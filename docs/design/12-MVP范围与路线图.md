@@ -1,0 +1,39 @@
+# 12 · MVP 范围与路线图
+
+## M0 · 骨架（本次）
+
+目标：**用 mock harness 端到端跑通一条示例流水线，CLI 能跑能查，Web 能看能改。**
+
+| 模块 | 做到 |
+|---|---|
+| core | 类型契约、DSL + 静态校验、文件存储（存放区 / 事件哈希链 / 运行 / 待办）、DAG 引擎（script / agent / gate / human / judge / loop / planner）、写权限守卫、读模型（运行图、追溯图、度量） |
+| harness | mock（剧本化）、claude-code、codex、dsh 适配器 |
+| knowledge | grep / wiki / workspace / git-history + 路由器 |
+| server | `packages/core/src/api.ts` 里列出的全部接口 + SSE |
+| cli | `takt init / req new / ws put,get,ls,log / run / resume / answer / status / trace / audit verify / kb query / serve` |
+| web | 项目总览、需求页（阶段条 + 公共产物 Tab + 版本 + 编辑）、运行页（DAG 画布 + 节点抽屉：输入输出 / Trace / 上下文 / 判决 / 门禁）、待办 |
+| 模板 | `sdlc.workflow.ts`（默认流水线）、7 个角色档案 |
+| 示例 | `examples/hello-delivery`：一个小需求，mock 剧本里故意让一条用例失败，演示判决 → 路由 → 修复 → 通过 |
+
+验收：`npm run build && npm test` 通过；`takt run` 跑完示例并产出完整的 `.takt/`；`takt serve` 后 Web 能看到需求、阶段、DAG、节点详情、上下文账本、判决；`takt audit verify` 通过。
+
+## M1 · 真跑起来
+
+- 用真实 harness（Claude Code / Codex / DeepSeek）跑一个真实小需求；
+- 修复准入 validator V2–V5；
+- 外部导入：飞书文档、Meego 需求；
+- 上下文预算策略和压缩前钩子；
+- 知识层：CodeGraph、数据库只读源。
+
+## M2 · 团队协作
+
+- 服务端模式（多人共用一个 `.takt/`）、权限；
+- 需求级成员和评论通知；
+- 判决评测集与混淆矩阵；
+- 多 harness 组合评测（控制变量、多次运行、成对比较）。
+
+## M3 · 生态
+
+- workflow / 角色 / 知识源 / harness 插件化发布与安装；
+- 导入 spec-kit、BMAD 的产物作为公共存放区输入；
+- 托管运行与触发器（issue 事件、定时）。

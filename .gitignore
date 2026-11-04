@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+coverage/
+# 运行产物：示例项目里的 .takt/runs 会很大，默认不入库
+examples/*/.takt/runs/
+examples/*/.takt/objects/
+.taktdev/

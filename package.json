@@ -1,0 +1,32 @@
+{
+  "name": "taktflow",
+  "private": true,
+  "version": "0.0.0",
+  "description": "AI 一站式交付流水线：代码定义的 DAG、多 Agent 分工、公共存放区、全程可追溯可审计",
+  "type": "module",
+  "license": "MIT",
+  "workspaces": [
+    "packages/core",
+    "packages/harness",
+    "packages/knowledge",
+    "packages/server",
+    "packages/cli",
+    "packages/web"
+  ],
+  "scripts": {
+    "build": "tsc -b packages/core packages/harness packages/knowledge packages/server packages/cli && npm run build -w @taktflow/web",
+    "typecheck": "tsc -b packages/core packages/harness packages/knowledge packages/server packages/cli",
+    "test": "vitest run",
+    "dev:web": "npm run dev -w @taktflow/web",
+    "takt": "tsx packages/cli/src/index.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.12"
+  }
+}

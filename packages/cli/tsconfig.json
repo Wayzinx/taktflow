@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "references": [{ "path": "../core" }, { "path": "../harness" }, { "path": "../knowledge" }, { "path": "../server" }],
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

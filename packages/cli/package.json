@@ -1,0 +1,30 @@
+{
+  "name": "@taktflow/cli",
+  "version": "0.0.0",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "takt": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@taktflow/core": "0.0.0",
+    "@taktflow/harness": "0.0.0",
+    "@taktflow/knowledge": "0.0.0",
+    "@taktflow/server": "0.0.0",
+    "tsx": "^4.23.15"
+  }
+}
