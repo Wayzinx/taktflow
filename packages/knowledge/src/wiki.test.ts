@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createWikiSource } from './wiki.js'
+import { markdownPages } from './markdown.js'
 
 let root: string
 async function page(path: string, content: string) {
@@ -78,6 +79,41 @@ describe('Wiki 两阶段检索', () => {
     await page('one.md', '```md\n# wrong\n```\n\nRefund rules\n============\n\nDetails.')
     expect((await createWikiSource({ root }).query({ text: 'refund' }))[0]!.title).toBe('Refund rules')
     expect(await createWikiSource({ root }).query({ text: 'wrong' })).toEqual([])
+  })
+
+  it('YAML 锚点、别名、注释和折叠文本由共享解析器处理，元数据不混入正文', async () => {
+    await page('one.md', '\uFEFF---\r\nterms: &terms [" refund ", returns] # comment\r\naliases: *terms\r\nsummary: >-\r\n  Refund policy\r\n  for customers\r\nverifiedAt: 2026-10-20\r\n...\r\n# General\r\n\r\nDetails.')
+    expect(await markdownPages(root)).toEqual([{
+      ref: 'one.md', title: 'General', aliases: ['refund', 'returns'],
+      summary: 'Refund policy for customers', verifiedAt: '2026-10-20',
+      body: '# General\n\nDetails.',
+    }])
+    expect(await createWikiSource({ root }).query({ text: 'returns' })).toHaveLength(1)
+    expect(await createWikiSource({ root }).query({ text: 'comment' })).toEqual([])
+  })
+
+  it.each([
+    ['aliases: [refund, 42, null, false, { bad: value }, " "]\nsummary: { bad: value }\nverifiedAt: [2026-10-20]', ['refund']],
+    ['aliases: " refund "\nsummary: false\nverifiedAt: 42', ['refund']],
+    ['aliases: { bad: value }\nsummary: null\nverifiedAt: true', []],
+  ])('非文本元数据不参与检索或证据分级：%s', async (metadata, aliases) => {
+    await page('one.md', `---\n${metadata}\n---\n# General\n\nDetails.`)
+    expect((await markdownPages(root))[0]).toMatchObject({ aliases, summary: '', verifiedAt: undefined })
+    expect(await createWikiSource({ root }).query({ text: 'value' })).toEqual([])
+    expect((await createWikiSource({ root }).query({ text: 'general' }))[0]?.evidenceLevel).toBe('derived')
+  })
+
+  it.each([
+    ['---\naliases: [refund\n---\n# General', 'Frontmatter YAML 解析失败'],
+    ['---\naliases: *missing\n---\n# General', 'Frontmatter YAML 解析失败'],
+    ['---\n- refund\n---\n# General', 'Frontmatter 必须是 YAML 映射'],
+    ['---\naliases: refund\n# General', 'Frontmatter 缺少结束分隔符'],
+  ])('非法 frontmatter 拒绝检索并保留文件路径：%s', async (content, message) => {
+    await page('broken.md', content)
+    await expect(createWikiSource({ root }).query({ text: 'refund' })).rejects.toMatchObject({
+      message: expect.stringContaining(join(root, 'broken.md')),
+      cause: expect.objectContaining({ message }),
+    })
   })
 
   it('长段落截取真实英文单词命中处，不截取同前缀单词', async () => {

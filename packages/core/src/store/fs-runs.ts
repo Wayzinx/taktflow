@@ -11,20 +11,25 @@ import type {
   WorkflowSnapshot,
 } from '../types.js'
 import { fileExists, isEnoent, readJsonFile, toJsonText, writeFileAtomic } from './fs-utils.js'
-import { withLock } from './locks.js'
+import { withFileLock } from './file-lock.js'
+import { mergeState } from './merge-state.js'
+import { applyInvalidations, readInvalidations } from './run-invalidations.js'
 import { contextFile, runDir, runsDir } from './paths.js'
 
 type ContextFile = Awaited<ReturnType<RunStore['getContext']>>
 
 export class FsRunStore implements RunStore {
+  private readonly observed = new WeakMap<RunState, RunState>()
+  private readonly submitted = new Map<string, RunState>()
   constructor(private readonly taktDir: string) {}
 
   async create(state: RunState, workflow: WorkflowSnapshot): Promise<void> {
     const dir = runDir(this.taktDir, state.runId)
-    await withLock(dir, async () => {
+    await withFileLock(path.join(dir, 'state.json'), async () => {
       if (await fileExists(path.join(dir, 'state.json'))) throw new Error(`运行已存在：${state.runId}`)
       await writeFileAtomic(path.join(dir, 'workflow.json'), toJsonText(workflow))
       await writeFileAtomic(path.join(dir, 'state.json'), toJsonText(state))
+      this.submitted.set(state.runId, structuredClone(state))
     })
   }
 
@@ -35,13 +40,32 @@ export class FsRunStore implements RunStore {
   async save(state: RunState): Promise<void> {
     const dir = runDir(this.taktDir, state.runId)
     const file = path.join(dir, 'state.json')
-    await withLock(dir, async () => {
-      await writeFileAtomic(file, toJsonText(state))
+    const incoming = structuredClone(state)
+    const observed = this.observed.get(state)
+    await withFileLock(path.join(dir, 'state.json'), async () => {
+      const current = await readJsonFile<RunState>(file)
+      const invalidations = await readInvalidations(dir)
+      const baseline = structuredClone(observed ?? this.submitted.get(state.runId) ?? current)
+      const proposed = structuredClone(incoming)
+      if (baseline) applyInvalidations(baseline, invalidations)
+      applyInvalidations(proposed, invalidations)
+      const merged = current ? mergeState(baseline, proposed, current) : proposed
+      applyInvalidations(merged, invalidations)
+      await writeFileAtomic(file, toJsonText(merged))
+      this.submitted.set(state.runId, incoming)
+      this.observed.set(state, structuredClone(incoming))
     })
   }
 
   async get(runId: RunId): Promise<RunState | undefined> {
-    return readJsonFile<RunState>(path.join(runDir(this.taktDir, runId), 'state.json'))
+    const dir = runDir(this.taktDir, runId)
+    const state = await readJsonFile<RunState>(path.join(dir, 'state.json'))
+    if (state) {
+      await this.reconcile(dir, state)
+      this.observed.set(state, structuredClone(state))
+      if (!this.submitted.has(runId)) this.submitted.set(runId, structuredClone(state))
+    }
+    return state
   }
 
   async list(filter?: { requirementId?: RequirementId }): Promise<RunState[]> {
@@ -56,7 +80,8 @@ export class FsRunStore implements RunStore {
     const runs: RunState[] = []
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
-      const state = await readJsonFile<RunState>(path.join(root, entry.name, 'state.json'))
+      if (entry.name.startsWith('.')) continue
+      const state = await this.get(entry.name)
       if (!state) continue
       if (filter?.requirementId !== undefined && state.requirementId !== filter.requirementId) continue
       runs.push(state)
@@ -91,11 +116,15 @@ export class FsRunStore implements RunStore {
     mutate: (file: ContextFile) => void,
   ): Promise<void> {
     const file = contextFile(this.taktDir, runId, nodeId)
-    await withLock(file, async () => {
+    await withFileLock(file, async () => {
       const current = await this.readContext(runId, nodeId)
       mutate(current)
       await writeFileAtomic(file, toJsonText(current))
     })
+  }
+
+  private async reconcile(dir: string, state: RunState): Promise<void> {
+    applyInvalidations(state, await readInvalidations(dir))
   }
 
   private async readContext(runId: RunId, nodeId: NodeId): Promise<ContextFile> {

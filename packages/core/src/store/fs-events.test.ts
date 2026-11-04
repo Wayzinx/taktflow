@@ -203,4 +203,52 @@ describe('FsEventStore', () => {
       unsubscribe()
     }
   })
+  it('外部追加刷新缓存，截断和替换重新读取尾部，损坏尾部拒绝追加', async () => {
+    const first = await store.append(runId, logEvent('first'))
+    const second = { ...first, seq: 2, prevHash: first.hash, data: { level: 'info', message: 'external' } }
+    const { hash: _hash, prevHash, ...payload } = second
+    second.hash = sha256(prevHash + canonicalJson(payload))
+    const file = eventsFile(taktDir, runId)
+    await appendFile(file, `${JSON.stringify(second)}\n`)
+    expect((await store.append(runId, logEvent('third'))).seq).toBe(3)
+    expect(await store.verify(runId)).toEqual({ ok: true })
+    await writeFile(file, `${JSON.stringify(first)}\n`)
+    expect((await store.append(runId, logEvent('after-truncate'))).seq).toBe(2)
+    expect(await store.verify(runId)).toEqual({ ok: true })
+    await appendFile(file, '{unfinished')
+    await expect(store.append(runId, logEvent('blocked'))).rejects.toThrow('换行')
+    await writeFile(file, `${JSON.stringify({ ...first, hash: 'a'.repeat(64) })}\n`)
+    await expect(store.append(runId, logEvent('blocked'))).rejects.toThrow('损坏')
+  })
+
+  it('同大小替换与截断后重写更长的有效链会重建缓存，非法追加不写入', async () => {
+    const first = await store.append(runId, logEvent('original'))
+    await store.append(runId, logEvent('second'))
+    const file = eventsFile(taktDir, runId)
+    const make = (seq: number, prevHash: string, message: string) => {
+      const payload = { seq, ts: first.ts, runId, ...logEvent(message) }
+      return { ...payload, prevHash, hash: sha256(prevHash + canonicalJson(payload)) }
+    }
+    const replacement = make(1, ZERO_HASH, 'new-first-' + 'x'.repeat(2000))
+    const next = make(2, replacement.hash, 'new-second')
+    await writeFile(file, `${JSON.stringify(replacement)}\n${JSON.stringify(next)}\n`)
+    expect((await store.append(runId, logEvent('after-rewrite'))).seq).toBe(3)
+    expect(await store.verify(runId)).toEqual({ ok: true })
+    const lines = (await readFile(file, 'utf8')).trim().split('\n')
+    const last = JSON.parse(lines.at(-1)!) as EventEnvelope
+    const sameSize = { ...last, data: { level: 'info', message: 'equal-rewrite' } }
+    const { hash: _hash, prevHash, ...payload } = sameSize
+    sameSize.hash = sha256(prevHash + canonicalJson(payload))
+    lines[lines.length - 1] = JSON.stringify(sameSize)
+    const oldSize = (await stat(file)).size
+    await writeFile(file, `${lines.join('\n')}\n`)
+    expect((await stat(file)).size).toBe(oldSize)
+    expect((await store.append(runId, logEvent('after-same-size'))).seq).toBe(4)
+    expect(await store.verify(runId)).toEqual({ ok: true })
+    await appendFile(file, `${JSON.stringify(make(5, ZERO_HASH, 'bad-link'))}\n`)
+    const before = await readFile(file, 'utf8')
+    await expect(store.append(runId, logEvent('must-not-write'))).rejects.toThrow('断链')
+    expect(await readFile(file, 'utf8')).toBe(before)
+  })
+
 })

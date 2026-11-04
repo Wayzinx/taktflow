@@ -98,6 +98,25 @@ describe('grep', () => {
     await expect(createGrepSource({ root }).query({ text: 'needle' })).rejects.toThrow(`grep 搜索失败（${root}）`)
   })
 
+  it.each(['rg', 'fallback'])('%s：共享 glob 保留根路径、basename、目录和 scope 的边界', async mode => {
+    for (const path of [
+      'root-only.ts', 'nested/root-only.ts', 'cache/a.ts', 'nested/cache/a.ts',
+      'generated/a.ts', 'nested/generated/a.ts', 'src/skip1.ts', 'src/keep.ts',
+      'src-other/keep.ts', 'nested/src/keep.ts', 'nested/dist/out.ts',
+      '.takt/runs/log', 'nested/.takt/runs/log',
+    ]) await put(path, 'needle')
+    if (mode === 'fallback') failRg('ENOENT')
+    const source = createGrepSource({ root, ignore: ['/root-only.ts', '/cache/', './generated/', 'src/skip?.ts'] })
+    expect((await source.query({ text: 'needle' })).map(hit => hit.ref)).toEqual([
+      'nested/.takt/runs/log:1', 'nested/cache/a.ts:1',
+      'nested/root-only.ts:1', 'nested/src/keep.ts:1', 'src-other/keep.ts:1', 'src/keep.ts:1',
+    ])
+    expect((await source.query({ text: 'needle', scope: ['/src/'] })).map(hit => hit.ref)).toEqual(['src/keep.ts:1'])
+    expect((await source.query({ text: 'needle', scope: ['src'] })).map(hit => hit.ref)).toEqual([
+      'nested/src/keep.ts:1', 'src/keep.ts:1',
+    ])
+  })
+
   it('缺失 root 抛出上下文错误', async () => {
     await expect(createGrepSource({ root: join(root, 'missing') }).query({ text: 'needle' })).rejects.toThrow('grep 搜索失败')
   })

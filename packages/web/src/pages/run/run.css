@@ -122,6 +122,14 @@
   cursor: default;
   pointer-events: none !important;
 }
+/* 自定义节点类型名叫 group，会吃到 React Flow 内置 group 节点的边框、内边距和底色，这里清掉，只保留 .dag-group 自己的框 */
+.run-canvas .react-flow__node-group {
+  padding: 0;
+  border: none;
+  border-radius: 14px;
+  background: transparent;
+  box-shadow: none;
+}
 .run-canvas .react-flow__controls {
   border-radius: 8px;
   overflow: hidden;
@@ -405,9 +413,11 @@
 .dag-group-title {
   font-size: 13px;
   font-weight: 620;
+  white-space: nowrap;
 }
 .dag-group-status {
   display: inline-flex;
+  white-space: nowrap;
   align-items: center;
   gap: 4px;
   font-size: 11.5px;
@@ -419,6 +429,7 @@
   height: 12px;
 }
 .dag-group-note {
+  min-width: 0;
   font-size: 11.5px;
   color: var(--text-3);
 }

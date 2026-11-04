@@ -1,6 +1,7 @@
 import { constants } from 'node:fs'
 import { lstat, open, readdir } from 'node:fs/promises'
 import { basename, join, relative, sep } from 'node:path'
+import { parseFrontmatter } from '@taktflow/core'
 import type { KnowledgeHit, KnowledgeQuery } from '@taktflow/core'
 
 interface MarkdownPage {
@@ -31,97 +32,13 @@ export function keywordScore(text: string, keywords: string[]): number {
   return keywords.reduce((score, word) => score + Number(words.has(word)), 0)
 }
 
-function withoutComment(value: string): string {
-  let quote = ''
-  for (let i = 0; i < value.length; i++) {
-    const char = value[i]!
-    if (quote === '"' && char === '\\') { i++; continue }
-    if (quote === "'" && char === "'" && value[i + 1] === "'") { i++; continue }
-    if (quote && char === quote) quote = ''
-    else if (!quote && (char === '"' || char === "'")) quote = char
-    else if (!quote && char === '#' && (i === 0 || /\s/.test(value[i - 1]!))) return value.slice(0, i).trim()
-  }
-  return value.trim()
-}
-
-function scalar(value: string): string {
-  const text = withoutComment(value)
-  if (text.startsWith('"') && text.endsWith('"')) {
-    try {
-      return JSON.parse(text) as string
-    } catch {
-      return text.slice(1, -1)
-    }
-  }
-  if (text.startsWith("'") && text.endsWith("'")) return text.slice(1, -1).replace(/''/g, "'")
-  return text
-}
-
-function inlineAliases(value: string): string[] {
-  // 逗号只分隔数组项，不拆开引号中的别名。
-  const text = value.slice(1, value.lastIndexOf(']'))
-  const items: string[] = []
-  let quote = ''
-  let start = 0
-  for (let i = 0; i < text.length; i++) {
-    const char = text[i]!
-    if (quote === '"' && char === '\\') { i++; continue }
-    if (quote === "'" && char === "'" && text[i + 1] === "'") { i++; continue }
-    if (quote && char === quote) quote = ''
-    else if (!quote && (char === '"' || char === "'")) quote = char
-    else if (!quote && char === ',') {
-      items.push(text.slice(start, i))
-      start = i + 1
-    }
-  }
-  items.push(text.slice(start))
-  return items.map(scalar).filter(Boolean)
-}
-
 function parseMarkdown(content: string, ref: string): MarkdownPage {
-  const lines = content.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').split('\n')
-  let body = lines.join('\n')
-  let aliases: string[] = []
-  let summary = ''
-  let verifiedAt: string | undefined
-  const end = lines[0]?.trim() === '---'
-    ? lines.findIndex((line, index) => index > 0 && /^(---|\.\.\.)\s*$/.test(line))
-    : -1
-  if (end > 0) {
-    body = lines.slice(end + 1).join('\n')
-    for (let i = 1; i < end; i++) {
-      const field = /^(aliases|summary|verifiedAt):\s*(.*)$/.exec(lines[i]!)
-      if (!field) continue
-      const key = field[1]!
-      const value = withoutComment(field[2]!)
-      if (key === 'verifiedAt') verifiedAt = scalar(value)
-      if (key === 'aliases') {
-        if (value.startsWith('[')) aliases = inlineAliases(value)
-        else if (value) aliases = [scalar(value)]
-        else {
-          while (i + 1 < end) {
-            const next = lines[i + 1]!
-            if (!next.trim() || /^\s*#/.test(next)) { i++; continue }
-            const item = /^\s*-\s+(.+)$/.exec(next)
-            if (!item) break
-            aliases.push(scalar(item[1]!))
-            i++
-          }
-        }
-      }
-      if (key === 'summary') {
-        if (/^[|>][+-]?[1-9]?$|^[|>][1-9][+-]?$/.test(value)) {
-          const block: string[] = []
-          while (i + 1 < end && (/^\s/.test(lines[i + 1]!) || !lines[i + 1]!.trim())) {
-            block.push(lines[++i]!)
-          }
-          const indent = Math.min(...block.filter(line => line.trim()).map(line => /^\s*/.exec(line)![0].length))
-          const text = block.map(line => line.slice(indent)).join('\n').trim()
-          summary = value.startsWith('>') ? text.replace(/([^\n])\n(?=[^\n])/g, '$1 ') : text
-        } else summary = scalar(value)
-      }
-    }
-  }
+  const { data, body } = parseFrontmatter(content.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n'))
+  const aliasValues = Array.isArray(data.aliases) ? data.aliases : [data.aliases]
+  const aliases = aliasValues.filter((value): value is string => typeof value === 'string')
+    .map(value => value.trim()).filter(Boolean)
+  const summary = typeof data.summary === 'string' ? data.summary.trim() : ''
+  const verifiedAt = typeof data.verifiedAt === 'string' ? data.verifiedAt.trim() : undefined
   // fenced code 中的 # 不是页面标题。
   let fence: string | undefined
   let title: string | undefined

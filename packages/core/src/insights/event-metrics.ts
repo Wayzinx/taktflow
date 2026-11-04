@@ -29,11 +29,11 @@ export function eventMetrics(events: EventEnvelope[], state: RunState, snapshot?
     return loops
   }
   for (const event of orderedEvents(events)) {
-    if (event.type === 'human.answered') metrics.humanInterventions++
+    if (event.type === 'human.answered' && event.actor.type === 'human' && event.actor.id !== 'auto-approve'
+      && (event.data as EventPayloads['human.answered']).decision !== 'cancelled') metrics.humanInterventions++
     if (event.type === 'judge.verdict') {
       const data = event.data as EventPayloads['judge.verdict']
       for (const verdict of data.verdicts) metrics.verdicts[verdict.category] = (metrics.verdicts[verdict.category] ?? 0) + 1
-      metrics.humanInterventions += data.routed.filter((route) => route.to === 'human').length
     }
     if (!event.nodeId) continue
     const id = event.nodeId

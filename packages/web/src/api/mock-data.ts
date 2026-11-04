@@ -1125,7 +1125,7 @@ export function createMockDb(): MockDb {
   attention.push({
     requestId: 'att-0004-design-gate', runId: RUN4, nodeId: 'design-gate', requirementId: 'REQ-004',
     ask: '系分门禁未通过（rubric 62 < 80）：未覆盖 AC-4 跨时区、契约缺少错误码、扫描任务无重试方案。请裁决。',
-    form: 'choice', choices: ['打回重做系分', '放行（需写明理由）', '转人工补充后重跑'], createdAt: iso(m4(49.5)),
+    form: 'choice', choices: ['打回重做系分', '放行', '转人工补充后重跑'], createdAt: iso(m4(49.5)),
   })
   const pendingQuestions = attention.find((a) => a.requirementId === 'REQ-005' && !a.answeredAt)
   if (pendingQuestions) pendingQuestions.ask = '3 个待确认问题：① 高亮是否区分大小写？② 多个关键词是否分别着色？③ 拼音 / 同义词命中是否高亮？可在 spec/clarify.md 里逐条回答，或在这里统一答复。'

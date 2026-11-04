@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import type { ArtifactKind } from '@taktflow/core'
+import { markArtifactEdited, withLock, type ArtifactKind } from '@taktflow/core'
 import { createPrinter } from '../output.js'
 import { openStores } from '../project.js'
 
@@ -32,16 +32,20 @@ export async function runWsPut(
   const stores = await openStores(project)
   if (!await stores.workspaces.getRequirement(id)) throw new Error(`需求不存在：${id}`)
   const content = file === '-' ? await readStdin() : await readFile(file)
-  const ref = await stores.workspaces.writeArtifact({
-    ref: { workspace: id, path },
-    content,
-    kind,
-    author: { type: 'human', id: currentUser(stores.projectDir) },
-    reason: options.reason ?? '人工写入',
+  const author = { type: 'human' as const, id: currentUser(stores.projectDir) }
+  const reason = options.reason ?? '人工写入'
+  const result = await withLock(stores.projectDir, async () => {
+    const record = (await stores.workspaces.listArtifacts(id)).find((item) => item.path === path)
+    const ref = await stores.workspaces.writeArtifact({ ref: { workspace: id, path }, content, kind, author, reason })
+    const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markArtifactEdited(stores, ref, author, reason)
+    return { ...ref, staleNodes }
   })
   const printer = createPrinter(options.json)
-  if (options.json) printer.data(ref)
-  else printer.text(`${printer.colors.green('✔')} ${id}/${ref.path} v${ref.version}`)
+  if (options.json) printer.data(result)
+  else {
+    printer.text(`${printer.colors.green('✔')} ${id}/${result.path} v${result.version}`)
+    for (const node of result.staleNodes) printer.text(`  stale ${node.runId}/${node.nodeId}`)
+  }
 }
 
 export async function runWsGet(

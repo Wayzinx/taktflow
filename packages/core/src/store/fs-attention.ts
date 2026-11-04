@@ -1,6 +1,7 @@
 import type { AttentionItem, AttentionStore } from '../interfaces.js'
 import { appendLine, readJsonLines } from './fs-utils.js'
-import { withLock } from './locks.js'
+import { withFileLock } from './file-lock.js'
+import { AttentionAlreadyAnsweredError } from './attention-rules.js'
 import { attentionFile } from './paths.js'
 
 type CreateInput = Parameters<AttentionStore['create']>[0]
@@ -27,7 +28,7 @@ export class FsAttentionStore implements AttentionStore {
     const requestId = assertRequestId(item.requestId)
     const created: AttentionItem = { ...item, requestId, createdAt: new Date().toISOString() }
     const file = attentionFile(this.taktDir)
-    await withLock(file, async () => {
+    await withFileLock(file, async () => {
       const merged = await this.merged()
       if (merged.has(requestId)) throw new Error(`待办已存在：${requestId}`)
       await appendLine(file, JSON.stringify(created))
@@ -38,27 +39,30 @@ export class FsAttentionStore implements AttentionStore {
   async answer(requestId: string, input: AnswerInput): Promise<AttentionItem> {
     const rid = assertRequestId(requestId)
     const file = attentionFile(this.taktDir)
-    return withLock(file, async () => {
+    return withFileLock(file, async () => {
       const merged = await this.merged()
       const current = merged.get(rid)
       if (!current) throw new Error(`待办不存在：${rid}`)
-      const answered: AttentionItem = { ...current, answeredAt: new Date().toISOString() }
+      if (current.answeredAt !== undefined) throw new AttentionAlreadyAnsweredError(rid)
+      const answered: AttentionItem = { ...current, answeredAt: new Date().toISOString(), answeredBy: input.by }
       if (input.decision !== undefined) answered.decision = input.decision
       if (input.answer !== undefined) answered.answer = input.answer
-      await appendLine(file, JSON.stringify({ ...answered, by: input.by }))
+      await appendLine(file, JSON.stringify(answered))
       return answered
     })
   }
 
   /** 只追加的 jsonl：同一 requestId 的后写覆盖先写。 */
   private async merged(): Promise<Map<string, AttentionItem>> {
-    const items = await readJsonLines<AttentionItem>(attentionFile(this.taktDir))
+    const items = await readJsonLines<AttentionItem & { by?: AttentionItem['answeredBy'] }>(attentionFile(this.taktDir))
     const merged = new Map<string, AttentionItem>()
     for (const item of items) {
       if (!item || typeof item.requestId !== 'string' || item.requestId === '') {
         throw new Error(`attention.jsonl 里有缺 requestId 的记录：${attentionFile(this.taktDir)}`)
       }
-      merged.set(item.requestId, item)
+      const { by, ...record } = item
+      if (record.answeredAt && !record.answeredBy && by) record.answeredBy = by
+      merged.set(item.requestId, record)
     }
     return merged
   }

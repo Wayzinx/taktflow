@@ -4,7 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { openProject, type AttentionItem, type RunState } from '@taktflow/core'
+import { createInsights, openProject, type AttentionItem, type RunState } from '@taktflow/core'
 import { repoRoot } from './project.js'
 
 const entry = join(repoRoot, 'packages/cli/src/index.ts')
@@ -256,6 +256,55 @@ it('完整示例 run --json：成功、迭代两轮、审计和质量报告，�
   expect(trace.edges.length).toBeGreaterThan(0)
   expect((await json(dir, ['status', '--req', req.id]))[0].runs.at(-1).status).toBe('succeeded')
   const events = await stores.events.read(run.runId)
-  // 外部 core 已知缺陷：成功轮仍发空判决。必须保留严格原始事件计数，不过滤 data、不跳过。
+  expect((await stores.workspaces.getRequirement(req.id))?.status).toBe('delivered')
+  expect((await createInsights(stores).metrics(req.id)).humanInterventions).toBe(0)
+  expect(await stores.workspaces.detectUntracked(req.id)).toEqual([])
+  const artifacts = await stores.workspaces.listArtifacts(req.id)
+  for (const id of ['TC-GREET-001', 'TC-GREET-002']) expect(artifacts.some((artifact) => artifact.path === `evidence/${id}/result.json`)).toBe(true)
   expect(events.filter((event) => event.type === 'judge.verdict')).toHaveLength(1)
 }, 60000)
+
+it('审计先报告损坏 JSON 行的位置，不追加事件或掩盖断链', async () => {
+  const dir = await runtimeProject(`[{ id: 'done', kind: 'script', title: '完成', run: async () => {} }]`)
+  const run = await json<State>(dir, ['run', 'custom.workflow.ts', '--req', 'REQ-001'])
+  const file = join(dir, '.takt/runs', run.runId, 'events.jsonl')
+  const lines = (await readFile(file, 'utf8')).trim().split('\n')
+  lines[1] = '{broken json'
+  const broken = `${lines.join('\n')}\n`
+  await writeFile(file, broken)
+  await writeFile(join(dir, '.takt/workspaces/REQ-001/untracked.txt'), 'new')
+  expect(await json(dir, ['audit', 'verify', run.runId], 1)).toMatchObject({ runId: run.runId, ok: false, brokenAt: 2 })
+  expect(await readFile(file, 'utf8')).toBe(broken)
+}, 30000)
+
+it('audit 检出直接修改及未登记的逐条证据，重复扫描去重；ws put 登记并传播 stale', async () => {
+  const dir = await runtimeProject(`[
+    { id: 'read', kind: 'script', title: '读取', stage: 'build', inputs: [{path: 'spec.md'}], run: async () => {} },
+    { id: 'after', kind: 'script', title: '下游', stage: 'build', needs: ['read'], run: async () => {} }
+  ]`)
+  const source = join(dir, 'input.txt')
+  await writeFile(source, 'v1')
+  await json(dir, ['ws', 'put', 'REQ-001', 'spec.md', source])
+  const run = await json<State>(dir, ['run', 'custom.workflow.ts', '--req', 'REQ-001'])
+  const stores = await openProject(dir)
+  const workspace = stores.workspaces.dir('REQ-001')
+  await writeFile(join(workspace, 'spec.md'), 'bypassed')
+  await mkdir(join(workspace, 'evidence/TC-1'), { recursive: true })
+  await writeFile(join(workspace, 'evidence/TC-1/result.json'), '{"status":"passed"}')
+  const first = await json(dir, ['audit', 'verify', run.runId], 1)
+  expect(first).toMatchObject({ ok: false, untracked: expect.arrayContaining([expect.objectContaining({ path: 'spec.md' }), expect.objectContaining({ path: 'evidence/TC-1/result.json' })]) })
+  expect(await stores.events.verify(run.runId)).toEqual({ ok: true })
+  const count = (await stores.events.read(run.runId)).length
+  await json(dir, ['audit', 'verify', run.runId], 1)
+  expect(await stores.events.read(run.runId)).toHaveLength(count)
+  await writeFile(source, 'v2')
+  const edited = await json(dir, ['ws', 'put', 'REQ-001', 'spec.md', source, '--reason', '需求修订'])
+  expect(edited).toMatchObject({ version: 2, staleNodes: expect.arrayContaining([{ runId: run.runId, nodeId: 'read' }, { runId: run.runId, nodeId: 'after' }]) })
+  expect((await stores.runs.get(run.runId))?.nodes.after?.status).toBe('stale')
+  const afterEdit = (await stores.events.read(run.runId)).length
+  expect((await json(dir, ['ws', 'put', 'REQ-001', 'spec.md', source])).staleNodes).toEqual([])
+  expect(await stores.events.read(run.runId)).toHaveLength(afterEdit)
+  expect((await stores.events.read(run.runId, { types: ['artifact.edited'] }))).toHaveLength(1)
+  await json(dir, ['ws', 'put', 'REQ-001', 'evidence/TC-1/result.json', join(workspace, 'evidence/TC-1/result.json'), '--kind', 'evidence'])
+  expect(await json(dir, ['audit', 'verify', run.runId])).toMatchObject({ ok: true, untracked: [] })
+}, 30000)

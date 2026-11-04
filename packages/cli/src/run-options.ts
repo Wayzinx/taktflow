@@ -1,3 +1,4 @@
+import { assertRunId } from '@taktflow/core'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
@@ -7,14 +8,6 @@ export interface RunCliOptions {
   workflowPath?: string
   harness?: string
   mock?: string
-}
-
-const SAFE_RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-
-/** 运行 ID 会进路径，Core 的 assertRunId 没从包入口导出，这里做同样的校验。 */
-function assertRunId(runId: string): string {
-  if (!SAFE_RUN_ID.test(runId)) throw new Error(`非法运行 ID：${runId}`)
-  return runId
 }
 
 const optionsFile = (taktDir: string, runId: string): string =>

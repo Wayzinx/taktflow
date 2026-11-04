@@ -29,6 +29,7 @@
 .ev-time {
   padding-top: 2px;
   font-size: 11px;
+  line-height: 1.45;
   color: var(--text-3);
   text-align: right;
   white-space: nowrap;

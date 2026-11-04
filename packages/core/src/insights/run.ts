@@ -4,8 +4,8 @@ import { addUsage } from './usage.js'
 
 export function summarizeRun(state: RunState): RunSummary {
   const nodes = Object.values(state.nodes)
-  const usage: Usage = { inputTokens: 0, outputTokens: 0 }
-  for (const node of nodes) if (node.usage) addUsage(usage, node.usage)
+  let usage: Usage = { inputTokens: 0, outputTokens: 0 }
+  for (const node of nodes) if (node.usage) usage = addUsage(usage, node.usage)
   return {
     runId: state.runId, workflowId: state.workflowId, requirementId: state.requirementId,
     status: state.status, startedAt: state.startedAt, endedAt: state.endedAt,

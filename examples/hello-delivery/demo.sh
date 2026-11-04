@@ -48,24 +48,34 @@ echo "    运行 ID：$RUN_ID"
 echo "==> 校验审计哈希链"
 "${TAKT[@]}" --json audit verify "$RUN_ID" > "$TMP/audit.json"
 
+node --input-type=module - "$EXAMPLE" "$REQ" > "$TMP/metrics.json" <<'NODE'
+import { openProject, createInsights } from '@taktflow/core'
+const stores = await openProject(process.argv[2])
+console.log(JSON.stringify(await createInsights(stores).metrics(process.argv[3])))
+NODE
+
 echo "==> 校验演示结果"
 CHECK_STATUS=0
-node - "$TMP/run.json" "$TMP/audit.json" "$EXAMPLE/.takt/runs/$RUN_ID/events.jsonl" "$EXAMPLE/.takt/workspaces/$REQ" <<'NODE' || CHECK_STATUS=$?
+node - "$TMP/run.json" "$TMP/audit.json" "$EXAMPLE/.takt/runs/$RUN_ID/events.jsonl" "$EXAMPLE/.takt/workspaces/$REQ" "$TMP/metrics.json" <<'NODE' || CHECK_STATUS=$?
 const fs = require('node:fs')
 const path = require('node:path')
-const [runFile, auditFile, eventsFile, workspace] = process.argv.slice(2)
+const [runFile, auditFile, eventsFile, workspace, metricsFile] = process.argv.slice(2)
 const run = JSON.parse(fs.readFileSync(runFile, 'utf8'))
 const audit = JSON.parse(fs.readFileSync(auditFile, 'utf8'))
 const events = fs.readFileSync(eventsFile, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
 
 const checks = []
 const check = (name, ok, detail) => { checks.push({ name, ok, detail }) }
+const requirement = JSON.parse(fs.readFileSync(path.join(workspace, 'requirement.json'), 'utf8'))
+const metrics = JSON.parse(fs.readFileSync(metricsFile, 'utf8'))
+check('持久化需求 delivered', requirement.status === 'delivered', `status=${requirement.status}`)
+check('实际人工介入 0 次', metrics.humanInterventions === 0, `humanInterventions=${metrics.humanInterventions}`)
+check('全部证据已登记', Array.isArray(audit.untracked) && audit.untracked.length === 0, JSON.stringify(audit.untracked))
 check('运行状态 succeeded', run.status === 'succeeded', `status=${run.status}`)
 const loop = run.nodes?.['dev-test-loop']
 check('dev-test-loop 迭代 2 轮', loop?.iteration === 2, `iteration=${loop?.iteration}`)
 check('dev-test-loop 成功', loop?.status === 'succeeded', `status=${loop?.status}`)
 // 验收要求：整个运行恰好 1 条 judge.verdict 事件，且判决为 product_bug、路由到 fix-code。
-// 注意：当前 core 在第二轮无失败时仍会发一条空 verdicts 的事件，这里严格按事件条数断言。
 const verdicts = events.filter((event) => event.type === 'judge.verdict')
 check('judge.verdict 事件 1 条', verdicts.length === 1, `count=${verdicts.length}`)
 const verdict = verdicts[0]?.data?.verdicts?.[0]

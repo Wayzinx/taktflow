@@ -1,7 +1,8 @@
 import type { GraphEdge, GraphNode, RunDetail, StageProgress } from '../api.js'
 import type { RunState, SnapshotNode, WorkflowSnapshot } from '../types.js'
+import type { RunGraphNode } from '../store/run-graph.js'
 
-export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState): RunDetail['graph'] {
+export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, records: RunGraphNode[] = []): RunDetail['graph'] {
   const nodes = new Map<string, GraphNode>()
   const definitions = new Map<string, SnapshotNode>()
   const edges = new Map<string, GraphEdge>()
@@ -49,6 +50,34 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState): RunD
     }
   }
 
+  for (const record of records) {
+    const existing = nodes.get(record.id)
+    const runtime = state.nodes[record.id]
+    nodes.set(record.id, {
+      id: record.id, kind: record.kind ?? existing?.kind ?? 'subflow',
+      title: record.title ?? existing?.title ?? `${record.id}（展开节点，定义未持久化）`,
+      parent: record.parent ?? existing?.parent, stage: record.stage ?? existing?.stage,
+      role: record.role ?? existing?.role,
+      harness: runtime?.sessionRef?.harness ?? record.harness ?? existing?.harness,
+      status: runtime?.status ?? 'pending', attempts: runtime?.attempts ?? 0,
+      iteration: runtime?.iteration, usage: runtime?.usage,
+    })
+  }
+  // 记录可能乱序，等所有父节点存在后继承阶段。
+  for (let pass = 0; pass < nodes.size; pass++) {
+    let changed = false
+    for (const node of nodes.values()) {
+      const stage = node.parent ? nodes.get(node.parent)?.stage : undefined
+      if (!node.stage && stage) { node.stage = stage; changed = true }
+    }
+    if (!changed) break
+  }
+  const recorded = new Map(records.map((record) => [record.id, record]))
+  for (const record of records) {
+    for (const from of record.needs) addEdge({ from, to: record.id, kind: 'dep' })
+    if (record.parent && nodes.get(record.parent)?.kind === 'planner') addEdge({ from: record.parent, to: record.id, kind: 'expand' })
+  }
+
   const resolve = (reference: string, parent?: string): string | undefined => {
     let scope = parent
     while (scope) {
@@ -60,7 +89,7 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState): RunD
   }
   for (const [id, definition] of definitions) {
     const parent = nodes.get(id)?.parent
-    for (const dependency of definition.needs) {
+    for (const dependency of recorded.has(id) ? [] : definition.needs) {
       const from = resolve(dependency, parent)
       if (from) addEdge({ from, to: id, kind: 'dep' })
     }
@@ -73,8 +102,8 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState): RunD
   return { nodes: [...nodes.values()], edges: [...edges.values()] }
 }
 
-export function stageProgress(snapshot: WorkflowSnapshot, state: RunState): StageProgress[] {
-  const graph = buildRunGraph(snapshot, state)
+export function stageProgress(snapshot: WorkflowSnapshot, state: RunState, records?: RunGraphNode[]): StageProgress[] {
+  const graph = buildRunGraph(snapshot, state, records)
   return snapshot.stages.map((stage) => {
     const nodes = graph.nodes.filter((node) => node.stage === stage.id)
     const done = nodes.filter((node) => node.status === 'succeeded' || node.status === 'skipped').length

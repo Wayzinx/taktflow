@@ -28,18 +28,27 @@ async function fixture() {
   }
   const state: RunState = {
     runId: 'run-1', requirementId: requirement.id, workflowId: 'wf', workflowVersion: '1', status: 'succeeded', startedAt: '2026-01-01T00:00:00Z', args: {},
-    nodes: Object.fromEntries(['loop', 'loop/child', 'after', 'planner', 'planner/a/task', 'planner/b/task', 'unrelated'].map((id) => [id, { id, status: 'succeeded', attempts: 1, outputs: [], ...(id === 'loop/child' || id === 'planner/a/task' ? { inputs: [ref] } : {}) }])),
-    expansions: [{ plannerId: 'planner', nodeIds: ['planner/a/task', 'planner/b/task'], items: [{ key: 'a', title: 'a' }, { key: 'b', title: 'b', dependsOn: ['a'] }], at: '2026-01-01T00:00:00Z' }],
+    nodes: Object.fromEntries(['loop', 'loop/child', 'after', 'planner', 'planner/a/task', 'planner/b/task', 'planner/c/task', 'unrelated'].map((id) => [id, { id, status: 'succeeded', attempts: 1, outputs: [], ...(id === 'loop/child' || id === 'planner/a/task' ? { inputs: [ref] } : {}) }])),
+    expansions: [{ plannerId: 'planner', nodeIds: ['planner/a/task', 'planner/b/task', 'planner/c/task'], items: [{ key: 'a', title: 'a' }, { key: 'b', title: 'b', dependsOn: ['a'] }], at: '2026-01-01T00:00:00Z' }],
   }
   await stores.runs.create(state, snapshot)
+  const graph = { nodes: [
+    { id: 'loop', needs: [] }, { id: 'loop/child', needs: [], parent: 'loop' },
+    { id: 'after', needs: ['loop'] }, { id: 'planner', needs: [] },
+    { id: 'planner/a/task', needs: [], parent: 'planner', kind: 'agent', title: '实现 A', role: 'dev', stage: 'dev', harness: 'mock' },
+    { id: 'planner/b/task', needs: ['planner/a/task'], parent: 'planner' },
+    { id: 'planner/c/task', needs: [], parent: 'planner' }, { id: 'unrelated', needs: [] },
+  ], requests: {} }
+  await writeFile(join(stores.taktDir, 'runs/run-1/engine.json'), JSON.stringify(graph))
   const server = await createServer({ projectDir: root, port: 0 })
   cleanups.push(() => server.close())
-  return { root, stores, server, state, snapshot }
+  return { root, stores, server, state, snapshot, graph }
 }
 
-it('编辑传播到所有运行、loop 父容器及后继、动态展开组；同内容不重复写事件', async () => {
-  const { stores, server, state, snapshot } = await fixture()
+it('编辑传播到所有运行、loop 父容器及后继、动态依赖但不波及兄弟；同内容不重复写事件', async () => {
+  const { stores, server, state, snapshot, graph } = await fixture()
   await stores.runs.create({ ...state, runId: 'run-2', startedAt: '2026-02-01T00:00:00Z' }, snapshot)
+  await writeFile(join(stores.taktDir, 'runs/run-2/engine.json'), JSON.stringify(graph))
   const edit = async (content: string) => {
     const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', body: JSON.stringify({ content, reason: '修改规格' }) })
     expect(response.status).toBe(200)
@@ -51,16 +60,18 @@ it('编辑传播到所有运行、loop 父容器及后继、动态展开组；�
   for (const runId of ['run-1', 'run-2']) {
     const state = await stores.runs.get(runId)
     for (const id of ['loop', 'loop/child', 'after', 'planner', 'planner/a/task', 'planner/b/task']) expect(state!.nodes[id]!.status).toBe('stale')
+    expect(state!.nodes['planner/c/task']!.status).toBe('succeeded')
     expect(state!.nodes.unrelated!.status).toBe('succeeded')
     const events = await stores.events.read(runId)
-    expect(events).toHaveLength(6)
-    expect(events.every((event) => event.type === 'node.stale' && event.actor.type === 'human' && event.actor.id === 'web')).toBe(true)
+    expect(events).toHaveLength(7)
+    expect(events.filter((event) => event.type === 'artifact.edited')).toHaveLength(1)
+    expect(events.every((event) => event.actor.type === 'human' && event.actor.id === 'web')).toBe(true)
     expect(await stores.events.verify(runId)).toEqual({ ok: true })
   }
   expect(await edit('v2')).toEqual({ version: 2, staleNodes: [] })
-  expect((await stores.events.read('run-1'))).toHaveLength(6)
+  expect((await stores.events.read('run-1'))).toHaveLength(7)
   expect((await edit('v3')).staleNodes).toHaveLength(12)
-  expect((await stores.events.read('run-1'))).toHaveLength(12)
+  expect((await stores.events.read('run-1'))).toHaveLength(14)
   expect((await stores.workspaces.readArtifact({ workspace: 'REQ-1', path: 'spec.md', version: 1 }))?.toString()).toBe('v1')
 })
 
@@ -153,4 +164,23 @@ it('SSE 只发送 after 之后事件，活跃连接随 server.close 结束且重
   await server.close()
   await server.close()
   expect(await reader.read()).toMatchObject({ done: true })
+})
+
+it('动态节点使用持久化图的元数据与依赖，实际 prompt 优先于快照', async () => {
+  const { stores, server } = await fixture()
+  const nodeId = 'planner/a/task'
+  await stores.events.append('run-1', { nodeId, type: 'harness.message', actor: { type: 'system', id: 'test' }, data: { role: 'user', text: '本轮 TC-2：修复空名字' } })
+  const detail = await (await fetch(`${server.url}/api/runs/run-1/nodes/${encodeURIComponent(nodeId)}`)).json()
+  expect(detail).toMatchObject({ kind: 'agent', title: '实现 A', role: 'dev', stage: 'dev', prompt: '本轮 TC-2：修复空名字' })
+  const run = await (await fetch(`${server.url}/api/runs/run-1`)).json()
+  expect(run.graph.edges).toContainEqual({ from: nodeId, to: 'planner/b/task', kind: 'dep' })
+})
+
+it('已有新版本输入不会 stale', async () => {
+  const { stores, server, state } = await fixture()
+  state.nodes['loop/child']!.inputs![0]!.version = 2
+  state.nodes['planner/a/task']!.inputs![0]!.version = 2
+  await stores.runs.save(state)
+  const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', body: JSON.stringify({ content: 'v2', reason: '同步新版本' }) })
+  expect(await response.json()).toEqual({ version: 2, staleNodes: [] })
 })

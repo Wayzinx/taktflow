@@ -3,9 +3,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import {
-  initProject, snapshotWorkflow,
+  createEngine, initProject, snapshotWorkflow,
   type Actor, type ApiError, type ArtifactComment, type ArtifactContent, type ArtifactEditResponse,
-  type ArtifactRecord, type AttentionItem, type EventEnvelope, type HarnessInfo, type ModelInfo,
+  type ArtifactRecord, type AttentionItem, type EventEnvelope, type HarnessAdapter, type HarnessInfo,
+  type HarnessRequest, type ModelInfo, type NodeContext,
   type NodeDetail, type ProjectOverview, type ProjectStores, type RequirementDetail,
   type RequirementMetrics, type RequirementSummary, type RunDetail, type RunState, type RunSummary,
   type TraceGraph, type WorkflowDefinition,
@@ -161,6 +162,8 @@ it('GET /api/project、/api/requirements 与需求详情', async () => {
   expect(overview.body.attention.map((a) => a.requestId)).toContain('att-1')
 
   const summary = overview.body.requirements[0]!
+  expect(summary.status).toBe('delivered')
+  expect(overview.body.totals.delivered).toBe(1)
   expect(summary.latestRunId).toBe(fixture.runId)
   expect(summary.pendingAttention).toBe(1)
   expect(summary.stages.map((s) => s.id)).toEqual(['dev', 'test'])
@@ -466,6 +469,125 @@ it('GET /api/attention?pending=1 与 POST 回答触发 onAnswer', async () => {
   expect(unknown.status).toBe(404)
 })
 
+/**
+ * 同一份起始状态的两个副本，供 markStale 双入口一致性对比：
+ * reader 读 spec → reader-after 依赖它；loop/inner 读 spec → loop 父 → loop-after；
+ * other 只读 other.md，两个入口都应保持 succeeded。
+ */
+async function makeStaleParityProject(): Promise<Fixture & { workflow: WorkflowDefinition; state: RunState }> {
+  const root = await mkdtemp(join(tmpdir(), 'takt-stale-parity-'))
+  cleanups.push(() => rm(root, { recursive: true, force: true }))
+  const stores = await initProject(root, { name: '过期入口一致性' })
+  const requirement = await stores.workspaces.createRequirement({ title: '过期入口一致性' })
+  const actor: Actor = { type: 'system', id: 'fixture' }
+  const spec = await stores.workspaces.writeArtifact({
+    ref: { workspace: requirement.id, path: 'spec/spec.md' },
+    content: '# 规格\n- AC-1: 初始\n', kind: 'spec', author: actor,
+  })
+  const other = await stores.workspaces.writeArtifact({
+    ref: { workspace: requirement.id, path: 'inputs/other.md' },
+    content: '无关输入\n', kind: 'input', author: actor,
+  })
+
+  const workflow: WorkflowDefinition = {
+    id: 'stale-parity', title: '过期入口一致性', version: '1',
+    stages: [{ id: 'work', title: '工作' }],
+    nodes: [
+      { id: 'reader', kind: 'script', title: '读规格', stage: 'work', inputs: [{ path: 'spec/spec.md' }], run: async () => undefined },
+      { id: 'reader-after', kind: 'script', title: '阅读下游', stage: 'work', needs: ['reader'], run: async () => undefined },
+      {
+        id: 'loop', kind: 'loop', title: '循环', stage: 'work', maxIterations: 1, until: () => true,
+        body: [{ id: 'inner', kind: 'script', title: '读规格子节点', inputs: [{ path: 'spec/spec.md' }], run: async () => undefined }],
+      },
+      { id: 'loop-after', kind: 'script', title: '循环下游', stage: 'work', needs: ['loop'], run: async () => undefined },
+      { id: 'other', kind: 'script', title: '无关节点', stage: 'work', inputs: [{ path: 'inputs/other.md' }], run: async () => undefined },
+    ],
+  }
+  const runId = 'run-stale-parity-1'
+  const state: RunState = {
+    runId, requirementId: requirement.id, workflowId: workflow.id, workflowVersion: workflow.version,
+    status: 'succeeded', startedAt: '2026-11-04T00:00:00.000Z', endedAt: '2026-11-04T00:05:00.000Z',
+    args: {}, expansions: [],
+    nodes: {
+      reader: {
+        id: 'reader', status: 'succeeded', attempts: 1,
+        inputs: [{ workspace: requirement.id, path: 'spec/spec.md', version: spec.version }], outputs: [],
+      },
+      'reader-after': { id: 'reader-after', status: 'succeeded', attempts: 1, outputs: [] },
+      loop: { id: 'loop', status: 'succeeded', attempts: 1, outputs: [] },
+      'loop/inner': {
+        id: 'loop/inner', status: 'succeeded', attempts: 1, iteration: 1,
+        inputs: [{ workspace: requirement.id, path: 'spec/spec.md', version: spec.version }], outputs: [],
+      },
+      'loop-after': { id: 'loop-after', status: 'succeeded', attempts: 1, outputs: [] },
+      other: {
+        id: 'other', status: 'succeeded', attempts: 1,
+        inputs: [{ workspace: requirement.id, path: 'inputs/other.md', version: other.version }], outputs: [],
+      },
+    },
+  }
+  await stores.runs.create(state, snapshotWorkflow(workflow))
+  return { root, stores, requirementId: requirement.id, runId, workflow, state }
+}
+
+const nodeStatuses = (state: RunState): Record<string, string> =>
+  Object.fromEntries(Object.entries(state.nodes).map(([id, node]) => [id, node.status]))
+
+it('engine.markStale 与 HTTP PUT 产物对同一起始状态的失效集合完全一致', async () => {
+  const engineSide = await makeStaleParityProject()
+  const httpSide = await makeStaleParityProject()
+  // 两入口的起始状态必须逐字段相同（runId/requirementId 相同，内容也相同）。
+  expect(engineSide.state).toEqual(httpSide.state)
+  expect(engineSide.runId).toBe(httpSide.runId)
+  const expected = ['loop', 'loop-after', 'loop/inner', 'reader', 'reader-after']
+
+  const engine = createEngine({
+    stores: engineSide.stores, harnesses: {}, profiles: {}, knowledge: [],
+  })
+  const engineStale = await engine.markStale(engineSide.runId, {
+    workspace: engineSide.requirementId, path: 'spec/spec.md', version: 2,
+  })
+
+  const server = await startServer({ projectDir: httpSide.root })
+  const res = await fetch(
+    `${server.url}/api/requirements/${httpSide.requirementId}/artifact?path=${encodeURIComponent('spec/spec.md')}`,
+    {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', 'x-takt-user': 'alice' },
+      body: JSON.stringify({ content: '# 规格\n- AC-1: 修改后\n', reason: '修改规格' }),
+    },
+  )
+  expect(res.status).toBe(200)
+  const edit = (await res.json()) as ArtifactEditResponse
+  expect(edit.version).toBe(2)
+  const httpStale = edit.staleNodes.filter((item) => item.runId === httpSide.runId).map((item) => item.nodeId)
+
+  // 明确预期集合，防止两个入口都返回空也“相等”。
+  expect([...engineStale].sort()).toEqual(expected)
+  expect([...httpStale].sort()).toEqual(expected)
+  expect([...engineStale].sort()).toEqual([...httpStale].sort())
+
+  const engineState = (await engineSide.stores.runs.get(engineSide.runId))!
+  const httpState = (await httpSide.stores.runs.get(httpSide.runId))!
+  const expectedStatuses = {
+    loop: 'stale', 'loop-after': 'stale', 'loop/inner': 'stale',
+    reader: 'stale', 'reader-after': 'stale', other: 'succeeded',
+  }
+  expect(nodeStatuses(engineState)).toEqual(expectedStatuses)
+  expect(nodeStatuses(httpState)).toEqual(expectedStatuses)
+
+  const staleEvents = async (stores: ProjectStores, runId: string) =>
+    (await stores.events.read(runId, { types: ['node.stale'] })).map((event) => event.nodeId!).sort()
+  expect(await staleEvents(engineSide.stores, engineSide.runId)).toEqual(expected)
+  expect(await staleEvents(httpSide.stores, httpSide.runId)).toEqual(expected)
+  for (const event of await httpSide.stores.events.read(httpSide.runId, { types: ['node.stale'] })) {
+    expect((event.data as { cause: { path: string; version?: number } }).cause).toMatchObject({ path: 'spec/spec.md', version: 2 })
+  }
+
+  expect(await engineSide.stores.events.verify(engineSide.runId)).toEqual({ ok: true })
+  expect(await httpSide.stores.events.verify(httpSide.runId)).toEqual({ ok: true })
+})
+
 /** 读一段 SSE 数据，超时即失败，避免测试挂死。 */
 async function readChunk(reader: ReadableStreamDefaultReader<Uint8Array>, timeoutMs = 5000): Promise<string> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -536,4 +658,99 @@ it('SSE 先推历史事件、再推实时事件，断开后清理订阅', async 
   } finally {
     clearTimeout(timer)
   }
+})
+
+it('回答按表单校验；重复和并发回答返回 409，回调仅执行一次', async () => {
+  const { root, stores, runId, requirementId } = await makeFixture()
+  let callbacks = 0
+  const server = await startServer({ projectDir: root, onAnswer: () => { callbacks++ } })
+  await stores.attention.create({ requestId: 'choice', runId, requirementId, nodeId: 'verify', ask: '选一个', form: 'choice', choices: ['a', 'b'] })
+  await stores.attention.create({ requestId: 'answer', runId, requirementId, nodeId: 'verify', ask: '说明', form: 'answer' })
+  const post = (id: string, input: unknown) => fetch(`${server.url}/api/attention/${id}`, { method: 'POST', headers: { 'x-takt-user': 'reviewer' }, body: JSON.stringify(input) })
+  for (const [id, input] of [
+    ['choice', { decision: 'approve' }], ['choice', { decision: 'choice', answer: 'wrong' }],
+    ['att-1', { answer: 'yes' }], ['answer', { answer: ' ' }], ['answer', { decision: 'approve' }],
+  ] as const) expect((await post(id, input)).status).toBe(400)
+  expect(callbacks).toBe(0)
+  // 失败请求不能写入任何回答或落盘记录。
+  for (const id of ['choice', 'att-1', 'answer']) {
+    expect((await stores.attention.list()).find((item) => item.requestId === id)!.answeredAt).toBeUndefined()
+  }
+  const responses = await Promise.all([post('choice', { decision: 'choice', answer: 'a' }), post('choice', { decision: 'choice', answer: 'b' })])
+  expect(responses.map((response) => response.status).sort()).toEqual([200, 409])
+  expect(callbacks).toBe(1)
+  const answered = (await stores.attention.list()).find((item) => item.requestId === 'choice')!
+  expect(answered.answeredBy).toEqual({ type: 'human', id: 'reviewer' })
+  expect(answered).not.toHaveProperty('by')
+  expect((await post('choice', { decision: 'choice', answer: 'a' })).status).toBe(409)
+  expect(callbacks).toBe(1)
+  // 409 之后持久化回答仍是首次成功的那次。
+  const persisted = (await stores.attention.list()).find((item) => item.requestId === 'choice')!
+  expect(persisted).toEqual(answered)
+  expect(['a', 'b']).toContain(persisted.answer)
+})
+
+it('动态 prompt 经引擎和 HTTP 读回实际文本', async () => {
+  const { root, stores, requirementId } = await makeFixture()
+  const actual = '本轮只修复 TC-DYNAMIC，证据 evidence/TC-DYNAMIC/result.json'
+  const seen: { requests: HarnessRequest[]; contexts: NodeContext[] } = { requests: [], contexts: [] }
+  const harness: HarnessAdapter = {
+    id: 'mock', displayName: '测试', available: async () => ({ ok: true }),
+    run: async (request, onEvent) => {
+      seen.requests.push(request)
+      // assistant 消息只应追加，不能覆盖 user prompt。
+      onEvent({ type: 'message', role: 'assistant', text: '收到，开始修复' })
+      return { ok: true, finalText: 'done' }
+    },
+  }
+  const engine = createEngine({
+    stores, profiles: { dev: { role: 'dev', title: '开发', description: '', instructions: '测试角色', harness: { harness: 'mock' }, skills: [], writeScope: ['**'] } }, knowledge: [],
+    harnesses: { mock: harness },
+  }, { harnessOverride: 'mock' })
+  const args = { ticket: 'TC-DYNAMIC', priority: 2 }
+  const state = await engine.start({ requirementId, args, workflow: {
+    id: 'dynamic', title: '动态', version: '1', stages: [], nodes: [
+      {
+        id: 'fix', kind: 'agent', title: '修复', role: 'dev',
+        prompt: (ctx) => {
+          seen.contexts.push(ctx)
+          return actual
+        },
+      },
+    ],
+  } })
+  expect(state.status).toBe('succeeded')
+
+  // 运行时上下文：args、requirementId、workspace 实际路径都来自本次运行。
+  expect(seen.contexts).toHaveLength(1)
+  const ctx = seen.contexts[0]!
+  expect(ctx.args).toEqual(args)
+  expect(ctx.requirementId).toBe(requirementId)
+  const workspaceDir = stores.workspaces.dir(requirementId)
+  expect(ctx.workspaceDir).toBe(workspaceDir)
+  expect(ctx.projectDir).toBe(root)
+
+  // harness 收到的完整 prompt 才是唯一事实来源。
+  expect(seen.requests).toHaveLength(1)
+  const prompt = seen.requests[0]!.prompt
+  expect(seen.requests[0]!.env).toMatchObject({
+    TAKT_REQ: requirementId, TAKT_NODE: 'fix', TAKT_WORKSPACE: workspaceDir, TAKT_RUN_ID: state.runId,
+  })
+  expect(prompt.startsWith(actual)).toBe(true)
+  expect(prompt).toContain(`公共存放区：${workspaceDir}`)
+  expect(prompt).not.toBe(actual)
+
+  const server = await startServer({ projectDir: root })
+  const detail = await getJson<NodeDetail>(`${server.url}/api/runs/${state.runId}/nodes/fix`)
+  expect(detail.status).toBe(200)
+  expect(detail.body.prompt).toBe(prompt)
+  const userMessages = detail.body.events.filter((event) => {
+    const data = event.data as { role?: string; text?: string }
+    return event.type === 'harness.message' && data.role === 'user'
+  })
+  expect(userMessages).toHaveLength(1)
+  expect((userMessages[0]!.data as { text: string }).text).toBe(prompt)
+  expect(detail.body.events.some((event) =>
+    event.type === 'harness.message' && (event.data as { role: string }).role === 'assistant'
+    && (event.data as { text: string }).text === '收到，开始修复')).toBe(true)
 })

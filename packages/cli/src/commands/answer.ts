@@ -1,4 +1,4 @@
-import type { AttentionItem } from '@taktflow/core'
+import { validateAnswer as validateCoreAnswer, type AttentionItem } from '@taktflow/core'
 import type { ParsedCli } from '../args.js'
 import { parseAnswerOptions } from '../args.js'
 import { UsageError } from '../args.js'
@@ -7,21 +7,10 @@ import { currentUser } from './ws.js'
 import { openStores } from '../project.js'
 import { resumeWorkflow } from './run.js'
 
-/** 按待办表单校验回答：choice 必须命中选项，approve/reject 只给 approve 表单，文本只给 answer 表单。 */
 export function validateAnswer(item: AttentionItem, input: { decision?: string; answer?: string }): void {
-  if (input.decision === 'choice') {
-    if (item.form !== 'choice') throw new UsageError(`待办 ${item.requestId} 的表单是 ${item.form}，不接受 --choice`)
-    if (!item.choices?.includes(input.answer ?? '')) {
-      throw new UsageError(`--choice 必须是以下之一：${(item.choices ?? []).join(', ')}`)
-    }
-    return
+  try { validateCoreAnswer(item, input) } catch (error) {
+    throw new UsageError(error instanceof Error ? error.message : String(error))
   }
-  if (input.decision === 'approve' || input.decision === 'reject') {
-    if (item.form !== 'approve') throw new UsageError(`待办 ${item.requestId} 的表单是 ${item.form}，不接受 --${input.decision}`)
-    return
-  }
-  if (item.form !== 'answer') throw new UsageError(`待办 ${item.requestId} 的表单是 ${item.form}，不接受 --answer`)
-  if (input.answer === undefined || input.answer.trim() === '') throw new UsageError('--answer 不能为空')
 }
 
 export async function runAnswer(cli: ParsedCli): Promise<number> {

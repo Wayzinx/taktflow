@@ -540,8 +540,31 @@
   box-shadow: none;
 }
 .trace-canvas {
-  height: 440px;
+  position: relative;
+  height: 560px;
   overflow: hidden;
+}
+/* 图比画布宽时右侧淡出，提示还能往右拖 */
+.trace-canvas::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 48px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--surface));
+  z-index: 5;
+}
+.trace-canvas .react-flow__node.dim {
+  opacity: 0.35;
+}
+.trace-canvas .react-flow__node {
+  transition: opacity 150ms var(--ease);
+}
+.trace-canvas .react-flow__controls {
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 .trace-node {
   display: flex;
@@ -727,4 +750,16 @@
   .metrics-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.metrics-empty {
+  margin: 0;
+  font-size: 12.5px;
+}
+.trace-canvas .react-flow {
+  --xy-controls-button-background-color: var(--surface);
+  --xy-controls-button-background-color-hover: var(--surface-hover);
+  --xy-controls-button-color: var(--text-2);
+  --xy-controls-button-color-hover: var(--text);
+  --xy-controls-button-border-color: var(--border);
 }

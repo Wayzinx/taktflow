@@ -2,10 +2,13 @@ import type { Engine, EngineDeps } from '../interfaces.js'
 import type { RunState } from '../types.js'
 import { newRunId } from '../util/ids.js'
 import { snapshotWorkflow } from '../store/snapshot.js'
-import { readJsonFile } from '../store/fs-utils.js'
+import { persistArtifactInvalidation } from '../store/artifact-edits.js'
+import { withFileLock } from '../store/file-lock.js'
+import { answerOrRead, recordAnswerOnce } from './answers.js'
+import { requirementLock, updateRequirement } from './requirement.js'
 import { validateDag } from './graph.js'
 import { WriteGuard } from './guard.js'
-import { Runtime, runtimeFile, system, type EngineOptions, type RuntimeRecord } from './runtime.js'
+import { Runtime, system, type EngineOptions } from './runtime.js'
 
 export type { EngineOptions } from './runtime.js'
 
@@ -29,7 +32,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   }
   return {
     async start(input) {
-      validateDag(input.workflow.nodes)
+      validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
       const now = opts.now?.() ?? new Date()
       const state: RunState = {
@@ -38,7 +41,8 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         args: input.args ?? {}, nodes: {}, expansions: [],
       }
       for (const node of input.workflow.nodes) state.nodes[node.id] = { id: node.id, status: 'pending', attempts: 0, outputs: [] }
-      await deps.stores.runs.create(state, snapshotWorkflow(input.workflow))
+      await withFileLock(requirementLock(deps.stores, state.requirementId), () => deps.stores.runs.create(state, snapshotWorkflow(input.workflow)))
+      await updateRequirement(deps.stores, state, snapshotWorkflow(input.workflow))
       await deps.stores.events.append(state.runId, { type: 'run.started', actor: system, data: {
         workflowId: state.workflowId, workflowVersion: state.workflowVersion, args: state.args,
       } })
@@ -71,37 +75,24 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       }
       for (const item of await deps.stores.attention.list({ pending: true, requirementId: state.requirementId })) {
         if (item.runId !== runId) continue
-        const answered = await deps.stores.attention.answer(item.requestId, { decision: 'cancelled', by: system })
-        if (runtime) { await runtime.recordAnswer(answered); continue }
-        const events = await deps.stores.events.read(runId, { nodeId: item.nodeId, types: ['human.answered'] })
-        if (!events.some((event) => (event.data as { requestId: string }).requestId === item.requestId)) {
-          await deps.stores.events.append(runId, { type: 'human.answered', actor: system, nodeId: item.nodeId, data: { requestId: item.requestId, decision: 'cancelled' } })
-        }
+        const answered = await answerOrRead(deps.stores, item, { decision: 'cancelled', by: system })
+        await recordAnswerOnce(deps.stores, runId, answered)
       }
+      await updateRequirement(deps.stores, state)
       if (!runtime) await deps.stores.events.append(runId, { type: 'run.finished', actor: system, data: { status: 'cancelled' } })
     },
     async markStale(runId, cause) {
       const runtime = active.get(runId)
       const state = runtime?.state ?? await deps.stores.runs.get(runId)
       if (!state) throw new Error(`运行不存在：${runId}`)
-      const record = await readJsonFile<RuntimeRecord>(runtimeFile(deps, runId))
-      if (!record) throw new Error(`运行缺少引擎依赖记录：${runId}`)
-      const affected = new Set(Object.values(state.nodes).filter((node) => node.inputs?.some((input) =>
-        input.workspace === cause.workspace && input.path === cause.path)).map((node) => node.id))
-      let changed = true
-      while (changed) {
-        changed = false
-        for (const node of record.nodes) {
-          if (affected.has(node.id) && node.parent && !affected.has(node.parent)) { affected.add(node.parent); changed = true }
-          if (!affected.has(node.id) && node.needs.some((id) => affected.has(id))) { affected.add(node.id); changed = true }
-        }
-      }
+      if (runtime) await runtime.save()
+      const affected = await persistArtifactInvalidation(deps.stores, runId, cause)
+      for (const id of affected) state.nodes[id]!.status = 'stale'
+      if (runtime) await runtime.save()
+      else await deps.stores.runs.save(state)
       for (const id of affected) {
-        if (!state.nodes[id]) continue
-        state.nodes[id]!.status = 'stale'
         if (runtime) await runtime.emit('node.stale', { cause }, id)
         else {
-          await deps.stores.runs.save(state)
           await deps.stores.events.append(runId, { type: 'node.stale', actor: system, nodeId: id, data: { cause } })
         }
       }

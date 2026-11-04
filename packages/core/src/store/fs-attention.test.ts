@@ -2,6 +2,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { AttentionAlreadyAnsweredError } from './attention-rules.js'
 import { FsAttentionStore } from './fs-attention.js'
 
 const item = (requestId: string, fill: Partial<Omit<Parameters<FsAttentionStore['create']>[0], 'requestId'>> = {}) => ({
@@ -49,14 +50,15 @@ describe('FsAttentionStore', () => {
     await expect(store.answer('带 空格', { answer: 'x', by: { type: 'human', id: 'u1' } })).rejects.toThrow('非法待办 ID')
   })
 
-  it('后写覆盖先写：重复回答以最后一次为准', async () => {
+  it('重复回答被拒绝，首次回答者与决定不变', async () => {
     await store.create(item('req-1'))
-    await store.answer('req-1', { decision: 'reject', by: { type: 'human', id: 'u1' } })
-    const latest = await store.answer('req-1', { decision: 'approve', by: { type: 'human', id: 'u2' } })
-    expect(latest.decision).toBe('approve')
-    const listed = await store.list()
-    expect(listed).toHaveLength(1)
-    expect(listed[0]?.decision).toBe('approve')
+    const answered = await store.answer('req-1', { decision: 'reject', by: { type: 'human', id: 'u1' } })
+    const before = (await store.list())[0]!
+    expect(before).toMatchObject({ decision: 'reject', answeredBy: { type: 'human', id: 'u1' }, answeredAt: answered.answeredAt })
+    await expect(store.answer('req-1', { decision: 'approve', by: { type: 'human', id: 'u2' } })).rejects.toBeInstanceOf(AttentionAlreadyAnsweredError)
+    const reread = await new FsAttentionStore(taktDir).list()
+    expect(reread).toHaveLength(1)
+    expect(reread[0]).toEqual(before)
   })
 
   it('另一个实例能立刻看到写入并回答', async () => {
@@ -75,6 +77,7 @@ describe('FsAttentionStore', () => {
     expect((await new FsAttentionStore(taktDir).list())[0]?.answer).toBe('继续')
     const records = (await readFile(path.join(taktDir, 'attention.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
     expect(records).toHaveLength(2)
-    expect(records[1].by).toEqual(by)
+    expect(records[1].answeredBy).toEqual(by)
+    expect(records[1]).not.toHaveProperty('by')
   })
 })

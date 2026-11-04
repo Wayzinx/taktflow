@@ -1,4 +1,5 @@
-import type { KnowledgeIntent, KnowledgeQuery } from '@taktflow/core'
+import { knowledgeFromConfig } from '../knowledge.js'
+import { createKnowledgeRouter, type KnowledgeIntent, type KnowledgeQuery } from '@taktflow/core'
 import { createPrinter } from '../output.js'
 import { openStores } from '../project.js'
 import { UsageError } from '../args.js'
@@ -13,13 +14,7 @@ export async function runKbQuery(project: string | undefined, text: string, inte
   }
   const stores = await openStores(project)
   const printer = createPrinter(json)
-  const wikiRoot = stores.config.knowledge?.find((source) => source.kind === 'wiki')?.options?.root
-  const { createDefaultSources, createKnowledgeRouter } = await import('@taktflow/knowledge')
-  const sources = createDefaultSources({
-    projectDir: stores.projectDir,
-    taktDir: stores.taktDir,
-    ...(typeof wikiRoot === 'string' ? { wikiDir: wikiRoot } : {}),
-  })
+  const sources = knowledgeFromConfig(stores)
   const query: KnowledgeQuery = parsed === undefined ? { text } : { text, intent: parsed }
   const { hits } = await createKnowledgeRouter(sources).query(query)
   if (json) {

@@ -12,7 +12,7 @@ import {
   type WorkflowDefinition,
 } from '@taktflow/core'
 import { createHarnesses, loadMockScript, type MockScript } from '@taktflow/harness'
-import { createDefaultSources } from '@taktflow/knowledge'
+import { knowledgeFromConfig } from './knowledge.js'
 import { tsImport } from 'tsx/esm/api'
 import { UsageError } from './args.js'
 
@@ -48,7 +48,7 @@ export async function loadRuntime(project: string | undefined, options: { mock?:
     ? await readMock(join(stores.taktDir, 'mock.json'))
     : await readMock(resolve(process.cwd(), options.mock), true)
   const harnesses = createHarnesses(mockScript === undefined ? {} : { mockScript })
-  return { stores, workflows, harnesses, profiles, knowledge: knowledgeSources(stores), ...(mockScript === undefined ? {} : { mockScript }) }
+  return { stores, workflows, harnesses, profiles, knowledge: knowledgeFromConfig(stores), ...(mockScript === undefined ? {} : { mockScript }) }
 }
 
 /** 指定了 mock 文件时重建 harness 表；serve 恢复运行时用。 */
@@ -56,15 +56,6 @@ export async function withMock(context: ProjectContext, mockFile: string | undef
   if (mockFile === undefined) return context
   const mockScript = await readMock(mockFile, true)
   return { ...context, harnesses: createHarnesses({ mockScript }), mockScript }
-}
-
-function knowledgeSources(stores: ProjectStores): KnowledgeSource[] {
-  const wikiRoot = stores.config.knowledge?.find((source) => source.kind === 'wiki')?.options?.root
-  return createDefaultSources({
-    projectDir: stores.projectDir,
-    taktDir: stores.taktDir,
-    ...(typeof wikiRoot === 'string' ? { wikiDir: wikiRoot } : {}),
-  })
 }
 
 async function readMock(file: string, required = false): Promise<MockScript | undefined> {

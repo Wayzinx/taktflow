@@ -150,7 +150,6 @@ export class FsWorkspaceStore implements WorkspaceStore {
   async readArtifact(ref: ArtifactRef): Promise<Buffer | undefined> {
     const id = assertRequirementId(ref.workspace)
     const artifactPath = assertArtifactPath(ref.path)
-    if (META_FILES.has(artifactPath.split('/')[0]!.toLowerCase())) throw new Error(`产物路径与元数据文件冲突：${artifactPath}`)
     await assertNoSymlinks(this.taktDir, path.join(this.dir(id), artifactPath))
     const manifest = await this.readManifest(id)
     const record = manifest.artifacts.find((r) => r.path === artifactPath)
@@ -171,7 +170,6 @@ export class FsWorkspaceStore implements WorkspaceStore {
   async writeArtifact(input: WriteArtifactInput): Promise<ArtifactRef & { version: number }> {
     const id = assertRequirementId(input.ref.workspace)
     const artifactPath = assertArtifactPath(input.ref.path)
-    if (META_FILES.has(artifactPath.split('/')[0]!.toLowerCase())) throw new Error(`产物路径与元数据文件冲突：${artifactPath}`)
     if (input.author.type === 'human' && !input.reason?.trim()) {
       throw new Error(`人工修改必须写 reason：${artifactPath}`)
     }

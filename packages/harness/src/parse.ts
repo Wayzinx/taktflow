@@ -1,5 +1,7 @@
 import type { HarnessEvent, HarnessRequest, HarnessResult, Usage } from '@taktflow/core'
 
+export { addUsage } from '@taktflow/core'
+
 export type JsonObject = Record<string, unknown>
 export type EventSink = (event: HarnessEvent) => void
 export interface StreamParser {
@@ -30,16 +32,6 @@ export function readUsage(value: unknown, camelCase = false): Usage | undefined 
   if (inputTokens === undefined || outputTokens === undefined) return undefined
   const cachedTokens = number(camelCase ? data.cacheReadTokens : data.cache_read_input_tokens ?? data.cached_input_tokens)
   return { inputTokens, outputTokens, ...(cachedTokens === undefined ? {} : { cachedTokens }) }
-}
-
-export function addUsage(left: Usage | undefined, right: Usage): Usage {
-  if (!left) return { ...right }
-  return {
-    inputTokens: left.inputTokens + right.inputTokens,
-    outputTokens: left.outputTokens + right.outputTokens,
-    ...(left.cachedTokens !== undefined && right.cachedTokens !== undefined
-      ? { cachedTokens: left.cachedTokens + right.cachedTokens } : {}),
-  }
 }
 
 export class ParseState {

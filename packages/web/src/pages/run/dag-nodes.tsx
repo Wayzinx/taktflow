@@ -23,18 +23,20 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
   const meta = NODE_STATUS[n.status]
   const StatusIcon = meta.icon
   const tokens = totalTokens(n.usage)
-  const sub = n.role ? `${n.role}${n.harness ? ` · ${n.harness}` : ''}` : NODE_KIND[n.kind].label
+  const role = n.role ? `${n.role}${n.harness ? ` · ${n.harness}` : ''}` : NODE_KIND[n.kind].label
+  const sub = data.label.sub ? `${data.label.sub}${n.role ? ` · ${role}` : ''}` : role
+  const showIteration = n.iteration !== undefined && !data.hideIteration
   return (
     <div
       className={`dag-node st-${n.status} tone-${meta.tone}${data.selected ? ' selected' : ''}`}
       style={{ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}
-      title={`${n.title}\n${n.id} · ${meta.label}`}
+      title={`${data.label.title}\n${n.id} · ${meta.label}`}
     >
       <Handles />
       <span className="dag-bar" />
       <div className="dag-row">
         <KindIcon kind={n.kind} size={22} />
-        <span className="dag-title truncate">{n.title}</span>
+        <span className="dag-title truncate">{data.label.title}</span>
         <span className="dag-status" title={meta.label}>
           <StatusIcon className={meta.spin ? 'spin' : undefined} strokeWidth={2.6} />
         </span>
@@ -44,9 +46,9 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
         <span style={{ flex: 1 }} />
         {tokens > 0 && <span className="mono num dag-tok">{fmtTokens(tokens)}</span>}
       </div>
-      {(n.iteration !== undefined || n.attempts > 1) && (
+      {(showIteration || n.attempts > 1) && (
         <span className="dag-badges">
-          {n.iteration !== undefined && <span className="dag-badge">第 {n.iteration} 轮</span>}
+          {showIteration && <span className="dag-badge">第 {n.iteration} 轮</span>}
           {n.attempts > 1 && <span className="dag-badge warn">×{n.attempts}</span>}
         </span>
       )}
@@ -79,10 +81,11 @@ export function GroupView({ data }: NodeProps<Node<GroupData, 'group'>>) {
             {meta.label}
           </span>
         )}
-        {n?.iteration !== undefined && <span className="dag-badge">第 {n.iteration} 轮 / 上限 5</span>}
+        {/* 轮次 / 条目上限在 workflow 定义里，RunDetail 不带，这里只显示实际值 */}
+        {n?.iteration !== undefined && <span className="dag-badge">第 {n.iteration} 轮</span>}
         {data.variant === 'expand' && (
-          <span className="dag-group-note">
-            planner 规划 {data.items} 个条目 · {data.childCount} 个节点 · 上限 12
+          <span className="dag-group-note truncate">
+            planner 规划 {data.items} 个条目 · {data.childCount} 个节点
           </span>
         )}
         <span style={{ flex: 1 }} />

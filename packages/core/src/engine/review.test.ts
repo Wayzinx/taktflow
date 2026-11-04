@@ -47,12 +47,12 @@ it('脚本覆盖已登记产物后立即读取，得到本轮磁盘内容而不�
   expect(state.nodes.run?.outputs[0]?.version).toBe(2)
 })
 
-it('两轮 loop 内人工请求分别批准，上一轮回答不能自动批准下一轮', async () => {
+it('三轮 loop 内人工请求分别批准，上一轮回答不能自动批准下一轮', async () => {
   const { stores, requirementId } = await fixture()
   let executions = 0
   const def = workflow([loop({
-    id: 'cycle', title: '两轮确认', maxIterations: 2,
-    until: (ctx) => ctx.iteration === 2,
+    id: 'cycle', title: '三轮确认', maxIterations: 3,
+    until: (ctx) => ctx.iteration === 3,
     body: [
       script({ id: 'work', title: '执行', run: async () => { executions++ } }),
       human({ id: 'confirm', title: '确认', needs: ['work'], ask: '批准本轮？', form: 'approve' }),
@@ -61,19 +61,31 @@ it('两轮 loop 内人工请求分别批准，上一轮回答不能自动批准�
   const deps = { stores, profiles: {}, harnesses: {}, knowledge: [] }
   const first = await createEngine(deps).start({ requirementId, workflow: def })
   expect(first.status).toBe('waiting_human')
+  const requestId = `${first.runId}:cycle/confirm`
   const [request1] = await stores.attention.list({ pending: true })
-  expect(request1).toBeDefined()
-  await stores.attention.answer(request1!.requestId, { decision: 'approve', by: { type: 'human', id: 'reviewer' } })
+  expect(request1?.requestId).toBe(requestId)
+  await stores.attention.answer(requestId, { decision: 'approve', by: { type: 'human', id: 'reviewer-1' } })
   const second = await createEngine(deps).resume(first.runId, def)
   expect(second.status).toBe('waiting_human')
   expect(executions).toBe(2)
-  const pending = await stores.attention.list({ pending: true })
-  expect(pending).toHaveLength(1)
-  expect(pending[0]!.requestId).not.toBe(request1!.requestId)
-  await stores.attention.answer(pending[0]!.requestId, { decision: 'approve', by: { type: 'human', id: 'reviewer' } })
+  const pending2 = await stores.attention.list({ pending: true })
+  expect(pending2.map((item) => item.requestId)).toEqual([`${requestId}#2`])
+  await stores.attention.answer(`${requestId}#2`, { decision: 'approve', by: { type: 'human', id: 'reviewer-2' } })
+  const third = await createEngine(deps).resume(first.runId, def)
+  expect(third.status).toBe('waiting_human')
+  expect(executions).toBe(3)
+  const pending3 = await stores.attention.list({ pending: true })
+  expect(pending3.map((item) => item.requestId)).toEqual([`${requestId}#3`])
+  // 旧轮次的答复记录保留，本轮只是另一个未回答的独立 pending
+  expect((await stores.attention.list({ requirementId })).map((item) => [item.requestId, item.answeredBy, item.answeredAt !== undefined])).toEqual([
+    [requestId, { type: 'human', id: 'reviewer-1' }, true],
+    [`${requestId}#2`, { type: 'human', id: 'reviewer-2' }, true],
+    [`${requestId}#3`, undefined, false],
+  ])
+  await stores.attention.answer(`${requestId}#3`, { decision: 'approve', by: { type: 'human', id: 'reviewer-3' } })
   const completed = await createEngine(deps).resume(first.runId, def)
   expect(completed.status).toBe('succeeded')
-  expect(executions).toBe(2)
+  expect(executions).toBe(3)
   expect(await stores.events.verify(first.runId)).toEqual({ ok: true })
 })
 
@@ -275,7 +287,7 @@ it('同一引擎并发运行两个 workflow，合法写入不会互相触发守�
   expect(states.map((state) => state.status)).toEqual(['succeeded', 'succeeded'])
 })
 
-it('git 守卫恢复已跟踪文件并删除新文件，事件准确标记 reverted', async () => {
+it('git 守卫标记越界但不覆盖暂存、人工或新文件', async () => {
   const { stores, requirementId } = await fixture()
   const root = stores.projectDir
   execFileSync('git', ['init', '--quiet'], { cwd: root })
@@ -292,8 +304,8 @@ it('git 守卫恢复已跟踪文件并删除新文件，事件准确标记 rever
   const state = await createEngine({ stores, profiles: { dev: profile }, harnesses: { mock }, knowledge: [] })
     .start({ requirementId, workflow: workflow([agent({ id: 'guard', title: '守卫', role: 'dev', prompt: '执行', writeScope: [] })]) })
   expect(state.nodes.guard?.status).toBe('blocked')
-  expect(await readFile(join(root, 'tracked.txt'), 'utf8')).toBe('原始内容')
-  await expect(readFile(join(root, 'new.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await readFile(join(root, 'tracked.txt'), 'utf8')).toBe('越界修改')
+  expect(await readFile(join(root, 'new.txt'), 'utf8')).toBe('越界新增')
   const events = await stores.events.read(state.runId, { types: ['guard.violation'] })
-  expect(events[0]?.data).toMatchObject({ action: 'reverted', paths: expect.arrayContaining(['tracked.txt', 'new.txt']) })
+  expect(events[0]?.data).toMatchObject({ action: 'flagged', paths: expect.arrayContaining(['tracked.txt', 'new.txt']) })
 })

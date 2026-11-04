@@ -9,9 +9,9 @@ taktflow 的最小示例：需求 → spec → 系分 → 测分 → 对齐 → 
 - `src/greet.js`：`greet(name)` 返回 `Hello, <name>!`。**缺陷**：空字符串应返回 `Hello, stranger!`，现在返回 `Hello, !`。
 - `tests/run-cases.mjs`：用例执行器。读 `$TAKT_WORKSPACE/cases/*.json`，逐条**真实调用** `greet`，把输入、期望、实际写到 `evidence/<id>/result.json`，汇总写 `evidence/summary.json`；有失败时退出码非 0。
 - `fixtures/`：`prd.md`（演示物料）、`greet.buggy.js`（缺陷版本）、`greet.fixed.js`（修复版本）。
-- `.takt/agents/`、`.takt/workflows/sdlc.workflow.ts`：从仓库 `templates/` 逐字节复制，不要改这里，改模板。
+- `.takt/agents/`、`.takt/workflows/sdlc.workflow.ts`：角色文件来自仓库 `templates/`；workflow 示例另含异步用例执行、判决注入和逐条证据登记，根模板待单独同步。
 - `.takt/mock.json`：MockScript，覆盖 sdlc 的每个 agent / judge / planner / rubric 调用；`fix-code` 把修复后的 `src/greet.js` 写回。
-- `docs/wiki/greeting.md`：问候语规范知识页（`business` intent，供系分和影响面检索）。
+- `docs/wiki/greeting.md`：问候语规范知识页（`business` intent，供系分按问候语和空名字规则检索）。
 
 ## 怎么跑
 
@@ -35,11 +35,11 @@ npm run demo
 
 如果把示例复制到仓库外的独立项目，项目中必须有可解析的 `@taktflow/core` 依赖，因为 `.takt/workflows/sdlc.workflow.ts` 会导入它；仅复制示例文件不足以加载 workflow。
 
-## 已知问题
+## 执行边界
 
-当前 core 会产生 **2 条原始 `judge.verdict` 事件**：第一轮包含 `product_bug` 判决，第二轮无失败时仍产生一条空 `verdicts` 事件。因此，即使运行状态为 `succeeded`、Loop 的 `iteration=2`、审计链有效，`npm run demo` 仍会显示 `FAIL judge.verdict 事件 1 条 (count=2)`，最终以退出码 **1** 结束。
+用例命令异步执行，运行时仍能处理 HTTP 和事件；当前 NodeContext 没有取消信号，取消运行不会主动终止已启动的用例子进程。命令启动前删除上一轮 summary，避免把旧结论当成新结果。
 
-示例保留“整个运行恰好 1 条原始事件”的严格验收断言，不过滤空事件、不放宽计数。校验失败后仍会打印 `takt status`，便于区分运行状态与演示验收结果；此问题需要在 core 中解决。
+Mock 模拟 agent 决策和代码修改，用例执行器实际调用产品函数；示例通过不代表真实模型交付能力已验证。`--auto-approve` 的系统自动回答不计作人工介入，验收同时检查持久化需求为 delivered 和 metrics.humanInterventions=0。
 
 ## 会看到什么
 
@@ -48,7 +48,7 @@ npm run demo
 - `fix-code` 写回修复后的 `src/greet.js`；
 - 第二轮 `run-cases` 全部通过，Loop 以 `iteration=2` 收敛；
 - `reports/quality.md` 的 AC 覆盖表：AC-1、AC-2 各 1 条用例且全部通过；
-- `audit verify` 哈希链校验通过。
+- `audit verify` 哈希链校验通过，逐条证据已登记且没有未追踪改动。
 
 想单独执行用例（需要先有一次运行的存放区）：
 

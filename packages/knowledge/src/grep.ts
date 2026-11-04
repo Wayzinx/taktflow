@@ -1,44 +1,28 @@
 import { execFile } from 'node:child_process'
-import { readdir, readFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { listFiles, matchGlob } from '@taktflow/core'
 import type { KnowledgeHit, KnowledgeQuery, KnowledgeSource } from '@taktflow/core'
 
 const defaultIgnore = ['.git', 'node_modules', 'dist', '.takt/objects', '.takt/runs']
 
-// 文件集合由两条检索路径共用；隐藏文件参与搜索，不读取 gitignore。
-function pathPattern(pattern: string): RegExp {
+// 保留 basename 在任意层级匹配、含斜杠的路径从根匹配的约定。
+function pathGlob(pattern: string): string {
   const anchored = pattern.startsWith('/')
   const normalized = pattern.replace(/^\.\//, '').replace(/^\/+|\/+$/g, '')
-  let source = ''
-  for (let i = 0; i < normalized.length; i++) {
-    const char = normalized[i]!
-    if (char === '*' && normalized[i + 1] === '*') {
-      i++
-      if (normalized[i + 1] === '/') {
-        source += '(?:.*/)?'
-        i++
-      } else source += '.*'
-    } else if (char === '*') source += '[^/]*'
-    else if (char === '?') source += '[^/]'
-    else source += char.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  }
-  return new RegExp(`${anchored || normalized.includes('/') ? '^' : '(?:^|/)'}${source}(?:/|$)`)
+  return anchored || normalized.includes('/') ? normalized : `**/${normalized}`
 }
 
-async function collectFiles(root: string, ignore: RegExp[]): Promise<string[]> {
-  const files: string[] = []
-  async function walk(directory: string): Promise<void> {
-    const entries = await readdir(resolve(root, directory), { withFileTypes: true })
-    entries.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)
-    for (const entry of entries) {
-      const path = directory ? `${directory}/${entry.name}` : entry.name
-      if (entry.isSymbolicLink() || ignore.some(pattern => pattern.test(path))) continue
-      if (entry.isDirectory()) await walk(path)
-      else if (entry.isFile()) files.push(path)
-    }
-  }
-  await walk('')
-  return files
+function matchesPath(pattern: string, path: string): boolean {
+  const parts = path.split('/')
+  return parts.some((_, index) => matchGlob(pattern, parts.slice(0, index + 1).join('/')))
+}
+
+async function collectFiles(root: string, ignore: string[]): Promise<string[]> {
+  // listFiles 会将裸名称扩展到任意层级；根目录限定的裸名称用后置过滤，目录仍提前剪枝。
+  const traversalIgnore = ignore.flatMap(pattern => pattern.includes('/') ? [pattern] : [`${pattern}/**`])
+  return (await listFiles(root, ['**'], { ignore: traversalIgnore }))
+    .filter(file => !ignore.some(pattern => matchesPath(pattern, file)))
 }
 
 function runRg(root: string, text: string, files: string[]): Promise<string> {
@@ -102,16 +86,16 @@ async function fileHits(root: string, path: string, text: string, fetchedAt: str
 
 export function createGrepSource(options: { root: string; ignore?: string[] }): KnowledgeSource {
   const root = resolve(options.root)
-  const ignore = [...defaultIgnore, ...options.ignore ?? []].filter(Boolean).map(pathPattern)
+  const ignore = [...defaultIgnore, ...options.ignore ?? []].filter(Boolean).map(pathGlob)
   return {
     id: 'grep', kind: 'grep', intents: ['symbol'],
     describe: () => '字面搜索项目文件，包含隐藏文件、不应用 gitignore；排除默认目录和追加 ignore，不跟随符号链接。rg 不存在时使用 Node。',
     async query(q: KnowledgeQuery) {
       if (!q.text) return []
       try {
-        const scopes = q.scope?.map(pathPattern)
+        const scopes = q.scope?.map(pathGlob)
         const files = (await collectFiles(root, ignore))
-          .filter(file => !scopes?.length || scopes.some(scope => scope.test(file)))
+          .filter(file => !scopes?.length || scopes.some(scope => matchesPath(scope, file)))
         let matched: Set<string>
         try {
           matched = await matchedFiles(root, q.text, files)

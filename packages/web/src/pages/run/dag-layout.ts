@@ -1,12 +1,13 @@
 import { MarkerType, type Edge, type Node, type BuiltInEdge } from '@xyflow/react'
-import type { GraphEdge, GraphNode, StageDef, StageProgress, Usage } from '@taktflow/core'
+import type { Expansion, GraphEdge, GraphNode, StageDef, StageProgress, Usage } from '@taktflow/core'
 import { VERDICT } from '../../lib/status'
+import { nodeLabel, type NodeLabel } from './node-label'
 
 /**
  * DAG 布局（不依赖 dagre / elk）：
  * - 每个阶段一列，列头显示阶段名；列内按依赖拓扑排序、自上而下堆叠；
  * - loop 节点本身是分组框，循环体在框内按依赖分层（从左到右）；
- * - planner 的展开节点放进它右侧的虚线分组框，每个条目一行；
+ * - planner 的展开节点放进它右侧的虚线分组框，每个条目一行，行内按依赖、没有依赖时按展开顺序从左到右；
  * - 边的连接点按相对位置选：左右相邻走右→左，同列相邻走下→上，同列跨行走左侧括号。
  */
 
@@ -17,12 +18,17 @@ const COL_GAP = 72
 const PAD = 14
 const HEAD = 42
 const IN_GAP_X = 44
+/** loop 体内 judge → 修复节点的路由边要挂类别标签，列间距留够标签宽度。 */
+const LOOP_GAP_X = 88
 const EXP_GAP = 52
 export const LANE_HEAD = 46
 const LANE_PAD_X = 18
 
 export interface DagNodeData extends Record<string, unknown> {
   node: GraphNode
+  label: NodeLabel
+  /** 循环体内节点的轮次和所在 loop 一致时不再重复画角标（分组框头上已经有）。 */
+  hideIteration?: boolean
   selected?: boolean
   dim?: boolean
 }
@@ -33,7 +39,6 @@ export interface GroupData extends Record<string, unknown> {
   childCount: number
   usage?: Usage
   items?: number
-  maxIterations?: number
   selected?: boolean
 }
 export interface LaneData extends Record<string, unknown> {
@@ -93,8 +98,9 @@ export interface Layout {
   stageNodes: Map<string, string[]>
 }
 
-export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, stageDefs: StageDef[], stages: StageProgress[], selected?: string): Layout {
+export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, stageDefs: StageDef[], stages: StageProgress[], expansions: Expansion[], selected?: string): Layout {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]))
+  const leaf = (n: GraphNode, extra: Partial<DagNodeData> = {}): DagNodeData => ({ node: n, label: nodeLabel(n, expansions), selected: n.id === selected, ...extra })
   const children = new Map<string, GraphNode[]>()
   for (const n of graph.nodes) if (n.parent) children.set(n.parent, [...(children.get(n.parent) ?? []), n])
   const top = graph.nodes.filter((n) => !n.parent)
@@ -117,8 +123,8 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
       const rows = [...new Set(ids.map((id) => id.split('/').slice(-2, -1)[0] ?? id))]
       for (const row of rows) {
         const rowIds = ids.filter((id) => id.split('/').slice(-2, -1)[0] === row)
-        const d = depthMap(rowIds, graph.edges)
-        rowIds.forEach((id) => pos.set(id, { col: d.get(id)!, row: rows.indexOf(row) }))
+        // 展开节点之间常常没有显式依赖边，深度全是 0 会叠在一起；按拓扑序逐个排开
+        topoOrder(rowIds, graph.edges).forEach((id, col) => pos.set(id, { col, row: rows.indexOf(row) }))
       }
     } else {
       const d = depthMap(ids, graph.edges)
@@ -130,9 +136,10 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
         pos.set(id, { col, row })
       }
     }
+    const gapX = variant === 'loop' ? LOOP_GAP_X : IN_GAP_X
     const cols = Math.max(1, ...[...pos.values()].map((p) => p.col + 1))
     const rows = Math.max(1, ...[...pos.values()].map((p) => p.row + 1))
-    const w = PAD * 2 + cols * NW + (cols - 1) * IN_GAP_X
+    const w = PAD * 2 + cols * NW + (cols - 1) * gapX
     const h = HEAD + rows * NH + (rows - 1) * GAP_Y + PAD
     return {
       w,
@@ -140,9 +147,11 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
       place(gx, gy) {
         for (const k of kids) {
           const p = pos.get(k.id)!
-          const rel = { x: PAD + p.col * (NW + IN_GAP_X), y: HEAD + p.row * (NH + GAP_Y) }
+          const rel = { x: PAD + p.col * (NW + gapX), y: HEAD + p.row * (NH + GAP_Y) }
           abs.set(k.id, { x: gx + rel.x, y: gy + rel.y, w: NW, h: NH })
-          leaves.push({ id: k.id, type: 'dag', parentId: groupId, extent: 'parent', position: rel, width: NW, height: NH, data: { node: k, selected: k.id === selected }, draggable: false, zIndex: 4 })
+          const parent = byId.get(k.parent ?? '')
+          const hideIteration = variant === 'loop' && k.iteration === parent?.iteration
+          leaves.push({ id: k.id, type: 'dag', parentId: groupId, extent: 'parent', position: rel, width: NW, height: NH, data: leaf(k, { hideIteration }), draggable: false, zIndex: 4 })
         }
       },
     }
@@ -184,7 +193,7 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
         const g = layoutGroup(gid, kids, 'expand')
         const nodeY = y + HEAD - 2
         abs.set(id, { x, y: nodeY, w: NW, h: NH })
-        leaves.push({ id, type: 'dag', position: { x, y: nodeY }, width: NW, height: NH, data: { node: n, selected: id === selected }, draggable: false, zIndex: 4 })
+        leaves.push({ id, type: 'dag', position: { x, y: nodeY }, width: NW, height: NH, data: leaf(n), draggable: false, zIndex: 4 })
         const gx = x + NW + EXP_GAP
         abs.set(gid, { x: gx, y, w: g.w, h: g.h })
         const itemCount = new Set(kids.map((k) => k.id.split('/').slice(-2, -1)[0])).size
@@ -195,7 +204,7 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
         return
       }
       abs.set(id, { x, y, w: NW, h: NH })
-      leaves.push({ id, type: 'dag', position: { x, y }, width: NW, height: NH, data: { node: n, selected: id === selected }, draggable: false, zIndex: 4 })
+      leaves.push({ id, type: 'dag', position: { x, y }, width: NW, height: NH, data: leaf(n), draggable: false, zIndex: 4 })
       y += NH + GAP_Y
     })
     stageNodes.set(stageId, ids)
@@ -223,8 +232,20 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
 
   // ---------------------------------------------------------------- 边
   const routePairs = new Set(graph.edges.filter((e) => e.kind === 'route').map((e) => `${e.from}→${e.to}`))
+  // planner → 每个展开节点各一条点线会横穿分组框里的节点；分组框已经表达了"这些是它展开的"，合成一条 planner → 分组框
+  const expandedPlanners = new Set<string>()
+  const drawn: GraphEdge[] = []
+  for (const e of graph.edges) {
+    if (e.kind === 'expand' && abs.has(`__expand__/${e.from}`)) {
+      if (expandedPlanners.has(e.from)) continue
+      expandedPlanners.add(e.from)
+      drawn.push({ ...e, to: `__expand__/${e.from}` })
+      continue
+    }
+    drawn.push(e)
+  }
   const edges: BuiltInEdge[] = []
-  graph.edges.forEach((e, i) => {
+  drawn.forEach((e, i) => {
     if (e.kind === 'dep' && routePairs.has(`${e.from}→${e.to}`)) return
     const s = abs.get(e.from)
     const t = abs.get(e.to)
@@ -267,7 +288,8 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
       sourceHandle,
       targetHandle,
       type: 'smoothstep',
-      pathOptions: { borderRadius: 12, offset: sourceHandle === 'ls' ? 28 : 18 },
+      // 上下相邻的 b → t 边间距很小，默认 offset 会先下探再折回，画出一个驼峰
+      pathOptions: { borderRadius: 12, offset: sourceHandle === 'ls' ? 28 : sourceHandle === 'b' ? Math.max(4, Math.min(18, (t.y - s.y - s.h) / 2 - 2)) : 18 },
       animated: live,
       label: e.kind === 'route' ? (VERDICT[e.label as keyof typeof VERDICT]?.label ?? e.label) : undefined,
       labelStyle: { fontSize: 10.5, fontWeight: 600, fill: color },

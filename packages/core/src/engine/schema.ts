@@ -1,3 +1,5 @@
+import { extractJsonBlock } from '../util/json-block.js'
+
 export function validateSchema(value: unknown, schema: Record<string, unknown>, path = '$'): void {
   const type = schema.type
   const valid = type === undefined || (type === 'null' ? value === null
@@ -24,10 +26,8 @@ export function validateSchema(value: unknown, schema: Record<string, unknown>, 
 }
 
 export function parseResult(text: string, schema: Record<string, unknown>): unknown {
-  const blocks = [...text.matchAll(/```json\s*\n?([\s\S]*?)```/gi)]
-  const last = blocks.at(-1)
-  if (!last) throw new Error('结构化结果缺少最后的 json 代码块')
-  const value: unknown = JSON.parse(last[1]!)
+  const value = extractJsonBlock(text)
+  if (value === undefined) throw new Error('结构化结果缺少有效且闭合的最后 json 代码块')
   validateSchema(value, schema)
   return value
 }

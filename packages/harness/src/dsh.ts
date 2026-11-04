@@ -84,7 +84,7 @@ export function createDshParser(onEvent: EventSink = () => {}): StreamParser {
       const stepUsage = readUsage(data.usage, true)
       if (!stepUsage) incompleteUsage = true
       else {
-        usage = addUsage(usage, stepUsage)
+        usage = addUsage(usage ?? { inputTokens: 0, outputTokens: 0 }, stepUsage)
         onEvent({ type: 'usage', usage: stepUsage })
       }
     } else if (data.type === 'status' && data.phase === 'turn_end') {

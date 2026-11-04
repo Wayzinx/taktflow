@@ -1,11 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isUtf8 } from 'node:buffer'
-import { buildRunGraph, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
+import { AttentionAlreadyAnsweredError, validateAnswer, loadRunGraph, markArtifactEdited, buildRunGraph, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
 import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
 import { harnesses, models } from './catalog.js'
 import { nodeDetail, overview, requirement, run, summaries, summary, summarizeRun, workflow } from './read-model.js'
 import { createRouter } from './router.js'
-import { markStale, serialize } from './stale.js'
+import { serialize } from './stale.js'
 import { stream } from './stream.js'
 
 export interface RequestContext {
@@ -55,7 +55,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
       const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
       const author = actor(request)
       const ref = await stores.workspaces.writeArtifact({ ref: { workspace: params.id!, path }, content, reason, author, kind: record?.kind ?? 'other', title: record?.title, tags: record?.tags })
-      const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markStale(stores, ref, author)
+      const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markArtifactEdited(stores, ref, author, reason)
       return { version: ref.version, staleNodes }
     })
   })
@@ -90,7 +90,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   add('GET', '/api/runs/:runId', async ({ stores, params }) => {
     const state = await run(stores, params.runId!)
     const snapshot = await workflow(stores, state.runId)
-    return { run: state, workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph: buildRunGraph(snapshot, state) }
+    return { run: state, workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph: buildRunGraph(snapshot, state, await loadRunGraph(stores, state.runId)) }
   })
   add('GET', '/api/runs/:runId/events', async ({ stores, params, url }) => {
     await run(stores, params.runId!)
@@ -121,7 +121,17 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     const item = await serialize(stores.projectDir, async () => {
       const current = (await stores.attention.list()).find((item) => item.requestId === params.requestId)
       if (!current) throw new HttpError(404, '待办不存在')
-      return stores.attention.answer(current.requestId, { decision, answer, by: actor(request) })
+      if (current.answeredAt !== undefined) throw new HttpError(409, '待办已处理')
+      try { validateAnswer(current, { decision, answer }) } catch (error) {
+        if (error instanceof AttentionAlreadyAnsweredError) throw new HttpError(409, error.message)
+        throw new HttpError(400, error instanceof Error ? error.message : String(error))
+      }
+      try {
+        return await stores.attention.answer(current.requestId, { decision, answer, by: actor(request) })
+      } catch (error) {
+        if (error instanceof AttentionAlreadyAnsweredError) throw new HttpError(409, error.message)
+        throw error
+      }
     })
     await onAnswer?.(item)
     return item

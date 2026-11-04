@@ -119,7 +119,7 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
             <div className="d-answer">
               <Check />
               <span>
-                <b>{answered.actor.type === 'human' ? answered.actor.id : '—'}</b> {answered.data.decision === 'approve' ? '通过' : answered.data.decision === 'reject' ? '打回' : answered.data.decision ?? '回答'}
+                <b>{answered.actor.type === 'human' ? answered.actor.id : '—'}</b> {answered.data.decision === 'approve' ? '通过' : answered.data.decision === 'reject' ? '打回' : answered.data.decision === 'choice' ? '裁决' : answered.data.decision ?? '回答'}
                 {answered.data.answer && <span className="muted">：{answered.data.answer}</span>}
               </span>
             </div>
@@ -145,7 +145,7 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
               </div>
             ))}
           </div>
-          <p className="faint d-note">模型决定拆成哪些条目，代码决定每个条目展开成什么节点（实现 → 评审），上限 12、角色限定 dev。</p>
+          <p className="faint d-note">模型决定拆成哪些条目，workflow 代码决定每个条目展开成什么节点、最多拆多少、可用哪些角色。</p>
         </div>
       )}
 
@@ -567,11 +567,11 @@ export function GateTab({ d }: { d: NodeDetail }) {
             <div style={{ minWidth: 0, flex: 1 }}>
               <div className="gate-check-head">
                 <span className="mono">{c.id}</span>
+                {/* NodeDetail.gate 不带阈值（快照里也没有），只画分数，不画阈值刻度 */}
                 {c.score !== undefined && (
-                  <span className="gate-score">
+                  <span className="gate-score" title={c.pass ? '达到阈值' : '未达阈值'}>
                     <span className="gate-score-track">
                       <span style={{ width: `${c.score}%`, background: c.pass ? 'var(--st-success)' : 'var(--st-failed)' }} />
-                      <i style={{ left: '80%' }} title="阈值 80" />
                     </span>
                     <b className="mono num">{c.score}</b>
                     <span className="faint">/ 100</span>

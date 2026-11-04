@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ArrowUpRight, Check, CornerDownLeft, MessageSquareText, ShieldAlert, UserRoundCheck, X } from 'lucide-react'
 import type { AttentionItem } from '@taktflow/core'
 import { invalidate, useSource } from '../api'
-import { fmtRelative } from '../lib/format'
+import { actorName, fmtRelative } from '../lib/format'
 import { Link } from '../lib/router'
 import { toast } from './ui'
 import './attention-card.css'
@@ -12,6 +12,13 @@ const FORM_META = {
   answer: { label: '回答', icon: MessageSquareText },
   choice: { label: '裁决', icon: ShieldAlert },
 } as const
+
+function answerLabel(item: AttentionItem): string {
+  if (item.decision === 'approve') return '已通过'
+  if (item.decision === 'reject') return '已打回'
+  if (item.decision === 'choice') return '已裁决'
+  return item.decision ?? '已回答'
+}
 
 /** 一条待办：审批 / 回答 / 选择，可以直接在卡片里处理。 */
 export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem; reqTitle?: string; compact?: boolean }) {
@@ -66,10 +73,11 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
         <div className="att-result">
           <Check />
           <span>
-            {item.decision ? (item.decision === 'approve' ? '已通过' : item.decision === 'reject' ? '已打回' : item.decision) : '已回答'}
+            {answerLabel(item)}
             {item.answer && <span className="faint"> · {item.answer}</span>}
           </span>
           <span className="faint" style={{ marginLeft: 'auto' }}>
+            {item.answeredBy && <span className="mono">{actorName(item.answeredBy)} · </span>}
             {fmtRelative(item.answeredAt)}
           </span>
         </div>
@@ -126,9 +134,9 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
               </button>
             ))}
           </div>
-          {(!compact || choice) && <input className="input" placeholder="理由（放行时必填）" value={text} onChange={(e) => setText(e.target.value)} />}
           <div className="att-actions end">
-            <button className="btn btn-sm btn-primary" disabled={busy || !choice || (choice.startsWith('放行') && !text.trim())} onClick={() => submit({ decision: choice, answer: text || undefined }, '已裁决')}>
+            {/* 编码与 CLI `takt answer --choice` 一致：decision 固定为 'choice'，answer 是选中的选项原文 */}
+            <button className="btn btn-sm btn-primary" disabled={busy || !choice} onClick={() => choice && submit({ decision: 'choice', answer: choice }, '已裁决')}>
               提交裁决
             </button>
           </div>

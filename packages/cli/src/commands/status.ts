@@ -1,5 +1,6 @@
+import { latestRun, requirementState } from '../requirement-state.js'
 import type { Requirement, ProjectStores, RunState, StageProgress } from '@taktflow/core'
-import { createInsights, stageProgress } from '@taktflow/core'
+import { createInsights, loadRunGraph, stageProgress } from '@taktflow/core'
 import { createPrinter } from '../output.js'
 import { openStores } from '../project.js'
 
@@ -15,12 +16,13 @@ export async function runStatus(project: string | undefined, req: string | undef
   const stores = await openStores(project)
   const printer = createPrinter(json)
   const requirements = await stores.workspaces.listRequirements()
-  const selected = req === undefined ? requirements : requirements.filter((item) => item.id === req)
+  let selected = req === undefined ? requirements : requirements.filter((item) => item.id === req)
   if (req !== undefined && selected.length === 0) throw new Error(`需求不存在：${req}`)
   const attention = await stores.attention.list({ pending: true })
   const runs = await stores.runs.list(req === undefined ? undefined : { requirementId: req })
+  selected = await Promise.all(selected.map((item) => requirementState(stores, item, latestRun(runs, item.id))))
   const stages = await Promise.all(selected.map(async (requirement) => {
-    const latest = runs.filter((run) => run.requirementId === requirement.id).at(-1)
+    const latest = latestRun(runs, requirement.id)
     return latest === undefined ? [] : await stageBar(stores, latest)
   }))
   if (json) {
@@ -47,7 +49,7 @@ export async function runStatus(project: string | undefined, req: string | undef
     printer.text(`${printer.colors.cyan(requirement.id)}  ${requirement.title}  ${printer.colors.dim(requirement.status)}`)
     if (stageText !== '') printer.text(`  ${stageText}`)
     const own = runs.filter((run) => run.requirementId === requirement.id)
-    const latest = own.at(-1)
+    const latest = latestRun(own, requirement.id)
     if (latest) printer.text(`  最近运行：${latest.runId}  ${latest.status}  ${printer.colors.dim(latest.startedAt)}`)
     for (const item of attention.filter((item) => item.requirementId === requirement.id)) {
       printer.text(`  ${printer.colors.yellow('待办')} ${printer.colors.cyan(item.requestId)} ${item.ask}`)
@@ -57,7 +59,7 @@ export async function runStatus(project: string | undefined, req: string | undef
 
 async function stageBar(stores: ProjectStores, run: RunState): Promise<StageProgress[]> {
   const snapshot = await stores.runs.getWorkflow(run.runId)
-  if (snapshot) return stageProgress(snapshot, run)
+  if (snapshot) return stageProgress(snapshot, run, await loadRunGraph(stores, run.runId))
   return []
 }
 

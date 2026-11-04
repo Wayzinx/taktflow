@@ -227,12 +227,12 @@ describe('DSH parser', () => {
     expect(parser.result().usage).toEqual({ inputTokens: 30, outputTokens: 5 })
   })
 
-  it('从未报告 usage 时不编造零用量，缓存用量缺失时不返回部分缓存总数', () => {
+  it('从未报告 usage 时不编造零用量，后续缺省缓存字段仍保留已报告缓存', () => {
     const parser = createDshParser()
     expect(parser.result().usage).toBeUndefined()
     parser.onLine('{"type":"status","phase":"step_end","turn":1,"step":1,"usage":{"inputTokens":1,"outputTokens":0,"cacheReadTokens":1}}')
     parser.onLine('{"type":"status","phase":"step_end","turn":1,"step":2,"usage":{"inputTokens":2,"outputTokens":0}}')
-    expect(parser.result().usage).toEqual({ inputTokens: 3, outputTokens: 0 })
+    expect(parser.result().usage).toEqual({ inputTokens: 3, outputTokens: 0, cachedTokens: 1 })
   })
 })
 

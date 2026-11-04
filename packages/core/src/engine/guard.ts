@@ -1,20 +1,18 @@
-import { execFile } from 'node:child_process'
-import { readFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { promisify } from 'node:util'
+import { readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 import { listFiles, matchGlob } from '../util/glob.js'
 import { sha256 } from '../util/hash.js'
-import { isEnoent } from '../store/fs-utils.js'
+import type { ArtifactRecord } from '../types.js'
+import { isEnoent, readJsonFile } from '../store/fs-utils.js'
 
-const exec = promisify(execFile)
 type Scope = { profile: string[]; node?: string[] }
-type Window = { scope: Scope; start: number; end: number }
+type Window = { scope: Scope; start: number; end: number; uncertain?: boolean }
 const allowed = (scope: Scope, file: string) => scope.profile.some((p) => matchGlob(p, file)) &&
   (scope.node === undefined || scope.node.some((p) => matchGlob(p, file)))
 
 function metadata(file: string): boolean {
   return /^\.takt\/(runs|objects)\//.test(file) ||
-    /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp)?$/.test(file) ||
+    /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
 }
 
@@ -27,37 +25,54 @@ async function snapshot(root: string): Promise<Map<string, string>> {
   return map
 }
 
+async function humanVersions(root: string): Promise<Map<string, string>> {
+  const versions = new Map<string, string>()
+  const manifests = await listFiles(root, ['.takt/workspaces/*/manifest.json'], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects'] })
+  for (const file of manifests) {
+    const manifest = await readJsonFile<{ artifacts: ArtifactRecord[] }>(join(root, file))
+    for (const artifact of manifest?.artifacts ?? []) {
+      const human = artifact.versions.filter((version) => version.author.type === 'human').at(-1)
+      if (human) versions.set(`${dirname(file)}/${artifact.path}`, `${human.version}:${human.sha256}`)
+    }
+  }
+  return versions
+}
+
 export class WriteGuard {
   private clock = 0
   private readonly windows: Window[] = []
   constructor(private readonly root: string) {}
-  async begin(scope: Scope): Promise<() => Promise<{ paths: string[]; action: 'reverted' | 'flagged' }>> {
+
+  async system<T>(paths: string[], fn: () => Promise<T>, uncertain = false): Promise<T> {
+    const window: Window = { scope: { profile: paths }, start: ++this.clock, end: Infinity, uncertain }
+    this.windows.push(window)
+    try { return await fn() } finally { this.close(window) }
+  }
+
+  private close(window: Window): void {
+    window.end = ++this.clock
+    const earliest = Math.min(...this.windows.filter((item) => item.end === Infinity).map((item) => item.start))
+    for (let index = this.windows.length - 1; index >= 0; index--) {
+      if (this.windows[index]!.end < earliest) this.windows.splice(index, 1)
+    }
+  }
+
+  async begin(scope: Scope): Promise<() => Promise<{ paths: string[]; action: 'flagged'; ambiguous: boolean }>> {
     const window: Window = { scope, start: ++this.clock, end: Infinity }
     this.windows.push(window)
     let before: Map<string, string>
-    try { before = await snapshot(this.root) } catch (error) { window.end = ++this.clock; throw error }
+    let humans: Map<string, string>
+    try { [before, humans] = await Promise.all([snapshot(this.root), humanVersions(this.root)]) } catch (error) { this.close(window); throw error }
     return async () => {
       try {
-        const after = await snapshot(this.root)
-        const peers = this.windows.filter((w) => w.start <= this.clock && w.end >= window.start)
+        const [after, latestHumans] = await Promise.all([snapshot(this.root), humanVersions(this.root)])
+        const peers = this.windows.filter((w) => w.end >= window.start)
         const paths = [...new Set([...before.keys(), ...after.keys()])].filter((file) =>
           before.get(file) !== after.get(file) && !peers.some((peer) => allowed(peer.scope, file)))
-        let action: 'reverted' | 'flagged' = 'flagged'
-        if (paths.length) {
-          const git = await exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: this.root }).then(() => true, () => false)
-          if (git) {
-            let reverted = true
-            for (const file of paths) {
-              const tracked = await exec('git', ['ls-files', '--error-unmatch', '--', file], { cwd: this.root }).then(() => true, () => false)
-              if (tracked) await exec('git', ['checkout', '--', file], { cwd: this.root })
-              else if (!before.has(file)) await rm(join(this.root, file), { force: true })
-              else reverted = false
-            }
-            action = reverted ? 'reverted' : 'flagged'
-          }
-        }
-        return { paths, action }
-      } finally { window.end = ++this.clock }
+        // 文件快照无法证明写入者；checkout 或回写旧字节都可能覆盖人工、暂存或并发改动。
+        return { paths, action: 'flagged', ambiguous: peers.some((peer) => peer !== window && peer.uncertain) ||
+          paths.some((file) => latestHumans.has(file) && latestHumans.get(file) !== humans.get(file)) }
+      } finally { this.close(window) }
     }
   }
 }

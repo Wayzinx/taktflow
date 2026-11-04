@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, Maximize2 } from 'lucide-react'
-import type { RunDetail } from '@taktflow/core'
+import { Crosshair, Fingerprint, Map as MapIcon, Maximize2 } from 'lucide-react'
+import type { EventEnvelope, EventPayloads, RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { StageBar } from '../../components/stage-bar'
@@ -16,6 +16,45 @@ import { layoutRun, type FlowNode } from './dag-layout'
 import { nodeTypes } from './dag-nodes'
 import { NodeDrawer } from './node-drawer'
 import './run.css'
+
+/** 图例和右上角工具条大约占 52px，fitView 时顶部至少留这么多，泳道列头才不会被盖住。 */
+const PANEL_CLEARANCE = 60
+
+/** 小地图默认收起（会挡住左下角的画布内容），开关按浏览器记住。 */
+function useMiniMapPref(): [boolean, (v: boolean) => void] {
+  const [on, setOn] = useState(() => {
+    try {
+      return localStorage.getItem('takt.minimap') === '1'
+    } catch {
+      return false
+    }
+  })
+  const set = (v: boolean) => {
+    setOn(v)
+    try {
+      localStorage.setItem('takt.minimap', v ? '1' : '0')
+    } catch {
+      // 存不下就只在本页生效
+    }
+  }
+  return [on, set]
+}
+
+/**
+ * 运行总用量按事件里每次 node.finished 的 usage 累加：运行图节点只带最后一轮的 usage，
+ * loop 体前几轮会被漏掉（RunSummary.usage 也是这样算的），和需求页的用量对不上。
+ */
+function runUsage(events: EventEnvelope[]): { tokens: number; cost: number } {
+  let tokens = 0
+  let cost = 0
+  for (const e of events) {
+    if (e.type !== 'node.finished') continue
+    const u = (e.data as EventPayloads['node.finished']).usage
+    tokens += totalTokens(u)
+    cost += u?.costUsd ?? 0
+  }
+  return { tokens, cost }
+}
 
 function useNow(active: boolean) {
   const [now, setNow] = useState(Date.now())
@@ -34,11 +73,14 @@ export function RunPage({ runId }: { runId: string }) {
   const q = useAsync((s) => s.run(runId), [runId])
   const audit = useAsync((s) => s.audit(runId), [runId])
   const [liveTick, setLiveTick] = useState(0)
+  const spent = useAsync((s) => s.events(runId).then(runUsage), [runId, liveTick])
   const reload = useRef(q.reload)
   reload.current = q.reload
 
-  // SSE：每来一条事件，节流刷新运行图；抽屉按 liveTick 刷新
+  // SSE：每来一条事件，节流刷新运行图；抽屉按 liveTick 刷新。已结束的运行不再订阅，免得空占一条长连接
+  const live = q.data ? q.data.run.status === 'running' || q.data.run.status === 'waiting_human' : false
   useEffect(() => {
+    if (!live) return
     let timer: ReturnType<typeof setTimeout> | undefined
     const off = ds.subscribe(runId, () => {
       if (timer) return
@@ -52,7 +94,7 @@ export function RunPage({ runId }: { runId: string }) {
       off()
       if (timer) clearTimeout(timer)
     }
-  }, [ds, runId])
+  }, [ds, runId, live])
 
   const d = q.data
   useCrumbs(
@@ -74,8 +116,8 @@ export function RunPage({ runId }: { runId: string }) {
         done: d.graph.nodes.filter((n) => n.status === 'succeeded' || n.status === 'skipped').length,
         total: d.graph.nodes.length,
         failed: d.graph.nodes.filter((n) => n.status === 'failed' || n.status === 'blocked').length,
-        usage: d.graph.nodes.reduce((s, n) => s + totalTokens(n.usage), 0),
-        cost: d.graph.nodes.reduce((s, n) => s + (n.usage?.costUsd ?? 0), 0),
+        usage: spent.data?.tokens ?? d.graph.nodes.reduce((s, n) => s + totalTokens(n.usage), 0),
+        cost: spent.data?.cost ?? d.graph.nodes.reduce((s, n) => s + (n.usage?.costUsd ?? 0), 0),
       }
     : undefined
 
@@ -129,7 +171,7 @@ export function RunPage({ runId }: { runId: string }) {
       </header>
       <div className="run-body">
         {d ? <RunCanvas detail={d} selected={selected} /> : <div className="run-canvas-skeleton"><Skeleton w="100%" h={9999} r={0} /></div>}
-        {d && selected && d.run.nodes[selected] && <NodeDrawer runId={runId} requirementId={d.run.requirementId} nodeId={selected} graphNode={d.graph.nodes.find((n) => n.id === selected)} liveTick={liveTick} />}
+        {d && selected && d.run.nodes[selected] && <NodeDrawer runId={runId} requirementId={d.run.requirementId} nodeId={selected} graphNode={d.graph.nodes.find((n) => n.id === selected)} expansions={d.run.expansions} liveTick={liveTick} />}
       </div>
     </div>
   )
@@ -138,7 +180,8 @@ export function RunPage({ runId }: { runId: string }) {
 function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string }) {
   const dark = useIsDark()
   const stages = useMemo(() => computeStages(detail.workflow.stages, detail.graph.nodes), [detail])
-  const layout = useMemo(() => layoutRun(detail.graph, detail.workflow.stages, stages, selected), [detail, stages, selected])
+  const layout = useMemo(() => layoutRun(detail.graph, detail.workflow.stages, stages, detail.run.expansions, selected), [detail, stages, selected])
+  const [miniMap, setMiniMap] = useMiniMapPref()
   const rf = useRef<ReactFlowInstance<FlowNode> | null>(null)
   const drawerOpen = Boolean(selected)
 
@@ -150,7 +193,7 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
     const ids = stageId ? (layout.stageNodes.get(stageId) ?? []) : []
     void instance.fitView({
       nodes: [...ids, `__lane__/${stageId}`].map((id) => ({ id })),
-      padding: { top: '24px', bottom: '24px', left: '48px', right: drawerOpen ? '620px' : '48px' },
+      padding: { top: `${PANEL_CLEARANCE}px`, bottom: '24px', left: '48px', right: drawerOpen ? '620px' : '48px' },
       maxZoom: 1,
       minZoom: 0.45,
       duration: animate ? 400 : 0,
@@ -184,15 +227,17 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
         zoomOnDoubleClick={false}
       >
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="var(--grid-dot)" />
+        {miniMap && (
         <MiniMap
           pannable
           zoomable
           position="bottom-left"
-          style={{ marginLeft: 56 }}
+          style={{ marginLeft: 56, width: 168, height: 104 }}
           nodeClassName={(n) => (n.type === 'lane' ? 'mm-lane' : n.type === 'group' ? 'mm-group' : `mm-${NODE_STATUS[(n.data as { node: { status: keyof typeof NODE_STATUS } }).node.status].tone}`)}
           nodeBorderRadius={4}
           maskColor="var(--mm-mask)"
         />
+        )}
         <Controls showInteractive={false} position="bottom-left" />
         <Panel position="top-left" className="dag-legend">
           <span>
@@ -209,11 +254,15 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
           </span>
         </Panel>
         <Panel position="top-right" className="dag-tools" style={{ marginRight: drawerOpen ? 'calc(var(--drawer-w, 560px) + 16px)' : undefined }}>
+          <button className={`btn btn-sm${miniMap ? ' on' : ''}`} onClick={() => setMiniMap(!miniMap)} title={miniMap ? '隐藏小地图' : '显示小地图'} aria-pressed={miniMap}>
+            <MapIcon />
+            小地图
+          </button>
           <button className="btn btn-sm" onClick={() => rf.current && focusStage(rf.current, true)} title="聚焦当前阶段">
             <Crosshair />
             聚焦
           </button>
-          <button className="btn btn-sm" onClick={() => void rf.current?.fitView({ padding: { top: '24px', bottom: '24px', left: '24px', right: drawerOpen ? '600px' : '24px' }, duration: 400 })} title="适应视图">
+          <button className="btn btn-sm" onClick={() => void rf.current?.fitView({ padding: { top: `${PANEL_CLEARANCE}px`, bottom: '24px', left: '24px', right: drawerOpen ? '600px' : '24px' }, duration: 400 })} title="适应视图">
             <Maximize2 />
             全部
           </button>

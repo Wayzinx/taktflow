@@ -5,8 +5,10 @@ import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, Harnes
 import { estimateTokens } from '../util/tokens.js'
 import { assertNoSymlinks } from '../store/fs-utils.js'
 import { runDir } from '../store/paths.js'
-import { parseResult } from './schema.js'
+import { createKnowledgeRouter } from '../knowledge/router.js'
+import { parseResult, validateSchema } from './schema.js'
 import { Semaphore } from './process.js'
+import { system } from './actor.js'
 import { WriteGuard } from './guard.js'
 
 export class BlockedError extends Error {}
@@ -15,6 +17,7 @@ export interface HarnessHost {
   deps: EngineDeps
   state: RunState
   emit: Emit
+  save(): Promise<void>
   signal: AbortSignal
   timestamp(): string
   semaphore: Semaphore
@@ -46,15 +49,14 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     }
     const summaries: string[] = []
     for (const query of node.knowledge ?? []) {
-      const sources = knowledge.filter((source) => query.intent === undefined || source.intents.includes(query.intent))
-      const hits = (await Promise.all(sources.map((source) => source.query(query)))).flat()
-      await host.emit('knowledge.query', { query, sources: sources.map((s) => s.id), hits: hits.length }, node.id)
+      const { hits, sources } = await createKnowledgeRouter(knowledge).query(query)
+      await host.emit('knowledge.query', { query, sources, hits: hits.length }, node.id)
       for (const hit of hits) { add('knowledge', hit.title, hit.snippet, hit.ref); summaries.push(`${hit.ref}: ${hit.snippet}`) }
     }
     const context = { nodeId: node.id, at: host.timestamp(), budgetTokens: stores.config.contextBudgetTokens ?? 200000, totalTokens: items.reduce((sum, item) => sum + item.tokens, 0), items }
     await stores.runs.saveContext(host.state.runId, context)
     await host.emit('context.assembled', context, node.id)
-    const prompt = [profile.instructions, task, ...summaries,
+    const prompt = [task, ...summaries,
       `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
       node.resultSchema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(node.resultSchema)}` : '',
       retryNote,
@@ -103,6 +105,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       let result: HarnessResult | undefined
       let failure: unknown
       try {
+        await host.emit('harness.message', { role: 'user', text: prompt }, node.id, actor)
         result = await harness.run({ prompt, cwd: stores.projectDir, model: model?.id ?? selector.model,
           effort: selector.effort, provider: providerId && providerConfig ? { id: providerId, ...providerConfig } : undefined,
           systemAppend: profile.instructions, timeoutMs: node.timeoutMs, resultSchema: node.resultSchema,
@@ -115,7 +118,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       await eventChain
       const violation = await finishGuard()
       if (violation.paths.length) {
-        await host.emit('guard.violation', { rule: 'writeScope', ...violation }, node.id, actor)
+        await host.emit('guard.violation', { rule: violation.ambiguous ? 'concurrent-write' : 'writeScope', paths: violation.paths, action: violation.action }, node.id, violation.ambiguous ? system : actor)
         throw new BlockedError(`写权限越界：${violation.paths.join(', ')}`)
       }
       host.signal.throwIfAborted()
@@ -127,7 +130,10 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       }
       if (result.sessionId) ns.sessionRef = { harness: harness.id, sessionId: result.sessionId }
       if (result.usage) ns.usage = result.usage
-      return { data: node.resultSchema ? parseResult(result.finalText, node.resultSchema) : result.structured ?? result.finalText, actor }
+      await host.save()
+      const data = result.structured !== undefined ? result.structured : node.resultSchema ? parseResult(result.finalText, node.resultSchema) : result.finalText
+      if (node.resultSchema) validateSchema(data, node.resultSchema)
+      return { data, actor }
     }
     throw new Error(previous || '没有可用 harness')
   }

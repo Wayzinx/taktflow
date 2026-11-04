@@ -1,5 +1,5 @@
-import { buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
-import { HttpError, relativePath, safeId } from './http.js'
+import { addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
+import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
   const value = await stores.workspaces.getRequirement(safeId(id))
@@ -8,7 +8,7 @@ export async function requirement(stores: ProjectStores, id: string): Promise<Re
 }
 
 export async function run(stores: ProjectStores, id: string): Promise<RunState> {
-  const value = await stores.runs.get(safeId(id))
+  const value = await stores.runs.get(validRunId(id))
   if (!value) throw new HttpError(404, '运行不存在')
   return value
 }
@@ -26,7 +26,9 @@ export async function summary(stores: ProjectStores, item: Requirement): Promise
     createInsights(stores).metrics(item.id),
   ])
   const latest = runs.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.runId.localeCompare(b.runId)).at(-1)
-  return { ...item, stages: latest ? stageProgress(await workflow(stores, latest.runId), latest) : [], latestRunId: latest?.runId, pendingAttention: attention.length, usage: metrics.usage }
+  const snapshot = latest ? await workflow(stores, latest.runId) : undefined
+  const derived = latest && snapshot && item.status !== 'archived' ? deriveRequirementState(snapshot, latest) : {}
+  return { ...item, ...derived, stages: latest && snapshot ? stageProgress(snapshot, latest, await loadRunGraph(stores, latest.runId)) : [], latestRunId: latest?.runId, pendingAttention: attention.length, usage: metrics.usage }
 }
 
 export async function summaries(stores: ProjectStores): Promise<RequirementSummary[]> {
@@ -35,13 +37,7 @@ export async function summaries(stores: ProjectStores): Promise<RequirementSumma
 
 export async function overview(stores: ProjectStores): Promise<ProjectOverview> {
   const [requirements, attention, runs] = await Promise.all([summaries(stores), stores.attention.list({ pending: true }), stores.runs.list()])
-  const usage = { inputTokens: 0, outputTokens: 0 } as ProjectOverview['totals']['usage']
-  for (const item of requirements) {
-    usage.inputTokens += item.usage.inputTokens
-    usage.outputTokens += item.usage.outputTokens
-    if (item.usage.cachedTokens !== undefined) usage.cachedTokens = (usage.cachedTokens ?? 0) + item.usage.cachedTokens
-    if (item.usage.costUsd !== undefined) usage.costUsd = (usage.costUsd ?? 0) + item.usage.costUsd
-  }
+  const usage = requirements.reduce((total, item) => addUsage(total, item.usage), { inputTokens: 0, outputTokens: 0 })
   return { ...stores.config.project, requirements, attention, totals: { requirements: requirements.length, active: requirements.filter((r) => r.status === 'active').length, delivered: requirements.filter((r) => r.status === 'delivered').length, blocked: requirements.filter((r) => r.status === 'blocked').length, runs: runs.length, usage } }
 }
 
@@ -60,7 +56,7 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
   const state = await run(stores, runId)
   const snapshot = await workflow(stores, runId)
   const node = Object.hasOwn(state.nodes, nodeId) ? state.nodes[nodeId] : undefined
-  const graphNode = buildRunGraph(snapshot, state).nodes.find((item) => item.id === nodeId)
+  const graphNode = buildRunGraph(snapshot, state, await loadRunGraph(stores, runId)).nodes.find((item) => item.id === nodeId)
   if (!node || !graphNode) throw new HttpError(404, '节点不存在')
   const [events, context, artifacts] = await Promise.all([
     stores.events.read(runId, { nodeId }), stores.runs.getContext(runId, nodeId), stores.workspaces.listArtifacts(state.requirementId),
@@ -68,8 +64,7 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
   let prompt = definitions(snapshot.nodes).get(nodeId)?.prompt
   for (const event of events) {
     if (event.type === 'context.assembled') {
-      const data = event.data as EventPayloads['context.assembled'] & { prompt?: unknown }
-      if (typeof data.prompt === 'string') prompt = data.prompt
+      const data = event.data as EventPayloads['context.assembled']
       if (!context.snapshots.some((item) => item.nodeId === data.nodeId && item.at === data.at)) context.snapshots.push(data)
     }
     if (event.type === 'context.compacted') {

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
 import { Bot, FileInput, Layers, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
-import type { GraphNode } from '@taktflow/core'
+import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, Tabs, type TabDef } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
 import { NODE_STATUS } from '../../lib/status'
+import { nodeLabel } from './node-label'
 import { ContextTab, GateTab, IoTab, JudgeTab, OverviewTab, PromptTab, TraceTab } from './drawer-tabs'
 import './drawer.css'
 
@@ -47,7 +48,7 @@ function useDrawerWidth(): [number, (e: ReactMouseEvent) => void] {
   return [w, start]
 }
 
-export function NodeDrawer({ runId, requirementId, nodeId, graphNode, liveTick }: { runId: string; requirementId: string; nodeId: string; graphNode?: GraphNode; liveTick: number }) {
+export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions, liveTick }: { runId: string; requirementId: string; nodeId: string; graphNode?: GraphNode; expansions: Expansion[]; liveTick: number }) {
   const { query } = useLocation()
   const q = useAsync((ds) => ds.node(runId, nodeId), [runId, nodeId, liveTick])
   const [width, startResize] = useDrawerWidth()
@@ -84,7 +85,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, liveTick }
         <div className="drawer-title-row">
           {kind && <KindIcon kind={kind} size={28} />}
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="drawer-title truncate">{d?.title ?? graphNode?.title ?? <Skeleton w={160} h={16} />}</div>
+            <div className="drawer-title truncate">{graphNode ? nodeLabel(graphNode, expansions).title : (d?.title ?? <Skeleton w={160} h={16} />)}</div>
             <div className="drawer-sub">
               <span className="mono truncate">{nodeId}</span>
               {(d?.role ?? graphNode?.role) && <span className="mono">{d?.role ?? graphNode?.role}</span>}

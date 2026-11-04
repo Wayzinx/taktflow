@@ -1,3 +1,4 @@
+import { latestRun, requirementState } from '../requirement-state.js'
 import { createPrinter } from '../output.js'
 import { openStores } from '../project.js'
 
@@ -12,7 +13,8 @@ export async function runReqNew(project: string | undefined, title: string, opti
 
 export async function runReqList(project: string | undefined, json: boolean): Promise<void> {
   const stores = await openStores(project)
-  const requirements = await stores.workspaces.listRequirements()
+  const runs = await stores.runs.list()
+  const requirements = await Promise.all((await stores.workspaces.listRequirements()).map((item) => requirementState(stores, item, latestRun(runs, item.id))))
   const printer = createPrinter(json)
   if (json) {
     printer.data(requirements)

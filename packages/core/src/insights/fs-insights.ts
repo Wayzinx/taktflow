@@ -39,7 +39,7 @@ export class FsInsights implements Insights {
       for (const category of Object.keys(counts.verdicts) as Array<keyof typeof counts.verdicts>) {
         metrics.verdicts[category] = (metrics.verdicts[category] ?? 0) + counts.verdicts[category]!
       }
-      addUsage(metrics.usage, usage)
+      metrics.usage = addUsage(metrics.usage, usage)
     }
     if (total > 0) metrics.firstPassRate = passed / total
     return metrics

@@ -13,6 +13,8 @@ import { runAuditVerify } from './commands/audit.js'
 import { runKbQuery } from './commands/kb.js'
 import { runServe } from './commands/serve.js'
 
+export { knowledgeFromConfig } from './knowledge.js'
+
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   let cli: ParsedCli
   try {

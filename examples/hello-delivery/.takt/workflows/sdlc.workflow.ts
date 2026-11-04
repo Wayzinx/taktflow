@@ -11,10 +11,13 @@
  * - caseCommand：执行全部用例的命令（默认 `npm test`），必须产出 evidence/summary.json；
  * - maxLoop：研发测试 Loop 最大轮次（默认 5）。
  */
-import { execSync } from 'node:child_process'
-import { readdir, writeFile, mkdir } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { readdir, writeFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { agent, defineWorkflow, gate, human, judge, loop, planner, script, type NodeContext } from '@taktflow/core'
+import { promisify } from 'node:util'
+import { agent, defineWorkflow, gate, human, judge, loop, planner, script, type NodeContext, type JudgeVerdict } from '@taktflow/core'
+
+const execute = promisify(execFile)
 
 const AC_ID = /\bAC-\d+(?:-\d+)?\b/g
 
@@ -47,8 +50,9 @@ async function readSummary(ctx: NodeContext): Promise<CaseSummary> {
 /** 执行全部用例并把失败列表交给判决节点。COMPLETED ≠ PASS：只认 summary 里的用例结论。 */
 async function runCases(ctx: NodeContext) {
   const command = String(ctx.args.caseCommand ?? 'npm test')
+  await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
   try {
-    execSync(command, { cwd: ctx.projectDir, stdio: 'pipe', env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir } })
+    await execute('/bin/sh', ['-c', command], { cwd: ctx.projectDir, env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir }, maxBuffer: 16 * 1024 * 1024 })
   } catch (err) {
     ctx.log(`用例命令退出码非 0（失败用例会在 summary 里体现）：${(err as Error).message.slice(0, 300)}`)
   }
@@ -57,6 +61,17 @@ async function runCases(ctx: NodeContext) {
   const failures = summary.cases.filter((c) => c.status !== 'passed').map((c) => ({ subject: c.id, status: c.status, evidence: c.evidence }))
   return { data: { failures, total: summary.cases.length } }
 }
+
+function repairPrompt(target: string, instruction: string) {
+  return (ctx: NodeContext): string => {
+    const result = ctx.resultOf('judge') as { verdicts?: JudgeVerdict[]; routed?: Record<string, string[]> } | undefined
+    const subjects = result?.routed?.[target] ?? []
+    const verdicts = (result?.verdicts ?? []).filter((verdict) => subjects.includes(verdict.subject))
+    return `${instruction}\n本轮路由给 ${target} 的对象与判决（含证据路径、原因和修复提示）：\n${JSON.stringify({ subjects, verdicts }, null, 2)}`
+  }
+}
+
+const repairInputs = [{ path: 'reports/verdicts/**', required: false }, { path: 'evidence/**', required: false }]
 
 export default defineWorkflow({
   id: 'sdlc',
@@ -104,7 +119,7 @@ export default defineWorkflow({
       role: 'architect',
       needs: ['review-spec'],
       inputs: [{ path: 'spec/spec.md' }],
-      knowledge: [{ text: '与本需求相关的现有模块、接口和数据表', intent: 'impact' }],
+      knowledge: [{ text: '问候语规范 空名字', intent: 'business' }, { text: 'greet', intent: 'impact' }],
       outputs: [
         { path: 'design/design.md', kind: 'design' },
         { path: 'design/contracts.json', kind: 'contract' },
@@ -210,7 +225,7 @@ export default defineWorkflow({
         return Array.isArray(r?.failures) && r.failures.length === 0
       },
       body: [
-        script({ id: 'run-cases', title: '执行用例', run: runCases, outputs: [{ path: 'evidence/summary.json', kind: 'evidence' }] }),
+        script({ id: 'run-cases', title: '执行用例', run: runCases, outputs: [{ path: 'evidence/summary.json', kind: 'evidence' }, { path: 'evidence/**', kind: 'evidence' }] }),
         judge({
           id: 'judge',
           title: '失败判决',
@@ -219,9 +234,9 @@ export default defineWorkflow({
           target: 'run-cases',
           routes: { product_bug: 'fix-code', script_defect: 'fix-script', case_defect: 'fix-case', env_issue: 'human', requirement_gap: 'human', unknown: 'human', flaky: 'ignore' },
         }),
-        agent({ id: 'fix-code', title: '修复代码', role: 'dev', needs: ['judge'], prompt: '读 judge 的判决（product_bug 部分）和对应证据，修复产品代码。不要修改测试和用例。' }),
-        agent({ id: 'fix-script', title: '修复脚本', role: 'automation', needs: ['judge'], prompt: '读 judge 的判决（script_defect 部分），只修定位、等待、取值等机械问题；不得删除或弱化断言。' }),
-        agent({ id: 'fix-case', title: '修正用例', role: 'test-designer', needs: ['judge'], outputs: [{ path: 'decisions/case-changes.md', kind: 'decision', required: false }], prompt: '读 judge 的判决（case_defect 部分），按 spec 修正用例，并在 decisions/case-changes.md 写明每处修改的依据。' }),
+        agent({ id: 'fix-code', title: '修复代码', role: 'dev', needs: ['judge'], inputs: repairInputs, prompt: repairPrompt('fix-code', '按判决和对应证据修复产品代码。不要修改测试和用例。') }),
+        agent({ id: 'fix-script', title: '修复脚本', role: 'automation', needs: ['judge'], inputs: repairInputs, prompt: repairPrompt('fix-script', '只修定位、等待、取值等机械问题；不得删除或弱化断言。') }),
+        agent({ id: 'fix-case', title: '修正用例', role: 'test-designer', needs: ['judge'], inputs: [{ path: 'spec/spec.md' }, ...repairInputs], outputs: [{ path: 'decisions/case-changes.md', kind: 'decision', required: false }], prompt: repairPrompt('fix-case', '按 spec 修正用例，并在 decisions/case-changes.md 写明每处修改的依据。') }),
       ],
     }),
 

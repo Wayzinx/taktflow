@@ -234,7 +234,10 @@ export function createMockSource(): DataSource {
     answer(requestId, body) {
       const item = db.attention.find((a) => a.requestId === requestId)
       if (!item) return fail(`待办 ${requestId} 不存在`)
-      Object.assign(item, { answeredAt: new Date().toISOString(), decision: body.decision, answer: body.answer })
+      // 和 server / CLI 的校验保持一致：已处理的不能再答；choice 编码为 decision='choice'、answer=选项原文
+      if (item.answeredAt) return fail(`待办 ${requestId} 已处理`)
+      if (item.form === 'choice' && (body.decision !== 'choice' || !body.answer || !item.choices?.includes(body.answer))) return fail(`选项不在 ${(item.choices ?? []).join(' / ')} 之中`)
+      Object.assign(item, { answeredAt: new Date().toISOString(), answeredBy: { type: 'human', id: 'web' }, decision: body.decision, answer: body.answer })
       const run = getRun(item.runId)
       if (run) {
         appendEvent(run, 'human.answered', { type: 'human', id: 'web' }, { requestId, decision: body.decision, answer: body.answer }, item.nodeId)

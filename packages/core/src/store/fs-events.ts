@@ -1,11 +1,12 @@
-import { statSync } from 'node:fs'
+import { statSync, type Stats } from 'node:fs'
+import path from 'node:path'
 import { open, stat } from 'node:fs/promises'
 import { StringDecoder } from 'node:string_decoder'
 import type { EventStore } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
 import { canonicalJson, sha256 } from '../util/hash.js'
 import { appendLine, isEnoent, readFileIfExists } from './fs-utils.js'
-import { withLock } from './locks.js'
+import { withFileLock } from './file-lock.js'
 import { eventsFile } from './paths.js'
 
 const ZERO_HASH = '0'.repeat(64)
@@ -50,6 +51,97 @@ function hashPayload(envelope: EventEnvelope): Record<string, unknown> {
   }
 }
 
+function verifyContent(buf: Buffer, runId: string): { ok: boolean; brokenAt?: number } {
+    let prevHash = ZERO_HASH
+    let seq = 0
+    for (const line of buf.toString('utf8').split('\n')) {
+      if (line.trim() === '') continue
+      seq += 1
+      let envelope: unknown
+      try {
+        envelope = JSON.parse(line)
+      } catch {
+        return { ok: false, brokenAt: seq }
+      }
+      if (!isEnvelope(envelope, runId) || envelope.seq !== seq || envelope.prevHash !== prevHash) {
+        return { ok: false, brokenAt: seq }
+      }
+      const expected = sha256(prevHash + canonicalJson(hashPayload(envelope)))
+      if (envelope.hash !== expected) return { ok: false, brokenAt: seq }
+      prevHash = envelope.hash
+    }
+    return { ok: true }
+}
+
+interface AppendTail { size: number; ino: number; mtimeMs: number; ctimeMs: number; seq: number; hash: string; start: number }
+const appendTails = new Map<string, AppendTail>()
+
+function checkedLine(line: string, runId: string): EventEnvelope {
+  let value: unknown
+  try { value = JSON.parse(line) } catch { throw new Error(`事件日志尾部不是合法 JSON：${runId}`) }
+  if (!isEnvelope(value, runId) || value.hash !== sha256(value.prevHash + canonicalJson(hashPayload(value)))
+    || (value.seq === 1 && value.prevHash !== ZERO_HASH)) throw new Error(`事件日志尾部哈希或结构损坏：${runId}`)
+  return value
+}
+
+async function appendTail(file: string, runId: string): Promise<AppendTail> {
+  let info: Stats
+  try { info = await stat(file) } catch (error) {
+    if (!isEnoent(error)) throw error
+    appendTails.delete(file)
+    return { size: 0, ino: 0, mtimeMs: 0, ctimeMs: 0, seq: 0, hash: ZERO_HASH, start: 0 }
+  }
+  const cached = appendTails.get(file)
+  if (cached && cached.ino === info.ino && cached.size === info.size && cached.mtimeMs === info.mtimeMs && cached.ctimeMs === info.ctimeMs) return cached
+  const base = { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs }
+  if (info.size === 0) return { ...base, seq: 0, hash: ZERO_HASH, start: 0 }
+  const handle = await open(file, 'r')
+  try {
+    const continuing = cached && cached.ino === info.ino && info.size > cached.size && cached.size > 0
+    let offset = continuing ? cached.start : info.size
+    let bytes = Buffer.alloc(0)
+    if (continuing) {
+      bytes = Buffer.alloc(info.size - offset)
+      const result = await handle.read(bytes, 0, bytes.length, offset)
+      if (result.bytesRead !== bytes.length) throw new Error(`读取事件日志时文件被截断：${runId}`)
+    } else {
+      // 冷缓存或文件替换仅扫描最后一行；完整审计仍由 verify 从头计算。
+      while (offset > 0) {
+        const length = Math.min(4096, offset)
+        offset -= length
+        const chunk = Buffer.alloc(length)
+        const result = await handle.read(chunk, 0, length, offset)
+        if (result.bytesRead !== length) throw new Error(`读取事件日志时文件被截断：${runId}`)
+        bytes = Buffer.concat([chunk, bytes])
+        const previous = bytes.lastIndexOf(10, bytes.length - 2)
+        if (previous >= 0) { offset += previous + 1; bytes = bytes.subarray(previous + 1); break }
+      }
+    }
+    if (bytes.at(-1) !== 10) throw new Error(`事件日志尾部未完整换行：${runId}`)
+    const lines = bytes.toString('utf8').slice(0, -1).split('\n')
+    let last: EventEnvelope | undefined
+    let start = offset
+    for (const [index, line] of lines.entries()) {
+      let next: EventEnvelope
+      try {
+        next = checkedLine(line, runId)
+        if (index === 0 && continuing && (next.seq !== cached.seq || next.hash !== cached.hash)) throw new Error('缓存边界已改变')
+      } catch (error) {
+        if (index !== 0 || !continuing) throw error
+        const full = await readFileIfExists(file)
+        if (!full || !verifyContent(full, runId).ok) throw new Error(`事件日志替换后断链：${runId}`, { cause: error })
+        appendTails.delete(file)
+        return appendTail(file, runId)
+      }
+      if (last && (next.seq !== last.seq + 1 || next.prevHash !== last.hash)) throw new Error(`事件日志尾部断链：${runId}`)
+      last = next
+      start = offset
+      offset += Buffer.byteLength(line) + 1
+    }
+    return { ...base, seq: last!.seq, hash: last!.hash, start }
+  } finally { await handle.close() }
+}
+
 export class FsEventStore implements EventStore {
   constructor(private readonly taktDir: string) {}
 
@@ -57,10 +149,9 @@ export class FsEventStore implements EventStore {
     runId: string,
     e: { type: T; actor: EventEnvelope['actor']; nodeId?: string; data: EventPayloads[T] },
   ): Promise<EventEnvelope<T>> {
-    const file = eventsFile(this.taktDir, runId)
-    return withLock(file, async () => {
-      const events = await this.readEvents(runId)
-      const last = events.at(-1)
+    const file = path.resolve(eventsFile(this.taktDir, runId))
+    return withFileLock(file, async () => {
+      const last = await appendTail(file, runId)
       const envelope: EventEnvelope<T> = {
         seq: (last?.seq ?? 0) + 1,
         ts: new Date().toISOString(),
@@ -74,6 +165,8 @@ export class FsEventStore implements EventStore {
       if (e.nodeId !== undefined) envelope.nodeId = e.nodeId
       envelope.hash = sha256(envelope.prevHash + canonicalJson(hashPayload(envelope)))
       await appendLine(file, JSON.stringify(envelope))
+      const info = await stat(file)
+      appendTails.set(file, { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, seq: envelope.seq, hash: envelope.hash, start: last.size })
       return envelope
     })
   }
@@ -168,25 +261,7 @@ export class FsEventStore implements EventStore {
   async verify(runId: string): Promise<{ ok: boolean; brokenAt?: number }> {
     const buf = await readFileIfExists(eventsFile(this.taktDir, runId))
     if (buf === undefined) return { ok: true }
-    let prevHash = ZERO_HASH
-    let seq = 0
-    for (const line of buf.toString('utf8').split('\n')) {
-      if (line.trim() === '') continue
-      seq += 1
-      let envelope: unknown
-      try {
-        envelope = JSON.parse(line)
-      } catch {
-        return { ok: false, brokenAt: seq }
-      }
-      if (!isEnvelope(envelope, runId) || envelope.seq !== seq || envelope.prevHash !== prevHash) {
-        return { ok: false, brokenAt: seq }
-      }
-      const expected = sha256(prevHash + canonicalJson(hashPayload(envelope)))
-      if (envelope.hash !== expected) return { ok: false, brokenAt: seq }
-      prevHash = envelope.hash
-    }
-    return { ok: true }
+    return verifyContent(buf, runId)
   }
 
   private async readEvents(runId: string): Promise<EventEnvelope[]> {

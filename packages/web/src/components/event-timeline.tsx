@@ -187,7 +187,15 @@ function EventRow({ e, showNode, showRun, showDate }: { e: EventEnvelope; showNo
   return (
     <li className={`ev-row${collapsible ? ' collapsible' : ''}`} style={{ '--ev-tone': toneColor(info.tone) } as CSSProperties}>
       <span className="ev-time mono num" title={`seq ${e.seq} · ${e.ts}\nhash ${e.hash}`}>
-        {showDate ? fmtDate(e.ts) : fmtTime(e.ts)}
+        {showDate ? (
+          <>
+            {fmtDate(e.ts).slice(0, 5)}
+            <br />
+            {fmtTime(e.ts)}
+          </>
+        ) : (
+          fmtTime(e.ts)
+        )}
       </span>
       <span className="ev-icon">
         <Icon strokeWidth={2.2} />

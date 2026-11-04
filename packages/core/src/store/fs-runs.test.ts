@@ -139,4 +139,45 @@ describe('FsRunStore', () => {
     expect((await store.getContext(runId, 'a/b')).snapshots.map((s) => s.at)).toEqual(['first'])
     expect((await store.getContext(runId, 'a__b')).snapshots.map((s) => s.at)).toEqual(['second'])
   })
+  it('新实例普通更新、多次读取更新和交错的旧快照均保留外部字段', async () => {
+    await store.create(state({ nodes: { a: { id: 'a', attempts: 1, status: 'running', outputs: [] } } }), workflow)
+    const writer = new FsRunStore(taktDir)
+    const cached = (await writer.get(runId))!
+    const external = new FsRunStore(taktDir)
+    const update = (await external.get(runId))!
+    update.args.external = 'new'
+    update.nodes.a!.error = 'external note'
+    await external.save(update)
+    cached.nodes.a!.result = { done: true }
+    await writer.save(cached)
+    const reread = (await writer.get(runId))!
+    expect(reread.args.external).toBe('new')
+    expect(reread.nodes.a).toMatchObject({ error: 'external note', result: { done: true } })
+    reread.nodes.a!.error = 'acknowledged'
+    await writer.save(reread)
+    expect((await external.get(runId))!.nodes.a!.error).toBe('acknowledged')
+    const again = (await writer.get(runId))!
+    again.status = 'succeeded'
+    await writer.save(again)
+    expect((await store.get(runId))!.status).toBe('succeeded')
+  })
+
+  it('未知来源的旧克隆不能通过当前基线快捷分支回退已保存的新执行代次', async () => {
+    const original = state({ nodes: { a: { id: 'a', status: 'succeeded', attempts: 1, iteration: 2, outputs: [], inputs: [{ workspace: 'REQ-001', path: 'spec.md', version: 1 }] } } })
+    await store.create(original, workflow)
+    const oldClone = structuredClone(original)
+    const latest = (await store.get(runId))!
+    latest.status = 'succeeded'
+    latest.endedAt = '2026-11-04T23:00:00.000Z'
+    latest.nodes.a!.attempts = 2
+    latest.nodes.a!.iteration = 1
+    latest.nodes.a!.inputs![0]!.version = 2
+    await store.save(latest)
+    await store.save(oldClone)
+    const preserved = (await store.get(runId))!
+    expect(preserved.nodes.a).toMatchObject({ attempts: 2, iteration: 1, inputs: [{ version: 2 }] })
+    expect(preserved.status).toBe('succeeded')
+    expect(preserved.endedAt).toBe('2026-11-04T23:00:00.000Z')
+  })
+
 })

@@ -62,7 +62,11 @@ export function buildTraceGraph(requirementId: string, title: string, data: Arti
       if (/^AC-\d+(?:-\d+)?$/.test(traceId)) {
         const ac = ensureAc(traceId)
         if (artifact.kind === 'spec') addEdge(currentId, ac, 'derives')
-      } else if (/^TC-[A-Z0-9-]+$/.test(traceId)) ensureCase(traceId)
+        if (artifact.kind === 'task' || artifact.kind === 'code-change') addEdge(currentId, ac, 'implements')
+      } else if (/^TC-[A-Z0-9-]+$/.test(traceId)) {
+        const testCase = ensureCase(traceId)
+        if (artifact.kind === 'verdict') addEdge(currentId, testCase, 'judged')
+      }
     }
     const evidenceCase = /^evidence\/([^/]+)\//.exec(artifact.path)?.[1]
     if (evidenceCase) addEdge(currentId, ensureCase(evidenceCase), 'verifies')

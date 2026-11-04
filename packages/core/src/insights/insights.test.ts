@@ -163,7 +163,7 @@ describe('FsInsights.metrics', () => {
     ]
     const project = stores({ runs: [run(), run({ runId: 'other', requirementId: 'REQ-OTHER' })], snapshots: { 'run-1': snapshot }, events: { 'run-1': events } })
     const metrics = await new FsInsights(project).metrics(requirement.id)
-    expect(metrics).toMatchObject({ runs: 1, firstPassRate: 3 / 5, loopIterations: 3, humanInterventions: 2, verdicts: { product_bug: 1, unknown: 1 } })
+    expect(metrics).toMatchObject({ runs: 1, firstPassRate: 3 / 5, loopIterations: 3, humanInterventions: 0, verdicts: { product_bug: 1, unknown: 1 } })
     expect(project.runs.list).toHaveBeenCalledWith({ requirementId: requirement.id })
     expect(project.workspaces.writeArtifact).not.toHaveBeenCalled()
   })
@@ -304,4 +304,27 @@ describe('AC coverage and traceGraph', () => {
     const insights = new FsInsights(stores({ artifacts: records, contents: { ...contents, [path]: content } }))
     await expect(insights.metrics(requirement.id)).rejects.toThrow(message)
   })
+})
+
+it('人工介入只计实际 human 回答，不重复计判决路由、自动批准或取消', async () => {
+  const human = { type: 'human', id: 'reviewer' } as const
+  const events = [
+    { ...event(1, 'human.answered', { requestId: 'one', decision: 'approve' }), actor: human },
+    { ...event(2, 'human.answered', { requestId: 'two', decision: 'approve' }), actor: { type: 'human', id: 'auto-approve' } as const },
+    { ...event(3, 'human.answered', { requestId: 'three', decision: 'cancelled' }), actor: human },
+    event(4, 'human.answered', { requestId: 'four', decision: 'approve' }),
+    event(5, 'judge.verdict', { verdicts: [], routed: [{ subject: 'TC-1', to: 'human' }] }),
+  ]
+  expect((await createInsights(stores({ runs: [run()], events: { 'run-1': events } })).metrics('REQ-001')).humanInterventions).toBe(1)
+})
+
+it('持久化动态定义覆盖占位节点并提供实际依赖与元数据', () => {
+  const snapshot = workflow([node('plan', { kind: 'planner', stage: 'test' })])
+  const state = run({ expansions: [{ plannerId: 'plan', items: [], nodeIds: ['plan/a/dev', 'plan/b/review'], at: startedAt }] })
+  const graph = buildRunGraph(snapshot, state, [
+    { id: 'plan/a/dev', needs: [], parent: 'plan', kind: 'agent', title: '实现', role: 'dev', harness: 'codex' },
+    { id: 'plan/b/review', needs: ['plan/a/dev'], parent: 'plan', kind: 'gate', title: '评审' },
+  ])
+  expect(graph.nodes.find((entry) => entry.id === 'plan/a/dev')).toMatchObject({ kind: 'agent', title: '实现', role: 'dev', harness: 'codex', stage: 'test' })
+  expect(graph.edges).toContainEqual({ from: 'plan/a/dev', to: 'plan/b/review', kind: 'dep' })
 })

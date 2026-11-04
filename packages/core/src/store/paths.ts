@@ -32,6 +32,9 @@ export function assertArtifactPath(artifactPath: string): string {
   for (const seg of artifactPath.split('/')) {
     if (seg === '' || seg === '.' || seg === '..') throw new Error(`非法产物路径：${artifactPath}`)
   }
+  if (['requirement.json', 'manifest.json', 'comments.jsonl'].includes(artifactPath.split('/')[0]!.toLowerCase())) {
+    throw new Error(`产物路径与元数据文件冲突：${artifactPath}`)
+  }
   return artifactPath
 }
 
