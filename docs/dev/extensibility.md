@@ -46,3 +46,19 @@
 ## 完成定义（全部任务）
 
 `npm run typecheck`、`npx vitest run`、`npm run demo`、`npm run build -w @taktflow/web` 通过；`npm run takt -- doctor --project examples/hello-delivery` 能输出完整报告（没有安装的 harness 显示不可用，不算失败；示例配置里不放需要密钥的 provider）。
+
+## M0 收尾项（随本轮一起做）
+
+协议已加好（可选字段）：`Expansion.nodes`、`SnapshotNode.form / choices / checks[].threshold`、`NodeContext.signal`、`RunDetail.stages`、`AttentionItem` 回答编码注释。
+
+**后端（并入 ext-core-cli）**
+1. 引擎把 planner 展开出的节点定义写进 `Expansion.nodes`；`buildRunGraph` 和 stale 传播都从它读，删掉 engine.json 的临时方案（保留对旧运行数据的兼容读取即可）。
+2. `snapshotWorkflow` 填充 human 节点的 `form / choices` 和 rubric 检查的 `threshold`。
+3. 引擎给 `NodeContext.signal` 传入运行的 AbortSignal；取消运行时脚本函数能结束自己启动的子进程。模板 `templates/workflows/sdlc.workflow.ts` 的 `runCases` 用这个 signal（`execFile` 的 `signal` 选项），并同步到 `examples/hello-delivery/.takt/workflows/sdlc.workflow.ts`（两份只允许 design 节点的 knowledge 查询不同）。
+4. server 的 `RunDetail` 填 `stages`（用 core 的 `stageProgress`）。
+5. 用量口径统一：`summarizeRun`、`GraphNode.usage` 都按事件日志里全部 `node.finished` 的 usage 累加（loop 每一轮都算），与 RequirementSummary / metrics 一致；加测试锁住"同一运行在运行列表、运行页、需求页显示的 token 相同"。
+
+**Web（并入 ext-web）**
+1. 运行页阶段条改用 `RunDetail.stages`，删除 `lib/stage.ts` 里复制 core 规则的 `computeStages`。
+2. 门禁 Tab 画 rubric 阈值线（`SnapshotNode.checks[].threshold`）。
+3. 运行页头部的 token 直接用 server 返回的运行用量（后端口径统一后不再前端自算）。

@@ -143,6 +143,8 @@ export interface GraphEdge {
 export interface RunDetail {
   run: RunState
   workflow: { id: string; title: string; version: string; stages: StageDef[] }
+  /** 阶段进度（server 用 core 的 stageProgress 计算），web 不再自行推导。 */
+  stages?: StageProgress[]
   graph: { nodes: GraphNode[]; edges: GraphEdge[] }
 }
 

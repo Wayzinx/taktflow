@@ -169,6 +169,8 @@ export interface NodeContext {
   /** planner 展开出的条目，非展开节点为 undefined。 */
   item?: PlannedItem
   args: Record<string, unknown>
+  /** 运行被取消时触发；脚本函数自己启动的子进程应监听它并结束。 */
+  signal?: AbortSignal
   /** 读上游节点的结构化结果。 */
   resultOf(nodeId: NodeId): unknown
   /** 读公共存放区里某个产物的最新内容（文本）。 */
@@ -376,9 +378,12 @@ export interface SnapshotNode {
   /** planner：上限与可选角色。 */
   maxItems?: number
   allowedRoles?: string[]
-  /** gate：检查项标题。 */
-  checks?: Array<{ id: string; kind: GateCheck['kind']; title?: string }>
+  /** gate：检查项标题；rubric 检查带阈值。 */
+  checks?: Array<{ id: string; kind: GateCheck['kind']; title?: string; threshold?: number }>
+  /** human：问题、表单类型、选项。 */
   ask?: string
+  form?: HumanNodeDef['form']
+  choices?: string[]
 }
 
 export interface WorkflowSnapshot {
@@ -428,6 +433,8 @@ export interface Expansion {
   plannerId: NodeId
   items: PlannedItem[]
   nodeIds: NodeId[]
+  /** 展开出来的节点定义快照（id 已加前缀）：运行图和 stale 传播都以它为准。 */
+  nodes?: SnapshotNode[]
   at: Timestamp
 }
 

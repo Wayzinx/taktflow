@@ -102,6 +102,10 @@ export interface AttentionItem {
   answeredAt?: string
   /** 谁回答的（审计用）。 */
   answeredBy?: Actor
+  /**
+   * 回答编码：approve → decision 为 'approve' | 'reject'，answer 为可选备注；
+   * choice → decision 为 'choice'，answer 为所选项原文；answer → 无 decision，answer 为回答文本。
+   */
   decision?: string
   answer?: string
 }
