@@ -1,4 +1,5 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -95,6 +96,7 @@ it('retry 注入失败原因，resultSchema 校验最后一个 JSON 代码块', 
   expect(state.status).toBe('succeeded')
   expect(prompts).toHaveLength(2)
   expect(prompts[1]).toContain('上一次失败原因：第一次缺少证据')
+  expect(prompts[1]?.endsWith('上一次失败原因：第一次缺少证据')).toBe(true)
   expect(state.nodes.retry?.result).toEqual({ ok: true })
 })
 
@@ -140,4 +142,158 @@ it('两个容器共享叶子并发额度，容器本身不占用执行槽位', a
   expect(completed).toBe(6)
   expect(peak).toBeLessThanOrEqual(2)
   expect(peak).toBe(2)
+})
+
+it('嵌套 loop 的内层轮次独立初始化，外层下一轮完整重跑子 DAG', async () => {
+  const { stores, requirementId } = await fixture()
+  const iterations: number[] = []
+  const state = await createEngine({ stores, profiles: {}, harnesses: {}, knowledge: [] }, { concurrency: 1 })
+    .start({ requirementId, workflow: workflow([loop({
+      id: 'outer', title: '外层', maxIterations: 2, until: (ctx) => ctx.iteration === 2,
+      body: [loop({ id: 'inner', title: '内层', maxIterations: 1, until: () => true, body: [
+        script({ id: 'work', title: '执行', run: async (ctx) => { iterations.push(ctx.iteration!) } }),
+      ] })],
+    })]) })
+  expect(state.status).toBe('succeeded')
+  expect(iterations).toEqual([1, 1])
+})
+
+it('harness 按 available 和可重试错误降级，知识与实时事件落盘且审计链有效', async () => {
+  const { stores, requirementId } = await fixture()
+  const calls: string[] = []
+  const unavailable: HarnessAdapter = {
+    id: 'unavailable', displayName: 'unavailable', available: async () => ({ ok: false, reason: '未安装' }),
+    run: async () => { throw new Error('不应调用不可用适配器') },
+  }
+  const limited: HarnessAdapter = {
+    id: 'limited', displayName: 'limited', available: async () => ({ ok: true }),
+    run: async () => { calls.push('limited'); return { ok: false, finalText: '', error: '429 rate limited' } },
+  }
+  const mock: HarnessAdapter = {
+    id: 'mock', displayName: 'mock', available: async () => ({ ok: true }),
+    run: async (req, onEvent) => {
+      calls.push('mock')
+      expect(req.prompt).toContain('业务证据摘要')
+      expect(req.env).toMatchObject({ TAKT_ROLE: 'dev', TAKT_NODE: 'fallback', TAKT_WORKSPACE: stores.workspaces.dir(requirementId) })
+      expect(req.env?.TAKT_TRANSCRIPT).toContain(`/runs/${req.env?.TAKT_RUN_ID}/transcripts/fallback.jsonl`)
+      onEvent({ type: 'started', sessionId: 'session-1' })
+      onEvent({ type: 'message', role: 'assistant', text: '正在执行' })
+      onEvent({ type: 'tool_call', tool: 'read', input: 'spec.md', output: '证据', ok: true })
+      onEvent({ type: 'usage', usage: { inputTokens: 10, outputTokens: 20 } })
+      onEvent({ type: 'compacted', record: { at: '2026-11-04T00:00:00Z', trigger: 'auto', beforeTokens: 100, afterTokens: 50, summary: '摘要', dropped: [] } })
+      return { ok: true, finalText: '完成', usage: { inputTokens: 10, outputTokens: 20 } }
+    },
+  }
+  const state = await createEngine({
+    stores, profiles: { dev: profile }, harnesses: { unavailable, limited, mock }, knowledge: [
+      { id: 'business', kind: 'wiki', intents: ['business'], describe: () => '', query: async () => [{ sourceId: 'business', title: '规则', ref: 'rule-1', snippet: '业务证据摘要' }] },
+      { id: 'unused', kind: 'grep', intents: ['symbol'], describe: () => '', query: async () => { throw new Error('不应查询不匹配 intent 的源') } },
+    ],
+  }).start({ requirementId, workflow: workflow([agent({
+    id: 'fallback', title: '降级', role: 'dev', prompt: '完成验证',
+    harness: { harness: 'unavailable', fallback: [{ harness: 'limited' }, { harness: 'mock' }] },
+    knowledge: [{ text: '查询规则', intent: 'business' }],
+  })]) })
+  expect(state.status).toBe('succeeded')
+  expect(calls).toEqual(['limited', 'mock'])
+  expect(state.nodes.fallback?.usage).toEqual({ inputTokens: 10, outputTokens: 20 })
+  const context = await stores.runs.getContext(state.runId, 'fallback')
+  expect(context.snapshots).toHaveLength(1)
+  expect(context.snapshots[0]?.budgetTokens).toBe(200000)
+  expect(context.compactions).toHaveLength(1)
+  const events = await stores.events.read(state.runId)
+  expect(events.filter((e) => e.type === 'log' && (e.data as { message: string }).message.includes('切换 harness'))).toHaveLength(2)
+  expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['harness.started', 'harness.message', 'harness.tool_call', 'harness.usage', 'context.compacted', 'knowledge.query']))
+  expect(await stores.events.verify(state.runId)).toEqual({ ok: true })
+})
+
+it.each(['missing', 'invalid-json'])('必需产物不满足契约时失败：%s', async (mode) => {
+  const { stores, requirementId } = await fixture()
+  const state = await createEngine({ stores, profiles: {}, harnesses: {}, knowledge: [] }).start({ requirementId, workflow: workflow([
+    script({ id: 'output', title: '产物', outputs: [{ path: 'result.json', kind: 'report', schema: {
+      type: 'object', required: ['items'], properties: { items: { type: 'array', items: { type: 'string', enum: ['valid'] } } },
+    } }], run: async (ctx) => {
+      if (mode === 'invalid-json') await writeFile(join(ctx.workspaceDir, 'result.json'), '{"items":["wrong"]}')
+    } }),
+    script({ id: 'next', title: '下游', needs: ['output'], run: async () => { throw new Error('不应执行') } }),
+  ]) })
+  expect(state.status).toBe('failed')
+  expect(state.nodes.output?.status).toBe('failed')
+  expect(state.nodes.next?.status).toBe('pending')
+})
+
+it('产物收集期间输入被标记 stale，晚到的节点完成不能覆盖 stale', async () => {
+  const { stores, requirementId } = await fixture()
+  await stores.workspaces.writeArtifact({ ref: { workspace: requirementId, path: 'input.md' }, content: '原文', kind: 'input', author: { type: 'system', id: 'fixture' } })
+  let notify: (runId: string) => void = () => undefined
+  const entered = new Promise<string>((resolve) => { notify = resolve })
+  let release: () => void = () => undefined
+  const barrier = new Promise<void>((resolve) => { release = resolve })
+  const write = stores.workspaces.writeArtifact.bind(stores.workspaces)
+  stores.workspaces.writeArtifact = async (input) => {
+    if (input.ref.path === 'output.md' && input.producedBy) {
+      notify(input.producedBy.runId)
+      await barrier
+    }
+    return write(input)
+  }
+  const engine = createEngine({ stores, profiles: {}, harnesses: {}, knowledge: [] })
+  const pending = engine.start({ requirementId, workflow: workflow([
+    script({ id: 'source', title: '读取输入', inputs: [{ path: 'input.md' }], outputs: [{ path: 'output.md', kind: 'report' }],
+      run: async (ctx) => { await writeFile(join(ctx.workspaceDir, 'output.md'), '输出') } }),
+    script({ id: 'after', title: '后续', needs: ['source'], run: async () => { throw new Error('不应执行') } }),
+  ]) })
+  const runId = await entered
+  try {
+    expect(new Set(await engine.markStale(runId, { workspace: requirementId, path: 'input.md' }))).toEqual(new Set(['source', 'after']))
+  } finally { release() }
+  const state = await pending
+  expect(state.nodes.source?.status).toBe('stale')
+  expect(state.nodes.after?.status).toBe('stale')
+  expect((await stores.runs.get(runId))?.nodes.source?.status).toBe('stale')
+})
+
+it('同一引擎并发运行两个 workflow，合法写入不会互相触发守卫', async () => {
+  const { stores, requirementId } = await fixture()
+  let entered = 0
+  let release: () => void = () => undefined
+  const barrier = new Promise<void>((resolve) => { release = resolve })
+  const mock: HarnessAdapter = {
+    id: 'mock', displayName: 'mock', available: async () => ({ ok: true }),
+    run: async (req) => {
+      if (++entered === 2) release()
+      await barrier
+      await writeFile(join(req.cwd, `${req.env!.TAKT_NODE}.txt`), '合法写入')
+      await new Promise((resolve) => setTimeout(resolve, req.env!.TAKT_NODE === 'a' ? 20 : 60))
+      return { ok: true, finalText: '完成' }
+    },
+  }
+  const engine = createEngine({ stores, profiles: { dev: { ...profile, writeScope: ['a.txt', 'b.txt'] } }, harnesses: { mock }, knowledge: [] })
+  const states = await Promise.all(['a', 'b'].map((id) => engine.start({ requirementId, workflow: workflow([
+    agent({ id, title: id, role: 'dev', prompt: '写文件', writeScope: [`${id}.txt`] }),
+  ]) })))
+  expect(states.map((state) => state.status)).toEqual(['succeeded', 'succeeded'])
+})
+
+it('git 守卫恢复已跟踪文件并删除新文件，事件准确标记 reverted', async () => {
+  const { stores, requirementId } = await fixture()
+  const root = stores.projectDir
+  execFileSync('git', ['init', '--quiet'], { cwd: root })
+  await writeFile(join(root, 'tracked.txt'), '原始内容')
+  execFileSync('git', ['add', '--', 'tracked.txt'], { cwd: root })
+  const mock: HarnessAdapter = {
+    id: 'mock', displayName: 'mock', available: async () => ({ ok: true }),
+    run: async () => {
+      await writeFile(join(root, 'tracked.txt'), '越界修改')
+      await writeFile(join(root, 'new.txt'), '越界新增')
+      return { ok: true, finalText: '完成' }
+    },
+  }
+  const state = await createEngine({ stores, profiles: { dev: profile }, harnesses: { mock }, knowledge: [] })
+    .start({ requirementId, workflow: workflow([agent({ id: 'guard', title: '守卫', role: 'dev', prompt: '执行', writeScope: [] })]) })
+  expect(state.nodes.guard?.status).toBe('blocked')
+  expect(await readFile(join(root, 'tracked.txt'), 'utf8')).toBe('原始内容')
+  await expect(readFile(join(root, 'new.txt'))).rejects.toMatchObject({ code: 'ENOENT' })
+  const events = await stores.events.read(state.runId, { types: ['guard.violation'] })
+  expect(events[0]?.data).toMatchObject({ action: 'reverted', paths: expect.arrayContaining(['tracked.txt', 'new.txt']) })
 })

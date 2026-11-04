@@ -1,4 +1,4 @@
-import { mkdir, readFile } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
 import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessResult, HarnessSelector, NodeContext, NodeState, RunState } from '../types.js'
@@ -26,19 +26,20 @@ function selectors(selector: HarnessSelector): HarnessSelector[] {
   return [selector, ...(selector.fallback ?? []).flatMap(selectors)]
 }
 
-export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState): Promise<{ data: unknown; actor: Actor }> {
-  return host.semaphore.use(async () => {
+export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState, acquireSlot = true): Promise<{ data: unknown; actor: Actor }> {
+  const invoke = async (): Promise<{ data: unknown; actor: Actor }> => {
     host.signal.throwIfAborted()
     const { stores, profiles, harnesses, knowledge } = host.deps
     const profile = profiles[node.role]
     if (!profile) throw new Error(`角色不存在：${node.role}`)
-    const task = (typeof node.prompt === 'function' ? await node.prompt(ctx) : node.prompt) + (ns.error ? `\n上一次失败原因：${ns.error}` : '')
+    const task = typeof node.prompt === 'function' ? await node.prompt(ctx) : node.prompt
+    const retryNote = ns.error ? `上一次失败原因：${ns.error}` : ''
     const items: ContextItem[] = []
     const add = (source: ContextItem['source'], title: string, text: string, ref?: string) => {
       items.push({ id: `${source}-${items.length}`, source, title, ref, tokens: estimateTokens(text), included: true })
     }
     add('role', profile.title, profile.instructions)
-    add('prompt', node.title, task)
+    add('prompt', node.title, [task, retryNote].filter(Boolean).join('\n'))
     for (const input of ns.inputs ?? []) {
       const text = await ctx.readArtifact(input.path)
       add('artifact', input.path, text ?? '', input.path)
@@ -54,9 +55,10 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     await stores.runs.saveContext(host.state.runId, context)
     await host.emit('context.assembled', context, node.id)
     const prompt = [profile.instructions, task, ...summaries,
-      `公共存放区：${ctx.workspaceDir}，需要读的文件：${(node.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
+      `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
       node.resultSchema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(node.resultSchema)}` : '',
-    ].join('\n\n')
+      retryNote,
+    ].filter(Boolean).join('\n\n')
     const base = node.harness ?? profile.harness ?? stores.config.roles?.[node.role] ?? { harness: 'mock' }
     const chain = host.override ? [{ ...base, harness: host.override, fallback: undefined }] : selectors(base)
     let previous = ''
@@ -128,5 +130,6 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       return { data: node.resultSchema ? parseResult(result.finalText, node.resultSchema) : result.structured ?? result.finalText, actor }
     }
     throw new Error(previous || '没有可用 harness')
-  })
+  }
+  return acquireSlot ? host.semaphore.use(invoke) : invoke()
 }

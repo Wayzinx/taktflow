@@ -1,0 +1,10 @@
+{
+  "project": {
+    "name": "hello-delivery",
+    "description": "taktflow 最小示例：问候语支持空名字"
+  },
+  "workflows": [".takt/workflows/sdlc.workflow.ts"],
+  "knowledge": [
+    { "id": "wiki", "kind": "wiki", "options": { "root": "docs/wiki" } }
+  ]
+}

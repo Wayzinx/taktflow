@@ -18,7 +18,8 @@
     "typecheck": "tsc -b packages/core packages/harness packages/knowledge packages/server packages/cli",
     "test": "vitest run",
     "dev:web": "npm run dev -w @taktflow/web",
-    "takt": "tsx packages/cli/src/index.ts"
+    "takt": "tsx packages/cli/src/index.ts",
+    "demo": "bash examples/hello-delivery/demo.sh"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

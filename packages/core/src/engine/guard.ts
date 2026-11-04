@@ -46,13 +46,14 @@ export class WriteGuard {
         if (paths.length) {
           const git = await exec('git', ['rev-parse', '--is-inside-work-tree'], { cwd: this.root }).then(() => true, () => false)
           if (git) {
+            let reverted = true
             for (const file of paths) {
               const tracked = await exec('git', ['ls-files', '--error-unmatch', '--', file], { cwd: this.root }).then(() => true, () => false)
               if (tracked) await exec('git', ['checkout', '--', file], { cwd: this.root })
               else if (!before.has(file)) await rm(join(this.root, file), { force: true })
-              else continue
+              else reverted = false
             }
-            action = 'reverted'
+            action = reverted ? 'reverted' : 'flagged'
           }
         }
         return { paths, action }

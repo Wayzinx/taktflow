@@ -85,7 +85,11 @@ export interface RunStore {
   getContext(runId: RunId, nodeId: NodeId): Promise<{ snapshots: ContextSnapshot[]; compactions: CompactionRecord[] }>
 }
 
-/** 待人处理的事项（审批、回答问题、判决交人）。 */
+/**
+ * 待人处理的事项（审批、回答问题、判决交人）。
+ * requestId 规则：首次为 `${runId}:${nodeId}`；同一节点在 loop 后续轮次或重复请求时追加 `#<序号>`（从 2 开始），
+ * 避免上一轮的批准被复用。
+ */
 export interface AttentionItem {
   requestId: string
   runId: RunId
@@ -96,6 +100,8 @@ export interface AttentionItem {
   choices?: string[]
   createdAt: string
   answeredAt?: string
+  /** 谁回答的（审计用）。 */
+  answeredBy?: Actor
   decision?: string
   answer?: string
 }
