@@ -51,6 +51,9 @@ export const HELP = `用法：takt <命令> [选项]
   trace <REQ>
   audit verify <runId>
   kb query "<text>" [--intent <i>]
+  harness ls                                    列出 harness、能力和可用性
+  models ls                                     列出模型与密钥配置状态
+  doctor                                        检查配置、插件和运行环境
   serve [--port 4870] [--host 127.0.0.1]
 
 全局选项：

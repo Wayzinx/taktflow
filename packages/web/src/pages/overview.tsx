@@ -1,28 +1,15 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useState } from 'react'
 import { Activity, CircleCheckBig, Coins, Inbox, OctagonAlert } from 'lucide-react'
 import type { ProjectOverview, RequirementSummary } from '@taktflow/core'
 import { useAsync } from '../api'
 import { AttentionCard } from '../components/attention-card'
 import { PageHeader, useCrumbs } from '../components/layout'
+import { StatCard } from '../components/stat-card'
 import { EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows } from '../components/ui'
 import { fmtCost, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
 import { RequirementsTable } from './requirements-table'
 import './overview.css'
-
-function StatCard({ label, icon, value, foot, tone, children }: { label: string; icon: ReactNode; value: ReactNode; foot: ReactNode; tone?: string; children?: ReactNode }) {
-  return (
-    <div className="card stat-card" style={tone ? ({ '--stat-tone': tone } as CSSProperties) : undefined}>
-      <div className="stat-label">
-        <span className="stat-icon">{icon}</span>
-        {label}
-      </div>
-      <div className="stat-value num">{value}</div>
-      {children}
-      <div className="stat-foot">{foot}</div>
-    </div>
-  )
-}
 
 const SHARE_COLORS = ['var(--c-1)', 'var(--c-2)', 'var(--c-3)', 'var(--c-4)', 'var(--c-6)', 'var(--c-5)']
 

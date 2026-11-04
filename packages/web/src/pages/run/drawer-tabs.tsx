@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowRight, Check, ChevronDown, Copy, ExternalLink, Eye, FileText, Shrink, TriangleAlert, X } from 'lucide-react'
 import type { ContextSource, EventEnvelope, EventPayloads, JudgeVerdict, NodeDetail } from '@taktflow/core'
-import { useAsync } from '../../api'
+import { useAsync, type NodeView } from '../../api'
 import { EventTimeline } from '../../components/event-timeline'
 import { EmptyState, Meter, Segmented, Skeleton, StatusBadge, toast } from '../../components/ui'
 import { JsonView } from '../../lib/json-view'
@@ -548,7 +548,9 @@ export function JudgeTab({ d, runId, requirementId }: { d: NodeDetail; runId: st
 
 // ================================================================ 门禁
 
-export function GateTab({ d }: { d: NodeDetail }) {
+const CHECK_KIND: Record<string, string> = { rubric: 'rubric', command: '命令', function: '函数' }
+
+export function GateTab({ d }: { d: NodeView }) {
   if (!d.gate) return <div className="dpad"><EmptyState compact icon={Check} title="门禁尚未执行" /></div>
   const g = d.gate
   return (
@@ -561,27 +563,53 @@ export function GateTab({ d }: { d: NodeDetail }) {
         </div>
       </div>
       <div className="gate-checks">
-        {g.checks.map((c) => (
-          <div key={c.id} className={`gate-check ${c.pass ? 'pass' : 'fail'}`}>
-            <span className="gate-icon">{c.pass ? <Check /> : <X />}</span>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div className="gate-check-head">
-                <span className="mono">{c.id}</span>
-                {/* NodeDetail.gate 不带阈值（快照里也没有），只画分数，不画阈值刻度 */}
-                {c.score !== undefined && (
-                  <span className="gate-score" title={c.pass ? '达到阈值' : '未达阈值'}>
-                    <span className="gate-score-track">
-                      <span style={{ width: `${c.score}%`, background: c.pass ? 'var(--st-success)' : 'var(--st-failed)' }} />
-                    </span>
-                    <b className="mono num">{c.score}</b>
-                    <span className="faint">/ 100</span>
-                  </span>
-                )}
+        {g.checks.map((c) => {
+          const def = d.checks?.find((x) => x.id === c.id)
+          return (
+            <div key={c.id} className={`gate-check ${c.pass ? 'pass' : 'fail'}`}>
+              <span className="gate-icon">{c.pass ? <Check /> : <X />}</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div className="gate-check-head">
+                  <span className="truncate">{def?.title ?? <span className="mono">{c.id}</span>}</span>
+                  {def && <span className="gate-kind">{CHECK_KIND[def.kind] ?? def.kind}</span>}
+                </div>
+                {def?.title && <div className="gate-check-id mono">{c.id}</div>}
+                {c.score !== undefined && <GateScore score={c.score} pass={c.pass} threshold={def?.threshold} />}
+                {c.message && <p className="gate-msg">{c.message}</p>}
               </div>
-              {c.message && <p className="gate-msg">{c.message}</p>}
             </div>
-          </div>
-        ))}
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** 分数条：0–100 轨道，阈值处画竖线，阈值右侧是通过区。没有阈值（旧 server）时只画分数。 */
+function GateScore({ score, pass, threshold }: { score: number; pass: boolean; threshold?: number }) {
+  const clamp = (v: number) => Math.max(0, Math.min(100, v))
+  const delta = threshold === undefined ? undefined : score - threshold
+  return (
+    <div className={`gate-score ${pass ? 'pass' : 'fail'}`}>
+      <div className="gate-score-nums">
+        <b className="mono num">{score}</b>
+        <span className="faint">/ 100</span>
+        {delta !== undefined && (
+          <span className="gate-delta mono num" title={`与阈值 ${threshold} 的差`}>
+            {delta >= 0 ? `+${delta}` : `−${-delta}`}
+          </span>
+        )}
+      </div>
+      <div className="gate-score-track" role="img" aria-label={threshold === undefined ? `得分 ${score}` : `得分 ${score}，阈值 ${threshold}`}>
+        {threshold !== undefined && <span className="gate-pass-zone" style={{ left: `${clamp(threshold)}%` }} />}
+        <span className="gate-score-fill" style={{ width: `${clamp(score)}%` }} />
+        {threshold !== undefined && (
+          <span className="gate-threshold" style={{ left: `${clamp(threshold)}%` }}>
+            <span className="gate-threshold-label">
+              阈值 <b className="mono num">{threshold}</b>
+            </span>
+          </span>
+        )}
       </div>
     </div>
   )

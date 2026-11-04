@@ -12,6 +12,7 @@ import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
 import { runKbQuery } from './commands/kb.js'
 import { runServe } from './commands/serve.js'
+import { runCatalog, runDoctor } from './commands/catalog.js'
 
 export { knowledgeFromConfig } from './knowledge.js'
 
@@ -36,6 +37,15 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 async function dispatch(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
   switch (command) {
+    case 'doctor':
+      expectPositionals('doctor', args, 0, 0)
+      return runDoctor(options.project, options.json)
+    case 'harness':
+    case 'models':
+      if (args[0] !== 'ls') throw new UsageError(`${command} 子命令：ls`)
+      expectPositionals(`${command} ls`, args.slice(1), 0, 0)
+      await runCatalog(options.project, command, options.json)
+      return 0
     case 'init':
       expectPositionals('init', args, 0, 1)
       await runInit(options.project, { name: options.name, json: options.json }, args[0])

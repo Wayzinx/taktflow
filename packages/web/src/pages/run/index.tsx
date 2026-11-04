@@ -2,14 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Crosshair, Fingerprint, Map as MapIcon, Maximize2 } from 'lucide-react'
-import type { EventEnvelope, EventPayloads, RunDetail } from '@taktflow/core'
+import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { StageBar } from '../../components/stage-bar'
 import { ErrorState, Skeleton, StatusBadge } from '../../components/ui'
 import { fmtCost, fmtDate, fmtDuration, fmtTokens, totalTokens } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
-import { computeStages } from '../../lib/stage'
 import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
 import { useIsDark } from '../../lib/theme'
 import { layoutRun, type FlowNode } from './dag-layout'
@@ -40,22 +39,6 @@ function useMiniMapPref(): [boolean, (v: boolean) => void] {
   return [on, set]
 }
 
-/**
- * 运行总用量按事件里每次 node.finished 的 usage 累加：运行图节点只带最后一轮的 usage，
- * loop 体前几轮会被漏掉（RunSummary.usage 也是这样算的），和需求页的用量对不上。
- */
-function runUsage(events: EventEnvelope[]): { tokens: number; cost: number } {
-  let tokens = 0
-  let cost = 0
-  for (const e of events) {
-    if (e.type !== 'node.finished') continue
-    const u = (e.data as EventPayloads['node.finished']).usage
-    tokens += totalTokens(u)
-    cost += u?.costUsd ?? 0
-  }
-  return { tokens, cost }
-}
-
 function useNow(active: boolean) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
@@ -73,20 +56,28 @@ export function RunPage({ runId }: { runId: string }) {
   const q = useAsync((s) => s.run(runId), [runId])
   const audit = useAsync((s) => s.audit(runId), [runId])
   const [liveTick, setLiveTick] = useState(0)
-  const spent = useAsync((s) => s.events(runId).then(runUsage), [runId, liveTick])
-  const reload = useRef(q.reload)
-  reload.current = q.reload
+  // 头部用量取 server 的 RunSummary.usage（与运行列表、需求页同一口径），web 不自己累加。
+  // 过渡做法：RunDetail 还没有 usage（已提协议变更请求），先从该需求的运行列表里取；协议加上后删掉这段。
+  const reqId = q.data?.run.requirementId
+  const summary = useAsync((s) => (reqId ? s.runs(reqId).then((rs) => rs.find((r) => r.runId === runId)) : Promise.resolve(undefined)), [runId, reqId])
+  const reload = useRef({ run: q.reload, usage: summary.reload })
+  reload.current = { run: q.reload, usage: summary.reload }
 
-  // SSE：每来一条事件，节流刷新运行图；抽屉按 liveTick 刷新。已结束的运行不再订阅，免得空占一条长连接
+  // SSE：每来一条事件，节流刷新运行图；抽屉按 liveTick 刷新。已结束的运行不再订阅，免得空占一条长连接。
+  // server 的运行用量只累加 node.finished，所以只有这类事件之后才重拉用量（它要读整个需求的事件日志）。
   const live = q.data ? q.data.run.status === 'running' || q.data.run.status === 'waiting_human' : false
   useEffect(() => {
     if (!live) return
     let timer: ReturnType<typeof setTimeout> | undefined
-    const off = ds.subscribe(runId, () => {
+    let usageDirty = false
+    const off = ds.subscribe(runId, (e) => {
+      if (e.type === 'node.finished') usageDirty = true
       if (timer) return
       timer = setTimeout(() => {
         timer = undefined
-        reload.current()
+        reload.current.run()
+        if (usageDirty) reload.current.usage()
+        usageDirty = false
         setLiveTick((t) => t + 1)
       }, 400)
     })
@@ -107,7 +98,7 @@ export function RunPage({ runId }: { runId: string }) {
   )
   const running = d?.run.status === 'running'
   const now = useNow(running)
-  const stages = useMemo(() => (d ? computeStages(d.workflow.stages, d.graph.nodes) : []), [d])
+  const stages = d?.stages ?? []
 
   if (q.error && !d) return <ErrorState error={q.error} onRetry={q.reload} />
 
@@ -116,8 +107,7 @@ export function RunPage({ runId }: { runId: string }) {
         done: d.graph.nodes.filter((n) => n.status === 'succeeded' || n.status === 'skipped').length,
         total: d.graph.nodes.length,
         failed: d.graph.nodes.filter((n) => n.status === 'failed' || n.status === 'blocked').length,
-        usage: spent.data?.tokens ?? d.graph.nodes.reduce((s, n) => s + totalTokens(n.usage), 0),
-        cost: spent.data?.cost ?? d.graph.nodes.reduce((s, n) => s + (n.usage?.costUsd ?? 0), 0),
+        usage: summary.data?.usage,
       }
     : undefined
 
@@ -152,11 +142,11 @@ export function RunPage({ runId }: { runId: string }) {
               </span>
               <span>
                 <label>Token</label>
-                <span className="mono num">{fmtTokens(counts.usage)}</span>
+                <span className="mono num">{counts.usage ? fmtTokens(totalTokens(counts.usage)) : '—'}</span>
               </span>
               <span>
                 <label>成本</label>
-                <span className="mono num">{fmtCost(counts.cost)}</span>
+                <span className="mono num">{fmtCost(counts.usage?.costUsd)}</span>
               </span>
               {audit.data && (
                 <span className={`audit-pill${audit.data.ok ? '' : ' broken'}`} title="events.jsonl 哈希链校验（takt audit verify）">
@@ -179,7 +169,7 @@ export function RunPage({ runId }: { runId: string }) {
 
 function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string }) {
   const dark = useIsDark()
-  const stages = useMemo(() => computeStages(detail.workflow.stages, detail.graph.nodes), [detail])
+  const stages = useMemo(() => detail.stages ?? [], [detail])
   const layout = useMemo(() => layoutRun(detail.graph, detail.workflow.stages, stages, detail.run.expansions, selected), [detail, stages, selected])
   const [miniMap, setMiniMap] = useMiniMapPref()
   const rf = useRef<ReactFlowInstance<FlowNode> | null>(null)

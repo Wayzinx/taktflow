@@ -1,9 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isUtf8 } from 'node:buffer'
-import { AttentionAlreadyAnsweredError, validateAnswer, loadRunGraph, markArtifactEdited, buildRunGraph, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
+import { AttentionAlreadyAnsweredError, validateAnswer, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
 import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
-import { harnesses, models } from './catalog.js'
-import { nodeDetail, overview, requirement, run, summaries, summary, summarizeRun, workflow } from './read-model.js'
+import type { CatalogCallbacks } from './catalog.js'
+import { nodeDetail, overview, requirement, run, summaries, summary, runSummaries, workflow } from './read-model.js'
 import { createRouter } from './router.js'
 import { serialize } from './stale.js'
 import { stream } from './stream.js'
@@ -19,7 +19,7 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks = {}) {
   const router = createRouter<Handler>()
   const add = router.add
   add('GET', '/api/project', ({ stores }) => overview(stores))
@@ -27,7 +27,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   add('GET', '/api/requirements/:id', async ({ stores, params }) => {
     const item = await requirement(stores, params.id!)
     const [info, artifacts, runs] = await Promise.all([summary(stores, item), stores.workspaces.listArtifacts(item.id), stores.runs.list({ requirementId: item.id })])
-    return { ...info, artifacts, runs: runs.map(summarizeRun) }
+    return { ...info, artifacts, runs: await runSummaries(stores, runs) }
   })
   add('GET', '/api/requirements/:id/artifacts', async ({ stores, params }) => {
     await requirement(stores, params.id!)
@@ -85,12 +85,13 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   })
   add('GET', '/api/runs', ({ stores, url }) => {
     const id = url.searchParams.get('requirement')
-    return stores.runs.list(id === null ? undefined : { requirementId: safeId(id) }).then((runs) => runs.map(summarizeRun))
+    return stores.runs.list(id === null ? undefined : { requirementId: safeId(id) }).then((runs) => runSummaries(stores, runs))
   })
   add('GET', '/api/runs/:runId', async ({ stores, params }) => {
     const state = await run(stores, params.runId!)
     const snapshot = await workflow(stores, state.runId)
-    return { run: state, workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph: buildRunGraph(snapshot, state, await loadRunGraph(stores, state.runId)) }
+    const [records, events] = await Promise.all([loadRunGraph(stores, state.runId), stores.events.read(state.runId)])
+    return { run: state, stages: stageProgress(snapshot, state, records), workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph: buildRunGraph(snapshot, state, records, events) }
   })
   add('GET', '/api/runs/:runId/events', async ({ stores, params, url }) => {
     await run(stores, params.runId!)
@@ -136,7 +137,15 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     await onAnswer?.(item)
     return item
   })
-  add('GET', '/api/harnesses', ({ stores }) => harnesses(stores))
-  add('GET', '/api/models', ({ stores }) => models(stores))
+  add('GET', '/api/harnesses', ({ stores }) => {
+    if (catalog.getHarnesses) return catalog.getHarnesses(stores)
+    if (catalog.getCatalog) return catalog.getCatalog(stores).then((value) => value.harnesses)
+    throw new HttpError(501, '未接入运行时 harnesses 目录')
+  })
+  add('GET', '/api/models', ({ stores }) => {
+    if (catalog.getModels) return catalog.getModels(stores)
+    if (catalog.getCatalog) return catalog.getCatalog(stores).then((value) => value.models)
+    throw new HttpError(501, '未接入运行时 models 目录')
+  })
   return router
 }

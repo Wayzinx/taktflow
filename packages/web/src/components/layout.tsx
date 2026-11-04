@@ -76,7 +76,7 @@ function Sidebar() {
     { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements },
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
     { to: '/knowledge', label: '知识源', icon: BookOpen, active: path === '/knowledge', soon: true },
-    { to: '/settings', label: '设置', icon: Settings, active: path === '/settings', soon: true },
+    { to: '/settings', label: '设置', icon: Settings, active: path === '/settings' },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []
   return (

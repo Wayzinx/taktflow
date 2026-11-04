@@ -112,6 +112,9 @@ export function createDshHarness(options: DshOptions = {}): HarnessAdapter {
   }
 
   async function run(req: HarnessRequest, onEvent: EventSink): Promise<HarnessResult> {
+    if (req.provider) {
+      return finalizeResult(req, { ok: false, finalText: '', error: 'DeepSeek Harness does not support custom providers' }, { ok: true, stdout: '', stderr: '' })
+    }
     const args = ['--profile', 'headless', '--json']
     if (req.sessionId) args.push('--session-id', req.sessionId)
     args.push('-')
@@ -135,6 +138,10 @@ export function createDshHarness(options: DshOptions = {}): HarnessAdapter {
   return {
     id: 'dsh',
     displayName: 'DeepSeek Harness',
+    capabilities: {
+      resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false,
+      compactionEvents: false, customProvider: false, sandbox: false, mcp: false,
+    },
     async available() {
       const key = JSON.stringify([options.bin, process.env.DSH_BIN, process.env.PATH])
       if (cache?.key === key && cache.expires > Date.now()) return cache.value

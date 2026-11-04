@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import type { HarnessAdapter, HarnessResult, Usage } from '@taktflow/core'
-import { finalizeResult } from './process.js'
+import type { HarnessAdapter, HarnessEvent, HarnessResult, Usage } from '@taktflow/core'
+import { collectSecrets, createRedactor, finalizeResult } from './process.js'
 
 export interface MockStep {
   match?: { role?: string; nodeId?: string; promptIncludes?: string }
@@ -24,8 +24,17 @@ export function createMockHarness(script: MockScript): HarnessAdapter {
   return {
     id: 'mock',
     displayName: 'Mock',
+    capabilities: {
+      resume: false, structuredOutput: false, toolEvents: true, usage: true, cost: true,
+      compactionEvents: true, customProvider: false, sandbox: false, mcp: false,
+    },
     async available() { return { ok: true } },
     async run(req, onEvent) {
+      if (req.provider) {
+        return finalizeResult(req, { ok: false, finalText: '', error: 'Mock does not support custom providers' }, { ok: true, stdout: '', stderr: '' })
+      }
+      const redact = createRedactor(collectSecrets(req))
+      const emit = (event: HarnessEvent) => onEvent(JSON.parse(redact(JSON.stringify(event))) as HarnessEvent)
       let result: HarnessResult = { ok: true, finalText: '' }
       try {
         const checkCancelled = () => {
@@ -51,7 +60,7 @@ export function createMockHarness(script: MockScript): HarnessAdapter {
         if (step?.structured !== undefined) {
           result.finalText += `\n\`\`\`json\n${JSON.stringify(step.structured)}\n\`\`\``
         }
-        onEvent({ type: 'started', sessionId: req.sessionId, model: req.model })
+        emit({ type: 'started', sessionId: req.sessionId, model: req.model })
         for (const [path, content] of Object.entries(step?.writes ?? {})) {
           checkCancelled()
           if (path.includes('{{workspace}}') && !req.env?.TAKT_WORKSPACE) {
@@ -63,12 +72,12 @@ export function createMockHarness(script: MockScript): HarnessAdapter {
           await writeFile(target, content, 'utf8')
         }
         checkCancelled()
-        for (const call of step?.toolCalls ?? []) onEvent({ type: 'tool_call', ...call })
-        if (step?.usage) onEvent({ type: 'usage', usage: step.usage })
+        for (const call of step?.toolCalls ?? []) emit({ type: 'tool_call', ...call })
+        if (step?.usage) emit({ type: 'usage', usage: step.usage })
         if (step?.compaction) {
-          onEvent({ type: 'compacted', record: { ...step.compaction, at: new Date().toISOString(), trigger: 'auto' } })
+          emit({ type: 'compacted', record: { ...step.compaction, at: new Date().toISOString(), trigger: 'auto' } })
         }
-        onEvent({ type: 'message', role: 'assistant', text: result.finalText })
+        emit({ type: 'message', role: 'assistant', text: result.finalText })
       } catch (error) {
         result.ok = false
         result.error = [result.error, `Mock failed: ${error instanceof Error ? error.message : String(error)}`].filter(Boolean).join('\n')

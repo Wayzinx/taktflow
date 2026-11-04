@@ -56,12 +56,16 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
   const state = await run(stores, runId)
   const snapshot = await workflow(stores, runId)
   const node = Object.hasOwn(state.nodes, nodeId) ? state.nodes[nodeId] : undefined
-  const graphNode = buildRunGraph(snapshot, state, await loadRunGraph(stores, runId)).nodes.find((item) => item.id === nodeId)
-  if (!node || !graphNode) throw new HttpError(404, '节点不存在')
   const [events, context, artifacts] = await Promise.all([
     stores.events.read(runId, { nodeId }), stores.runs.getContext(runId, nodeId), stores.workspaces.listArtifacts(state.requirementId),
   ])
-  let prompt = definitions(snapshot.nodes).get(nodeId)?.prompt
+  const graphNode = buildRunGraph(snapshot, state, await loadRunGraph(stores, runId), events).nodes.find((item) => item.id === nodeId)
+  if (!node || !graphNode) throw new HttpError(404, '节点不存在')
+  const snapshots = definitions(snapshot.nodes)
+  for (const expansion of state.expansions) {
+    for (const [id, definition] of definitions(expansion.nodes ?? [])) snapshots.set(id, definition)
+  }
+  let prompt = snapshots.get(nodeId)?.prompt
   for (const event of events) {
     if (event.type === 'context.assembled') {
       const data = event.data as EventPayloads['context.assembled']
@@ -88,7 +92,9 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
     if (version === undefined) throw new Error(`节点输出缺少版本：${nodeId}/${ref.path}`)
     outputs.push({ path: ref.path, version, kind: record?.kind ?? 'other' })
   }
-  return { state: node, kind: graphNode.kind, title: graphNode.title, stage: graphNode.stage, role: graphNode.role, prompt, inputs: (node.inputs ?? []).map(({ path, version }) => ({ path, version })), outputs, context, ...(verdicts.length ? { verdicts } : {}), ...(gate ? { gate } : {}), events }
+  return { state: node, kind: graphNode.kind, title: graphNode.title, stage: graphNode.stage, role: graphNode.role, checks: snapshots.get(nodeId)?.checks, prompt, inputs: (node.inputs ?? []).map(({ path, version }) => ({ path, version })), outputs, context, ...(verdicts.length ? { verdicts } : {}), ...(gate ? { gate } : {}), events }
 }
 
-export { summarizeRun }
+export async function runSummaries(stores: ProjectStores, states: RunState[]) {
+  return Promise.all(states.map(async (state) => summarizeRun(state, await stores.events.read(state.runId))))
+}

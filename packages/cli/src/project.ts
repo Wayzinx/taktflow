@@ -3,18 +3,23 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   createEngine,
-  loadProfiles,
   openProject,
+  validateWorkflow,
+  loadPlugins,
+  type LoadedPlugins,
   type Engine,
   type HarnessAdapter,
   type KnowledgeSource,
+  type ModelProvider,
   type ProjectStores,
   type WorkflowDefinition,
 } from '@taktflow/core'
-import { createHarnesses, loadMockScript, type MockScript } from '@taktflow/harness'
+import { createHarnesses, createMockHarness, loadMockScript, type MockScript } from '@taktflow/harness'
 import { knowledgeFromConfig } from './knowledge.js'
 import { tsImport } from 'tsx/esm/api'
 import { UsageError } from './args.js'
+import { normalizeConfig, runtimeProviders, redactConfigError } from './runtime-config.js'
+import { loadRuntimeProfiles } from './runtime-profiles.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 /** 仓库根目录：packages/cli/{src,dist} → 上三级。 */
@@ -35,27 +40,62 @@ export interface ProjectContext {
   stores: ProjectStores
   workflows: WorkflowDefinition[]
   harnesses: Record<string, HarnessAdapter>
-  profiles: Awaited<ReturnType<typeof loadProfiles>>
+  profiles: Awaited<ReturnType<typeof loadRuntimeProfiles>>
+  plugins: LoadedPlugins
+  providers: Record<string, ModelProvider>
   knowledge: KnowledgeSource[]
   mockScript?: MockScript
 }
 
 /** 运行类命令才加载 workflow / harness / knowledge。 */
 export async function loadRuntime(project: string | undefined, options: { mock?: string } = {}): Promise<ProjectContext> {
-  const stores = await openStores(project)
-  const [profiles, workflows] = await Promise.all([loadProfiles(stores.taktDir), loadWorkflows(stores)])
-  const mockScript = options.mock === undefined
-    ? await readMock(join(stores.taktDir, 'mock.json'))
-    : await readMock(resolve(process.cwd(), options.mock), true)
-  const harnesses = createHarnesses(mockScript === undefined ? {} : { mockScript })
-  return { stores, workflows, harnesses, profiles, knowledge: knowledgeFromConfig(stores), ...(mockScript === undefined ? {} : { mockScript }) }
+  const stores = await openProject(project ?? process.cwd())
+  try {
+    stores.config = normalizeConfig(stores.config)
+    const plugins = await loadProjectPlugins(stores)
+    const providers = runtimeProviders(stores.config, plugins.providers)
+    const [profiles, workflows] = await Promise.all([loadRuntimeProfiles(stores.taktDir, plugins.roles), loadWorkflows(stores)])
+    for (const workflow of plugins.workflows) {
+      if (workflows.some((item) => item.id === workflow.id)) throw new Error(`workflow 名称冲突：${workflow.id}`)
+      workflows.push(workflow)
+    }
+    const mockScript = options.mock === undefined
+      ? await readMock(join(stores.taktDir, 'mock.json'))
+      : await readMock(resolve(process.cwd(), options.mock), true)
+    const harnesses = createHarnesses({ config: stores.config, projectDir: stores.projectDir, providers, mockScript })
+    for (const [id, harness] of Object.entries(plugins.harnesses)) {
+      if (Object.hasOwn(harnesses, id)) throw new Error(`harness 名称冲突：${id}`)
+      Object.defineProperty(harnesses, id, { value: harness, enumerable: true, configurable: true, writable: true })
+    }
+    const knowledge = mergeKnowledge(stores, plugins)
+    return { stores, workflows, harnesses, profiles, knowledge, plugins, providers, ...(mockScript === undefined ? {} : { mockScript }) }
+  } catch (error) {
+    throw new Error(redactConfigError(stores.config, error))
+  }
 }
 
-/** 指定了 mock 文件时重建 harness 表；serve 恢复运行时用。 */
+export async function loadProjectPlugins(stores: ProjectStores): Promise<LoadedPlugins> {
+  try {
+    return await loadPlugins(stores.config, stores.projectDir, (url) => tsImport(url, { parentURL: import.meta.url }))
+  } catch (error) {
+    throw new Error(redactConfigError(stores.config, error))
+  }
+}
+
+export function mergeKnowledge(stores: ProjectStores, plugins: LoadedPlugins): KnowledgeSource[] {
+  const sources = knowledgeFromConfig(stores)
+  for (const source of plugins.knowledge) {
+    if (sources.some((item) => item.id === source.id)) throw new Error(`knowledge 名称冲突：${source.id}`)
+    sources.push(source)
+  }
+  return sources
+}
+
+/** 指定 mock 文件时只替换 mock，保留 native 和插件实例；serve 恢复运行时用。 */
 export async function withMock(context: ProjectContext, mockFile: string | undefined): Promise<ProjectContext> {
   if (mockFile === undefined) return context
   const mockScript = await readMock(mockFile, true)
-  return { ...context, harnesses: createHarnesses({ mockScript }), mockScript }
+  return { ...context, harnesses: { ...context.harnesses, mock: createMockHarness(mockScript!) }, mockScript }
 }
 
 async function readMock(file: string, required = false): Promise<MockScript | undefined> {
@@ -93,11 +133,9 @@ async function importWorkflow(file: string): Promise<WorkflowDefinition> {
   } catch (error) {
     throw new Error(`加载 workflow 失败：${file}（${error instanceof Error ? error.message : String(error)}）`)
   }
-  const definition = namespace.default as WorkflowDefinition | undefined
-  if (!definition || typeof definition !== 'object' || typeof definition.id !== 'string' || !Array.isArray(definition.nodes)) {
-    throw new Error(`workflow 文件缺少 default 导出或结构不对：${file}`)
-  }
-  return definition
+  try { validateWorkflow(namespace.default) }
+  catch (error) { throw new Error(`workflow 文件 ${file}：${error instanceof Error ? error.message : String(error)}`) }
+  return namespace.default
 }
 
 /** `<workflowId>` 可以是已注册的 ID，也可以直接是文件路径。 */
@@ -105,11 +143,7 @@ export async function resolveWorkflow(context: ProjectContext, idOrPath: string)
   const found = context.workflows.find((workflow) => workflow.id === idOrPath)
   if (found) return found
   if (/[\\/]/.test(idOrPath) || idOrPath.endsWith('.ts')) {
-    try {
-      return await importWorkflow(isAbsolute(idOrPath) ? idOrPath : resolve(context.stores.projectDir, idOrPath))
-    } catch (error) {
-      throw new UsageError(error instanceof Error ? error.message : String(error))
-    }
+    return importWorkflow(isAbsolute(idOrPath) ? idOrPath : resolve(context.stores.projectDir, idOrPath))
   }
   throw new UsageError(`workflow 不存在：${idOrPath}（已注册：${context.workflows.map((item) => item.id).join(', ') || '无'}）`)
 }
@@ -154,4 +188,3 @@ export function createRunEngine(
     knowledge: context.knowledge,
   }, engineOptions)
 }
-

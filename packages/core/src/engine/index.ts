@@ -7,6 +7,7 @@ import { withFileLock } from '../store/file-lock.js'
 import { answerOrRead, recordAnswerOnce } from './answers.js'
 import { requirementLock, updateRequirement } from './requirement.js'
 import { validateDag } from './graph.js'
+import { validateWorkflowHarnesses } from './selection.js'
 import { WriteGuard } from './guard.js'
 import { Runtime, system, type EngineOptions } from './runtime.js'
 
@@ -32,6 +33,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   }
   return {
     async start(input) {
+      validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
       const now = opts.now?.() ?? new Date()
@@ -54,6 +56,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       if (!state) throw new Error(`运行不存在：${runId}`)
       if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
       if (state.status === 'cancelled') return state
+      validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       return execute(new Runtime(deps, state, workflow, opts, guard), true)
     },
     async cancel(runId) {

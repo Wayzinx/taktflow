@@ -1,8 +1,9 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
-import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessResult, HarnessSelector, NodeContext, NodeState, RunState } from '../types.js'
+import type { Actor, AgentProfile, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeState, RunState } from '../types.js'
 import { estimateTokens } from '../util/tokens.js'
+import { addUsage } from '../insights/usage.js'
 import { assertNoSymlinks } from '../store/fs-utils.js'
 import { runDir } from '../store/paths.js'
 import { createKnowledgeRouter } from '../knowledge/router.js'
@@ -10,6 +11,8 @@ import { parseResult, validateSchema } from './schema.js'
 import { Semaphore } from './process.js'
 import { system } from './actor.js'
 import { WriteGuard } from './guard.js'
+import { harnessSelectors, resolveHarnessSelector, selectHarness } from './selection.js'
+import { intersectWriteScopes } from './scope.js'
 
 export class BlockedError extends Error {}
 export type Emit = <T extends EventType>(type: T, data: EventPayloads[T], nodeId?: string, actor?: Actor) => Promise<void>
@@ -25,16 +28,14 @@ export interface HarnessHost {
   override?: string
 }
 
-function selectors(selector: HarnessSelector): HarnessSelector[] {
-  return [selector, ...(selector.fallback ?? []).flatMap(selectors)]
-}
-
 export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState, acquireSlot = true): Promise<{ data: unknown; actor: Actor }> {
   const invoke = async (): Promise<{ data: unknown; actor: Actor }> => {
     host.signal.throwIfAborted()
     const { stores, profiles, harnesses, knowledge } = host.deps
     const profile = profiles[node.role]
     if (!profile) throw new Error(`角色不存在：${node.role}`)
+    const selection = { config: stores.config, profiles, harnesses }
+    const base = selectHarness(node.role, node.harness, selection, host.override)
     const task = typeof node.prompt === 'function' ? await node.prompt(ctx) : node.prompt
     const retryNote = ns.error ? `上一次失败原因：${ns.error}` : ''
     const items: ContextItem[] = []
@@ -61,22 +62,29 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       node.resultSchema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(node.resultSchema)}` : '',
       retryNote,
     ].filter(Boolean).join('\n\n')
-    const base = node.harness ?? profile.harness ?? stores.config.roles?.[node.role] ?? { harness: 'mock' }
-    const chain = host.override ? [{ ...base, harness: host.override, fallback: undefined }] : selectors(base)
+    const priorOutputs = ns.outputs.length || node.session !== 'resume' ? ns.outputs
+      : ((await stores.events.read(host.state.runId, { nodeId: node.id, types: ['node.finished'] })).at(-1)?.data as EventPayloads['node.finished'] | undefined)?.outputs ?? []
+    const chain = harnessSelectors(base)
     let previous = ''
     for (const [index, selector] of chain.entries()) {
       host.signal.throwIfAborted()
       if (index) await host.emit('log', { level: 'warn', message: `切换 harness → ${selector.harness}：${previous}` }, node.id)
-      const harness = harnesses[selector.harness]
-      if (!harness) { previous = `harness 不存在：${selector.harness}`; continue }
+      const { harness, model, provider, modelConfig } = resolveHarnessSelector(selector, stores.config, harnesses)
       const available = await harness.available().catch((error: unknown) => ({ ok: false, reason: String(error) }))
       if (!available.ok) { previous = available.reason ?? `${selector.harness} unavailable`; continue }
-      const model = selector.model ? stores.config.models?.[selector.model] : undefined
-      const providerId = selector.provider ?? model?.provider
-      const providerConfig = providerId ? stores.config.providers?.[providerId] : undefined
-      if (providerId && !providerConfig) throw new Error(`provider 不存在：${providerId}`)
-      if (providerId && !harness.capabilities?.customProvider) throw new Error(`harness ${harness.id} 不支持 customProvider`)
-      const actor: Actor = { type: 'agent', role: node.role, harness: harness.id, model: model?.id ?? selector.model }
+      const resume = node.session === 'resume' && harness.capabilities?.resume
+      const history = node.session === 'resume' && !resume
+        ? `该 harness 不支持续聊，本次使用新会话。上一轮产物清单：\n${priorOutputs.length ? priorOutputs.map((ref) => `${ref.workspace}/${ref.path} (version ${ref.version ?? 'latest'})`).join('\n') : '（无已登记产物）'}` : ''
+      const requestPrompt = [prompt, history].filter(Boolean).join('\n\n')
+      if (history) {
+        const historyItem: ContextItem = { id: `history-${index}`, source: 'history', title: '上一轮产物清单', tokens: estimateTokens(history), included: true }
+        const resumedContext = { ...context, at: host.timestamp(), items: [...items, historyItem], totalTokens: context.totalTokens + historyItem.tokens }
+        await stores.runs.saveContext(host.state.runId, resumedContext)
+        await host.emit('context.assembled', resumedContext, node.id)
+      }
+      const writeScope = intersectWriteScopes(profile.writeScope, node.writeScope)
+      delete ns.usage
+      const actor: Actor = { type: 'agent', role: node.role, harness: harness.id, model }
       const transcript = join(runDir(stores.taktDir, host.state.runId), 'transcripts', `${node.id}.jsonl`)
       await assertNoSymlinks(stores.taktDir, transcript)
       await mkdir(dirname(transcript), { recursive: true })
@@ -89,8 +97,10 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
             if (event.sessionId) ns.sessionRef = { harness: harness.id, sessionId: event.sessionId }
             await host.emit('harness.started', { harness: harness.id, model: event.model, sessionId: event.sessionId }, node.id, actor)
           } else if (event.type === 'usage') {
-            ns.usage = event.usage
-            await host.emit('harness.usage', event.usage, node.id, actor)
+            if (harness.capabilities?.usage) {
+              ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, event.usage)
+              await host.emit('harness.usage', event.usage, node.id, actor)
+            }
           } else if (event.type === 'compacted') {
             const record = { ...event.record, nodeId: node.id }
             await stores.runs.saveCompaction(host.state.runId, record)
@@ -105,15 +115,17 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       let result: HarnessResult | undefined
       let failure: unknown
       try {
-        await host.emit('harness.message', { role: 'user', text: prompt }, node.id, actor)
-        result = await harness.run({ prompt, cwd: stores.projectDir, model: model?.id ?? selector.model,
-          effort: selector.effort, provider: providerId && providerConfig ? { id: providerId, ...providerConfig } : undefined,
-          systemAppend: profile.instructions, timeoutMs: node.timeoutMs, resultSchema: node.resultSchema,
-          sessionId: node.session === 'resume' && ns.sessionRef?.harness === harness.id ? ns.sessionRef.sessionId : undefined,
+        await host.emit('harness.message', { role: 'user', text: requestPrompt }, node.id, actor)
+        const request: HarnessRequest = { prompt: requestPrompt, cwd: stores.projectDir, model,
+          effort: selector.effort, provider,
+          modelConfig: modelConfig ? { price: modelConfig.price, contextWindow: modelConfig.contextWindow } : undefined,
+          systemAppend: profile.instructions, timeoutMs: node.timeoutMs, resultSchema: harness.capabilities?.structuredOutput ? node.resultSchema : undefined,
+          sessionId: resume && ns.sessionRef?.harness === harness.id ? ns.sessionRef.sessionId : undefined,
           env: { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript },
-          tools: { writeScope: node.writeScope ?? profile.writeScope },
+          tools: { writeScope, allowBash: profile.allowBash === true },
           signal: node.timeoutMs ? AbortSignal.any([host.signal, AbortSignal.timeout(node.timeoutMs)]) : host.signal,
-        }, onEvent)
+        }
+        result = await harness.run(request, onEvent)
       } catch (error) { failure = error }
       await eventChain
       const violation = await finishGuard()
@@ -129,7 +141,15 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         throw new Error(previous)
       }
       if (result.sessionId) ns.sessionRef = { harness: harness.id, sessionId: result.sessionId }
-      if (result.usage) ns.usage = result.usage
+      if (harness.capabilities?.usage && result.usage) ns.usage = result.usage
+      if (!harness.capabilities?.usage || !ns.usage) {
+        const inputTokens = estimateTokens(profile.instructions) + estimateTokens(requestPrompt)
+        const outputTokens = estimateTokens(result.finalText)
+        const price = modelConfig?.price
+        const estimated = { inputTokens, outputTokens, ...(price ? { costUsd: (inputTokens * price.input + outputTokens * price.output) / 1_000_000 } : {}), note: 'estimated' }
+        ns.usage = { inputTokens, outputTokens, ...(estimated.costUsd !== undefined ? { costUsd: estimated.costUsd } : {}) }
+        await host.emit('harness.usage', estimated, node.id, actor)
+      }
       await host.save()
       const data = result.structured !== undefined ? result.structured : node.resultSchema ? parseResult(result.finalText, node.resultSchema) : result.finalText
       if (node.resultSchema) validateSchema(data, node.resultSchema)

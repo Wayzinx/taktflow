@@ -12,10 +12,11 @@ import { expandPlanner, qualify, validateDag, type Entry, type Graph } from './g
 import { WriteGuard } from './guard.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
+import { validateWorkflowHarnesses } from './selection.js'
 
 export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
 export type GraphRecord = RunGraphNode
-export interface RuntimeRecord { nodes: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
+export interface RuntimeRecord { nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
 export { system } from './actor.js'
 import { system } from './actor.js'
 import { run as runGate } from './nodes/gate.js'
@@ -74,11 +75,6 @@ export class Runtime implements HarnessHost {
   async persistGraph(): Promise<void> {
     for (const node of Object.values(this.state.nodes)) this.attempts[node.id] = Math.max(this.attempts[node.id] ?? 0, node.attempts)
     const record: RuntimeRecord = {
-      nodes: [...this.graph].map(([id, { def, parent }]) => ({
-        id, needs: def.needs ?? [], parent, kind: def.kind, title: def.title, stage: def.stage,
-        role: 'role' in def ? def.role : undefined,
-        harness: 'role' in def ? this.state.nodes[id]?.sessionRef?.harness ?? this.override ?? def.harness?.harness ?? this.deps.profiles[def.role]?.harness.harness ?? this.deps.stores.config.roles?.[def.role]?.harness ?? 'mock' : undefined,
-      })),
       requests: { ...this.requests },
       attempts: { ...this.attempts },
       reservedAttempts: { ...this.reservedAttempts },
@@ -122,6 +118,10 @@ export class Runtime implements HarnessHost {
           const groups = expandPlanner(node, expansion.items)
           const ids = groups.flatMap((group) => group.nodes.map((child) => child.id))
           if (JSON.stringify(ids) !== JSON.stringify(expansion.nodeIds)) throw new Error(`planner 展开定义已改变：${node.id}`)
+          const definitions = snapshotWorkflow({ ...this.workflow, nodes: groups.flatMap((group) => group.nodes) }).nodes
+          if (expansion.nodes && JSON.stringify(definitions) !== JSON.stringify(expansion.nodes)) throw new Error(`planner 展开定义已改变：${node.id}`)
+          validateWorkflowHarnesses({ ...this.workflow, nodes: groups.flatMap((group) => group.nodes) }, { config: this.deps.stores.config, profiles: this.deps.profiles, harnesses: this.deps.harnesses }, this.override)
+          expansion.nodes ??= definitions
           for (const group of groups) this.add(group.nodes, node.id, group.scope, group.item, entry.iteration)
         }
       }
@@ -159,7 +159,7 @@ export class Runtime implements HarnessHost {
     return {
       runId: this.state.runId, requirementId: this.state.requirementId, nodeId: node.id,
       projectDir: this.deps.stores.projectDir, workspaceDir: this.deps.stores.workspaces.dir(this.state.requirementId),
-      args: this.state.args, iteration: node.kind === 'loop' ? ns.iteration : entry.iteration, item: entry.item,
+      signal: this.signal, args: this.state.args, iteration: node.kind === 'loop' ? ns.iteration : entry.iteration, item: entry.item,
       resultOf: (id) => {
         for (const scope of scopes) if (Object.hasOwn(this.state.nodes, scope + id)) return this.state.nodes[scope + id]!.result
         return this.state.nodes[id]?.result

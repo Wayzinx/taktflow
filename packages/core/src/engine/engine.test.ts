@@ -46,7 +46,7 @@ async function fixture(respond: ConstructorParameters<typeof MemoryHarness>[0] =
   const requirement = await stores.workspaces.createRequirement({ title: '引擎基本验收' })
   const harness = new MemoryHarness(respond)
   const profiles: Record<string, AgentProfile> = Object.fromEntries(
-    ['dev', 'pm', 'architect', 'judge', 'automation', 'test-designer'].map((role) => [role, {
+    ['dev', 'pm', 'architect', 'judge', 'automation', 'test-designer', 'reviewer'].map((role) => [role, {
       role, title: role, description: '', instructions: `完成 ${role} 的任务`,
       harness: { harness: 'mock' }, skills: [], writeScope: ['**'],
     }]),

@@ -182,7 +182,7 @@ it('harness 按 available 和可重试错误降级，知识与实时事件落盘
     run: async () => { calls.push('limited'); return { ok: false, finalText: '', error: '429 rate limited' } },
   }
   const mock: HarnessAdapter = {
-    id: 'mock', displayName: 'mock', available: async () => ({ ok: true }),
+    id: 'mock', displayName: 'mock', capabilities: { usage: true }, available: async () => ({ ok: true }),
     run: async (req, onEvent) => {
       calls.push('mock')
       expect(req.prompt).toContain('业务证据摘要')

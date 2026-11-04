@@ -52,8 +52,9 @@ async function runCases(ctx: NodeContext) {
   const command = String(ctx.args.caseCommand ?? 'npm test')
   await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
   try {
-    await execute('/bin/sh', ['-c', command], { cwd: ctx.projectDir, env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir }, maxBuffer: 16 * 1024 * 1024 })
+    await execute('/bin/sh', ['-c', command], { cwd: ctx.projectDir, signal: ctx.signal, env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir }, maxBuffer: 16 * 1024 * 1024 })
   } catch (err) {
+    ctx.signal?.throwIfAborted()
     ctx.log(`用例命令退出码非 0（失败用例会在 summary 里体现）：${(err as Error).message.slice(0, 300)}`)
   }
   const summary = await readSummary(ctx)

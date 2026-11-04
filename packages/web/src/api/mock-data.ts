@@ -27,6 +27,7 @@ import type {
   RequirementMetrics,
   RunState,
   RunStatus,
+  SnapshotNode,
   StageDef,
   TraceGraph,
   Usage,
@@ -66,7 +67,7 @@ interface TplNode {
   routes?: Partial<Record<VerdictCategory, string>>
   ask?: string
   form?: AttentionItem['form']
-  checks?: Array<{ id: string; title: string }>
+  checks?: SnapshotNode['checks']
 }
 
 const L = 'dev-test-loop'
@@ -90,7 +91,7 @@ const SDLC: TplNode[] = [
     inputs: ['spec/spec.md'], outputs: [{ path: 'design/design.md', kind: 'design' }, { path: 'design/contracts.json', kind: 'contract' }],
     prompt: '基于 spec 和现有代码写系分：改动范围、模块划分、接口契约（路径、方法、入参、响应结构、错误码）、数据变更、风险。契约写进 design/contracts.json。存量能力优先复用，不要重写。',
   },
-  { id: 'design-gate', kind: 'gate', title: '系分门禁', stage: 'design', needs: ['design'], checks: [{ id: 'design-rubric', title: 'rubric · reviewer · 阈值 80' }] },
+  { id: 'design-gate', kind: 'gate', title: '系分门禁', stage: 'design', needs: ['design'], checks: [{ id: 'design-rubric', kind: 'rubric', title: '系分质量评分（reviewer）', threshold: 80 }] },
   { id: 'review-design', kind: 'human', title: '评审系分', stage: 'design', needs: ['design-gate'], form: 'approve', ask: '审阅 design/：方案和契约是否可以冻结？' },
   {
     id: 'test-design', kind: 'agent', title: '测分与用例设计', stage: 'test-design', needs: ['review-design'], role: 'test-designer',
@@ -98,7 +99,7 @@ const SDLC: TplNode[] = [
     prompt: '按 spec 和契约设计测试：先写 test-plan/plan.md（范围、分层、数据构造、不可自动化项），再为每条用例写 cases/<CaseID>.json（id、title、covers 映射到 AC、前置、步骤、断言必须落到业务字段或终态）。不要读产品代码。',
   },
   { id: 'review-cases', kind: 'human', title: '评审用例', stage: 'test-design', needs: ['test-design'], form: 'approve', ask: '审阅 test-plan/ 和 cases/：用例是否覆盖全部验收标准、断言是否有效？' },
-  { id: 'trace-gate', kind: 'gate', title: '追溯对齐', stage: 'align', needs: ['review-cases'], checks: [{ id: 'ac-covered', title: '每条 AC 至少有一条用例，每条用例都映射到 AC' }] },
+  { id: 'trace-gate', kind: 'gate', title: '追溯对齐', stage: 'align', needs: ['review-cases'], checks: [{ id: 'ac-covered', kind: 'function', title: '每条 AC 至少有一条用例，每条用例都映射到 AC' }] },
   { id: 'freeze', kind: 'script', title: '冻结基线', stage: 'align', needs: ['trace-gate'], outputs: [{ path: 'decisions/baseline.json', kind: 'decision' }] },
   {
     id: P, kind: 'planner', title: '拆分并实现开发任务', stage: 'loop', needs: ['freeze'], role: 'architect',

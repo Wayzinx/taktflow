@@ -1,5 +1,6 @@
+import type { HarnessCapabilities } from '@taktflow/core'
 import type { HarnessAdapter } from '@taktflow/core'
-import { ParseState, object, string, number, readUsage } from './parse.js'
+import { ParseState, object, string, number, readUsage, readProviderApiKey } from './parse.js'
 import type { EventSink, StreamParser } from './parse.js'
 import { finalizeResult, runProcess } from './process.js'
 
@@ -47,21 +48,43 @@ export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamPar
 
 export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): HarnessAdapter {
   const bin = options.bin ?? 'claude'
+  const capabilities: HarnessCapabilities = {
+    resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true,
+    compactionEvents: false, customProvider: true, sandbox: false, mcp: true,
+    providerProtocols: ['anthropic-messages'],
+  }
   return {
     id: 'claude-code',
     displayName: 'Claude Code',
+    capabilities,
     async available() {
       const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), timeoutMs: 5_000 })
       return proc.ok ? { ok: true } : { ok: false, reason: proc.error || proc.stderr || 'Claude Code 不可用' }
     },
     async run(req, onEvent) {
+      let processReq = req
+      if (req.provider) {
+        if (req.provider.protocol !== 'anthropic-messages') {
+          return finalizeResult(req, { ok: false, finalText: '', error: 'Claude Code provider requires anthropic-messages protocol' }, { ok: true, stdout: '', stderr: '' })
+        }
+        const key = readProviderApiKey(req)
+        if (key.name && !key.value) {
+          return finalizeResult(req, { ok: false, finalText: '', error: `Claude Code provider missing API key environment variable: ${key.name}` }, { ok: true, stdout: '', stderr: '' })
+        }
+        processReq = { ...req, env: {
+          ...req.env,
+          ...(req.provider.baseURL === undefined ? {} : { ANTHROPIC_BASE_URL: req.provider.baseURL }),
+          ...(key.value === undefined ? {} : { ANTHROPIC_AUTH_TOKEN: key.value }),
+          ...(req.model === undefined ? {} : { ANTHROPIC_MODEL: req.model }),
+        } }
+      }
       const args = ['-p', '--output-format', 'stream-json', '--verbose']
       if (req.model) args.push('--model', req.model)
       if (req.sessionId) args.push('--resume', req.sessionId)
       if (req.systemAppend) args.push('--append-system-prompt', req.systemAppend)
       args.push('--permission-mode', 'bypassPermissions')
       const parser = createClaudeCodeParser(onEvent)
-      const proc = await runProcess(bin, args, req, { stdin: req.prompt, onLine: parser.onLine })
+      const proc = await runProcess(bin, args, processReq, { stdin: req.prompt, onLine: parser.onLine })
       return finalizeResult(req, parser.result(), proc)
     },
   }

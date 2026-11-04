@@ -39,6 +39,7 @@ import type {
   Requirement,
   RequirementMetrics,
   RunState,
+  SnapshotNode,
   StageDef,
   Usage,
 } from './types.js'
@@ -145,6 +146,8 @@ export interface RunDetail {
   workflow: { id: string; title: string; version: string; stages: StageDef[] }
   /** 阶段进度（server 用 core 的 stageProgress 计算），web 不再自行推导。 */
   stages?: StageProgress[]
+  /** 本次运行的总用量（按全部 node.finished 事件累加）。 */
+  usage?: Usage
   graph: { nodes: GraphNode[]; edges: GraphEdge[] }
 }
 
@@ -161,6 +164,8 @@ export interface NodeDetail {
   context: { snapshots: ContextSnapshot[]; compactions: CompactionRecord[] }
   verdicts?: JudgeVerdict[]
   gate?: { pass: boolean; checks: Array<{ id: string; pass: boolean; score?: number; message?: string }> }
+  /** gate 节点的检查定义（来自快照，含 rubric 阈值）。 */
+  checks?: SnapshotNode['checks']
   events: EventEnvelope[]
 }
 

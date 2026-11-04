@@ -28,6 +28,8 @@ export interface Usage {
   outputTokens: number
   cachedTokens?: number
   costUsd?: number
+  /** harness 不报告用量时按字符估算的值。 */
+  estimated?: boolean
 }
 
 // ============================================================ 需求与公共存放区
@@ -560,6 +562,8 @@ export interface HarnessRequest {
   resultSchema?: Record<string, unknown>
   /** 把模型指到另一家 LLM API：引擎已把模型别名解析成厂商模型 ID（放在 model），这里给连接信息；适配器负责翻译成该 harness 的配置。 */
   provider?: { id: string } & ProviderConfig
+  /** 引擎解析出的模型元数据（成本计算、压缩阈值用）。 */
+  modelConfig?: Pick<ModelConfig, 'price' | 'contextWindow'>
   /** native harness 的工具约束：写权限（glob，相对 cwd）与是否允许 bash。 */
   tools?: { writeScope?: string[]; allowBash?: boolean }
   signal?: AbortSignal
@@ -593,6 +597,10 @@ export interface HarnessCapabilities {
   cost?: boolean
   compactionEvents?: boolean
   customProvider?: boolean
+  /** customProvider 时能接哪些协议（引擎据此校验，不按 harness id 写死）。 */
+  providerProtocols?: ProviderProtocol[]
+  /** 必须配置 provider 才能运行（如 native）。 */
+  requiresProvider?: boolean
   sandbox?: boolean
   mcp?: boolean
 }
@@ -727,6 +735,8 @@ export interface AgentProfile {
   /** 默认写权限（glob）。节点上的 writeScope 只能收窄，不能放宽。 */
   writeScope: string[]
   readScope?: string[]
+  /** native harness 是否允许 bash 工具（默认关闭）。 */
+  allowBash?: boolean
   /** 角色说明正文（markdown）。 */
   instructions: string
 }

@@ -57,6 +57,8 @@ export function createHttpSource(base = '/api'): DataSource {
     audit: (runId) => get(`/runs/${enc(runId)}/audit`),
     attention: (pending) => get(`/attention${qs({ pending: pending ? 1 : undefined })}`),
     answer: (requestId, body) => req('POST', `/attention/${enc(requestId)}`, body),
+    harnesses: () => get('/harnesses'),
+    models: () => get('/models'),
     subscribe(runId, onEvent) {
       const es = new EventSource(`${base}/runs/${enc(runId)}/stream`)
       es.onmessage = (m) => {

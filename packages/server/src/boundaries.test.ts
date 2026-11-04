@@ -184,3 +184,42 @@ it('已有新版本输入不会 stale', async () => {
   const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', body: JSON.stringify({ content: 'v2', reason: '同步新版本' }) })
   expect(await response.json()).toEqual({ version: 2, staleNodes: [] })
 })
+
+it.each(['deleted', 'conflicting'] as const)('Expansion.nodes 驱动图与 stale，engine.json 为 %s 时仍使用新定义', async (legacy) => {
+  const { stores, server, state } = await fixture()
+  state.expansions[0]!.nodes = [
+    { id: 'planner/a/task', kind: 'agent', title: '新实现 A', role: 'dev', harness: 'mock', prompt: '展开快照 prompt', needs: [] },
+    { id: 'planner/b/task', kind: 'gate', title: '新检查 B', needs: ['planner/a/task'], checks: [{ id: 'rubric', kind: 'rubric', threshold: 85 }] },
+    { id: 'planner/c/task', kind: 'human', title: '独立审批', needs: [], ask: '请选择', form: 'choice', choices: ['是', '否'] },
+  ]
+  await stores.runs.save(state)
+  const engineFile = join(stores.taktDir, 'runs/run-1/engine.json')
+  if (legacy === 'deleted') await rm(engineFile)
+  else await writeFile(engineFile, JSON.stringify({ nodes: [
+    { id: 'planner/a/task', kind: 'script', title: '旧 A', role: 'old', needs: [], parent: 'unrelated', stage: 'wrong' },
+    { id: 'planner/b/task', kind: 'script', title: '旧 B', needs: [], parent: 'planner' },
+    { id: 'planner/c/task', kind: 'script', title: '旧 C', needs: ['planner/a/task'], parent: 'planner' },
+  ], requests: {}, attempts: {} }))
+  const detailResponse = await fetch(`${server.url}/api/runs/run-1`)
+  expect(detailResponse.status).toBe(200)
+  const detail = await detailResponse.json()
+  expect(detail.graph.nodes.find((node: { id: string }) => node.id === 'planner/a/task')).toMatchObject({ kind: 'agent', title: '新实现 A', parent: 'planner', stage: 'dev', role: 'dev', harness: 'mock' })
+  expect(detail.graph.edges).toContainEqual({ from: 'planner/a/task', to: 'planner/b/task', kind: 'dep' })
+  expect(detail.graph.edges).not.toContainEqual({ from: 'planner/a/task', to: 'planner/c/task', kind: 'dep' })
+  expect(detail.stages).toEqual([{ id: 'dev', title: '研发', status: 'done', done: 7, total: 7 }])
+  const nodeResponse = await fetch(`${server.url}/api/runs/run-1/nodes/planner%2Fa%2Ftask`)
+  expect(nodeResponse.status).toBe(200)
+  expect(await nodeResponse.json()).toMatchObject({ kind: 'agent', prompt: '展开快照 prompt' })
+  const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', body: JSON.stringify({ content: 'v2', reason: '新定义传播' }) })
+  expect(response.status).toBe(200)
+  const changed = await response.json()
+  expect(changed.staleNodes.map((item: { nodeId: string }) => item.nodeId).sort()).toEqual(['after', 'loop', 'loop/child', 'planner', 'planner/a/task', 'planner/b/task'])
+  const persisted = await stores.runs.get('run-1')
+  expect(persisted!.nodes['planner/b/task']!.status).toBe('stale')
+  expect(persisted!.nodes['planner/c/task']!.status).toBe('succeeded')
+  expect(persisted!.nodes.unrelated!.status).toBe('succeeded')
+  expect(persisted!.expansions).toEqual(state.expansions)
+  expect(await stores.events.verify('run-1')).toEqual({ ok: true })
+  const reloaded = await (await fetch(`${server.url}/api/runs/run-1`)).json()
+  expect(reloaded.stages).toEqual([{ id: 'dev', title: '研发', status: 'running', done: 1, total: 7 }])
+})

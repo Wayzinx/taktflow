@@ -1,10 +1,12 @@
 import { access } from 'node:fs/promises'
-import { createServer } from '@taktflow/server'
+import { createServer, type ServerOptions } from '@taktflow/server'
 import type { AttentionItem } from '@taktflow/core'
 import { createPrinter } from '../output.js'
 import { loadRuntime, webDir, type ProjectContext } from '../project.js'
 import { serializeRun } from '../resume-lock.js'
 import { resumeOnce } from './run.js'
+import { createRuntimeCatalog } from '../catalog.js'
+import { validateRuntime } from '../runtime-validation.js'
 
 export interface ServeOptions {
   project?: string
@@ -24,18 +26,21 @@ async function webDirectory(): Promise<string | undefined> {
 
 export async function runServe(options: ServeOptions): Promise<void> {
   const context = await loadRuntime(options.project)
+  validateRuntime(context)
   const printer = createPrinter(options.json)
   const dir = await webDirectory()
   if (dir === undefined) {
     printer.warn(`Web 控制台未构建（${webDir} 不存在），先运行 npm run build -w @taktflow/web；API 仍可用。`)
   }
-  const server = await createServer({
+  const serverOptions: ServerOptions = {
     projectDir: context.stores.projectDir,
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.host === undefined ? {} : { host: options.host }),
     ...(dir === undefined ? {} : { webDir: dir }),
     onAnswer: (item) => resumeAfterAnswer(context, item),
-  })
+    ...createRuntimeCatalog(),
+  }
+  const server = await createServer(serverOptions)
   if (options.json) printer.data({ url: server.url, projectDir: context.stores.projectDir })
   else printer.text(`${printer.colors.green('✔')} takt 已启动：${server.url}  ${printer.colors.dim(context.stores.projectDir)}`)
   // serve 常驻：等待进程信号，收到后关闭。

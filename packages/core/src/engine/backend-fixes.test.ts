@@ -23,7 +23,7 @@ async function fixture(run: HarnessAdapter['run'] = async () => ({ ok: true, fin
   roots.push(root)
   const stores = await initProject(root)
   const requirementId = (await stores.workspaces.createRequirement({ title: '回归' })).id
-  const deps = { stores, profiles: { dev: profile }, knowledge: [], harnesses: { mock: { id: 'mock', displayName: '', available: async () => ({ ok: true }), run } } }
+  const deps = { stores, profiles: { dev: profile }, knowledge: [], harnesses: { mock: { id: 'mock', displayName: '', capabilities: { usage: true }, available: async () => ({ ok: true }), run } } }
   return { root, stores, requirementId, deps }
 }
 
@@ -151,12 +151,16 @@ it('动态 planner 记录子节点完整元信息及条目间依赖，loop 保�
     planner({ id: 'p', title: 'Planner', role: 'dev', stage: 'delivery', maxItems: 2, prompt: '', expand: () => [human({ id: 'h', title: 'Review', stage: 'delivery', ask: '', form: 'approve' })] }),
     loop({ id: 'l', title: 'Loop', body: [script({ id: 's', title: 'Script', run: async () => undefined })], maxIterations: 1, until: () => true }),
   ]) })
-  const graph = JSON.parse(await readFile(join(root, '.takt/runs', state.runId, 'engine.json'), 'utf8')) as { nodes: unknown[] }
-  expect(graph.nodes).toEqual(expect.arrayContaining([
-    expect.objectContaining({ id: 'p', kind: 'planner', title: 'Planner', role: 'dev', stage: 'delivery', harness: 'mock', needs: [] }),
-    expect.objectContaining({ id: 'p/b/h', kind: 'human', title: 'Review', stage: 'delivery', needs: ['p/a/h'], parent: 'p' }),
-    expect.objectContaining({ id: 'l/s', kind: 'script', title: 'Script', parent: 'l' }),
+  const metadata = JSON.parse(await readFile(join(root, '.takt/runs', state.runId, 'engine.json'), 'utf8')) as { nodes?: unknown[]; requests: Record<string, string> }
+  expect(metadata.nodes).toBeUndefined()
+  expect(metadata.requests['p/a/h']).toBeTruthy()
+  expect((await stores.runs.get(state.runId))?.expansions[0]?.nodes).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: 'p/a/h', kind: 'human', title: 'Review', stage: 'delivery', needs: [] }),
+    expect.objectContaining({ id: 'p/b/h', kind: 'human', title: 'Review', stage: 'delivery', needs: ['p/a/h'] }),
   ]))
+  const snapshot = await stores.runs.getWorkflow(state.runId)
+  expect(snapshot?.nodes.find((node) => node.id === 'p')).toMatchObject({ kind: 'planner', title: 'Planner', role: 'dev' })
+  expect(snapshot?.nodes.find((node) => node.id === 'l')?.body).toEqual([expect.objectContaining({ id: 's', kind: 'script', title: 'Script' })])
   expect(await stores.events.verify(state.runId)).toEqual({ ok: true })
 })
 

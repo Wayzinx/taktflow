@@ -31,3 +31,19 @@ it('指定版本只匹配未知或更旧的输入；迟到通知不能把更新�
   expect(propagateStale(state, graph, { workspace: 'req', path: 'spec', version: 2 })).toEqual(['0', '1'])
   expect(propagateStale(state, graph, { workspace: 'req', path: 'spec' })).toEqual(['0', '1', '2', '3'])
 })
+
+it('Expansion.nodes 优先于旧临时图，顶层依赖全限定、loop body 相对 ID，传播到 planner 与下游', () => {
+  const ids = ['plan', 'plan/a/l', 'plan/a/l/read', 'plan/a/l/after', 'plan/b/task', 'plan/c/sibling', 'after']
+  const state: RunState = { runId: 'run', requirementId: 'req', workflowId: 'flow', workflowVersion: '1', status: 'succeeded', startedAt: '', args: {},
+    nodes: Object.fromEntries(ids.map((id) => [id, { id, status: 'succeeded', attempts: 1, outputs: [], inputs: id.endsWith('/read') ? [{ workspace: 'req', path: 'spec', version: 1 }] : [] }])),
+    expansions: [{ plannerId: 'plan', at: '', items: [], nodeIds: ['plan/a/l', 'plan/b/task', 'plan/c/sibling'], nodes: [
+      { id: 'plan/a/l', kind: 'loop', title: '', needs: [], body: [
+        { id: 'read', kind: 'script', title: '', needs: [] }, { id: 'after', kind: 'script', title: '', needs: ['read'] },
+      ] },
+      { id: 'plan/b/task', kind: 'script', title: '', needs: ['plan/a/l'] },
+      { id: 'plan/c/sibling', kind: 'script', title: '', needs: [] },
+    ] }],
+  }
+  const old = [{ id: 'plan', needs: [] }, { id: 'after', needs: ['plan'] }, { id: 'plan/b/task', needs: ['plan/c/sibling'] }]
+  expect(new Set(propagateStale(state, old, { workspace: 'req', path: 'spec', version: 2 }))).toEqual(new Set(['plan/a/l/read', 'plan/a/l/after', 'plan/a/l', 'plan/b/task', 'plan', 'after']))
+})

@@ -2,7 +2,7 @@
 
 **按节拍走的 AI 交付流水线。** 需求进来，多个 Agent 按代码定义的 DAG 分工完成澄清、设计、编码、测试、判决修复和准出；每个节点的输入、产物、上下文和判决都落盘、可追溯、可审计、可人工修改后重跑。
 
-> 状态：M0 骨架开发中。设计见 [docs/design](docs/design/README.md)。
+> 状态：M0 骨架与 M1 扩展性第一批已完成（1151 条测试）。设计见 [docs/design](docs/design/README.md)。
 
 ## 它和别的工具有什么不同
 
@@ -13,14 +13,27 @@
 - **多 harness × 多模型**：Claude Code、Codex、DeepSeek Harness 按角色和节点选择，可降级。
 - **流程即代码，画布可视化**：TypeScript 定义 DAG，Web 上实时看运行状态和每个节点的细节。
 
-## 快速开始（开发中）
+## 快速开始
 
 ```bash
 npm install
 npm run build
 npm run demo            # 用 mock harness 跑示例需求：失败 → 判决 → 修复 → 通过
-npm run takt -- serve --project examples/hello-delivery   # 打开 Web 控制台
+npm run takt -- serve --project examples/hello-delivery   # 打开 Web 控制台（默认 http://127.0.0.1:4870）
+npm run takt -- doctor --project examples/hello-delivery  # 检查 harness / 模型 / 插件
 ```
+
+## 支持哪些 harness 和模型
+
+| 类别 | 支持 |
+|---|---|
+| Agent harness（内置适配器） | Claude Code、Codex、DeepSeek Harness、Gemini CLI、Cursor Agent、Qwen Code、Kimi CLI、OpenCode、mock |
+| 任意 CLI（零代码接入） | 在 `takt.config.json` 的 `harnesses` 里声明命令模板与输出映射，例如 Aider、Goose |
+| 内置轻量 Agent（native） | 直连任意 LLM API；写权限在工具层前置校验，bash 默认关闭 |
+| LLM API | OpenAI 兼容（OpenAI、DeepSeek、Kimi、智谱 GLM、通义千问、火山方舟、MiniMax、硅基流动、OpenRouter、Azure、Ollama、vLLM、LM Studio、LiteLLM）、Anthropic 兼容 |
+| harness × 模型 | Claude Code / Codex 可以把模型指到别家 API（如 Claude Code + GLM），按角色或节点配置 |
+
+`takt doctor` 检查每个 harness、provider、模型和插件是否可用；`takt harness ls` / `takt models ls` 查看能力矩阵。扩展方式（插件、能力声明、一致性测试）见 [docs/design/13](docs/design/13-扩展性与生态.md)。
 
 ## 定义一条流水线
 

@@ -113,7 +113,7 @@ describe('buildRunGraph / stageProgress', () => {
 })
 
 describe('summarizeUsage / summarizeRun', () => {
-  it('按节点每次尝试去重流式用量和结束汇总，并保留失败重试的花费', () => {
+  it('只累计完成事件的权威用量，忽略失败尝试和未完成节点的流式记录', () => {
     const events = [
       start(1, 'a'), event(2, 'harness.usage', { inputTokens: 10, outputTokens: 2 }, 'a'),
       event(3, 'harness.usage', { inputTokens: 5, outputTokens: 3 }, 'a'),
@@ -125,17 +125,17 @@ describe('summarizeUsage / summarizeRun', () => {
       event(12, 'harness.usage', { inputTokens: 7, outputTokens: 1 }),
     ]
     const before = JSON.stringify(events)
-    expect(summarizeUsage([...events].reverse())).toEqual({ inputTokens: 112, outputTokens: 24, cachedTokens: 4, costUsd: expect.closeTo(0.6) })
+    expect(summarizeUsage([...events].reverse())).toEqual({ inputTokens: 85, outputTokens: 19, cachedTokens: 4, costUsd: expect.closeTo(0.4) })
     expect(JSON.stringify(events)).toBe(before)
   })
 
-  it('隔离不同运行同名节点以及并发节点，实时运行也返回流式用量', () => {
+  it('跨运行累计完成事件，实时流式用量不提前计入', () => {
     const events = [
       event(1, 'harness.usage', { inputTokens: 10, outputTokens: 1 }, 'a', 'run-1'),
       event(1, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 20, outputTokens: 2 } }, 'a', 'run-2'),
       event(2, 'harness.usage', { inputTokens: 30, outputTokens: 3 }, 'b', 'run-1'),
     ]
-    expect(summarizeUsage(events)).toEqual({ inputTokens: 60, outputTokens: 6, cachedTokens: undefined, costUsd: undefined })
+    expect(summarizeUsage(events)).toEqual({ inputTokens: 20, outputTokens: 2 })
     expect(summarizeUsage([])).toEqual({ inputTokens: 0, outputTokens: 0 })
   })
 
@@ -327,4 +327,57 @@ it('持久化动态定义覆盖占位节点并提供实际依赖与元数据', (
   ])
   expect(graph.nodes.find((entry) => entry.id === 'plan/a/dev')).toMatchObject({ kind: 'agent', title: '实现', role: 'dev', harness: 'codex', stage: 'test' })
   expect(graph.edges).toContainEqual({ from: 'plan/a/dev', to: 'plan/b/review', kind: 'dep' })
+})
+
+it('Expansion.nodes 优先于旧 records，展开节点全限定 ID 与相对 loop body 不重复加前缀', () => {
+  const snapshot = workflow([node('plan', { kind: 'planner', stage: 'test' })])
+  const state = run({ expansions: [
+    { plannerId: 'plan/a/loop/nested', items: [], at: startedAt, nodeIds: ['plan/a/loop/nested/b/dev'], nodes: [
+      node('plan/a/loop/nested/b/dev', { kind: 'agent', title: '嵌套实现', role: 'dev', harness: 'mock', needs: ['plan/a/source'] }),
+    ] },
+    { plannerId: 'plan', items: [], at: startedAt, nodeIds: ['plan/a/source', 'plan/a/loop'], nodes: [
+      node('plan/a/source', { kind: 'agent', title: '新定义', role: 'pm', harness: 'codex' }),
+      node('plan/a/loop', { kind: 'loop', needs: ['plan/a/source'], body: [
+        node('test'), node('judge', { kind: 'judge', needs: ['test'], routes: { product_bug: 'fix' } }),
+        node('fix', { kind: 'agent', needs: ['judge'], role: 'dev' }), node('nested', { kind: 'planner', needs: ['fix'] }),
+      ] }),
+    ] },
+  ] })
+  const graph = buildRunGraph(snapshot, state, [
+    { id: 'plan/a/source', kind: 'script', title: '旧定义', role: 'old', parent: 'wrong', stage: 'wrong', harness: 'old', needs: ['plan/a/loop'] },
+    { id: 'plan/a/loop/fix', kind: 'human', title: '旧子节点', needs: ['plan/a/source'] },
+  ])
+  expect(graph.nodes).toHaveLength(8)
+  expect(graph.nodes.find((entry) => entry.id === 'plan/a/source')).toMatchObject({ kind: 'agent', title: '新定义', role: 'pm', harness: 'codex', parent: 'plan', stage: 'test' })
+  expect(graph.nodes.find((entry) => entry.id === 'plan/a/loop/fix')).toMatchObject({ kind: 'agent', role: 'dev', parent: 'plan/a/loop', stage: 'test' })
+  expect(graph.nodes.find((entry) => entry.id === 'plan/a/loop/nested/b/dev')).toMatchObject({ kind: 'agent', title: '嵌套实现', parent: 'plan/a/loop/nested', stage: 'test' })
+  expect(graph.edges).toEqual(expect.arrayContaining([
+    { from: 'plan/a/source', to: 'plan/a/loop', kind: 'dep' },
+    { from: 'plan/a/loop/test', to: 'plan/a/loop/judge', kind: 'dep' },
+    { from: 'plan/a/loop/judge', to: 'plan/a/loop/fix', kind: 'route', label: 'product_bug' },
+    { from: 'plan/a/loop/judge', to: 'plan/a/loop/fix', kind: 'dep' },
+    { from: 'plan/a/source', to: 'plan/a/loop/nested/b/dev', kind: 'dep' },
+  ]))
+  expect(graph.edges).not.toContainEqual({ from: 'plan/a/loop', to: 'plan/a/source', kind: 'dep' })
+  expect(graph.edges).not.toContainEqual({ from: 'plan/a/source', to: 'plan/a/loop/fix', kind: 'dep' })
+})
+
+it('运行与图按所有完成事件累计 loop/retry，已删除节点仍计入运行总量，空日志不使用 state', () => {
+  const snapshot = workflow([node('loop', { kind: 'loop', body: [node('dev')] })])
+  const state = run({ nodes: { 'loop/dev': runtime('loop/dev', { usage: { inputTokens: 999, outputTokens: 999 } }) } })
+  const events = [
+    event(1, 'node.finished', { status: 'failed', outputs: [], usage: { inputTokens: 10, outputTokens: 2, cachedTokens: 1, costUsd: 0.1 } }, 'loop/dev'),
+    event(2, 'harness.usage', { inputTokens: 1000, outputTokens: 1000 }, 'loop/dev'),
+    event(3, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 20, outputTokens: 3, cachedTokens: 2, costUsd: 0.2 } }, 'loop/dev'),
+    event(4, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 7, outputTokens: 1 } }, 'loop/removed'),
+    event(1, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 888, outputTokens: 888 } }, 'loop/dev', 'other'),
+  ]
+  const before = JSON.stringify(state)
+  expect(summarizeRun(state, events).usage).toEqual({ inputTokens: 37, outputTokens: 6, cachedTokens: 3, costUsd: expect.closeTo(0.3) })
+  expect(buildRunGraph(snapshot, state, [], events).nodes.find((item) => item.id === 'loop/dev')?.usage).toEqual({ inputTokens: 30, outputTokens: 5, cachedTokens: 3, costUsd: expect.closeTo(0.3) })
+  expect(buildRunGraph(snapshot, state, [], events).nodes.some((item) => item.id === 'loop/removed')).toBe(false)
+  expect(summarizeRun(state, []).usage).toEqual({ inputTokens: 0, outputTokens: 0 })
+  expect(buildRunGraph(snapshot, state, [], []).nodes.find((item) => item.id === 'loop/dev')?.usage).toEqual({ inputTokens: 0, outputTokens: 0 })
+  expect(buildRunGraph(snapshot, state).nodes.find((item) => item.id === 'loop/dev')?.usage).toEqual(state.nodes['loop/dev']!.usage)
+  expect(JSON.stringify(state)).toBe(before)
 })

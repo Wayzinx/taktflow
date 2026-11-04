@@ -48,10 +48,12 @@ function snapshotNode(node: NodeDef): SnapshotNode {
       snapshot.allowedRoles = node.allowedRoles
       break
     case 'gate':
-      snapshot.checks = node.checks.map(({ id, kind, title }) => ({ id, kind, title }))
+      snapshot.checks = node.checks.map((check) => ({ id: check.id, kind: check.kind, title: check.title, ...(check.kind === 'rubric' ? { threshold: check.threshold } : {}) }))
       break
     case 'human':
       snapshot.ask = node.ask
+      snapshot.form = node.form
+      snapshot.choices = node.choices
       break
   }
   return snapshot

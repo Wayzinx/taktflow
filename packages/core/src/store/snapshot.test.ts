@@ -49,12 +49,13 @@ describe('snapshotWorkflow', () => {
     expect(snapshot.nodes[2]?.body?.[0]?.maxIterations).toBe(2)
     expect(snapshot.nodes[3]?.checks).toEqual([
       { id: 'cmd', kind: 'command', title: 'Command' }, { id: 'fn', kind: 'function' },
-      { id: 'rubric', kind: 'rubric' },
+      { id: 'rubric', kind: 'rubric', threshold: 80 },
     ])
     expect(snapshot.nodes[4]).toMatchObject({ role: 'judge', target: 'script', harness: 'claude-code',
       routes: { product_bug: 'agent', unknown: 'human' } })
     expect(snapshot.nodes[5]).toMatchObject({ prompt: 'plan tasks', role: 'planner', maxItems: 4, allowedRoles: ['dev'] })
-    expect(snapshot.nodes[6]?.ask).toBe('Approve?')
+    expect(snapshot.nodes[6]).toMatchObject({ ask: 'Approve?', form: 'approve' })
+    expect(snapshot.nodes[6]?.choices).toBeUndefined()
     expect(snapshot.nodes[7]).toEqual({ id: 'subflow', kind: 'subflow', title: 'Subflow', needs: [] })
     const check = (value: unknown): void => {
       expect(typeof value).not.toBe('function')

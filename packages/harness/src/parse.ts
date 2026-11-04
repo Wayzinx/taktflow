@@ -91,3 +91,14 @@ export function promptWithInstructions(req: HarnessRequest): string {
   // Codex/DSH 的 stdin 只有用户消息；这里的前缀不是原生 system role。
   return req.systemAppend ? `${req.systemAppend}\n\n${req.prompt}` : req.prompt
 }
+
+/**
+ * 取 provider.apiKeyEnv 指向的密钥值：req.env 优先于 process.env，与子进程实际继承的环境一致。
+ * 没配 apiKeyEnv 时两者都为空；配了但环境里没有时只有 name，交给调用方报明确错误（不打印值）。
+ */
+export function readProviderApiKey(req: HarnessRequest): { name?: string; value?: string } {
+  const name = req.provider?.apiKeyEnv
+  if (!name) return {}
+  const value = req.env?.[name] ?? process.env[name]
+  return value ? { name, value } : { name }
+}

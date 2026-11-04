@@ -1,40 +1,45 @@
 import type { GraphEdge, GraphNode, RunDetail, StageProgress } from '../api.js'
-import type { RunState, SnapshotNode, WorkflowSnapshot } from '../types.js'
+import type { EventEnvelope, RunState, SnapshotNode, WorkflowSnapshot } from '../types.js'
+import { nodeUsage } from './usage.js'
 import type { RunGraphNode } from '../store/run-graph.js'
 
-export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, records: RunGraphNode[] = []): RunDetail['graph'] {
+export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, records: RunGraphNode[] = [], events?: EventEnvelope[]): RunDetail['graph'] {
+  const usage = events === undefined ? undefined : nodeUsage(events, state.runId)
+  const authoritative = new Set<string>()
   const nodes = new Map<string, GraphNode>()
   const definitions = new Map<string, SnapshotNode>()
   const edges = new Map<string, GraphEdge>()
   const addEdge = (edge: GraphEdge) => {
     if (nodes.has(edge.from) && nodes.has(edge.to)) edges.set(JSON.stringify(edge), edge)
   }
-  const visit = (definitionsInScope: SnapshotNode[], parent?: string, stage?: string) => {
+  const visit = (definitionsInScope: SnapshotNode[], parent?: string, stage?: string, prefix = parent, expanded = false) => {
     for (const definition of definitionsInScope) {
-      const id = parent ? `${parent}/${definition.id}` : definition.id
+      const id = prefix ? `${prefix}/${definition.id}` : definition.id
       const runtime = state.nodes[id]
       const node: GraphNode = {
         id, kind: definition.kind, title: definition.title,
         stage: definition.stage ?? stage, parent, role: definition.role,
         harness: runtime?.sessionRef?.harness ?? definition.harness,
         status: runtime?.status ?? 'pending', attempts: runtime?.attempts ?? 0,
-        iteration: runtime?.iteration, usage: runtime?.usage,
+        iteration: runtime?.iteration, usage: usage === undefined ? runtime?.usage : usage.get(id) ?? { inputTokens: 0, outputTokens: 0 },
       }
       nodes.set(id, node)
       definitions.set(id, definition)
-      if (definition.body) visit(definition.body, id, node.stage)
+      if (expanded) authoritative.add(id)
+      if (definition.body) visit(definition.body, id, node.stage, id, expanded)
     }
   }
   visit(snapshot.nodes)
 
-  // Expansion 只存节点 ID，无法还原 kind/title/needs；subflow 是展示占位，不代表实际执行类型。
+  // 新记录保留完整定义；旧记录只有 ID 时仍使用占位节点。
   const pending = [...state.expansions]
   while (pending.length) {
     const index = pending.findIndex((expansion) => nodes.has(expansion.plannerId))
     if (index < 0) break
     const expansion = pending.splice(index, 1)[0]!
     const planner = nodes.get(expansion.plannerId)!
-    for (const id of expansion.nodeIds) {
+    visit(expansion.nodes ?? [], planner.id, planner.stage, '', true)
+    for (const id of new Set([...expansion.nodeIds, ...(expansion.nodes ?? []).map((node) => node.id)])) {
       if (id === planner.id) continue
       if (!nodes.has(id)) {
         const runtime = state.nodes[id]
@@ -42,7 +47,7 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, recor
           id, kind: 'subflow', title: `${id}（展开节点，定义未持久化）`,
           parent: planner.id, stage: planner.stage,
           status: runtime?.status ?? 'pending', attempts: runtime?.attempts ?? 0,
-          iteration: runtime?.iteration, usage: runtime?.usage,
+          iteration: runtime?.iteration, usage: usage === undefined ? runtime?.usage : usage.get(id) ?? { inputTokens: 0, outputTokens: 0 },
           harness: runtime?.sessionRef?.harness,
         })
       }
@@ -51,6 +56,7 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, recor
   }
 
   for (const record of records) {
+    if (authoritative.has(record.id)) continue
     const existing = nodes.get(record.id)
     const runtime = state.nodes[record.id]
     nodes.set(record.id, {
@@ -60,7 +66,7 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, recor
       role: record.role ?? existing?.role,
       harness: runtime?.sessionRef?.harness ?? record.harness ?? existing?.harness,
       status: runtime?.status ?? 'pending', attempts: runtime?.attempts ?? 0,
-      iteration: runtime?.iteration, usage: runtime?.usage,
+      iteration: runtime?.iteration, usage: usage === undefined ? runtime?.usage : usage.get(record.id) ?? { inputTokens: 0, outputTokens: 0 },
     })
   }
   // 记录可能乱序，等所有父节点存在后继承阶段。
@@ -74,6 +80,7 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, recor
   }
   const recorded = new Map(records.map((record) => [record.id, record]))
   for (const record of records) {
+    if (authoritative.has(record.id)) continue
     for (const from of record.needs) addEdge({ from, to: record.id, kind: 'dep' })
     if (record.parent && nodes.get(record.parent)?.kind === 'planner') addEdge({ from: record.parent, to: record.id, kind: 'expand' })
   }
@@ -89,7 +96,7 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, recor
   }
   for (const [id, definition] of definitions) {
     const parent = nodes.get(id)?.parent
-    for (const dependency of recorded.has(id) ? [] : definition.needs) {
+    for (const dependency of recorded.has(id) && !authoritative.has(id) ? [] : definition.needs) {
       const from = resolve(dependency, parent)
       if (from) addEdge({ from, to: id, kind: 'dep' })
     }

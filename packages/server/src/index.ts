@@ -1,11 +1,12 @@
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { openProject, type AttentionItem } from '@taktflow/core'
+import type { CatalogCallbacks } from './catalog.js'
 import { fail, HttpError, json } from './http.js'
 import { routes, STREAMING } from './routes.js'
 import { staticFile } from './static.js'
 
-export interface ServerOptions {
+export interface ServerOptions extends CatalogCallbacks {
   projectDir: string
   port?: number
   host?: string
@@ -18,7 +19,7 @@ export interface RunningServer { url: string; close(): Promise<void> }
 export async function createServer(options: ServerOptions): Promise<RunningServer> {
   const stores = await openProject(options.projectDir)
   const connections = new Set<() => void>()
-  const router = routes(connections, options.onAnswer)
+  const router = routes(connections, options.onAnswer, options)
   let closing = false
   const server = httpServer((request, response) => {
     void (async () => {

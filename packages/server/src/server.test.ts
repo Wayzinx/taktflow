@@ -11,7 +11,7 @@ import {
   type RequirementMetrics, type RequirementSummary, type RunDetail, type RunState, type RunSummary,
   type TraceGraph, type WorkflowDefinition,
 } from '@taktflow/core'
-import { createServer } from './index.js'
+import { createServer, type ServerOptions } from './index.js'
 
 type Cleanup = () => Promise<void>
 const cleanups: Cleanup[] = []
@@ -30,6 +30,8 @@ async function startServer(options: {
   projectDir: string
   webDir?: string
   onAnswer?: (item: AttentionItem) => void
+  getHarnesses?: ServerOptions['getHarnesses']
+  getModels?: ServerOptions['getModels']
 }): Promise<{ url: string; close: () => Promise<void> }> {
   const server = await createServer({ ...options, port: 0, host: '127.0.0.1' })
   cleanups.push(() => server.close())
@@ -309,37 +311,29 @@ it('GET 追溯图与度量', async () => {
   expect(metrics.body.acCoverage?.map((c) => c.ac)).toContain('AC-1')
 })
 
-it('GET /api/harnesses 与 /api/models 返回能力矩阵与模型别名', async () => {
+it('GET /api/harnesses 与 /api/models 透传注入的能力矩阵与模型别名', async () => {
   const fixture = await makeFixture()
-  const configFile = join(fixture.root, 'takt.config.json')
-  const config = JSON.parse(await readFile(configFile, 'utf8')) as Record<string, unknown>
-  config.providers = {
-    demo: { protocol: 'openai-chat', baseURL: 'http://127.0.0.1:9/v1', apiKeyEnv: 'TAKT_SERVER_TEST_KEY' },
-  }
-  config.models = { fast: { provider: 'demo', id: 'demo-fast', contextWindow: 128000, price: { input: 1, output: 2 } } }
-  await writeFile(configFile, JSON.stringify(config, null, 2))
-  delete process.env.TAKT_SERVER_TEST_KEY
+  const harnessRows: HarnessInfo[] = [{ id: 'test', displayName: 'Test', source: 'plugin', available: true, capabilities: { usage: true }, roles: ['dev'] }]
+  const modelRows: ModelInfo[] = [{ alias: 'fast', provider: 'demo', protocol: 'openai-chat', id: 'demo-fast', contextWindow: 128000, keyPresent: false }]
+  const server = await startServer({ projectDir: fixture.root, getHarnesses: async () => harnessRows, getModels: async () => modelRows })
+  expect(await getJson<HarnessInfo[]>(`${server.url}/api/harnesses`)).toEqual({ status: 200, body: harnessRows })
+  expect(await getJson<ModelInfo[]>(`${server.url}/api/models`)).toEqual({ status: 200, body: modelRows })
+})
 
+it('节点 HTTP 详情从持久化快照返回 rubric checks.threshold', async () => {
+  const fixture = await makeFixture()
+  const state = (await fixture.stores.runs.get(fixture.runId))!
+  const snapshot = (await fixture.stores.runs.getWorkflow(fixture.runId))!
+  const checks = [{ id: 'quality', kind: 'rubric' as const, title: '质量', threshold: 87 }]
+  const gate = snapshot.nodes.find((node) => node.id === 'verify')!
+  gate.kind = 'gate'
+  gate.checks = checks
+  await fixture.stores.runs.create({ ...state, runId: 'run-threshold' }, snapshot)
   const server = await startServer({ projectDir: fixture.root })
-  const harnesses = await getJson<HarnessInfo[]>(`${server.url}/api/harnesses`)
-  expect(harnesses.status).toBe(200)
-  expect(Array.isArray(harnesses.body)).toBe(true)
-  for (const harness of harnesses.body) {
-    expect(typeof harness.id).toBe('string')
-    expect(typeof harness.displayName).toBe('string')
-    expect(typeof harness.available).toBe('boolean')
-    expect(typeof harness.capabilities).toBe('object')
-    expect(Array.isArray(harness.roles)).toBe(true)
-  }
-
-  const models = await getJson<ModelInfo[]>(`${server.url}/api/models`)
-  expect(models.status).toBe(200)
-  expect(models.body).toEqual(expect.arrayContaining([
-    expect.objectContaining({
-      alias: 'fast', provider: 'demo', protocol: 'openai-chat', id: 'demo-fast',
-      contextWindow: 128000, keyPresent: false,
-    }),
-  ]))
+  const response = await getJson<NodeDetail>(`${server.url}/api/runs/run-threshold/nodes/verify`)
+  expect(response.status).toBe(200)
+  expect(response.body.kind).toBe('gate')
+  expect(response.body.checks).toEqual(checks)
 })
 
 it('未知 /api 路由 404，跨域响应带 CORS 头', async () => {
@@ -753,4 +747,62 @@ it('动态 prompt 经引擎和 HTTP 读回实际文本', async () => {
   expect(detail.body.events.some((event) =>
     event.type === 'harness.message' && (event.data as { role: string }).role === 'assistant'
     && (event.data as { text: string }).text === '收到，开始修复')).toBe(true)
+})
+
+it('loop 多轮用量在列表、运行图、需求详情和 metrics 一致，历史删除节点仍计入总量', async () => {
+  const { root, stores, requirementId, runId } = await makeFixture()
+  const actor: Actor = { type: 'system', id: 'usage-test' }
+  const state = (await stores.runs.get(runId))!
+  state.nodes['loop/run']!.usage = { inputTokens: 999, outputTokens: 999 }
+  state.nodes['loop/run']!.iteration = 2
+  await stores.runs.save(state)
+  const before = await readFile(join(stores.taktDir, 'runs', runId, 'state.json'), 'utf8')
+  for (const iteration of [1, 2]) {
+    await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'node.started', data: { attempt: 1, iteration } })
+    await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'harness.usage', data: { inputTokens: 10000, outputTokens: 10000 } })
+    await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'node.finished', data: { status: 'succeeded', outputs: [], usage: { inputTokens: 10 * iteration, outputTokens: 2 * iteration, cachedTokens: iteration, costUsd: 0.25 * iteration } } })
+  }
+  const server = await startServer({ projectDir: root })
+  const total = { inputTokens: 130, outputTokens: 26, cachedTokens: 3, costUsd: 0.75 }
+  const assertTotals = async (expected: typeof total) => {
+    const paths = [`/api/runs?requirement=${requirementId}`, `/api/requirements/${requirementId}`, `/api/requirements/${requirementId}/metrics`, '/api/project']
+    const [runs, requirement, metrics, project] = await Promise.all(paths.map(async (path) => {
+      const response = await fetch(server.url + path)
+      expect(response.status).toBe(200)
+      return response.json()
+    }))
+    expect(runs[0].usage).toEqual(expected)
+    expect(requirement.usage).toEqual(expected)
+    expect(requirement.runs[0].usage).toEqual(expected)
+    expect(metrics.usage).toEqual(expected)
+    expect(project.totals.usage).toEqual(expected)
+  }
+  await assertTotals(total)
+  const detail = await getJson<RunDetail>(`${server.url}/api/runs/${runId}`)
+  expect(detail.status).toBe(200)
+  expect(detail.body.graph.nodes.find((node) => node.id === 'loop/run')?.usage).toEqual({ inputTokens: 30, outputTokens: 6, cachedTokens: 3, costUsd: 0.75 })
+  expect(detail.body.graph.nodes.reduce((sum, node) => sum + (node.usage?.inputTokens ?? 0), 0)).toBe(total.inputTokens)
+  expect(detail.body.stages).toEqual([
+    { id: 'dev', title: '研发', status: 'done', done: 1, total: 1 },
+    { id: 'test', title: '测试', status: 'done', done: 3, total: 3 },
+  ])
+  expect(detail.body.run).toEqual(state)
+  await stores.events.append(runId, { actor, nodeId: 'loop/removed', type: 'node.finished', data: { status: 'succeeded', outputs: [], usage: { inputTokens: 7, outputTokens: 1 } } })
+  await assertTotals({ ...total, inputTokens: 137, outputTokens: 27 })
+  const reloaded = await getJson<RunDetail>(`${server.url}/api/runs/${runId}`)
+  expect(reloaded.body.run).toEqual(state)
+  expect(reloaded.body.graph.nodes.some((node) => node.id === 'loop/removed')).toBe(false)
+  expect(await readFile(join(stores.taktDir, 'runs', runId, 'state.json'), 'utf8')).toBe(before)
+})
+
+it('空日志通过 HTTP 返回零用量，不把持久 state 的最后一轮用量当总量', async () => {
+  const { root, stores, runId } = await makeFixture()
+  const state = (await stores.runs.get(runId))!
+  await stores.runs.create({ ...state, runId: 'run-no-events' }, (await stores.runs.getWorkflow(runId))!)
+  const server = await startServer({ projectDir: root })
+  const runs = await getJson<RunSummary[]>(`${server.url}/api/runs`)
+  expect(runs.body.find((run) => run.runId === 'run-no-events')?.usage).toEqual({ inputTokens: 0, outputTokens: 0 })
+  const detail = await getJson<RunDetail>(`${server.url}/api/runs/run-no-events`)
+  expect(detail.body.graph.nodes.every((node) => node.usage?.inputTokens === 0 && node.usage.outputTokens === 0)).toBe(true)
+  expect(detail.body.run.nodes['spec-agent']!.usage).toEqual(state.nodes['spec-agent']!.usage)
 })

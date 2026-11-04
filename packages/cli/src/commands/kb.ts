@@ -1,7 +1,6 @@
-import { knowledgeFromConfig } from '../knowledge.js'
 import { createKnowledgeRouter, type KnowledgeIntent, type KnowledgeQuery } from '@taktflow/core'
 import { createPrinter } from '../output.js'
-import { openStores } from '../project.js'
+import { openStores, loadProjectPlugins, mergeKnowledge } from '../project.js'
 import { UsageError } from '../args.js'
 
 const INTENTS = new Set<KnowledgeIntent>(['fact', 'symbol', 'impact', 'business', 'history', 'schema'])
@@ -14,7 +13,7 @@ export async function runKbQuery(project: string | undefined, text: string, inte
   }
   const stores = await openStores(project)
   const printer = createPrinter(json)
-  const sources = knowledgeFromConfig(stores)
+  const sources = mergeKnowledge(stores, await loadProjectPlugins(stores))
   const query: KnowledgeQuery = parsed === undefined ? { text } : { text, intent: parsed }
   const { hits } = await createKnowledgeRouter(sources).query(query)
   if (json) {

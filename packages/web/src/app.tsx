@@ -9,6 +9,7 @@ import { NotFoundPage, PlaceholderPage } from './pages/placeholder'
 import { RequirementPage } from './pages/requirement'
 import { RequirementsPage } from './pages/requirements'
 import { RunPage } from './pages/run'
+import { SettingsPage } from './pages/settings'
 
 function Routes() {
   const { path } = useLocation()
@@ -16,7 +17,7 @@ function Routes() {
   if (path === '/requirements') return <RequirementsPage />
   if (path === '/attention') return <AttentionPage />
   if (path === '/knowledge') return <PlaceholderPage kind="knowledge" />
-  if (path === '/settings') return <PlaceholderPage kind="settings" />
+  if (path === '/settings') return <SettingsPage />
   const req = matchPath('/req/:id', path)
   if (req) return <RequirementPage key={req.id} id={req.id!} />
   const run = matchPath('/run/:runId', path)

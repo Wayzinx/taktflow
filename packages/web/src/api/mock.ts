@@ -14,7 +14,8 @@ import type {
   Usage,
 } from '@taktflow/core'
 import { addUsage, createMockDb, STAGES, ZERO, type MockRun } from './mock-data'
-import type { DataSource } from './source'
+import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
+import type { DataSource, NodeView } from './source'
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const LOADED = Date.now()
@@ -40,6 +41,7 @@ export function createMockSource(): DataSource {
     return graphNodes(run).reduce<Usage>((acc, n) => addUsage(acc, n.usage), ZERO)
   }
 
+  /** 与 core 的 stageProgress（insights/graph.ts）同一套规则：演示数据扮演 server，web 页面本身不再推导。 */
   function stageProgress(run: MockRun | undefined): StageProgress[] {
     if (!run) return []
     return STAGES.map((s) => {
@@ -47,11 +49,10 @@ export function createMockSource(): DataSource {
       const done = ns.filter((n) => n.status === 'succeeded' || n.status === 'skipped').length
       const has = (...st: GraphNode['status'][]) => ns.some((n) => st.includes(n.status))
       let status: StageStatus = 'todo'
-      if (has('failed', 'blocked')) status = 'failed'
+      if (has('failed', 'blocked', 'cancelled')) status = 'failed'
       else if (has('waiting_human')) status = 'waiting_human'
-      else if (has('running')) status = 'running'
-      else if (ns.length && done === ns.length) status = 'done'
-      else if (done > 0 || has('stale', 'cancelled')) status = run.state.status === 'cancelled' ? 'failed' : 'running'
+      else if (ns.length > 0 && done === ns.length) status = 'done'
+      else if (done > 0 || has('running', 'ready', 'stale')) status = 'running'
       return { ...s, status, done, total: ns.length }
     })
   }
@@ -193,7 +194,7 @@ export function createMockSource(): DataSource {
     run(runId) {
       const run = getRun(runId)
       if (!run) return fail(`运行 ${runId} 不存在`)
-      return delay({ run: run.state, workflow: run.workflow, graph: { nodes: graphNodes(run), edges: run.graph.edges } })
+      return delay({ run: run.state, workflow: run.workflow, stages: stageProgress(run), graph: { nodes: graphNodes(run), edges: run.graph.edges } })
     },
     events(runId, opts = {}) {
       const run = getRun(runId)
@@ -209,7 +210,7 @@ export function createMockSource(): DataSource {
       const verdicts = events.filter((e) => e.type === 'judge.verdict').flatMap((e) => (e.data as { verdicts: JudgeVerdict[] }).verdicts)
       const gateEvent = [...events].reverse().find((e) => e.type === 'gate.result')
       const records = db.artifacts.get(run.state.requirementId) ?? []
-      const detail: NodeDetail = {
+      const detail: NodeView = {
         state: { ...state, usage: liveUsage(run, nodeId, state.usage) },
         kind: t.kind,
         title: t.title,
@@ -221,6 +222,7 @@ export function createMockSource(): DataSource {
         context: run.context.get(nodeId) ?? { snapshots: [], compactions: [] },
         verdicts: t.kind === 'judge' ? verdicts : undefined,
         gate: gateEvent ? (gateEvent.data as NodeDetail['gate']) : undefined,
+        checks: t.checks,
         events,
       }
       return delay(detail)
@@ -249,6 +251,8 @@ export function createMockSource(): DataSource {
       }
       return delay(item, 160)
     },
+    harnesses: () => delay(MOCK_HARNESSES, 140),
+    models: () => delay(MOCK_MODELS, 140),
     subscribe(runId, onEvent) {
       const run = getRun(runId)
       if (!run || run.live.length === 0) return () => {}
