@@ -1,0 +1,132 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import { isUtf8 } from 'node:buffer'
+import { buildRunGraph, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
+import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
+import { harnesses, models } from './catalog.js'
+import { nodeDetail, overview, requirement, run, summaries, summary, summarizeRun, workflow } from './read-model.js'
+import { createRouter } from './router.js'
+import { markStale, serialize } from './stale.js'
+import { stream } from './stream.js'
+
+export interface RequestContext {
+  stores: ProjectStores
+  request: IncomingMessage
+  response: ServerResponse
+  url: URL
+  params: Record<string, string>
+}
+
+export type Handler = (context: RequestContext) => Promise<unknown> | unknown
+export const STREAMING = Symbol('streaming')
+
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>) {
+  const router = createRouter<Handler>()
+  const add = router.add
+  add('GET', '/api/project', ({ stores }) => overview(stores))
+  add('GET', '/api/requirements', ({ stores }) => summaries(stores))
+  add('GET', '/api/requirements/:id', async ({ stores, params }) => {
+    const item = await requirement(stores, params.id!)
+    const [info, artifacts, runs] = await Promise.all([summary(stores, item), stores.workspaces.listArtifacts(item.id), stores.runs.list({ requirementId: item.id })])
+    return { ...info, artifacts, runs: runs.map(summarizeRun) }
+  })
+  add('GET', '/api/requirements/:id/artifacts', async ({ stores, params }) => {
+    await requirement(stores, params.id!)
+    return stores.workspaces.listArtifacts(params.id!)
+  })
+  add('GET', '/api/requirements/:id/artifact', async ({ stores, params, url }): Promise<ArtifactContent> => {
+    await requirement(stores, params.id!)
+    const path = artifactPath(url.searchParams.get('path'))
+    const requestedVersion = integer(url.searchParams.get('version'), 'version', 1)
+    const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+    const version = requestedVersion ?? record?.versions.at(-1)?.version
+    if (!record || version === undefined || !record.versions.some((item) => item.version === version)) throw new HttpError(404, '产物或版本不存在')
+    const content = await stores.workspaces.readArtifact({ workspace: params.id!, path, version })
+    if (!content) throw new HttpError(404, '产物内容不存在')
+    const encoding = isUtf8(content) && !content.includes(0) ? 'utf8' : 'base64'
+    return { path, version, mediaType: record.mediaType, content: content.toString(encoding), encoding }
+  })
+  add('PUT', '/api/requirements/:id/artifact', async ({ stores, params, url, request }) => {
+    await requirement(stores, params.id!)
+    const path = artifactPath(url.searchParams.get('path'))
+    const input = await body(request)
+    const content = text(input.content, 'content', true)
+    const reason = text(input.reason, 'reason')
+    return serialize(stores.projectDir, async () => {
+      const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+      const author = actor(request)
+      const ref = await stores.workspaces.writeArtifact({ ref: { workspace: params.id!, path }, content, reason, author, kind: record?.kind ?? 'other', title: record?.title, tags: record?.tags })
+      const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markStale(stores, ref, author)
+      return { version: ref.version, staleNodes }
+    })
+  })
+  add('GET', '/api/requirements/:id/comments', async ({ stores, params, url }) => {
+    await requirement(stores, params.id!)
+    const path = url.searchParams.has('path') ? artifactPath(url.searchParams.get('path')) : undefined
+    return stores.workspaces.listComments(params.id!, path)
+  })
+  add('POST', '/api/requirements/:id/comments', async ({ stores, params, request }) => {
+    await requirement(stores, params.id!)
+    const input = await body(request)
+    const path = artifactPath(input.path)
+    if (typeof input.version !== 'number' || !Number.isSafeInteger(input.version) || input.version < 1) throw new HttpError(400, 'version 必须是正整数')
+    const version = input.version
+    const content = text(input.body, 'body')
+    const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+    if (!record?.versions.some((item) => item.version === version)) throw new HttpError(404, '产物或版本不存在')
+    return stores.workspaces.addComment(params.id!, { path, version, body: content, author: actor(request) })
+  })
+  add('GET', '/api/requirements/:id/trace', async ({ stores, params }) => {
+    await requirement(stores, params.id!)
+    return createInsights(stores).traceGraph(params.id!)
+  })
+  add('GET', '/api/requirements/:id/metrics', async ({ stores, params }) => {
+    await requirement(stores, params.id!)
+    return createInsights(stores).metrics(params.id!)
+  })
+  add('GET', '/api/runs', ({ stores, url }) => {
+    const id = url.searchParams.get('requirement')
+    return stores.runs.list(id === null ? undefined : { requirementId: safeId(id) }).then((runs) => runs.map(summarizeRun))
+  })
+  add('GET', '/api/runs/:runId', async ({ stores, params }) => {
+    const state = await run(stores, params.runId!)
+    const snapshot = await workflow(stores, state.runId)
+    return { run: state, workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph: buildRunGraph(snapshot, state) }
+  })
+  add('GET', '/api/runs/:runId/events', async ({ stores, params, url }) => {
+    await run(stores, params.runId!)
+    const nodeId = url.searchParams.has('node') ? relativePath(url.searchParams.get('node')) : undefined
+    return stores.events.read(params.runId!, { afterSeq: integer(url.searchParams.get('after'), 'after'), nodeId })
+  })
+  add('GET', '/api/runs/:runId/stream', async ({ stores, params, url, response, request }) => {
+    await run(stores, params.runId!)
+    const cursor = url.searchParams.get('after') ?? (typeof request.headers['last-event-id'] === 'string' ? request.headers['last-event-id'] : null)
+    await stream(stores.events, params.runId!, integer(cursor, 'after') ?? 0, response, connections)
+    return STREAMING
+  })
+  add('GET', '/api/runs/:runId/nodes/:nodeId', ({ stores, params }) => nodeDetail(stores, params.runId!, params.nodeId!))
+  add('GET', '/api/runs/:runId/audit', async ({ stores, params }) => {
+    await run(stores, params.runId!)
+    return stores.events.verify(params.runId!)
+  })
+  add('GET', '/api/attention', ({ stores, url }) => {
+    const pending = url.searchParams.get('pending')
+    if (pending !== null && pending !== '0' && pending !== '1') throw new HttpError(400, 'pending 必须是 0 或 1')
+    return stores.attention.list({ pending: pending === '1' })
+  })
+  add('POST', '/api/attention/:requestId', async ({ stores, params, request }) => {
+    const input = await body(request)
+    const decision = input.decision === undefined ? undefined : text(input.decision, 'decision')
+    const answer = input.answer === undefined ? undefined : text(input.answer, 'answer')
+    if (decision === undefined && answer === undefined) throw new HttpError(400, 'decision 或 answer 至少填写一项')
+    const item = await serialize(stores.projectDir, async () => {
+      const current = (await stores.attention.list()).find((item) => item.requestId === params.requestId)
+      if (!current) throw new HttpError(404, '待办不存在')
+      return stores.attention.answer(current.requestId, { decision, answer, by: actor(request) })
+    })
+    await onAnswer?.(item)
+    return item
+  })
+  add('GET', '/api/harnesses', ({ stores }) => harnesses(stores))
+  add('GET', '/api/models', ({ stores }) => models(stores))
+  return router
+}

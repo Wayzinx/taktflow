@@ -147,7 +147,10 @@ export interface OutputSpec {
 /** 选哪个 harness 和模型；fallback 按顺序尝试。 */
 export interface HarnessSelector {
   harness: string
+  /** 模型：TaktConfig.models 里的别名，或 harness 认识的原始模型名。 */
   model?: string
+  /** 把模型指到另一家 LLM API（TaktConfig.providers 的 id）；harness 必须声明 customProvider。 */
+  provider?: string
   effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   fallback?: HarnessSelector[]
 }
@@ -548,6 +551,10 @@ export interface HarnessRequest {
   timeoutMs?: number
   /** 要求最终输出满足的 JSON Schema（harness 支持时透传，不支持时由适配器做提取 + 校验）。 */
   resultSchema?: Record<string, unknown>
+  /** 把模型指到另一家 LLM API：引擎已把模型别名解析成厂商模型 ID（放在 model），这里给连接信息；适配器负责翻译成该 harness 的配置。 */
+  provider?: { id: string } & ProviderConfig
+  /** native harness 的工具约束：写权限（glob，相对 cwd）与是否允许 bash。 */
+  tools?: { writeScope?: string[]; allowBash?: boolean }
   signal?: AbortSignal
 }
 
@@ -570,12 +577,132 @@ export interface HarnessResult {
   transcriptPath?: string
 }
 
+/** harness 能力声明：引擎据此降级（见 docs/design/13-扩展性与生态.md）。缺省视为全部 false。 */
+export interface HarnessCapabilities {
+  resume?: boolean
+  structuredOutput?: boolean
+  toolEvents?: boolean
+  usage?: boolean
+  cost?: boolean
+  compactionEvents?: boolean
+  customProvider?: boolean
+  sandbox?: boolean
+  mcp?: boolean
+}
+
 export interface HarnessAdapter {
   /** claude-code / codex / dsh / mock …… */
   id: string
   displayName: string
+  capabilities?: HarnessCapabilities
   available(): Promise<{ ok: boolean; reason?: string }>
   run(req: HarnessRequest, onEvent: (e: HarnessEvent) => void): Promise<HarnessResult>
+}
+
+/** 声明式 CLI 适配：任何能非交互执行的 Agent CLI，配置即可接入（kind: 'cli'）。 */
+export interface CliHarnessConfig {
+  id: string
+  kind: 'cli'
+  displayName?: string
+  /** 命令模板，可用占位符：{{prompt}} {{promptFile}} {{cwd}} {{model}} {{sessionId}}。 */
+  command: string[]
+  /** prompt 传入方式：stdin / 参数（{{prompt}}）/ 文件（{{promptFile}}）。 */
+  promptVia?: 'stdin' | 'arg' | 'file'
+  model?: { flag?: string; env?: string }
+  resume?: { args: string[] }
+  env?: Record<string, string>
+  output: {
+    format: 'text' | 'jsonl'
+    /** jsonl 时的字段映射（点路径），例如 { type: 'type', text: 'message.content', sessionId: 'session_id' }。 */
+    events?: { type?: string; text?: string; tool?: string; toolInput?: string; sessionId?: string; inputTokens?: string; outputTokens?: string; final?: { field: string; equals: string } }
+  }
+  /** 探测可用性的命令，退出码 0 即可用。 */
+  available?: string[]
+  capabilities?: HarnessCapabilities
+}
+
+// ============================================================ LLM API（ModelProvider）
+
+export type ProviderProtocol = 'openai-chat' | 'openai-responses' | 'anthropic-messages' | 'gemini' | (string & {})
+
+export interface ProviderConfig {
+  protocol: ProviderProtocol
+  baseURL?: string
+  /** 只写环境变量名，不写密钥。 */
+  apiKeyEnv?: string
+  headers?: Record<string, string>
+  /** 厂商预设名（deepseek / moonshot / zhipu / dashscope / ark / openrouter / ollama …），提供默认 baseURL。 */
+  preset?: string
+}
+
+export interface ModelConfig {
+  provider: string
+  /** 厂商侧的模型 ID。 */
+  id: string
+  contextWindow?: number
+  /** 每百万 token 的价格（美元），用于成本统计。 */
+  price?: { input: number; output: number; cachedInput?: number }
+}
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool'
+  content: string
+  toolCallId?: string
+  toolCalls?: ToolCall[]
+}
+
+export interface ToolCall {
+  id: string
+  name: string
+  /** JSON 字符串。 */
+  arguments: string
+}
+
+export interface ToolSpec {
+  name: string
+  description: string
+  /** JSON Schema。 */
+  parameters: Record<string, unknown>
+}
+
+export interface ChatRequest {
+  model: string
+  messages: ChatMessage[]
+  tools?: ToolSpec[]
+  /** 要求输出满足的 JSON Schema（协议支持时原生透传）。 */
+  responseSchema?: Record<string, unknown>
+  maxOutputTokens?: number
+  temperature?: number
+  signal?: AbortSignal
+}
+
+export interface ChatResponse {
+  message: ChatMessage
+  stopReason: 'end' | 'tool_calls' | 'length' | 'error'
+  usage?: Usage
+}
+
+/** 一种 LLM API 协议的客户端。native harness 用它跑 agent loop。 */
+export interface ModelProvider {
+  id: string
+  protocol: ProviderProtocol
+  chat(req: ChatRequest): Promise<ChatResponse>
+  /** 探测：密钥是否存在、地址是否可达。 */
+  available(): Promise<{ ok: boolean; reason?: string }>
+}
+
+// ============================================================ 插件
+
+/** 插件：npm 包或 .takt/plugins/*.ts 的默认导出。apiVersion 主版本不匹配时拒绝加载。 */
+export interface TaktPlugin {
+  name: string
+  apiVersion: 1
+  harnesses?: Array<HarnessAdapter | ((ctx: { config: TaktConfig; projectDir: string }) => HarnessAdapter)>
+  providers?: Record<string, (config: ProviderConfig) => ModelProvider>
+  knowledge?: Array<(ctx: { projectDir: string; options?: Record<string, unknown> }) => KnowledgeSource>
+  workflows?: WorkflowDefinition[]
+  /** 角色档案：role → markdown 全文（含 frontmatter）。 */
+  roles?: Record<string, string>
 }
 
 // ============================================================ 角色（子 Agent）
@@ -670,4 +797,12 @@ export interface TaktConfig {
   knowledge?: Array<{ id: string; kind: string; options?: Record<string, unknown> }>
   /** 上下文预算（token），超过即在账本里标红并触发策略。 */
   contextBudgetTokens?: number
+  /** 插件：npm 包名或相对路径。 */
+  plugins?: string[]
+  /** 额外注册的 harness（声明式 CLI 适配等）。 */
+  harnesses?: CliHarnessConfig[]
+  /** LLM API 提供方：id → 配置。 */
+  providers?: Record<string, ProviderConfig>
+  /** 模型别名：别名 → 配置。 */
+  models?: Record<string, ModelConfig>
 }

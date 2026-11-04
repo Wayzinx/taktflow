@@ -1,0 +1,99 @@
+import { buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
+import { HttpError, relativePath, safeId } from './http.js'
+
+export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
+  const value = await stores.workspaces.getRequirement(safeId(id))
+  if (!value) throw new HttpError(404, '需求不存在')
+  return value
+}
+
+export async function run(stores: ProjectStores, id: string): Promise<RunState> {
+  const value = await stores.runs.get(safeId(id))
+  if (!value) throw new HttpError(404, '运行不存在')
+  return value
+}
+
+export async function workflow(stores: ProjectStores, id: string): Promise<WorkflowSnapshot> {
+  const value = await stores.runs.getWorkflow(id)
+  if (!value) throw new Error(`运行 ${id} 缺少 workflow 快照`)
+  return value
+}
+
+export async function summary(stores: ProjectStores, item: Requirement): Promise<RequirementSummary> {
+  const [runs, attention, metrics] = await Promise.all([
+    stores.runs.list({ requirementId: item.id }),
+    stores.attention.list({ pending: true, requirementId: item.id }),
+    createInsights(stores).metrics(item.id),
+  ])
+  const latest = runs.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.runId.localeCompare(b.runId)).at(-1)
+  return { ...item, stages: latest ? stageProgress(await workflow(stores, latest.runId), latest) : [], latestRunId: latest?.runId, pendingAttention: attention.length, usage: metrics.usage }
+}
+
+export async function summaries(stores: ProjectStores): Promise<RequirementSummary[]> {
+  return Promise.all((await stores.workspaces.listRequirements()).map((item) => summary(stores, item)))
+}
+
+export async function overview(stores: ProjectStores): Promise<ProjectOverview> {
+  const [requirements, attention, runs] = await Promise.all([summaries(stores), stores.attention.list({ pending: true }), stores.runs.list()])
+  const usage = { inputTokens: 0, outputTokens: 0 } as ProjectOverview['totals']['usage']
+  for (const item of requirements) {
+    usage.inputTokens += item.usage.inputTokens
+    usage.outputTokens += item.usage.outputTokens
+    if (item.usage.cachedTokens !== undefined) usage.cachedTokens = (usage.cachedTokens ?? 0) + item.usage.cachedTokens
+    if (item.usage.costUsd !== undefined) usage.costUsd = (usage.costUsd ?? 0) + item.usage.costUsd
+  }
+  return { ...stores.config.project, requirements, attention, totals: { requirements: requirements.length, active: requirements.filter((r) => r.status === 'active').length, delivered: requirements.filter((r) => r.status === 'delivered').length, blocked: requirements.filter((r) => r.status === 'blocked').length, runs: runs.length, usage } }
+}
+
+function definitions(nodes: SnapshotNode[], prefix = ''): Map<string, SnapshotNode> {
+  const result = new Map<string, SnapshotNode>()
+  for (const node of nodes) {
+    const id = prefix + node.id
+    result.set(id, node)
+    if (node.body) for (const [key, value] of definitions(node.body, `${id}/`)) result.set(key, value)
+  }
+  return result
+}
+
+export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: string): Promise<NodeDetail> {
+  relativePath(nodeId)
+  const state = await run(stores, runId)
+  const snapshot = await workflow(stores, runId)
+  const node = Object.hasOwn(state.nodes, nodeId) ? state.nodes[nodeId] : undefined
+  const graphNode = buildRunGraph(snapshot, state).nodes.find((item) => item.id === nodeId)
+  if (!node || !graphNode) throw new HttpError(404, '节点不存在')
+  const [events, context, artifacts] = await Promise.all([
+    stores.events.read(runId, { nodeId }), stores.runs.getContext(runId, nodeId), stores.workspaces.listArtifacts(state.requirementId),
+  ])
+  let prompt = definitions(snapshot.nodes).get(nodeId)?.prompt
+  for (const event of events) {
+    if (event.type === 'context.assembled') {
+      const data = event.data as EventPayloads['context.assembled'] & { prompt?: unknown }
+      if (typeof data.prompt === 'string') prompt = data.prompt
+      if (!context.snapshots.some((item) => item.nodeId === data.nodeId && item.at === data.at)) context.snapshots.push(data)
+    }
+    if (event.type === 'context.compacted') {
+      const data = event.data as EventPayloads['context.compacted']
+      if (!context.compactions.some((item) => item.nodeId === data.nodeId && item.at === data.at)) context.compactions.push(data)
+    }
+    if (event.type === 'harness.message') {
+      const data = event.data as EventPayloads['harness.message']
+      if (data.role === 'user') prompt = data.text
+    }
+  }
+  context.snapshots.sort((a, b) => a.at.localeCompare(b.at))
+  context.compactions.sort((a, b) => a.at.localeCompare(b.at))
+  const verdicts = events.filter((event) => event.type === 'judge.verdict').flatMap((event) => (event.data as EventPayloads['judge.verdict']).verdicts)
+  const gate = events.filter((event) => event.type === 'gate.result').at(-1)?.data as EventPayloads['gate.result'] | undefined
+  const outputs: NodeDetail['outputs'] = []
+  for (const ref of node.outputs) {
+    const records = ref.workspace === state.requirementId ? artifacts : await stores.workspaces.listArtifacts(ref.workspace)
+    const record = records.find((item) => item.path === ref.path)
+    const version = ref.version ?? record?.versions.at(-1)?.version
+    if (version === undefined) throw new Error(`节点输出缺少版本：${nodeId}/${ref.path}`)
+    outputs.push({ path: ref.path, version, kind: record?.kind ?? 'other' })
+  }
+  return { state: node, kind: graphNode.kind, title: graphNode.title, stage: graphNode.stage, role: graphNode.role, prompt, inputs: (node.inputs ?? []).map(({ path, version }) => ({ path, version })), outputs, context, ...(verdicts.length ? { verdicts } : {}), ...(gate ? { gate } : {}), events }
+}
+
+export { summarizeRun }

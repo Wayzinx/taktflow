@@ -7,3 +7,5 @@ coverage/
 examples/*/.takt/runs/
 examples/*/.takt/objects/
 .taktdev/
+# 调度过程产物（简报、日志、截图）
+.taktdev/

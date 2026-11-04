@@ -21,9 +21,13 @@
  * | GET  | /api/runs/:runId/audit                         | { ok, brokenAt? }（哈希链校验） |
  * | GET  | /api/attention?pending=1                       | AttentionItem[] |
  * | POST | /api/attention/:requestId                      | 请求体 { decision?, answer? } → AttentionItem |
+ * | GET  | /api/harnesses                                 | HarnessInfo[]（设置页：可用性与能力矩阵） |
+ * | GET  | /api/models                                    | ModelInfo[] |
  */
 import type { AttentionItem } from './interfaces.js'
 import type {
+  HarnessCapabilities,
+  ProviderProtocol,
   ArtifactRecord,
   CompactionRecord,
   ContextSnapshot,
@@ -156,6 +160,29 @@ export interface NodeDetail {
   verdicts?: JudgeVerdict[]
   gate?: { pass: boolean; checks: Array<{ id: string; pass: boolean; score?: number; message?: string }> }
   events: EventEnvelope[]
+}
+
+export interface HarnessInfo {
+  id: string
+  displayName: string
+  /** builtin：内置适配器；cli：声明式 CLI 适配；plugin：插件提供；native：内置 agent loop。 */
+  source: 'builtin' | 'cli' | 'plugin' | 'native'
+  available: boolean
+  reason?: string
+  capabilities: HarnessCapabilities
+  /** 哪些角色默认用它。 */
+  roles: string[]
+}
+
+export interface ModelInfo {
+  alias: string
+  provider: string
+  protocol: ProviderProtocol
+  id: string
+  contextWindow?: number
+  price?: { input: number; output: number }
+  /** 对应的 apiKeyEnv 是否已设置（不返回值）。 */
+  keyPresent: boolean
 }
 
 export type { AttentionItem, RequirementMetrics }

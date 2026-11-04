@@ -15,6 +15,7 @@ import type {
   ScriptNodeDef,
   SubflowNodeDef,
   TaktConfig,
+  TaktPlugin,
   WorkflowDefinition,
 } from './types.js'
 
@@ -39,6 +40,10 @@ export function defineWorkflow(def: WorkflowDefinition): WorkflowDefinition {
 
 export function defineConfig(config: TaktConfig): TaktConfig {
   return config
+}
+
+export function definePlugin(plugin: TaktPlugin): TaktPlugin {
+  return plugin
 }
 
 function validateNodes(nodes: NodeDef[], stages: Set<string>, scope: string): void {

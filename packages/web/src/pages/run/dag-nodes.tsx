@@ -1,0 +1,115 @@
+import type { CSSProperties } from 'react'
+import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
+import { Network } from 'lucide-react'
+import { KindIcon } from '../../components/ui'
+import { fmtTokens, totalTokens } from '../../lib/format'
+import { NODE_KIND, NODE_STATUS, STAGE_STATUS, toneSoftVar, toneVar } from '../../lib/status'
+import type { DagNodeData, GroupData, LaneData } from './dag-layout'
+
+function Handles() {
+  return (
+    <>
+      <Handle type="target" position={Position.Left} id="l" />
+      <Handle type="target" position={Position.Top} id="t" />
+      <Handle type="source" position={Position.Right} id="r" />
+      <Handle type="source" position={Position.Bottom} id="b" />
+      <Handle type="source" position={Position.Left} id="ls" />
+    </>
+  )
+}
+
+export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
+  const n = data.node
+  const meta = NODE_STATUS[n.status]
+  const StatusIcon = meta.icon
+  const tokens = totalTokens(n.usage)
+  const sub = n.role ? `${n.role}${n.harness ? ` · ${n.harness}` : ''}` : NODE_KIND[n.kind].label
+  return (
+    <div
+      className={`dag-node st-${n.status} tone-${meta.tone}${data.selected ? ' selected' : ''}`}
+      style={{ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}
+      title={`${n.title}\n${n.id} · ${meta.label}`}
+    >
+      <Handles />
+      <span className="dag-bar" />
+      <div className="dag-row">
+        <KindIcon kind={n.kind} size={22} />
+        <span className="dag-title truncate">{n.title}</span>
+        <span className="dag-status" title={meta.label}>
+          <StatusIcon className={meta.spin ? 'spin' : undefined} strokeWidth={2.6} />
+        </span>
+      </div>
+      <div className="dag-row dag-sub">
+        <span className="mono truncate">{sub}</span>
+        <span style={{ flex: 1 }} />
+        {tokens > 0 && <span className="mono num dag-tok">{fmtTokens(tokens)}</span>}
+      </div>
+      {(n.iteration !== undefined || n.attempts > 1) && (
+        <span className="dag-badges">
+          {n.iteration !== undefined && <span className="dag-badge">第 {n.iteration} 轮</span>}
+          {n.attempts > 1 && <span className="dag-badge warn">×{n.attempts}</span>}
+        </span>
+      )}
+    </div>
+  )
+}
+
+export function GroupView({ data }: NodeProps<Node<GroupData, 'group'>>) {
+  const n = data.node
+  const meta = n ? NODE_STATUS[n.status] : undefined
+  const tokens = totalTokens(data.usage)
+  return (
+    <div
+      className={`dag-group v-${data.variant}${n ? ` st-${n.status}` : ''}${data.selected ? ' selected' : ''}`}
+      style={meta ? ({ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties) : undefined}
+    >
+      <Handles />
+      <div className="dag-group-head">
+        {n ? (
+          <KindIcon kind={n.kind} size={22} />
+        ) : (
+          <span className="kind-icon kind-planner" style={{ width: 22, height: 22 }}>
+            <Network strokeWidth={2} />
+          </span>
+        )}
+        <span className="dag-group-title">{data.title}</span>
+        {meta && (
+          <span className="dag-group-status">
+            <meta.icon className={meta.spin ? 'spin' : undefined} strokeWidth={2.6} />
+            {meta.label}
+          </span>
+        )}
+        {n?.iteration !== undefined && <span className="dag-badge">第 {n.iteration} 轮 / 上限 5</span>}
+        {data.variant === 'expand' && (
+          <span className="dag-group-note">
+            planner 规划 {data.items} 个条目 · {data.childCount} 个节点 · 上限 12
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        {tokens > 0 && <span className="mono num dag-tok">{fmtTokens(tokens)}</span>}
+      </div>
+    </div>
+  )
+}
+
+export function LaneView({ data }: NodeProps<Node<LaneData, 'lane'>>) {
+  const s = data.stage
+  const meta = STAGE_STATUS[s.status]
+  return (
+    <div className={`dag-lane st-${s.status}`} style={{ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}>
+      <div className="dag-lane-head">
+        <span className="dag-lane-idx mono">{String(data.index).padStart(2, '0')}</span>
+        <span className="dag-lane-title">{s.title}</span>
+        <span className="dag-lane-status">
+          <meta.icon className={meta.spin ? 'spin' : undefined} strokeWidth={2.6} />
+        </span>
+        <span style={{ flex: 1 }} />
+        <span className="dag-lane-count mono num">
+          {s.done}/{s.total}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+export const nodeTypes = { dag: DagNodeView, group: GroupView, lane: LaneView }

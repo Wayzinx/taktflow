@@ -19,6 +19,8 @@
 
 ## M1 · 真跑起来
 
+- 扩展性第一批（[13](13-扩展性与生态.md)，简报 `docs/dev/extensibility.md`）：ModelProvider（openai-chat / anthropic-messages + 国内外厂商预设）、native harness、声明式 CLI 适配、Gemini / Cursor / Qwen / Kimi / OpenCode 适配器、插件加载、`takt doctor`、一致性测试套件、Web 设置页；
+
 - 用真实 harness（Claude Code / Codex / DeepSeek）跑一个真实小需求；
 - 修复准入 validator V2–V5；
 - 外部导入：飞书文档、Meego 需求；

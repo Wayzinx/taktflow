@@ -1,0 +1,141 @@
+.ev-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+.ev-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px 22px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 0;
+}
+.ev-row::before {
+  content: '';
+  position: absolute;
+  left: calc(64px + 10px + 10.5px);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--divider);
+}
+.ev-row:first-child::before {
+  top: 14px;
+}
+.ev-row:last-child::before {
+  bottom: calc(100% - 14px);
+}
+.ev-time {
+  padding-top: 2px;
+  font-size: 11px;
+  color: var(--text-3);
+  text-align: right;
+  white-space: nowrap;
+}
+.ev-icon {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  color: var(--ev-tone);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border), 0 0 0 4px var(--surface);
+}
+.ev-icon svg {
+  width: 11px;
+  height: 11px;
+}
+.ev-body {
+  min-width: 0;
+  padding-top: 1px;
+}
+.ev-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.ev-row.collapsible .ev-title {
+  cursor: pointer;
+}
+.ev-title-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ev-caret {
+  width: 13px;
+  height: 13px;
+  margin-top: 3px;
+  flex: none;
+  color: var(--text-3);
+  transition: transform var(--dur) var(--ease);
+}
+.ev-caret.open {
+  transform: rotate(90deg);
+}
+.ev-tool {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--text-2);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+}
+.ev-msg {
+  color: var(--text-2);
+}
+.ev-detail {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.ev-pre {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  border: 1px solid var(--divider);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text-2);
+}
+.ev-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+.ev-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-3);
+  min-width: 0;
+}
+.ev-link {
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--dur) var(--ease);
+}
+.ev-link:hover {
+  color: var(--accent-text);
+}
