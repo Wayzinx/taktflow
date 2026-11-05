@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cp, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,7 +8,8 @@ import { createServer } from '@taktflow/server'
 import { main } from '../../packages/cli/src/index.js'
 
 const example = dirname(fileURLToPath(import.meta.url))
-const root = await mkdtemp(join(tmpdir(), 'takt-chat-demo-'))
+// TAKT_DEMO_DIR：把演示数据留在指定目录（需不存在或为空），便于用 takt serve 查看
+const root = process.env.TAKT_DEMO_DIR ? await mkdir(process.env.TAKT_DEMO_DIR, { recursive: true }).then(() => process.env.TAKT_DEMO_DIR as string) : await mkdtemp(join(tmpdir(), 'takt-chat-demo-'))
 const stores = await initProject(root)
 for (const role of ['lead', 'pm', 'reviewer']) {
   const source = await readFile(join(example, 'agents', `${role}.md`), 'utf8')

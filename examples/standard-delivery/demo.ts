@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createRepoManager } from '@taktflow/sandbox'
-import { cp, mkdtemp, readFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,7 +10,8 @@ import { createMockHarness, loadMockScript } from '@taktflow/harness'
 import workflow from './workflows/taktflow-standard.workflow.js'
 
 const example = dirname(fileURLToPath(import.meta.url))
-const root = await mkdtemp(join(tmpdir(), 'takt-standard-delivery-'))
+// TAKT_DEMO_DIR：把演示数据留在指定目录（需不存在或为空），便于用 takt serve 查看
+const root = process.env.TAKT_DEMO_DIR ? await mkdir(process.env.TAKT_DEMO_DIR, { recursive: true }).then(() => process.env.TAKT_DEMO_DIR as string) : await mkdtemp(join(tmpdir(), 'takt-standard-delivery-'))
 // 每次使用独立的新布局空间，证据保留在打印的目录，不修改示例源码或其他运行。
 for (const name of ['agents', 'workflows', 'skills', 'knowledge', 'requirements', 'fixtures', 'src', 'tests', 'package.json', 'takt.config.json', 'mock.json']) {
   await cp(join(example, name), join(root, name), { recursive: true })
