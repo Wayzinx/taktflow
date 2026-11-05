@@ -1,12 +1,20 @@
 import type { ArtifactRef, NodeContext, ReviewNodeDef } from '../../types.js'
 import type { Runtime } from '../runtime.js'
 import { resolveInputs } from '../artifacts.js'
+import { diffPath, saveWorktreeDiff } from '../execution.js'
 import { matchGlob } from '../../util/glob.js'
 
-/** M2-B 可在此替换为 worktree diff；当前只接收本运行、对应仓库登记的任务 diff。 */
+/** 有执行面时从本运行的工作树读取；旧运行保留其已登记 diff 的读取能力。 */
 export async function codeReviewTargets(host: Runtime, node: ReviewNodeDef, ctx: NodeContext): Promise<string[]> {
   if (Array.isArray(node.target)) return node.target
   const repo = node.target.code.repo
+  const sources = Object.values(host.state.nodes).filter((state) => state.worktree?.repo === repo
+    && (!ctx.item || host.graph.get(state.id)?.item?.key === ctx.item.key))
+  if (sources.length) {
+    for (const state of sources) await saveWorktreeDiff(host, state.id, state, Array.isArray(node.target) ? undefined : node.target.code.base)
+    return sources.map((state) => diffPath(state.id))
+  }
+  if (host.deps.repos) throw new Error(`评审 ${node.id} 没有仓库 ${repo} 的任务工作树`)
   const artifacts = await host.deps.stores.workspaces.listArtifacts(ctx.requirementId)
   return artifacts.filter((artifact) => {
     if (!matchGlob('tasks/*.diff', artifact.path)) return false

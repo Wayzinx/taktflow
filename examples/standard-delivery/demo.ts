@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { execFileSync } from 'node:child_process'
+import { createRepoManager } from '@taktflow/sandbox'
 import { cp, mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -13,6 +15,7 @@ const root = await mkdtemp(join(tmpdir(), 'takt-standard-delivery-'))
 for (const name of ['agents', 'workflows', 'skills', 'knowledge', 'requirements', 'fixtures', 'src', 'tests', 'package.json', 'takt.config.json', 'mock.json']) {
   await cp(join(example, name), join(root, name), { recursive: true })
 }
+for (const args of [['init', '-b', 'main'], ['add', 'src', 'tests', 'package.json'], ['-c', 'user.name=Demo', '-c', 'user.email=demo@localhost', 'commit', '-m', '演示基线']]) execFileSync('git', args, { cwd: root, stdio: 'pipe' })
 console.log(`演示空间与持久化证据：${root}`)
 const stores = await initProject(root)
 assert.equal(stores.paths.requirements, join(root, 'requirements'))
@@ -20,7 +23,7 @@ const req = await stores.workspaces.createRequirement({ title: '问候语支持�
 await stores.workspaces.writeArtifact({ ref: { workspace: req.id, path: 'inputs/prd.md' }, kind: 'input', content: await readFile(join(root, 'fixtures/prd.md')), author: { type: 'human', id: 'demo-owner' }, reason: '导入演示物料' })
 const profiles = await loadProfiles(stores.paths)
 const mock = createMockHarness(await loadMockScript(join(root, 'mock.json')))
-const engine = createEngine({ stores, profiles, harnesses: { mock }, knowledge: [] }, { concurrency: 2, harnessOverride: 'mock', autoApprove: true })
+const engine = createEngine({ stores, profiles, harnesses: { mock }, knowledge: [], repos: createRepoManager({ projectDir: root, taktDir: stores.taktDir, repos: stores.config.repos ?? [] }), skillsDir: stores.paths.skills }, { concurrency: 2, harnessOverride: 'mock', autoApprove: true })
 const returned = await engine.start({ workflow, requirementId: req.id })
 const reopened = await openProject(root)
 const state = (await reopened.runs.get(returned.runId))!
@@ -45,6 +48,9 @@ assert.equal(ofType('judge.verdict').length, 1)
 assert.equal(ofType('judge.verdict')[0]!.data.verdicts[0]!.category, 'product_bug')
 assert(ofType('node.finished', 'dev-test-loop/fix-code').some((event) => event.data.status === 'succeeded'))
 assert.equal(ofType('review.round', 'dev-test-loop/review-fix').length, 1)
+assert(state.nodes['implement/greet-core/code']?.worktree)
+assert(state.nodes['integration']?.status === 'succeeded')
+assert.equal(ofType('worktree.created').length, 2)
 assert.deepEqual(await reopened.events.verify(state.runId), { ok: true })
 assert.deepEqual(await reopened.workspaces.detectUntracked(req.id), [])
 const artifacts = await reopened.workspaces.listArtifacts(req.id)

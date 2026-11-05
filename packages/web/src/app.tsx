@@ -1,8 +1,9 @@
 import { DataProvider } from './api'
 import { AppShell } from './components/layout'
-import { Skeleton, Toaster } from './components/ui'
+import { TaktLoader } from './components/takt'
+import { Toaster } from './components/ui'
 import { matchPath, useLocation } from './lib/router'
-import { useTheme } from './lib/theme'
+import './lib/theme'
 import { AttentionPage } from './pages/attention'
 import { OverviewPage } from './pages/overview'
 import { NotFoundPage, PlaceholderPage } from './pages/placeholder'
@@ -25,20 +26,15 @@ function Routes() {
   return <NotFoundPage />
 }
 
+/** 首屏：导轨先占位，工作区放节拍加载。 */
 function Boot() {
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <Skeleton w={120} h={18} style={{ margin: '6px 8px 20px' }} />
-        {[0, 1, 2, 3, 4].map((i) => (
-          <Skeleton key={i} w="80%" h={12} style={{ margin: '10px 8px' }} />
-        ))}
-      </aside>
+      <aside className="sidebar" aria-hidden />
       <div className="shell-main">
         <div className="topbar" />
         <main className="shell-content">
-          <Skeleton w={220} h={22} />
-          <Skeleton w={380} h={12} style={{ marginTop: 10 }} />
+          <TaktLoader label="正在连接 taktflow" />
         </main>
       </div>
     </div>
@@ -46,7 +42,6 @@ function Boot() {
 }
 
 export function App() {
-  useTheme()
   return (
     <DataProvider fallback={<Boot />}>
       <AppShell>

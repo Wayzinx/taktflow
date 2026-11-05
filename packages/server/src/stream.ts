@@ -1,12 +1,12 @@
 import type { ServerResponse } from 'node:http'
-import type { EventEnvelope, EventStore } from '@taktflow/core'
+import type { EventStore } from '@taktflow/core'
 
-export async function stream(events: EventStore, runId: string, after: number, response: ServerResponse, connections: Set<() => void>): Promise<void> {
+export async function stream<T extends { seq: number } = Awaited<ReturnType<EventStore['read']>>[number]>(events: { read(id: string, opts?: { afterSeq?: number }): Promise<T[]>; subscribe(id: string, onEvent: (event: T) => void): () => void }, runId: string, after: number, response: ServerResponse, connections: Set<() => void>): Promise<void> {
   if (response.destroyed) return
   let replaying = true
   let closed = false
   let last = after
-  const buffered: EventEnvelope[] = []
+  const buffered: T[] = []
   let unsubscribe: () => void = () => {}
   let timer: ReturnType<typeof setInterval> | undefined
   const cleanup = () => {
@@ -17,7 +17,7 @@ export async function stream(events: EventStore, runId: string, after: number, r
     connections.delete(close)
   }
   const close = () => { cleanup(); response.end() }
-  const send = (event: EventEnvelope) => {
+  const send = (event: T) => {
     if (closed || event.seq <= last) return
     last = event.seq
     response.write(`id: ${event.seq}\ndata: ${JSON.stringify(event)}\n\n`)

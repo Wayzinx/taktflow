@@ -19,5 +19,8 @@
       "name": "示例负责人",
       "role": "owner"
     }
-  ]
+  ],
+  "space": {
+    "id": "standard-delivery"
+  }
 }

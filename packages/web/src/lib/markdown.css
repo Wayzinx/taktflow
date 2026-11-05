@@ -69,11 +69,11 @@
 }
 .md blockquote {
   margin: 10px 0;
-  padding: 2px 14px;
-  border-left: 3px solid var(--accent-ring);
+  padding: 6px 14px;
+  border: 1px solid var(--divider);
   color: var(--text-2);
   background: var(--surface-2);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border-radius: var(--radius-sm);
 }
 .md hr {
   border: none;
@@ -112,8 +112,8 @@
 .md-table-wrap {
   margin: 10px 0;
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  /* 文档表格只用上下两道细线收边，不再套一层卡片 */
+  border-block: 1px solid var(--border-strong);
 }
 .md table {
   border-collapse: collapse;

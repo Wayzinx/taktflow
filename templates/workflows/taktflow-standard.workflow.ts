@@ -4,6 +4,7 @@
  * 默认 3 轮、1 次打回、人工确认；caseCommand / testScript 指定项目测试入口。
  */
 import { agent, defineWorkflow, gate, human, judge, loop, planner, review, script } from '@taktflow/core'
+import { integrate } from './taktflow-standard.integration.js'
 import { codeWasFixed, converged, expandTask, freezeBaseline, qualityReport, repairPrompt, runCases, traceCoverage } from './taktflow-standard.hooks.js'
 
 export default defineWorkflow({
@@ -48,7 +49,8 @@ export default defineWorkflow({
       author: { role: 'automation', prompt: '同时更新公共存放区 scripts/ 副本与项目 tests/ 下实际执行的脚本，保持一致。' },
       reviewers: [{ role: 'test-designer', focus: '断言有效性、覆盖完整性；禁止弱化断言' }],
       maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'automate', maxReworks: 1 } }),
-    loop({ id: 'dev-test-loop', title: '研发测试 Loop', stage: 'loop', needs: ['implement', 'review-scripts'], maxIterations: 5, onExhausted: 'human', until: converged,
+    script({ id: 'integration', title: '集成任务分支', stage: 'develop', needs: ['implement'], run: integrate, outputs: [{ path: 'tasks/integration.json', kind: 'code-change' }] }),
+    loop({ id: 'dev-test-loop', title: '研发测试 Loop', stage: 'loop', needs: ['integration', 'review-scripts'], maxIterations: 5, onExhausted: 'human', until: converged,
       body: [
         script({ id: 'run-cases', title: '执行用例', run: runCases, outputs: [{ path: 'evidence/**', kind: 'evidence' }] }),
         judge({ id: 'judge', title: '失败判决', role: 'judge', needs: ['run-cases'], target: 'run-cases',
@@ -57,6 +59,7 @@ export default defineWorkflow({
           outputs: [{ path: 'tasks/repair.diff', kind: 'code-change' }], prompt: repairPrompt('fix-code', '按证据修复产品代码，禁止改用例与测试。将修复 diff 写入 tasks/repair.diff。') }),
         review({ id: 'review-fix', title: '修复代码评审', needs: ['fix-code'], when: codeWasFixed, target: { code: { repo: 'app' } },
           author: { role: 'dev' }, reviewers: [{ role: 'reviewer', focus: '修复有效性、无弱化测试' }], maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'fix-code', maxReworks: 1 } }),
+        script({ id: 'integrate-fix', title: '集成评审后的修复', needs: ['review-fix'], when: codeWasFixed, run: integrate, outputs: [{ path: 'tasks/integration.json', kind: 'code-change' }] }),
         agent({ id: 'fix-script', title: '修复脚本', role: 'automation', needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
           prompt: repairPrompt('fix-script', '只修定位、等待与取值问题，禁止弱化断言。') }),
         agent({ id: 'fix-case', title: '修正用例', role: 'test-designer', needs: ['judge'], inputs: [{ path: 'spec/prd.md' }, { path: 'reports/verdicts/**' }],

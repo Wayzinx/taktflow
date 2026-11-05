@@ -19,7 +19,7 @@ function metadata(file: string, requirements: string): boolean {
 }
 
 async function snapshot(root: string, requirements: string): Promise<Map<string, string>> {
-  const files = await listFiles(root, ['**'], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects'] })
+  const files = await listFiles(root, ['**'], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects', '.takt/worktrees', '.takt/repos'] })
   const map = new Map<string, string>()
   await Promise.all(files.filter((file) => !metadata(file, requirements)).map(async (file) => {
     try { map.set(file, sha256(await readFile(join(root, file)))) } catch (error) { if (!isEnoent(error)) throw error }
@@ -29,7 +29,7 @@ async function snapshot(root: string, requirements: string): Promise<Map<string,
 
 async function humanVersions(root: string, requirements: string): Promise<Map<string, string>> {
   const versions = new Map<string, string>()
-  const manifests = await listFiles(root, [`${requirements}/*/manifest.json`], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects'] })
+  const manifests = await listFiles(root, [`${requirements}/*/manifest.json`], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects', '.takt/worktrees', '.takt/repos'] })
   for (const file of manifests) {
     const manifest = await readJsonFile<{ artifacts: ArtifactRecord[] }>(join(root, file))
     for (const artifact of manifest?.artifacts ?? []) {

@@ -47,9 +47,15 @@ export async function runCases(ctx: NodeContext) {
   const actual = await readFile(join(ctx.projectDir, String(ctx.args.testScript ?? 'tests/run-cases.mjs')), 'utf8')
   if (actual !== await ctx.readArtifact('scripts/run-cases.mjs')) return { status: 'blocked' as const, message: '实际执行脚本与评审产物不一致' }
   await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
+  const integration = ctx.resultOf('integration') as { path?: string } | undefined
+  const cwd = integration?.path ?? ctx.projectDir
+  if (cwd !== ctx.projectDir) {
+    await mkdir(join(cwd, 'tests'), { recursive: true })
+    await writeFile(join(cwd, String(ctx.args.testScript ?? 'tests/run-cases.mjs')), actual)
+  }
   try {
     await execute('/bin/sh', ['-c', String(ctx.args.caseCommand ?? 'npm test')], {
-      cwd: ctx.projectDir, signal: ctx.signal, env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir }, maxBuffer: 16 * 1024 * 1024,
+      cwd, signal: ctx.signal, env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir }, maxBuffer: 16 * 1024 * 1024,
     })
   } catch (error) {
     ctx.signal?.throwIfAborted()

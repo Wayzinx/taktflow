@@ -38,7 +38,7 @@ async function json<T = any>(project: string, args: string[], expectedCode = 0):
 
 async function init(): Promise<string> {
   const dir = await temp()
-  await json(dir, ['init', '--name', '外部项目'])
+  await json(dir, ['init', '--layout', 'legacy', '--name', '外部项目'])
   return dir
 }
 

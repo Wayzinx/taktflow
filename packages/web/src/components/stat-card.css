@@ -1,57 +1,70 @@
-.stat-card {
-  position: relative;
-  padding: 14px 16px 14px;
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-bottom: var(--sp-6);
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
 }
-.stat-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto 0;
-  height: 2px;
-  background: var(--stat-tone, transparent);
-  opacity: 0.85;
+.stat-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-5) var(--sp-4);
+  box-shadow: -1px 0 0 var(--divider), 0 -1px 0 var(--divider);
 }
 .stat-label {
   display: flex;
   align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--text-2);
+  gap: 6px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
 }
 .stat-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 6px;
-  color: var(--stat-tone, var(--text-2));
-  background: color-mix(in srgb, var(--stat-tone, var(--text-3)) 12%, transparent);
+  display: inline-flex;
+  color: var(--text-3);
 }
 .stat-icon svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
+}
+.stat-cell.toned .stat-icon,
+.stat-cell.toned .stat-value {
+  color: var(--stat-tone);
 }
 .stat-value {
-  margin-top: 10px;
-  font-size: 28px;
-  font-weight: 640;
-  letter-spacing: -0.03em;
-  line-height: 1.1;
+  margin-top: var(--sp-2);
+  font-size: var(--text-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
 }
 .stat-unit {
-  margin-left: 8px;
-  font-size: 14px;
-  font-weight: 520;
-  color: var(--text-2);
+  margin-left: 6px;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--text-3);
   letter-spacing: 0;
 }
 .stat-foot {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: auto;
+  padding-top: var(--sp-2);
+  font-size: var(--text-meta);
   color: var(--text-3);
+  overflow-wrap: anywhere;
 }
 .stat-foot b {
   color: var(--text-2);
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat-skeleton {
+  display: grid;
+  gap: var(--sp-3);
 }

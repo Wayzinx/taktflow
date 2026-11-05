@@ -1,3 +1,4 @@
+import { createProjectLead, leadEvents } from '../lead.js'
 import { isAbsolute, resolve } from 'node:path'
 import type { EventStore, ProjectStores, RunState } from '@taktflow/core'
 import { createPrinter, type Printer } from '../output.js'
@@ -55,7 +56,8 @@ export async function runWorkflow(cli: ParsedCli): Promise<number> {
   }
   const printer = createPrinter(options.json)
   const feed = new ProgressFeed(printer, workflow)
-  const engine = createRunEngine({ ...context, stores: instrument(context.stores, feed, cliOptions) }, {
+  const monitored = leadEvents(context, await createProjectLead(context))
+  const engine = createRunEngine({ ...monitored, stores: instrument(monitored.stores, feed, cliOptions) }, {
     harness: options.harness,
     autoApprove: options.autoApprove,
   })
@@ -67,6 +69,12 @@ export async function resumeWorkflow(cli: ParsedCli): Promise<number> {
   const runId = cli.positionals[0]!
   const context = await loadRuntime(cli.options.project)
   const printer = createPrinter(cli.options.json)
+  const current = await context.stores.runs.get(runId)
+  if (current?.workflowId.startsWith('task:')) {
+    const lead = await createProjectLead(await withMock(context, cli.options.mock))
+    const state = await serializeRun(runId, () => lead.resumeTask(runId))
+    return finishOutput(context, printer, state)
+  }
   const state = await serializeRun(runId, () => resumeOnce(context, runId, cli.options, printer))
   return finishOutput(context, printer, state)
 }
@@ -90,7 +98,8 @@ export async function resumeOnce(context: ProjectContext, runId: string, options
   }
   await saveRunOptions(context.stores.taktDir, runId, merged)
   const feed = new ProgressFeed(printer, workflow)
-  const engine = createRunEngine({ ...runtime, stores: instrument(runtime.stores, feed, merged) }, {
+  const monitored = leadEvents(runtime, await createProjectLead(runtime))
+  const engine = createRunEngine({ ...monitored, stores: instrument(monitored.stores, feed, merged) }, {
     harness,
     autoApprove: options.autoApprove,
   })

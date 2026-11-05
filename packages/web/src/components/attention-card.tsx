@@ -47,7 +47,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
   return (
     <div className={`att-card${compact ? ' compact' : ''}${answered ? ' answered' : ''}`}>
       <div className="att-head">
-        <span className={`att-form att-f-${item.form}`}>
+        <span className="att-form">
           <Icon />
           {meta.label}
         </span>

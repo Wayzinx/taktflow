@@ -1,10 +1,7 @@
-import type { CSSProperties } from 'react'
-import { Check, CircleAlert, Minus } from 'lucide-react'
+import { useState, type CSSProperties } from 'react'
+import { Check, CircleAlert, CircleCheck, Minus } from 'lucide-react'
 import type { HarnessInfo } from '@taktflow/core'
 import { CAPABILITIES, HARNESS_SOURCE, type CapabilityMeta } from '../../lib/capabilities'
-
-const HUES = [248, 190, 152, 32, 330, 270, 210, 12]
-const hueOf = (id: string) => HUES[[...id].reduce((s, c) => s + c.charCodeAt(0), 0) % HUES.length]
 
 /** "Claude Code" → CC，"Codex" → Co。 */
 function monogram(name: string): string {
@@ -23,20 +20,34 @@ function readableReason(reason: string | undefined): string {
 
 function CapTile({ cap, on, align }: { cap: CapabilityMeta; on: boolean; align: 'start' | 'center' | 'end' }) {
   const Icon = cap.icon
+  // tooltip 只在悬停 / 聚焦时挂载：54 个隐藏浮层常驻 DOM 会让读屏和检测都把它们当正文
+  const [open, setOpen] = useState(false)
+  const show = () => setOpen(true)
+  const hide = () => setOpen(false)
   return (
-    <span className={`cap${on ? ' on' : ''}`} tabIndex={0} aria-label={`${cap.label}：${on ? '支持' : '不支持'}`}>
+    <span
+      className={`cap${on ? ' on' : ''}`}
+      tabIndex={0}
+      aria-label={`${cap.label}：${on ? '支持' : '不支持'}`}
+      onMouseEnter={show}
+      onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
+    >
       <Icon strokeWidth={2} />
       {!on && <span className="cap-slash" aria-hidden />}
-      <span className={`cap-tip align-${align}`} role="tooltip">
-        <span className="cap-tip-head">
-          <b>{cap.label}</b>
-          <span className={`cap-tip-state${on ? ' on' : ''}`}>
-            {on ? <Check /> : <Minus />}
-            {on ? '支持' : '不支持'}
+      {open && (
+        <span className={`cap-tip align-${align}`} role="tooltip">
+          <span className="cap-tip-head">
+            <b>{cap.label}</b>
+            <span className={`cap-tip-state${on ? ' on' : ''}`}>
+              {on ? <Check /> : <Minus />}
+              {on ? '支持' : '不支持'}
+            </span>
           </span>
+          <span className="cap-tip-body">{on ? cap.on : `降级：${cap.off}`}</span>
         </span>
-        <span className="cap-tip-body">{on ? cap.on : `降级：${cap.off}`}</span>
-      </span>
+      )}
     </span>
   )
 }
@@ -45,7 +56,10 @@ export function HarnessCard({ h }: { h: HarnessInfo }) {
   const src = HARNESS_SOURCE[h.source]
   const supported = CAPABILITIES.filter((c) => h.capabilities[c.key]).length
   return (
-    <article className={`card harness-card${h.available ? '' : ' unavailable'}`} style={{ '--hue': hueOf(h.id), '--src': src.color } as CSSProperties}>
+    <article
+      className={`card harness-card${h.available ? '' : ' unavailable'}`}
+      style={{ '--src': src.color } as CSSProperties}
+    >
       <header className="hc-head">
         <span className="hc-mono" aria-hidden>
           {monogram(h.displayName)}
@@ -60,7 +74,7 @@ export function HarnessCard({ h }: { h: HarnessInfo }) {
           </div>
         </div>
         <span className={`hc-avail${h.available ? ' ok' : ''}`}>
-          <span className="hc-avail-dot" />
+          {h.available ? <CircleCheck strokeWidth={2.2} /> : <CircleAlert strokeWidth={2.2} />}
           {h.available ? '可用' : '不可用'}
         </span>
       </header>
@@ -82,7 +96,12 @@ export function HarnessCard({ h }: { h: HarnessInfo }) {
         </div>
         <div className="cap-row">
           {CAPABILITIES.map((c, i) => (
-            <CapTile key={c.key} cap={c} on={Boolean(h.capabilities[c.key])} align={i < 2 ? 'start' : i > CAPABILITIES.length - 3 ? 'end' : 'center'} />
+            <CapTile
+              key={c.key}
+              cap={c}
+              on={Boolean(h.capabilities[c.key])}
+              align={i < 2 ? 'start' : i > CAPABILITIES.length - 3 ? 'end' : 'center'}
+            />
           ))}
         </div>
       </div>

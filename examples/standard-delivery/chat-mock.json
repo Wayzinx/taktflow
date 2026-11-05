@@ -1,0 +1,32 @@
+{
+  "steps": [
+    {
+      "match": { "role": "lead", "promptIncludes": "把 PRD 里 AC-2 的描述改成" },
+      "structured": {
+        "reply": "我会派发产品任务修改 AC-2，完成后由独立评审者检查，并在群里回报。",
+        "actions": [{
+          "type": "dispatch_task",
+          "task": {
+            "role": "pm", "title": "修改 PRD 的 AC-2",
+            "instructions": "将 spec/prd.md 中 AC-2 的描述改为：空名字返回 Hello, stranger!。保留 AC-1。",
+            "inputs": ["spec/prd.md"], "outputs": [{ "path": "spec/prd.md", "kind": "spec" }],
+            "writeScope": ["requirements/REQ-001/spec/**"]
+          }
+        }]
+      }
+    },
+    {
+      "match": { "role": "lead" },
+      "structured": { "reply": "当前需求已创建，PRD 已登记为第 1 版；尚未启动研发，没有待处理审批。", "actions": [] }
+    },
+    {
+      "match": { "role": "pm", "nodeId": "task" },
+      "writes": { "{{workspace}}/spec/prd.md": "# 问候语 PRD\n\n- AC-1：有名字时返回 Hello, <name>!\n- AC-2：空名字返回 Hello, stranger!。\n" },
+      "finalText": "PRD AC-2 已修改，保留 AC-1。"
+    },
+    {
+      "match": { "role": "reviewer" },
+      "structured": { "verdict": "approve", "summary": "AC-2 与请求一致，AC-1 保留。", "issues": [] }
+    }
+  ]
+}

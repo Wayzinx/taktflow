@@ -13,6 +13,7 @@ import { system } from './actor.js'
 import { WriteGuard } from './guard.js'
 import { harnessSelectors, resolveHarnessSelector, selectHarness } from './selection.js'
 import { intersectWriteScopes } from './scope.js'
+import { workingDirectory, sandboxCall, cwdGuard, saveWorktreeDiff } from './execution.js'
 
 export class BlockedError extends Error {}
 export type Emit = <T extends EventType>(type: T, data: EventPayloads[T], nodeId?: string, actor?: Actor) => Promise<void>
@@ -28,12 +29,14 @@ export interface HarnessHost {
   override?: string
 }
 
-export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState, acquireSlot = true): Promise<{ data: unknown; actor: Actor }> {
+export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState, acquireSlot = true, directories: string[] = []): Promise<{ data: unknown; actor: Actor }> {
   const invoke = async (): Promise<{ data: unknown; actor: Actor }> => {
     host.signal.throwIfAborted()
     const { stores, profiles, harnesses, knowledge } = host.deps
     const profile = profiles[node.role]
     if (!profile) throw new Error(`角色不存在：${node.role}`)
+    const cwd = await workingDirectory(host, node, ctx, ns)
+    ctx = { ...ctx, projectDir: cwd }
     const selection = { config: stores.config, profiles, harnesses }
     const base = selectHarness(node.role, node.harness, selection, host.override)
     const task = typeof node.prompt === 'function' ? await node.prompt(ctx) : node.prompt
@@ -88,7 +91,25 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       const transcript = join(runDir(stores.taktDir, host.state.runId), 'transcripts', `${node.id}.jsonl`)
       await assertNoSymlinks(stores.taktDir, transcript)
       await mkdir(dirname(transcript), { recursive: true })
-      const finishGuard = await host.guard.begin({ profile: profile.writeScope, node: node.writeScope })
+      const env: Record<string, string> = { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript }
+      if (provider?.apiKeyEnv && process.env[provider.apiKeyEnv]) env[provider.apiKeyEnv] = process.env[provider.apiKeyEnv]!
+      const sandbox = await sandboxCall(host, cwd, harness.id, ctx, env, node.timeoutMs, directories)
+      let finishGuard: () => Promise<{ paths: string[]; action: 'flagged'; ambiguous: boolean }>
+      try {
+        const scope = { profile: profile.writeScope, node: node.writeScope }
+        const projectFinish = await host.guard.begin(scope)
+        const finishes = [projectFinish]
+        try {
+          for (const directory of new Set([cwd, ...directories])) {
+            if (directory !== stores.projectDir) finishes.push(await cwdGuard(host, directory).begin(scope))
+          }
+        } catch (error) { await Promise.all(finishes.map((finish) => finish())); throw error }
+        finishGuard = async () => {
+          const violations = await Promise.all(finishes.map((finish) => finish()))
+          return { paths: [...new Set(violations.flatMap((violation) => violation.paths))], action: 'flagged', ambiguous: violations.some((violation) => violation.ambiguous) }
+        }
+      }
+      catch (error) { await sandbox.dispose(); throw error }
       let eventChain = Promise.resolve()
       let eventError: unknown
       const onEvent = (event: HarnessEvent): void => {
@@ -116,19 +137,21 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       let failure: unknown
       try {
         await host.emit('harness.message', { role: 'user', text: requestPrompt }, node.id, actor)
-        const request: HarnessRequest = { prompt: requestPrompt, cwd: stores.projectDir, model,
+        const request: HarnessRequest = { prompt: requestPrompt, cwd, sandbox, model,
           effort: selector.effort, provider,
           modelConfig: modelConfig ? { price: modelConfig.price, contextWindow: modelConfig.contextWindow } : undefined,
           systemAppend: profile.instructions, timeoutMs: node.timeoutMs, resultSchema: harness.capabilities?.structuredOutput ? node.resultSchema : undefined,
           sessionId: resume && ns.sessionRef?.harness === harness.id ? ns.sessionRef.sessionId : undefined,
-          env: { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript },
+          env,
           tools: { writeScope, allowBash: profile.allowBash === true },
           signal: node.timeoutMs ? AbortSignal.any([host.signal, AbortSignal.timeout(node.timeoutMs)]) : host.signal,
         }
         result = await harness.run(request, onEvent)
       } catch (error) { failure = error }
+      finally { try { await sandbox.dispose() } catch (error) { failure ??= error } }
       await eventChain
       const violation = await finishGuard()
+      await saveWorktreeDiff(host, node.id, ns)
       if (violation.paths.length) {
         await host.emit('guard.violation', { rule: violation.ambiguous ? 'concurrent-write' : 'writeScope', paths: violation.paths, action: violation.action }, node.id, violation.ambiguous ? system : actor)
         throw new BlockedError(`写权限越界：${violation.paths.join(', ')}`)

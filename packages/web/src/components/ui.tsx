@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import { AlertTriangle, type LucideIcon } from 'lucide-react'
+import { TaktRuler } from './takt'
 import type { NodeKind } from '@taktflow/core'
 import { NODE_KIND, toneSoftVar, toneVar, type StatusMeta, type Tone } from '../lib/status'
 import { initials } from '../lib/format'
@@ -8,7 +9,7 @@ import './ui.css'
 export function StatusBadge({ meta, subtle }: { meta: StatusMeta; subtle?: boolean }) {
   const Icon = meta.icon
   return (
-    <span className={`status-badge${subtle ? ' subtle' : ''}`} style={{ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}>
+    <span className={`status-badge${subtle ? ' subtle' : ''}`} style={{ '--tone': meta.tone === 'pending' ? 'var(--text-2)' : toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}>
       <Icon className={meta.spin ? 'spin' : undefined} strokeWidth={2.4} />
       {meta.label}
     </span>
@@ -31,9 +32,11 @@ export function KindIcon({ kind, size = 22 }: { kind: NodeKind; size?: number })
 const AVATAR_HUES = [248, 190, 152, 32, 330, 270, 210]
 export function Avatar({ name, size = 22 }: { name: string; size?: number }) {
   const hue = AVATAR_HUES[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % AVATAR_HUES.length]
+  // 小于 20px 放不下 11px 的字，只留色块，名字在 title / aria-label 里
+  const tiny = size < 20
   return (
-    <span className="avatar" title={name} style={{ width: size, height: size, fontSize: size * 0.42, '--hue': hue } as CSSProperties}>
-      {initials(name)}
+    <span className="avatar" title={name} aria-label={name} style={{ width: size, height: size, fontSize: tiny ? undefined : Math.max(11, size * 0.42), '--hue': hue } as CSSProperties}>
+      {tiny ? null : initials(name)}
     </span>
   )
 }
@@ -76,7 +79,8 @@ export function EmptyState({ icon: Icon, title, hint, action, compact }: { icon:
       </span>
       <div className="empty-title">{title}</div>
       {hint && <div className="empty-hint">{hint}</div>}
-      {action && <div style={{ marginTop: 14 }}>{action}</div>}
+      {action && <div className="empty-action">{action}</div>}
+      {!compact && <TaktRuler ticks={9} className="empty-ruler" />}
     </div>
   )
 }

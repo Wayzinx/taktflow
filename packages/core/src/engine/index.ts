@@ -5,6 +5,7 @@ import { newRunId } from '../util/ids.js'
 import { snapshotWorkflow } from '../store/snapshot.js'
 import { persistArtifactInvalidation } from '../store/artifact-edits.js'
 import { withFileLock } from '../store/file-lock.js'
+import { configureRepositories } from './repository-options.js'
 import { configureReviews } from './review-options.js'
 import { postEventMessage } from './chat-events.js'
 import { answerOrRead, recordAnswerOnce } from './answers.js'
@@ -36,7 +37,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   }
   return {
     async start(input) {
-      input = { ...input, workflow: configureReviews(input.workflow, input.args ?? {}) }
+      input = { ...input, workflow: configureRepositories(configureReviews(input.workflow, input.args ?? {}), input.args ?? {}) }
       validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
@@ -61,7 +62,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       if (!state) throw new Error(`运行不存在：${runId}`)
       if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
       if (state.status === 'cancelled') return state
-      workflow = configureReviews(workflow, state.args)
+      workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
       validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       return execute(new Runtime(deps, state, workflow, opts, guard), true)
     },

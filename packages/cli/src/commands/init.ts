@@ -1,18 +1,21 @@
 import { copyFile, mkdir } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { basename, join, relative, resolve } from 'node:path'
 import { constants } from 'node:fs'
 import { initProject } from '@taktflow/core'
+import { atomicWrite } from '@taktflow/server'
+import { UsageError } from '../args.js'
 import { createPrinter } from '../output.js'
 import { templatesDir } from '../project.js'
 
 /** 复制 templates 下的角色与流水线；已存在不覆盖。 */
-export async function runInit(project: string | undefined, options: { name?: string; json: boolean }, dir?: string): Promise<string> {
+export async function runInit(project: string | undefined, options: { name?: string; json: boolean; layout?: string }, dir?: string): Promise<string> {
   const target = resolve(project ?? process.cwd(), dir ?? '.')
-  const stores = await initProject(target, options.name === undefined ? undefined : { name: options.name })
+  if (options.layout !== undefined && options.layout !== 'space' && options.layout !== 'legacy') throw new UsageError('--layout 必须是 space 或 legacy')
+  const stores = await initProject(target, { name: options.name, layout: options.layout })
   const agentSource = join(templatesDir, 'agents')
-  const workflowSource = join(templatesDir, 'workflows', 'sdlc.workflow.ts')
-  const agentTarget = join(stores.taktDir, 'agents')
-  const workflowTarget = join(stores.taktDir, 'workflows')
+  const workflowSource = join(templatesDir, 'workflows')
+  const agentTarget = stores.paths.agents
+  const workflowTarget = stores.paths.workflows
   await mkdir(agentTarget, { recursive: true })
   await mkdir(workflowTarget, { recursive: true })
   const { readdir } = await import('node:fs/promises')
@@ -22,20 +25,29 @@ export async function runInit(project: string | undefined, options: { name?: str
     const copied = await copyIfAbsent(join(agentSource, entry), join(agentTarget, entry))
     if (copied) agents.push(entry)
   }
-  const workflowCopied = await copyIfAbsent(workflowSource, join(workflowTarget, 'sdlc.workflow.ts'))
+  const workflows: string[] = []
+  for (const entry of await readdir(workflowSource)) {
+    if (entry.endsWith('.ts') && await copyIfAbsent(join(workflowSource, entry), join(workflowTarget, entry))) workflows.push(entry)
+  }
+  const registered = ['sdlc.workflow.ts', 'taktflow-standard.workflow.ts'].map((name) => relative(stores.projectDir, join(workflowTarget, name)))
+  if (registered.some((entry) => !stores.config.workflows.includes(entry))) {
+    stores.config.workflows = [...new Set([...stores.config.workflows, ...registered])]
+    await atomicWrite(join(stores.projectDir, 'takt.config.json'), JSON.stringify(stores.config, null, 2) + '\n')
+  }
+  const workflowCopied = workflows.includes('sdlc.workflow.ts')
   const printer = createPrinter(options.json)
   if (options.json) {
     printer.data({
       projectDir: stores.projectDir,
       name: stores.config.project.name,
       agents,
-      workflow: workflowCopied ? 'sdlc.workflow.ts' : undefined,
+      workflow: workflowCopied ? 'sdlc.workflow.ts' : undefined, workflows,
     })
   } else {
     const colors = printer.colors
     printer.text(`${colors.green('✔')} 已初始化项目 ${colors.bold(storeName(stores.config.project.name))}：${stores.projectDir}`)
     printer.text(`  角色：${agents.length ? agents.join(', ') : '（已存在，跳过）'}`)
-    printer.text(`  流水线：${workflowCopied ? 'sdlc.workflow.ts' : '（已存在，跳过）'}`)
+    printer.text(`  流水线：${workflows.length ? workflows.join(', ') : '（已存在，跳过）'}`)
     printer.text('  运行默认流水线前，请确保项目使用 ESM（package.json 的 type 为 module）且可解析 @taktflow/core。')
   }
   return stores.projectDir

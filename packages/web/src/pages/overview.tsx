@@ -4,7 +4,7 @@ import type { ProjectOverview, RequirementSummary } from '@taktflow/core'
 import { useAsync } from '../api'
 import { AttentionCard } from '../components/attention-card'
 import { PageHeader, useCrumbs } from '../components/layout'
-import { StatCard } from '../components/stat-card'
+import { StatCard, StatStrip } from '../components/stat-card'
 import { EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows } from '../components/ui'
 import { fmtCost, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
@@ -30,10 +30,11 @@ function Stats({ p }: { p: ProjectOverview }) {
   const running = p.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length
   const waiting = p.requirements.filter((r) => r.stages.some((s) => s.status === 'waiting_human')).length
   const tokens = totalTokens(p.totals.usage)
+  const cacheRate = tokens ? Math.round(((p.totals.usage.cachedTokens ?? 0) / p.totals.usage.inputTokens) * 100) : 0
   return (
-    <div className="stats">
-      <StatCard label="进行中" icon={<Activity />} value={p.totals.active} foot={<><b>{running}</b> 个在跑 · <b>{waiting}</b> 个等人</>} tone="var(--st-running)" />
-      <StatCard label="已交付" icon={<CircleCheckBig />} value={p.totals.delivered} foot={<>共 {p.totals.requirements} 个需求 · {p.totals.runs} 次运行</>} tone="var(--st-success)" />
+    <StatStrip label="项目读数">
+      <StatCard label="进行中" icon={<Activity />} value={p.totals.active} foot={<><b>{running}</b> 个在跑 · <b>{waiting}</b> 个等人</>} tone={running ? 'var(--st-running)' : undefined} />
+      <StatCard label="已交付" icon={<CircleCheckBig />} value={p.totals.delivered} foot={<>共 <b>{p.totals.requirements}</b> 个需求 · <b>{p.totals.runs}</b> 次运行</>} />
       <StatCard label="阻塞" icon={<OctagonAlert />} value={p.totals.blocked} foot={<><b>{p.attention.length}</b> 项待办等人处理</>} tone={p.totals.blocked ? 'var(--st-failed)' : undefined} />
       <StatCard
         label="本周 Token / 成本"
@@ -44,26 +45,26 @@ function Stats({ p }: { p: ProjectOverview }) {
             <span className="stat-unit">{fmtCost(p.totals.usage.costUsd)}</span>
           </>
         }
-        foot={<>缓存命中 {tokens ? Math.round(((p.totals.usage.cachedTokens ?? 0) / p.totals.usage.inputTokens) * 100) : 0}% · 按需求拆分</>}
+        foot={<>缓存命中 <b>{cacheRate}%</b> · 色段为各需求占比</>}
       >
         <TokenShare reqs={p.requirements} />
       </StatCard>
-    </div>
+    </StatStrip>
   )
 }
 
 function OverviewSkeleton() {
   return (
     <>
-      <div className="stats">
+      <StatStrip label="项目读数">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="card stat-card">
+          <div key={i} className="stat-cell stat-skeleton">
             <Skeleton w={72} h={11} />
-            <Skeleton w={56} h={26} style={{ marginTop: 14 }} />
-            <Skeleton w={120} h={10} style={{ marginTop: 14 }} />
+            <Skeleton w={56} h={26} />
+            <Skeleton w={120} h={10} />
           </div>
         ))}
-      </div>
+      </StatStrip>
       <div className="overview-grid">
         <div className="card">
           <SkeletonRows rows={6} />

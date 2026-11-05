@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 
 export type ThemePref = 'system' | 'light' | 'dark'
 
@@ -21,19 +21,39 @@ function apply(pref: ThemePref) {
   else document.documentElement.setAttribute('data-theme', pref)
 }
 
-export function useTheme(): [ThemePref, (p: ThemePref) => void] {
-  const [pref, setPref] = useState<ThemePref>(readPref)
-  useEffect(() => apply(pref), [pref])
-  const update = (p: ThemePref) => {
-    try {
-      if (p === 'system') localStorage.removeItem(KEY)
-      else localStorage.setItem(KEY, p)
-    } catch {
-      // 同上
-    }
-    setPref(p)
+// 全局只有一份主题偏好：侧栏开关、命令面板、首帧脚本读写同一处
+let current: ThemePref = readPref()
+const subs = new Set<() => void>()
+apply(current)
+
+export function setTheme(p: ThemePref) {
+  try {
+    if (p === 'system') localStorage.removeItem(KEY)
+    else localStorage.setItem(KEY, p)
+  } catch {
+    // 同上
   }
-  return [pref, update]
+  // URL 里的 ?theme= 优先级最高，手动切换后去掉它，否则刷新又变回去
+  const params = new URLSearchParams(location.search)
+  if (params.has('theme')) {
+    params.delete('theme')
+    const qs = params.toString()
+    history.replaceState(null, '', location.pathname + (qs ? `?${qs}` : ''))
+  }
+  current = p
+  apply(p)
+  subs.forEach((f) => f())
+}
+
+export function useTheme(): [ThemePref, (p: ThemePref) => void] {
+  const pref = useSyncExternalStore(
+    (f) => {
+      subs.add(f)
+      return () => subs.delete(f)
+    },
+    () => current,
+  )
+  return [pref, setTheme]
 }
 
 /** 当前实际生效的是不是深色（画布等需要显式传 colorMode 的组件用）。 */

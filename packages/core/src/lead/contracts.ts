@@ -1,0 +1,22 @@
+import type { Engine, ProjectStores } from '../interfaces.js'
+import type { Actor, AgentProfile, HarnessAdapter, LeadActionResult, RunState, WorkflowDefinition } from '../types.js'
+import type { RunSummary, WorkflowDocument, WorkflowSourceRequest } from '../api.js'
+
+export interface LeadWorkflowAccess {
+  load(id: string): Promise<WorkflowDefinition>
+  get(id: string): Promise<Pick<WorkflowDocument, 'rev' | 'source'>>
+  replaceSource(id: string, request: WorkflowSourceRequest & { author: Actor; onBehalfOf: Actor }): Promise<unknown>
+}
+
+export interface LeadRuntimeOptions {
+  stores: ProjectStores
+  harnesses: Record<string, HarnessAdapter>
+  profiles: Record<string, AgentProfile>
+  engineFactory(deps: { stores: ProjectStores; profiles: Record<string, AgentProfile>; harnesses: Record<string, HarnessAdapter> }): Engine
+  workflows?: LeadWorkflowAccess
+  instructions?: string
+}
+
+export type TaskRunState = RunState & Pick<RunSummary, 'kind' | 'origin'>
+export interface LeadTurnResult { run: TaskRunState; results: LeadActionResult[] }
+export const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)

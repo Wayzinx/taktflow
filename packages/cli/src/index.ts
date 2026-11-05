@@ -11,6 +11,7 @@ import { runAnswer } from './commands/answer.js'
 import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
 import { runKbQuery } from './commands/kb.js'
+import { runSpaceCommand } from './commands/space.js'
 import { runServe } from './commands/serve.js'
 import { runCatalog, runDoctor } from './commands/catalog.js'
 
@@ -37,6 +38,13 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 async function dispatch(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
   switch (command) {
+    case 'space':
+    case 'repo':
+    case 'skill':
+    case 'member':
+    case 'workflow':
+    case 'chat':
+      return runSpaceCommand(cli)
     case 'doctor':
       expectPositionals('doctor', args, 0, 0)
       return runDoctor(options.project, options.json)
@@ -48,7 +56,7 @@ async function dispatch(cli: ParsedCli): Promise<number> {
       return 0
     case 'init':
       expectPositionals('init', args, 0, 1)
-      await runInit(options.project, { name: options.name, json: options.json }, args[0])
+      await runInit(options.project, { name: options.name, json: options.json, layout: options.layout }, args[0])
       return 0
     case 'req': {
       const sub = args[0]
@@ -125,7 +133,7 @@ async function dispatch(cli: ParsedCli): Promise<number> {
       expectPositionals('serve', args, 0, 0)
       const port = options.port === undefined ? undefined : parsePositiveInt(options.port, '--port')
       if (port !== undefined && port > 65535) throw new UsageError('--port 必须在 1–65535 之间')
-      await runServe({ project: options.project, port, host: options.host, json: options.json })
+      await runServe({ project: options.project, spaces: options.spaces, port, host: options.host, json: options.json })
       return 0
     }
     default:

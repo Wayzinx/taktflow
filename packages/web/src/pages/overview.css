@@ -2,17 +2,11 @@
   max-width: 1480px;
   margin: 0 auto;
 }
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
 .token-share {
   display: flex;
   gap: 2px;
-  height: 6px;
-  margin-top: 10px;
+  height: 4px;
+  margin-top: var(--sp-3);
   border-radius: var(--radius-pill);
   overflow: hidden;
 }
@@ -40,7 +34,7 @@
 }
 .req-id {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--text-meta);
 }
 .req-title-cell {
   display: flex;
@@ -49,15 +43,16 @@
   min-width: 0;
 }
 .req-title {
-  font-weight: 560;
-  font-size: 13.5px;
+  font-weight: 500;
+  font-size: var(--text-ui);
+  color: var(--text);
 }
 .req-meta {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 3px;
-  font-size: 11.5px;
+  margin-top: 2px;
+  font-size: var(--text-meta);
   color: var(--text-3);
 }
 .dot-sep {
@@ -78,10 +73,12 @@
   height: 18px;
   padding: 0 6px;
   border-radius: var(--radius-pill);
-  font-size: 11px;
+  font-size: var(--text-label);
   font-weight: 600;
+  font-family: var(--font-mono);
   color: var(--st-waiting);
   background: var(--st-waiting-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--st-waiting) 22%, transparent);
 }
 
 @media (max-width: 1180px) {
@@ -91,10 +88,34 @@
   .attention-panel {
     position: static;
   }
-  .stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 .req-table {
   table-layout: fixed;
+}
+
+/* ---------------------------------------------------------------- 待办页 */
+.attention-page {
+  max-width: 920px;
+}
+.att-groups {
+  display: grid;
+  gap: var(--sp-5);
+}
+.att-group-head {
+  background: var(--surface-2);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.att-group-head .card-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.att-group-head a.card-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.att-group-count {
+  font-size: var(--text-meta);
+  white-space: nowrap;
 }

@@ -3,27 +3,28 @@ import { Boxes, Cpu, FileCog, KeyRound, Route, ServerOff } from 'lucide-react'
 import type { HarnessInfo, ModelInfo } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { PageHeader, useCrumbs } from '../../components/layout'
-import { StatCard } from '../../components/stat-card'
+import { StatCard, StatStrip } from '../../components/stat-card'
 import { EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows } from '../../components/ui'
 import { CAPABILITIES } from '../../lib/capabilities'
 import { HarnessCard } from './harness-card'
 import { ModelsTable } from './models-table'
 import './settings.css'
+import './models.css'
 
 type Filter = 'all' | 'available' | 'unavailable'
 
 function Stats({ harnesses, models }: { harnesses?: HarnessInfo[]; models?: ModelInfo[] }) {
   if (!harnesses || !models) {
     return (
-      <div className="settings-stats">
+      <StatStrip label="运行环境读数">
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="card stat-card">
+          <div key={i} className="stat-cell stat-skeleton">
             <Skeleton w={72} h={11} />
-            <Skeleton w={56} h={26} style={{ marginTop: 14 }} />
-            <Skeleton w={140} h={10} style={{ marginTop: 14 }} />
+            <Skeleton w={56} h={26} />
+            <Skeleton w={140} h={10} />
           </div>
         ))}
-      </div>
+      </StatStrip>
     )
   }
   const available = harnesses.filter((h) => h.available)
@@ -33,11 +34,11 @@ function Stats({ harnesses, models }: { harnesses?: HarnessInfo[]; models?: Mode
   const protocols = new Set(models.map((m) => m.protocol))
   const bound = harnesses.filter((h) => h.roles.length > 0)
   return (
-    <div className="settings-stats">
+    <StatStrip label="运行环境读数">
       <StatCard
         label="Harness 可用"
         icon={<Cpu />}
-        tone="var(--st-success)"
+        tone={down.length ? 'var(--st-failed)' : undefined}
         value={
           <>
             {available.length}
@@ -46,11 +47,11 @@ function Stats({ harnesses, models }: { harnesses?: HarnessInfo[]; models?: Mode
         }
         foot={down.length ? <>不可用：{down.map((h) => h.id).join(' · ')}</> : '全部可用'}
       />
-      <StatCard label="模型" icon={<Boxes />} tone="var(--accent)" value={models.length} foot={<><b>{providers.size}</b> 个 provider · <b>{protocols.size}</b> 种协议</>} />
+      <StatCard label="模型" icon={<Boxes />} value={models.length} foot={<><b>{providers.size}</b> 个 provider · <b>{protocols.size}</b> 种协议</>} />
       <StatCard
         label="密钥已配置"
         icon={<KeyRound />}
-        tone={missingKeys.length ? 'var(--st-waiting)' : 'var(--st-success)'}
+        tone={missingKeys.length ? 'var(--st-waiting)' : undefined}
         value={
           <>
             {models.length - missingKeys.length}
@@ -62,11 +63,10 @@ function Stats({ harnesses, models }: { harnesses?: HarnessInfo[]; models?: Mode
       <StatCard
         label="角色路由"
         icon={<Route />}
-        tone="var(--c-6)"
         value={bound.reduce((s, h) => s + h.roles.length, 0)}
         foot={bound.length ? bound.map((h) => `${h.id} ${h.roles.length}`).join(' · ') : '还没有角色指定默认 harness'}
       />
-    </div>
+    </StatStrip>
   )
 }
 

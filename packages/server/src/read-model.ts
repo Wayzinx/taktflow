@@ -1,4 +1,4 @@
-import { addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
+import { reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
 import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
@@ -25,7 +25,8 @@ export async function summary(stores: ProjectStores, item: Requirement): Promise
     stores.attention.list({ pending: true, requirementId: item.id }),
     createInsights(stores).metrics(item.id),
   ])
-  const latest = runs.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.runId.localeCompare(b.runId)).at(-1)
+  const latest = runs.filter((run) => (run as RunState & { kind?: string }).kind !== 'task' && run.workflowId !== 'lead' && !run.workflowId.startsWith('task:'))
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.runId.localeCompare(b.runId)).at(-1)
   const snapshot = latest ? await workflow(stores, latest.runId) : undefined
   const derived = latest && snapshot && item.status !== 'archived' ? deriveRequirementState(snapshot, latest) : {}
   return { ...item, ...derived, stages: latest && snapshot ? stageProgress(snapshot, latest, await loadRunGraph(stores, latest.runId)) : [], latestRunId: latest?.runId, pendingAttention: attention.length, usage: metrics.usage }
@@ -92,9 +93,18 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
     if (version === undefined) throw new Error(`节点输出缺少版本：${nodeId}/${ref.path}`)
     outputs.push({ path: ref.path, version, kind: record?.kind ?? 'other' })
   }
-  return { state: node, kind: graphNode.kind, title: graphNode.title, stage: graphNode.stage, role: graphNode.role, checks: snapshots.get(nodeId)?.checks, prompt, inputs: (node.inputs ?? []).map(({ path, version }) => ({ path, version })), outputs, context, ...(verdicts.length ? { verdicts } : {}), ...(gate ? { gate } : {}), events }
+  return { state: node, kind: graphNode.kind, title: graphNode.title, stage: graphNode.stage, role: graphNode.role, checks: snapshots.get(nodeId)?.checks, prompt, inputs: (node.inputs ?? []).map(({ path, version }) => ({ path, version })), outputs, context, review: await reviewDetail(stores, runId, nodeId), ...(verdicts.length ? { verdicts } : {}), ...(gate ? { gate } : {}), events }
 }
 
 export async function runSummaries(stores: ProjectStores, states: RunState[]) {
-  return Promise.all(states.map(async (state) => summarizeRun(state, await stores.events.read(state.runId))))
+  return Promise.all(states.map(async (state) => {
+    const events = await stores.events.read(state.runId)
+    const explicit = state as RunState & Pick<import('@taktflow/core').RunSummary, 'kind' | 'origin'>
+    const messages = await stores.chat.list(state.requirementId)
+    const taskMessage = messages.find((message) => message.refs?.taskRunId === state.runId && message.replyTo)
+    const trigger = messages.find((message) => message.id === taskMessage?.replyTo)
+    const dispatch = events.find((event) => event.type === 'task.dispatched' && (event.data as EventPayloads['task.dispatched']).taskRunId === state.runId)?.data as EventPayloads['task.dispatched'] | undefined
+    const origin = explicit.origin ?? (trigger ? { kind: 'chat' as const, messageId: trigger.id, by: trigger.author, title: dispatch?.title ?? taskMessage!.text } : undefined)
+    return { ...summarizeRun(state, events), kind: explicit.kind ?? (state.workflowId.startsWith('task:') || taskMessage || dispatch ? 'task' as const : 'workflow' as const), ...(origin ? { origin } : {}) }
+  }))
 }

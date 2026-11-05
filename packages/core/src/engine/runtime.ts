@@ -10,6 +10,7 @@ import { runDir } from '../store/paths.js'
 import { collectOutputs, readCurrent, resolveInputs } from './artifacts.js'
 import { expandPlanner, qualify, validateDag, type Entry, type Graph } from './graph.js'
 import { WriteGuard } from './guard.js'
+import { saveWorktreeDiff } from './execution.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
 import { validateWorkflowHarnesses } from './selection.js'
@@ -188,6 +189,7 @@ export class Runtime implements HarnessHost {
     const ns = this.state.nodes[entry.def.id]!
     await this.guard.system(this.workspacePaths(entry.def.outputs?.map((output) => output.path)), () =>
       collectOutputs(this.deps.stores, this.state, entry.def, ns, actor, this.emit))
+    await saveWorktreeDiff(this, entry.def.id, ns)
     this.signal.throwIfAborted()
     await this.save()
     if (ns.status === 'stale') return
@@ -397,9 +399,9 @@ export class Runtime implements HarnessHost {
           this.signal.throwIfAborted()
           const run = node.run
           const result = await this.guard.system(this.workspacePaths(node.outputs?.map((output) => output.path)), () => run(ctx), true)
+          ns.result = result?.data
           if (result?.status === 'blocked') throw new BlockedError(result.message ?? '脚本被阻塞')
           if (result?.status === 'failed') throw new Error(result.message ?? '脚本失败')
-          ns.result = result?.data
         }
         break
       }
@@ -450,6 +452,7 @@ export class Runtime implements HarnessHost {
     for (const id of reset) {
       const old = this.state.nodes[id]!
       const next = fresh(id, old.iteration, old.attempts + 1)
+      next.worktree = old.worktree
       next.reworks = id === target ? count : old.reworks
       this.state.nodes[id] = next
       this.reservedAttempts[id] = next.attempts

@@ -26,7 +26,7 @@ function profile(markdown: string, roleName: string, source: string): AgentProfi
   }
 }
 
-export async function loadRuntimeProfiles(taktDir: string, roles: Record<string, string>): Promise<Record<string, AgentProfile>> {
+export async function loadRuntimeProfiles(dir: string, roles: Record<string, string>): Promise<Record<string, AgentProfile>> {
   const result: Record<string, AgentProfile> = Object.create(null)
   const add = (value: AgentProfile) => {
     if (Object.hasOwn(result, value.role)) throw new Error(`角色名称冲突：${value.role}`)
@@ -37,7 +37,6 @@ export async function loadRuntimeProfiles(taktDir: string, roles: Record<string,
     if (value.role !== role) throw new Error(`插件角色 ${role} 与 frontmatter role 不一致`)
     add(value)
   }
-  const dir = join(taktDir, 'agents')
   const entries = await readdir(dir, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') return []
     throw error

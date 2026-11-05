@@ -22,7 +22,8 @@
     "dev:web": "npm run dev -w @taktflow/web",
     "takt": "tsx packages/cli/src/index.ts",
     "demo": "bash examples/hello-delivery/demo.sh",
-    "demo:standard": "tsx examples/standard-delivery/demo.ts"
+    "demo:standard": "tsx examples/standard-delivery/demo.ts",
+    "demo:chat": "tsx examples/standard-delivery/demo-chat.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

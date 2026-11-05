@@ -7,6 +7,10 @@ import { nodeDetail, overview, requirement, run, summaries, summary, runSummarie
 import { createRouter } from './router.js'
 import { serialize } from './stale.js'
 import { stream } from './stream.js'
+import { spaceRoutes, type LeadMention } from './space-routes.js'
+import { workflowRoutes } from './workflow-routes.js'
+import { workflowStore } from './space.js'
+import type { WorkflowStore } from '@taktflow/workflow-source'
 
 export interface RequestContext {
   stores: ProjectStores
@@ -19,9 +23,16 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks = {}) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks = {}, onLeadMention?: LeadMention) {
   const router = createRouter<Handler>()
   const add = router.add
+  const workflows = new Map<string, WorkflowStore>()
+  spaceRoutes(add, connections, onLeadMention)
+  workflowRoutes(add, connections, (stores) => {
+    let store = workflows.get(stores.paths.workflows)
+    if (!store) { store = workflowStore(stores); workflows.set(stores.paths.workflows, store) }
+    return store
+  })
   add('GET', '/api/project', ({ stores }) => overview(stores))
   add('GET', '/api/requirements', ({ stores }) => summaries(stores))
   add('GET', '/api/requirements/:id', async ({ stores, params }) => {

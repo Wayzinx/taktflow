@@ -10,16 +10,16 @@ function Ring({ value }: { value?: number }) {
   const c = 2 * Math.PI * r
   const v = value ?? 0
   return (
-    <svg width="56" height="56" viewBox="0 0 56 56" className="ring">
+    <svg width="48" height="48" viewBox="0 0 56 56" className="ring" aria-hidden>
       <circle cx="28" cy="28" r={r} fill="none" stroke="var(--bg-sunken)" strokeWidth="6" />
-      <circle cx="28" cy="28" r={r} fill="none" stroke={v >= 0.6 ? 'var(--st-success)' : v >= 0.35 ? 'var(--st-waiting)' : 'var(--st-failed)'} strokeWidth="6" strokeLinecap="round" strokeDasharray={`${c * v} ${c}`} transform="rotate(-90 28 28)" />
+      <circle cx="28" cy="28" r={r} fill="none" stroke={v >= 0.6 ? 'var(--st-success)' : v >= 0.35 ? 'var(--st-waiting)' : 'var(--st-failed)'} strokeWidth="6" strokeLinecap="butt" strokeDasharray={`${c * v} ${c}`} transform="rotate(-90 28 28)" />
     </svg>
   )
 }
 
 function Kpi({ label, value, hint, visual }: { label: string; value: ReactNode; hint: ReactNode; visual?: ReactNode }) {
   return (
-    <div className="card kpi">
+    <div className="kpi">
       <div style={{ minWidth: 0 }}>
         <div className="kpi-label">{label}</div>
         <div className="kpi-value num">{value}</div>

@@ -1,13 +1,13 @@
 .att-card {
-  padding: 14px 16px;
+  padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-4);
   border-bottom: 1px solid var(--divider);
   transition: background var(--dur) var(--ease);
 }
 .att-card:last-child {
   border-bottom: none;
 }
-.att-card.answered {
-  opacity: 0.78;
+.att-card.answered .att-ask {
+  color: var(--text-2);
 }
 .att-head {
   display: flex;
@@ -21,48 +21,48 @@
   gap: 4px;
   height: 20px;
   padding: 0 7px 0 5px;
-  border-radius: 5px;
-  font-size: 11px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
   font-weight: 600;
+  letter-spacing: 0.02em;
   flex: none;
+  color: var(--st-waiting);
+  background: var(--st-waiting-soft);
+}
+/* 已处理：表单类型退回中性，结果行用成功色说明 */
+.att-card.answered .att-form {
+  color: var(--text-3);
+  background: var(--surface-hover);
 }
 .att-form svg {
   width: 12px;
   height: 12px;
 }
-.att-f-approve {
-  color: var(--accent-text);
-  background: var(--accent-soft);
-}
-.att-f-answer {
-  color: var(--st-waiting);
-  background: var(--st-waiting-soft);
-}
-.att-f-choice {
-  color: var(--st-failed);
-  background: var(--st-failed-soft);
-}
 .att-req {
-  font-size: 11.5px;
+  font-size: var(--text-meta);
   color: var(--text-2);
   flex: none;
 }
 .att-req:hover {
-  color: var(--accent-text);
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 .att-req-title {
-  font-size: 12.5px;
+  font-size: var(--text-meta);
   color: var(--text-2);
 }
 .att-time {
-  font-size: 11.5px;
+  font-size: var(--text-meta);
+  font-variant-numeric: tabular-nums;
   color: var(--text-3);
   white-space: nowrap;
   flex: none;
 }
 .att-ask {
-  margin-top: 8px;
-  font-size: 13px;
+  margin-top: var(--sp-2);
+  max-width: 72ch;
+  font-size: var(--text-body);
   line-height: 1.6;
   color: var(--text);
 }
@@ -70,8 +70,9 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
   margin-top: 6px;
-  font-size: 11.5px;
+  font-size: var(--text-meta);
 }
 .att-node-link {
   display: inline-flex;
@@ -85,17 +86,17 @@
   height: 12px;
 }
 .att-node-link:hover {
-  color: var(--accent-text);
+  color: var(--text);
 }
 .att-actions {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 12px;
+  margin-top: var(--sp-3);
 }
 .att-actions .input {
   height: 26px;
-  font-size: 12.5px;
+  font-size: var(--text-ui);
 }
 .att-actions.end {
   justify-content: flex-end;
@@ -103,18 +104,18 @@
 }
 .att-hint {
   margin-right: auto;
-  font-size: 11px;
+  font-size: var(--text-label);
 }
 .att-body {
-  margin-top: 12px;
+  margin-top: var(--sp-3);
 }
 .att-body .textarea {
-  font-size: 12.5px;
+  font-size: var(--text-ui);
 }
 .att-body > .input {
   margin-top: 8px;
   height: 28px;
-  font-size: 12.5px;
+  font-size: var(--text-ui);
 }
 .att-choices {
   display: grid;
@@ -129,7 +130,8 @@
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
   background: var(--surface);
-  font-size: 12.5px;
+  color: var(--text);
+  font-size: var(--text-ui);
   text-align: left;
   cursor: pointer;
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
@@ -137,9 +139,11 @@
 .att-choice:hover {
   background: var(--surface-hover);
 }
+/* 选中用墨色，橙色只留给焦点环 */
 .att-choice.on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--ink);
+  background: var(--surface-active);
+  font-weight: 500;
 }
 .att-radio {
   width: 12px;
@@ -150,14 +154,14 @@
   transition: border var(--dur) var(--ease);
 }
 .att-choice.on .att-radio {
-  border: 4px solid var(--accent);
+  border: 4px solid var(--ink);
 }
 .att-result {
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 10px;
-  font-size: 12px;
+  font-size: var(--text-meta);
   color: var(--st-success);
 }
 .att-result svg {
@@ -172,10 +176,10 @@
   white-space: nowrap;
 }
 .att-card.compact {
-  padding: 12px 14px;
+  padding: var(--sp-3) var(--sp-4);
 }
 .att-card.compact .att-ask {
-  font-size: 12.5px;
+  font-size: var(--text-ui);
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;

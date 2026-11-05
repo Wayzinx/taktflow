@@ -4,7 +4,8 @@ import { parseAnswerOptions } from '../args.js'
 import { UsageError } from '../args.js'
 import { createPrinter } from '../output.js'
 import { currentUser } from './ws.js'
-import { openStores } from '../project.js'
+import { answerLead } from '../lead.js'
+import { loadRuntime, openStores } from '../project.js'
 import { resumeWorkflow } from './run.js'
 
 export function validateAnswer(item: AttentionItem, input: { decision?: string; answer?: string }): void {
@@ -26,6 +27,14 @@ export async function runAnswer(cli: ParsedCli): Promise<number> {
   const answered = await stores.attention.answer(requestId, { ...input, by: { type: 'human', id: currentUser(stores.projectDir) } })
   if (!options.json) {
     printer.text(`${printer.colors.green('✔')} 已回答 ${printer.colors.cyan(requestId)}：${answered.decision ?? answered.answer ?? ''}`)
+  }
+  const run = await stores.runs.get(answered.runId)
+  if (run?.workflowId === 'lead' || !options.noResume && run?.workflowId.startsWith('task:')) {
+    if (await answerLead(await loadRuntime(options.project, { mock: options.mock }), answered)) {
+      if (options.json) printer.data(answered)
+      const resumed = await stores.runs.get(answered.runId)
+      return resumed && ['failed', 'cancelled'].includes(resumed.status) ? 1 : 0
+    }
   }
   if (options.noResume) {
     if (options.json) printer.data(answered)

@@ -22,7 +22,7 @@ export function AttentionPage() {
   const pendingCount = q.data?.items.filter((a) => !a.answeredAt).length ?? 0
   const groups = q.data ? q.data.reqs.map((r) => ({ r, items: items.filter((a) => a.requirementId === r.id) })).filter((g) => g.items.length) : []
   return (
-    <div className="page attention-page fade-in" style={{ maxWidth: 980 }}>
+    <div className="page attention-page fade-in">
       <PageHeader
         title="待办"
         sub="所有等人处理的事项：审批、回答澄清问题、门禁裁决、判决交人。处理结果写入审计日志，运行随后自动继续。"
@@ -46,10 +46,10 @@ export function AttentionPage() {
           <EmptyState icon={Inbox} title={view === 'pending' ? '全部处理完了' : '还没有处理过的事项'} hint={view === 'pending' ? '新的审批和问题会出现在这里，也会在左侧导航显示数量。' : undefined} />
         </div>
       ) : (
-        <div style={{ display: 'grid', gap: 16 }}>
+        <div className="att-groups">
           {groups.map(({ r, items }) => (
             <section key={r.id} className="card">
-              <div className="card-head">
+              <div className="card-head att-group-head">
                 <Link to={`/req/${r.id}`} className="mono req-id">
                   {r.id}
                 </Link>
@@ -58,7 +58,7 @@ export function AttentionPage() {
                 </Link>
                 <StatusBadge meta={REQ_STATUS[r.status]} />
                 <span className="spacer" />
-                <span className="faint num">{items.length} 项</span>
+                <span className="faint num att-group-count">{items.length} 项</span>
               </div>
               {items.map((a) => (
                 <AttentionCard key={a.requestId} item={a} />

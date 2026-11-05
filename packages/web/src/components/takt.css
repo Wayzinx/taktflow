@@ -1,0 +1,127 @@
+/* ---------------------------------------------------------------- 节拍尺 */
+.takt-ruler {
+  --step: var(--takt);
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 12px;
+}
+.takt-ruler > span {
+  width: 2px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--border-strong);
+}
+.takt-ruler > span.bar {
+  height: 12px;
+  background: var(--text-3);
+}
+/* 光点逐格前进：每格在自己那一拍亮起，再慢慢熄灭 */
+.takt-ruler.running > span {
+  animation: takt-tick calc(var(--ticks) * var(--step)) linear infinite;
+  animation-delay: calc(var(--i) * var(--step));
+}
+@keyframes takt-tick {
+  0% {
+    background: var(--accent);
+    transform: scaleY(1.5);
+  }
+  6% {
+    background: var(--accent);
+    transform: scaleY(1);
+  }
+  30%,
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+/* ---------------------------------------------------------------- 加载 */
+.takt-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  min-height: 240px;
+  padding: var(--sp-10) var(--sp-6);
+  color: var(--text-3);
+  animation: fade-in var(--dur-slow) var(--ease) both;
+  animation-delay: 120ms; /* 快速返回时不闪 */
+}
+.takt-loader.compact {
+  min-height: 0;
+  padding: var(--sp-6);
+}
+.takt-loader-label {
+  font-size: var(--text-meta);
+  letter-spacing: 0.02em;
+}
+
+/* ---------------------------------------------------------------- 节拍指示 */
+.takt-beat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 10px 0 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--text-meta);
+  white-space: nowrap;
+}
+.takt-beat-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--st-pending);
+}
+.takt-beat.live {
+  color: var(--text);
+}
+.takt-beat.live .takt-beat-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  animation: takt-beat var(--takt) var(--ease-in-out) infinite;
+}
+
+/* ---------------------------------------------------------------- 顶栏下沿的传送带刻度 */
+.takt-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 4px;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px 16px) bottom / 100% 3px no-repeat;
+  -webkit-mask: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  opacity: 0.8;
+}
+/* 运行中：一段节拍橙沿刻度按拍子一格格推进 */
+.takt-track.running::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 64px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent));
+  animation: takt-conveyor calc(var(--takt) * 24) steps(48) infinite;
+}
+@keyframes takt-conveyor {
+  from {
+    transform: translateX(-64px);
+  }
+  to {
+    transform: translateX(100vw);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .takt-track.running::after {
+    display: none;
+  }
+}

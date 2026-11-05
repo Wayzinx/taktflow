@@ -123,6 +123,7 @@ describe('project / profiles', () => {
       'automation',
       'dev',
       'judge',
+      'lead',
       'pm',
       'reviewer',
       'test-designer',

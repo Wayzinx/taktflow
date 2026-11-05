@@ -1,180 +1,138 @@
-/* 设计 token：所有颜色、圆角、阴影都从这里取。深色主题跟随系统，也可用 data-theme 手动指定。 */
+/*
+ * 设计 token（规范见仓库根目录 DESIGN.md）。
+ * 深浅主题用 light-dark() 写在同一处：color-scheme 跟随系统，data-theme 手动覆盖。
+ * 旧变量名（--accent、--st-*、--c-*）保持不变，页面不用改就能换上新外观。
+ */
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+
 :root {
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, Menlo, Consolas, 'PingFang SC', monospace;
+  color-scheme: light dark;
 
-  --radius-sm: 6px;
-  --radius: 10px;
+  /* ---------------------------------------------------------------- 字体与字号阶梯 */
+  --font-sans: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', ui-monospace, Menlo, Consolas, 'PingFang SC', monospace;
+  --text-label: 11px; /* 分组标题、角标，字距加宽 */
+  --text-meta: 12px; /* 次要信息、时间、计数 */
+  --text-ui: 13px; /* 控件、表格、导航：控制台的默认字号 */
+  --text-body: 14px; /* 可读段落、抽屉正文 */
+  --text-title: 16px; /* 卡片 / 区块标题 */
+  --text-headline: 20px; /* 页面标题 */
+  --text-display: 28px; /* 关键数字 */
+  --tracking-label: 0.06em;
+
+  /* ---------------------------------------------------------------- 间距（4px 基线） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+
+  /* ---------------------------------------------------------------- 圆角：精密件，小半径 */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius: 7px;
+  --radius-lg: 10px;
   --radius-pill: 999px;
-  --ease: cubic-bezier(0.2, 0, 0, 1);
-  --dur: 150ms;
 
-  --sidebar-w: 224px;
-  --topbar-h: 48px;
+  /* ---------------------------------------------------------------- 动效 */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1); /* 默认：快出、稳停 */
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: linear(0, 0.18 7%, 0.6 18%, 0.9 28%, 1.03 38%, 1.05 46%, 1.02 58%, 0.995 72%, 1);
+  --dur-fast: 110ms;
+  --dur: 160ms;
+  --dur-slow: 320ms;
+  --takt: 1200ms; /* 一拍：所有"运行中"的节律都按它走 */
 
+  --sidebar-w: 232px;
+  --topbar-h: 52px;
+
+  /* ---------------------------------------------------------------- 中性色：暖石墨 */
+  --bg: light-dark(oklch(0.972 0.004 80), oklch(0.165 0.005 75));
+  --bg-sunken: light-dark(oklch(0.948 0.005 80), oklch(0.135 0.005 75));
+  --surface: light-dark(oklch(0.995 0.002 80), oklch(0.198 0.006 75));
+  --surface-2: light-dark(oklch(0.982 0.003 80), oklch(0.215 0.006 75));
+  --surface-hover: light-dark(oklch(0.952 0.005 80), oklch(0.24 0.007 75));
+  --surface-active: light-dark(oklch(0.928 0.006 80), oklch(0.275 0.008 75));
+  --border: light-dark(oklch(0.3 0.01 75 / 0.11), oklch(0.95 0.01 80 / 0.085));
+  --border-strong: light-dark(oklch(0.3 0.01 75 / 0.19), oklch(0.95 0.01 80 / 0.15));
+  --divider: light-dark(oklch(0.3 0.01 75 / 0.07), oklch(0.95 0.01 80 / 0.06));
+  --text: light-dark(oklch(0.215 0.008 70), oklch(0.94 0.006 80));
+  --text-2: light-dark(oklch(0.43 0.01 70), oklch(0.76 0.008 80));
+  --text-3: light-dark(oklch(0.52 0.01 70), oklch(0.64 0.008 80));
+  --text-inverse: light-dark(oklch(0.985 0.003 80), oklch(0.17 0.005 75));
+
+  /* 控制台导轨（侧栏）：两套主题都是深石墨，外壳的固定色 */
+  --rail: light-dark(oklch(0.215 0.007 70), oklch(0.135 0.005 75));
+  --rail-hover: oklch(0.29 0.008 70);
+  --rail-active: oklch(0.33 0.009 70);
+  --scrim: light-dark(oklch(0.25 0.01 70 / 0.28), oklch(0 0 0 / 0.5));
+  --rail-border: oklch(0.95 0.01 80 / 0.08);
+  --rail-text: oklch(0.93 0.006 80);
+  --rail-text-2: oklch(0.74 0.008 80);
+  --rail-text-3: oklch(0.67 0.008 80);
+
+  /* ---------------------------------------------------------------- 品牌：节拍橙（只用于品牌标、节拍、当前位置、焦点） */
+  --accent: light-dark(oklch(0.62 0.17 47), oklch(0.72 0.155 52));
+  --accent-hover: light-dark(oklch(0.56 0.17 45), oklch(0.77 0.14 54));
+  --accent-text: light-dark(oklch(0.52 0.15 44), oklch(0.78 0.13 55));
+  --accent-soft: light-dark(oklch(0.62 0.17 47 / 0.11), oklch(0.72 0.155 52 / 0.15));
+  --accent-ring: light-dark(oklch(0.62 0.17 47 / 0.45), oklch(0.72 0.155 52 / 0.55));
+  /* 主按钮用墨色，橙色留给节拍 */
+  --ink: light-dark(oklch(0.24 0.008 70), oklch(0.93 0.006 80));
+  --ink-hover: light-dark(oklch(0.32 0.009 70), oklch(0.86 0.007 80));
+
+  /* ---------------------------------------------------------------- 状态色：只用于状态，且总配图标或文字 */
+  --st-success: light-dark(oklch(0.5 0.12 155), oklch(0.75 0.13 155));
+  --st-success-soft: light-dark(oklch(0.55 0.12 155 / 0.11), oklch(0.75 0.13 155 / 0.14));
+  --st-running: light-dark(oklch(0.5 0.15 252), oklch(0.73 0.12 250));
+  --st-running-soft: light-dark(oklch(0.54 0.15 252 / 0.1), oklch(0.73 0.12 250 / 0.15));
+  --st-failed: light-dark(oklch(0.52 0.19 22), oklch(0.71 0.16 20));
+  --st-failed-soft: light-dark(oklch(0.54 0.19 22 / 0.1), oklch(0.71 0.16 20 / 0.15));
+  --st-waiting: light-dark(oklch(0.5 0.12 70), oklch(0.8 0.135 80));
+  --st-waiting-soft: light-dark(oklch(0.7 0.14 75 / 0.15), oklch(0.8 0.135 80 / 0.14));
+  --st-stale: light-dark(oklch(0.5 0.13 300), oklch(0.74 0.11 300));
+  --st-stale-soft: light-dark(oklch(0.53 0.13 300 / 0.1), oklch(0.74 0.11 300 / 0.15));
+  --st-skipped: light-dark(oklch(0.5 0.008 75), oklch(0.7 0.008 80));
+  --st-skipped-soft: light-dark(oklch(0.5 0.008 75 / 0.1), oklch(0.7 0.008 80 / 0.12));
+  --st-pending: light-dark(oklch(0.76 0.008 75), oklch(0.44 0.008 80));
+
+  /* ---------------------------------------------------------------- 数据系列（上下文来源、判决类别） */
+  --c-1: light-dark(oklch(0.55 0.12 255), oklch(0.72 0.11 255));
+  --c-2: light-dark(oklch(0.58 0.09 205), oklch(0.74 0.09 205));
+  --c-3: light-dark(oklch(0.58 0.11 155), oklch(0.74 0.12 155));
+  --c-4: light-dark(oklch(0.66 0.13 78), oklch(0.79 0.13 80));
+  --c-5: light-dark(oklch(0.58 0.14 355), oklch(0.74 0.12 355));
+  --c-6: light-dark(oklch(0.54 0.12 300), oklch(0.73 0.11 300));
+  --c-7: light-dark(oklch(0.56 0.012 75), oklch(0.66 0.012 80));
+  --c-8: light-dark(oklch(0.6 0.16 40), oklch(0.72 0.15 42));
+
+  /* ---------------------------------------------------------------- 阴影：低而利落，凸起面带一道机加工高光 */
+  --shadow-color: light-dark(oklch(0.25 0.01 70 / 0.08), oklch(0 0 0 / 0.42));
+  --edge-light: light-dark(oklch(1 0 0 / 0.7), oklch(1 0 0 / 0.045));
+  --shadow-xs: 0 1px 0 var(--shadow-color);
+  --shadow-sm: inset 0 1px 0 var(--edge-light), 0 1px 2px var(--shadow-color), 0 0 0 1px var(--border);
+  --shadow-md: 0 6px 18px -6px var(--shadow-color), 0 2px 5px -2px var(--shadow-color), 0 0 0 1px var(--border);
+  --shadow-lg: 0 28px 60px -16px light-dark(oklch(0.25 0.01 70 / 0.22), oklch(0 0 0 / 0.65)), 0 10px 20px -10px var(--shadow-color), 0 0 0 1px var(--border-strong);
+
+  /* ---------------------------------------------------------------- 代码高亮与画布 */
+  --code-key: light-dark(oklch(0.5 0.13 270), oklch(0.76 0.1 270));
+  --code-str: light-dark(oklch(0.5 0.11 155), oklch(0.78 0.12 155));
+  --code-num: light-dark(oklch(0.55 0.14 50), oklch(0.78 0.12 55));
+  --code-lit: light-dark(oklch(0.52 0.15 355), oklch(0.76 0.12 355));
+  --code-punc: var(--text-3);
+  --grid-dot: light-dark(oklch(0.3 0.01 75 / 0.12), oklch(0.95 0.01 80 / 0.08));
+}
+
+:root[data-theme='light'] {
   color-scheme: light;
-  --bg: #f7f7f8;
-  --bg-sunken: #f0f0f2;
-  --surface: #ffffff;
-  --surface-2: #fafafb;
-  --surface-hover: #f4f4f6;
-  --surface-active: #ececf0;
-  --border: rgba(16, 18, 27, 0.08);
-  --border-strong: rgba(16, 18, 27, 0.14);
-  --divider: rgba(16, 18, 27, 0.06);
-  --text: #16171c;
-  --text-2: #565a66;
-  --text-3: #8b8f9b;
-  --text-inverse: #ffffff;
-
-  --accent: #5b5bd6;
-  --accent-hover: #4f4fc7;
-  --accent-text: #4a4ac2;
-  --accent-soft: rgba(91, 91, 214, 0.1);
-  --accent-ring: rgba(91, 91, 214, 0.32);
-
-  /* 状态色：只用于状态 */
-  --st-success: #2a9d6a;
-  --st-success-soft: rgba(42, 157, 106, 0.11);
-  --st-running: #3b6fe0;
-  --st-running-soft: rgba(59, 111, 224, 0.11);
-  --st-failed: #d6454f;
-  --st-failed-soft: rgba(214, 69, 79, 0.1);
-  --st-waiting: #c98414;
-  --st-waiting-soft: rgba(201, 132, 20, 0.12);
-  --st-stale: #8a63d2;
-  --st-stale-soft: rgba(138, 99, 210, 0.11);
-  --st-skipped: #9a9ea8;
-  --st-skipped-soft: rgba(120, 124, 136, 0.1);
-  --st-pending: #b7bac3;
-
-  /* 上下文来源（堆叠条）与判决类别 */
-  --c-1: #5b5bd6;
-  --c-2: #2f9fb3;
-  --c-3: #2a9d6a;
-  --c-4: #c98414;
-  --c-5: #d26a8c;
-  --c-6: #8a63d2;
-  --c-7: #7c8494;
-  --c-8: #d6454f;
-
-  --shadow-xs: 0 1px 0 rgba(16, 18, 27, 0.03);
-  --shadow-sm: 0 1px 2px rgba(16, 18, 27, 0.05), 0 0 0 1px rgba(16, 18, 27, 0.02);
-  --shadow-md: 0 4px 16px -4px rgba(16, 18, 27, 0.1), 0 2px 4px -2px rgba(16, 18, 27, 0.05);
-  --shadow-lg: 0 24px 48px -12px rgba(16, 18, 27, 0.18), 0 8px 16px -8px rgba(16, 18, 27, 0.08);
-
-  --code-key: #5b4bc4;
-  --code-str: #1f7a52;
-  --code-num: #b2561a;
-  --code-lit: #b8336a;
-  --code-punc: #8b8f9b;
-  --grid-dot: rgba(16, 18, 27, 0.09);
 }
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-    --bg: #0c0d10;
-    --bg-sunken: #08090b;
-    --surface: #131418;
-    --surface-2: #17181d;
-    --surface-hover: #1c1d23;
-    --surface-active: #23252c;
-    --border: rgba(255, 255, 255, 0.075);
-    --border-strong: rgba(255, 255, 255, 0.13);
-    --divider: rgba(255, 255, 255, 0.055);
-    --text: #ececf0;
-    --text-2: #a3a6b1;
-    --text-3: #6f7380;
-    --text-inverse: #0c0d10;
-    --accent: #7b7bf0;
-    --accent-hover: #8d8df4;
-    --accent-text: #a3a3ff;
-    --accent-soft: rgba(123, 123, 240, 0.14);
-    --accent-ring: rgba(123, 123, 240, 0.4);
-    --st-success: #3dbd85;
-    --st-success-soft: rgba(61, 189, 133, 0.13);
-    --st-running: #5b8cf5;
-    --st-running-soft: rgba(91, 140, 245, 0.15);
-    --st-failed: #ec5f69;
-    --st-failed-soft: rgba(236, 95, 105, 0.14);
-    --st-waiting: #e4a33a;
-    --st-waiting-soft: rgba(228, 163, 58, 0.14);
-    --st-stale: #a585ec;
-    --st-stale-soft: rgba(165, 133, 236, 0.15);
-    --st-skipped: #747884;
-    --st-skipped-soft: rgba(140, 144, 156, 0.12);
-    --st-pending: #4a4d57;
-    --c-1: #7b7bf0;
-    --c-2: #3fb5c9;
-    --c-3: #3dbd85;
-    --c-4: #e4a33a;
-    --c-5: #e47ea0;
-    --c-6: #a585ec;
-    --c-7: #8a91a1;
-    --c-8: #ec5f69;
-    --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.2);
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.02);
-    --shadow-md: 0 6px 20px -6px rgba(0, 0, 0, 0.55), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
-    --shadow-lg: 0 28px 56px -12px rgba(0, 0, 0, 0.7), 0 8px 16px -8px rgba(0, 0, 0, 0.4);
-    --code-key: #a8a2ff;
-    --code-str: #6fd3a1;
-    --code-num: #f0a868;
-    --code-lit: #f08cb6;
-    --code-punc: #6f7380;
-    --grid-dot: rgba(255, 255, 255, 0.07);
-  }
-}
-
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --bg: #0c0d10;
-  --bg-sunken: #08090b;
-  --surface: #131418;
-  --surface-2: #17181d;
-  --surface-hover: #1c1d23;
-  --surface-active: #23252c;
-  --border: rgba(255, 255, 255, 0.075);
-  --border-strong: rgba(255, 255, 255, 0.13);
-  --divider: rgba(255, 255, 255, 0.055);
-  --text: #ececf0;
-  --text-2: #a3a6b1;
-  --text-3: #6f7380;
-  --text-inverse: #0c0d10;
-  --accent: #7b7bf0;
-  --accent-hover: #8d8df4;
-  --accent-text: #a3a3ff;
-  --accent-soft: rgba(123, 123, 240, 0.14);
-  --accent-ring: rgba(123, 123, 240, 0.4);
-  --st-success: #3dbd85;
-  --st-success-soft: rgba(61, 189, 133, 0.13);
-  --st-running: #5b8cf5;
-  --st-running-soft: rgba(91, 140, 245, 0.15);
-  --st-failed: #ec5f69;
-  --st-failed-soft: rgba(236, 95, 105, 0.14);
-  --st-waiting: #e4a33a;
-  --st-waiting-soft: rgba(228, 163, 58, 0.14);
-  --st-stale: #a585ec;
-  --st-stale-soft: rgba(165, 133, 236, 0.15);
-  --st-skipped: #747884;
-  --st-skipped-soft: rgba(140, 144, 156, 0.12);
-  --st-pending: #4a4d57;
-  --c-1: #7b7bf0;
-  --c-2: #3fb5c9;
-  --c-3: #3dbd85;
-  --c-4: #e4a33a;
-  --c-5: #e47ea0;
-  --c-6: #a585ec;
-  --c-7: #8a91a1;
-  --c-8: #ec5f69;
-  --shadow-xs: 0 1px 0 rgba(0, 0, 0, 0.2);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.02);
-  --shadow-md: 0 6px 20px -6px rgba(0, 0, 0, 0.55), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
-  --shadow-lg: 0 28px 56px -12px rgba(0, 0, 0, 0.7), 0 8px 16px -8px rgba(0, 0, 0, 0.4);
-  --code-key: #a8a2ff;
-  --code-str: #6fd3a1;
-  --code-num: #f0a868;
-  --code-lit: #f08cb6;
-  --code-punc: #6f7380;
-  --grid-dot: rgba(255, 255, 255, 0.07);
 }

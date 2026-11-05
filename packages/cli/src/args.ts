@@ -25,6 +25,13 @@ export interface CliOptions {
   intent?: string
   port?: string
   host?: string
+  spaces?: string
+  layout?: string
+  edits?: string
+  branch?: string
+  url?: string
+  purpose?: string
+  role?: string
 }
 
 export interface ParsedCli {
@@ -36,7 +43,7 @@ export interface ParsedCli {
 export const HELP = `用法：takt <命令> [选项]
 
 命令：
-  init [dir] [--name <n>]                       初始化项目并复制默认角色 / 流水线
+  init [dir] [--name <n>] [--layout space|legacy]                       初始化项目并复制默认角色 / 流水线
   req new "<title>" [--link <url>]              创建需求
   req ls                                        列出需求
   ws put <REQ> <path> <file|-> [--kind input] [--reason <r>]
@@ -54,7 +61,14 @@ export const HELP = `用法：takt <命令> [选项]
   harness ls                                    列出 harness、能力和可用性
   models ls                                     列出模型与密钥配置状态
   doctor                                        检查配置、插件和运行环境
-  serve [--port 4870] [--host 127.0.0.1]
+  space ls [dir] [--spaces <dir>]
+  repo add <id> <path> [--url <url>] [--branch main] | repo ls | repo sync [id]
+  skill ls | skill add <dir>
+  member ls | member add <id> [--name <n>] [--role member]
+  workflow ls | workflow lint <id> | workflow show <id>
+  workflow edit <id> --edits <json文件> | workflow revisions <id> | workflow rollback <id> <rev>
+  chat ls <REQ> | chat post <REQ> "<text>"
+  serve [--spaces <dir>] [--port 4870] [--host 127.0.0.1]
 
 全局选项：
   --project <dir>   项目目录（默认 cwd，并向上查找 takt.config.json）
@@ -63,6 +77,14 @@ export const HELP = `用法：takt <命令> [选项]
 
 const OPTIONS = {
   project: { type: 'string' },
+  spaces: { type: 'string' },
+  layout: { type: 'string' },
+  edits: { type: 'string' },
+  branch: { type: 'string' },
+  url: { type: 'string' },
+  purpose: { type: 'string' },
+  role: { type: 'string' },
+
   json: { type: 'boolean' },
   help: { type: 'boolean' },
   name: { type: 'string' },
@@ -102,7 +124,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     reject: values.reject === true,
     noResume: values['no-resume'] === true,
   }
-  for (const key of ['project', 'name', 'link', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host'] as const) {
+  for (const key of ['project', 'name', 'link', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {
     const value = values[key]
     if (value !== undefined) options[key] = value
   }

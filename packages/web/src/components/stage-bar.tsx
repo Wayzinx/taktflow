@@ -3,7 +3,7 @@ import type { StageProgress } from '@taktflow/core'
 import { STAGE_STATUS, toneSoftVar, toneVar } from '../lib/status'
 import './stage-bar.css'
 
-/** 阶段条。compact：一串胶囊 + 当前阶段名（表格里用）；full：等分的分段轨道（详情页头部用）。 */
+/** 阶段条。compact：传送带分段 + 当前阶段（图标 + 名称）（表格里用）；full：等分的分段轨道（详情页头部用）。 */
 export function StageBar({ stages, variant = 'compact', showLabel = true }: { stages: StageProgress[]; variant?: 'compact' | 'full'; showLabel?: boolean }) {
   if (stages.length === 0) return <span className="stage-empty">尚未运行</span>
   if (variant === 'full') {
@@ -34,24 +34,22 @@ export function StageBar({ stages, variant = 'compact', showLabel = true }: { st
   }
   const current = stages.find((s) => s.status !== 'done' && s.status !== 'todo') ?? stages.find((s) => s.status === 'todo')
   const allDone = stages.every((s) => s.status === 'done')
+  const doneCount = stages.filter((s) => s.status === 'done').length
+  const curMeta = allDone ? STAGE_STATUS.done : current ? STAGE_STATUS[current.status] : STAGE_STATUS.todo
+  const CurIcon = curMeta.icon
   const label = allDone ? '已完成' : current?.title
-  const labelTone = allDone ? 'success' : current ? STAGE_STATUS[current.status].tone : 'pending'
   return (
-    <span className="stage-pills">
-      <span className="stage-pills-row">
+    <span className="stage-belt" style={{ '--tone': toneVar(curMeta.tone) } as CSSProperties}>
+      <span className="stage-belt-row" role="img" aria-label={`${doneCount}/${stages.length} 个阶段完成${label ? `，当前：${label} · ${curMeta.label}` : ''}`}>
         {stages.map((s) => {
           const meta = STAGE_STATUS[s.status]
-          const Icon = meta.icon
-          return (
-            <span key={s.id} className={`stage-pill st-${s.status}`} style={{ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties} title={`${s.title} · ${meta.label} · ${s.done}/${s.total}`}>
-              <Icon className={meta.spin ? 'spin' : undefined} strokeWidth={2.8} />
-            </span>
-          )
+          return <span key={s.id} className={`belt-seg st-${s.status}`} style={{ '--seg': toneVar(meta.tone) } as CSSProperties} title={`${s.title} · ${meta.label} · ${s.done}/${s.total}`} />
         })}
       </span>
       {showLabel && label && (
-        <span className="stage-pills-label truncate" style={{ color: labelTone === 'pending' ? 'var(--text-3)' : undefined }}>
-          {label}
+        <span className={`stage-belt-label${current?.status === 'todo' && !allDone ? ' idle' : ''}`}>
+          <CurIcon className={curMeta.spin ? 'spin' : undefined} strokeWidth={2.4} aria-hidden />
+          <span className="truncate">{label}</span>
         </span>
       )}
     </span>

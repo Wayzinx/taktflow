@@ -1,15 +1,19 @@
 import { access } from 'node:fs/promises'
-import { createServer, type ServerOptions } from '@taktflow/server'
+import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
 import type { AttentionItem } from '@taktflow/core'
 import { createPrinter } from '../output.js'
 import { loadRuntime, webDir, type ProjectContext } from '../project.js'
 import { serializeRun } from '../resume-lock.js'
 import { resumeOnce } from './run.js'
 import { createRuntimeCatalog } from '../catalog.js'
+import { createProjectLead, watchLeadEvents } from '../lead.js'
 import { validateRuntime } from '../runtime-validation.js'
 
 export interface ServeOptions {
   project?: string
+  spaces?: string
+  onLeadMention?: LeadMention
+  onSpaceLeadMention?: ServerOptions['onSpaceLeadMention']
   port?: number
   host?: string
   json: boolean
@@ -25,22 +29,36 @@ async function webDirectory(): Promise<string | undefined> {
 }
 
 export async function runServe(options: ServeOptions): Promise<void> {
-  const context = await loadRuntime(options.project)
-  validateRuntime(context)
+  if (options.project && options.spaces) throw new Error('--project 与 --spaces 不能同时指定')
+  const contexts = options.spaces
+    ? await Promise.all((await discoverSpaces(options.spaces)).map((stores) => loadRuntime(stores.projectDir)))
+    : [await loadRuntime(options.project)]
+  for (const context of contexts) validateRuntime(context)
+  const leads = new Map(await Promise.all(contexts.map(async (context) => [context.stores.projectDir, await createProjectLead(context)] as const)))
+  const stops = await Promise.all(contexts.map((context) => watchLeadEvents(context, leads.get(context.stores.projectDir)!)))
+  const context = contexts[0]!
   const printer = createPrinter(options.json)
   const dir = await webDirectory()
   if (dir === undefined) {
     printer.warn(`Web 控制台未构建（${webDir} 不存在），先运行 npm run build -w @taktflow/web；API 仍可用。`)
   }
   const serverOptions: ServerOptions = {
-    projectDir: context.stores.projectDir,
+    onLeadMention: options.onLeadMention,
+    onSpaceLeadMention: options.onSpaceLeadMention ?? (options.onLeadMention
+      ? (_, id, message) => options.onLeadMention!(id, message)
+      : async (dir, id, message) => { await leads.get(dir)!.onMessage(id, message) }),
+    ...(options.spaces ? { spacesDir: options.spaces } : { projectDir: context.stores.projectDir }),
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.host === undefined ? {} : { host: options.host }),
     ...(dir === undefined ? {} : { webDir: dir }),
-    onAnswer: (item) => resumeAfterAnswer(context, item),
+    onSpaceAnswer: async (dir, item) => {
+      if (!await leads.get(dir)!.onAttention(item)) await resumeAfterAnswer(contexts.find((entry) => entry.stores.projectDir === dir)!, item)
+    },
     ...createRuntimeCatalog(),
   }
-  const server = await createServer(serverOptions)
+  let server: Awaited<ReturnType<typeof createServer>>
+  try { server = await createServer(serverOptions) }
+  catch (error) { await Promise.all(stops.map((stop) => stop())); throw error }
   if (options.json) printer.data({ url: server.url, projectDir: context.stores.projectDir })
   else printer.text(`${printer.colors.green('✔')} takt 已启动：${server.url}  ${printer.colors.dim(context.stores.projectDir)}`)
   // serve 常驻：等待进程信号，收到后关闭。
@@ -54,6 +72,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     process.on('SIGTERM', stop)
   })
   await server.close()
+  await Promise.all(stops.map((stop) => stop()))
 }
 
 /**

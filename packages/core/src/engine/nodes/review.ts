@@ -2,6 +2,7 @@ import type { AttentionItem } from '../../interfaces.js'
 import type { AgentNodeDef, ArtifactRef, NodeContext, ReviewNodeDef, ReviewRecord, ReviewResponse, ReviewRound } from '../../types.js'
 import type { Entry } from '../graph.js'
 import type { Runtime } from '../runtime.js'
+import { saveWorktreeDiff } from '../execution.js'
 import { callHarness } from '../harness.js'
 import { collectOutputs } from '../artifacts.js'
 import { addUsage } from '../../insights/usage.js'
@@ -54,8 +55,13 @@ async function persist(host: Runtime, node: ReviewNodeDef, progress: ReviewProgr
 async function invoke(host: Runtime, node: ReviewNodeDef, ctx: NodeContext, role: string, harness: AgentNodeDef['harness'], prompt: string, schema: Record<string, unknown>, writeScope?: string[]): Promise<unknown> {
   const ns = host.state.nodes[node.id]!
   // 每个角色使用独立临时状态，绝不把上一位评审者的 sessionRef 传给下一位。
-  const session = { ...ns, sessionRef: undefined, usage: undefined }
-  const result = await callHarness(host, { ...node, kind: 'agent', role, harness, prompt, resultSchema: schema, session: 'fresh', writeScope }, ctx, session)
+  const sources = !Array.isArray(node.target) ? Object.values(host.state.nodes).filter((state) => state.worktree?.repo === (node.target as { code: { repo: string } }).code.repo
+    && (!ctx.item || host.graph.get(state.id)?.item?.key === ctx.item.key)) : []
+  const session = { ...ns, worktree: undefined, sessionRef: undefined, usage: undefined }
+  if (sources[0]?.worktree) ctx = { ...ctx, projectDir: sources[0].worktree.path }
+  if (sources.length > 1) prompt += `\n工作树：${JSON.stringify(sources.map((state) => ({ nodeId: state.id, ...state.worktree })))}`
+  const result = await callHarness(host, { ...node, kind: 'agent', role, harness, prompt, resultSchema: schema, session: 'fresh', writeScope }, ctx, session, true, sources.map((state) => state.worktree!.path))
+  if (writeScope === undefined) for (const source of sources) await saveWorktreeDiff(host, source.id, source)
   if (session.usage) ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, session.usage)
   return result.data
 }

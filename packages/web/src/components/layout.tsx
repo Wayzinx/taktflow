@@ -1,11 +1,14 @@
-import { useEffect, useSyncExternalStore, type ReactNode } from 'react'
-import { BookOpen, ChevronRight, Inbox, LayoutDashboard, ListTodo, Monitor, Moon, Settings, Sun } from 'lucide-react'
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { BookOpen, ChevronRight, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, X } from 'lucide-react'
 import { useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
 import { REQ_STATUS } from '../lib/status'
 import { useTheme, type ThemePref } from '../lib/theme'
+import { CommandPalette, setPaletteOpen } from './command-palette'
+import { TaktBeat } from './takt'
 import { StatusDot } from './ui'
 import './layout.css'
+import './topbar.css'
 
 // ---------------------------------------------------------------- 面包屑：页面声明，顶栏渲染
 
@@ -32,22 +35,19 @@ function useCrumbState() {
   )
 }
 
+/** 品牌标：三道节拍刻度，最后一拍是节拍橙。 */
 function Logo() {
   return (
-    <svg viewBox="0 0 32 32" width="22" height="22" aria-hidden>
-      <defs>
-        <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#7474ee" />
-          <stop offset="1" stopColor="#4b4bc8" />
-        </linearGradient>
-      </defs>
-      <rect width="32" height="32" rx="8" fill="url(#lg)" />
-      <path d="M9 11h14M16 11v12" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" />
-      <circle cx="10" cy="21" r="2" fill="#fff" opacity=".7" />
-      <circle cx="22" cy="21" r="2" fill="#fff" opacity=".7" />
+    <svg className="logo" viewBox="0 0 28 28" width="26" height="26" aria-hidden>
+      <rect x="0.5" y="0.5" width="27" height="27" rx="6.5" className="logo-plate" />
+      <rect x="7" y="9" width="2.6" height="10" rx="1.3" className="logo-tick" />
+      <rect x="12.7" y="9" width="2.6" height="10" rx="1.3" className="logo-tick" />
+      <rect x="18.4" y="6" width="2.6" height="16" rx="1.3" className="logo-beat" />
     </svg>
   )
 }
+
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 
 function ThemeSwitch() {
   const [pref, setPref] = useTheme()
@@ -59,15 +59,15 @@ function ThemeSwitch() {
   return (
     <div className="theme-switch" role="radiogroup" aria-label="主题">
       {opts.map(({ v, icon: Icon, label }) => (
-        <button key={v} role="radio" aria-checked={pref === v} className={pref === v ? 'on' : undefined} onClick={() => setPref(v)} title={label}>
-          <Icon />
+        <button key={v} role="radio" aria-checked={pref === v} aria-label={label} className={pref === v ? 'on' : undefined} onClick={() => setPref(v)} title={label}>
+          <Icon aria-hidden />
         </button>
       ))}
     </div>
   )
 }
 
-function Sidebar() {
+function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { path } = useLocation()
   const project = useAsync((ds) => ds.project(), [])
   const pending = project.data?.attention.length ?? 0
@@ -80,20 +80,28 @@ function Sidebar() {
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${open ? ' open' : ''}`} aria-label="主导航">
       <div className="sb-brand">
         <Logo />
         <div className="sb-brand-text">
           <div className="sb-product">taktflow</div>
           <div className="sb-project truncate">{project.data?.name ?? '…'}</div>
         </div>
+        <button className="sb-close btn-icon" onClick={onClose} aria-label="收起导航">
+          <X aria-hidden />
+        </button>
       </div>
+      <button className="sb-search" onClick={() => setPaletteOpen(true)}>
+        <Search aria-hidden />
+        <span>搜索或跳转</span>
+        <span className="sb-kbd mono">{isMac ? '⌘' : 'Ctrl'} K</span>
+      </button>
       <nav className="sb-nav">
         {items.map(({ to, label, icon: Icon, active, badge, count, soon }) => (
-          <Link key={to} to={to} className={`sb-item${active ? ' active' : ''}`}>
-            <Icon />
+          <Link key={to} to={to} className={`sb-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
+            <Icon aria-hidden />
             <span>{label}</span>
-            {badge ? <span className="sb-badge num">{badge}</span> : null}
+            {badge ? <span className="sb-badge num" aria-label={`${badge} 项待办`}>{badge}</span> : null}
             {count !== undefined && !badge ? <span className="sb-count num">{count}</span> : null}
             {soon && <span className="sb-soon">占位</span>}
           </Link>
@@ -101,9 +109,9 @@ function Sidebar() {
       </nav>
       {recent.length > 0 && (
         <div className="sb-section">
-          <div className="sb-section-title">需求</div>
+          <div className="sb-section-title">最近的需求</div>
           {recent.map((r) => (
-            <Link key={r.id} to={`/req/${r.id}`} className={`sb-req${path === `/req/${r.id}` ? ' active' : ''}`}>
+            <Link key={r.id} to={`/req/${r.id}`} className={`sb-req${path === `/req/${r.id}` ? ' active' : ''}`} title={`${r.id} ${r.title} · ${REQ_STATUS[r.status].label}`}>
               <StatusDot tone={REQ_STATUS[r.status].tone} pulse={r.stages.some((s) => s.status === 'running')} />
               <span className="mono sb-req-id">{r.id}</span>
               <span className="truncate">{r.title}</span>
@@ -119,38 +127,64 @@ function Sidebar() {
   )
 }
 
-function Topbar() {
+function Topbar({ onMenu }: { onMenu: () => void }) {
   const items = useCrumbState()
   const ds = useSource()
+  const project = useAsync((d) => d.project(), [])
+  const running = project.data?.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length ?? 0
   return (
     <header className="topbar">
+      <button className="btn btn-ghost btn-icon topbar-menu" onClick={onMenu} aria-label="打开导航">
+        <Menu aria-hidden />
+      </button>
       <nav className="crumbs" aria-label="面包屑">
-        {items.map((c, i) => (
-          <span key={i} className="crumb">
-            {i > 0 && <ChevronRight className="crumb-sep" />}
-            {c.to && i < items.length - 1 ? <Link to={c.to}>{c.label}</Link> : <span className={i === items.length - 1 ? 'crumb-current' : undefined}>{c.label}</span>}
-          </span>
-        ))}
+        <ol>
+          {items.map((c, i) => (
+            <li key={i} className="crumb">
+              {i > 0 && <ChevronRight className="crumb-sep" aria-hidden />}
+              {c.to && i < items.length - 1 ? (
+                <Link to={c.to}>{c.label}</Link>
+              ) : (
+                <span className={i === items.length - 1 ? 'crumb-current' : undefined} aria-current={i === items.length - 1 ? 'page' : undefined}>
+                  {c.label}
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
       </nav>
-      <span style={{ flex: 1 }} />
+      <span className="topbar-spacer" />
       {ds.mock && (
         <span className="demo-badge" title="后端 API 不可达或指定了 ?mock=1，当前展示内置演示数据；写操作只保存在本页内存里">
-          <span className="demo-dot" />
           演示数据
         </span>
       )}
+      {project.data && <TaktBeat count={running} />}
+      <button className="btn btn-sm topbar-search" onClick={() => setPaletteOpen(true)} aria-label="打开命令面板">
+        <Search aria-hidden />
+        <span className="kbd">{isMac ? '⌘K' : 'Ctrl K'}</span>
+      </button>
+      <span className={`takt-track${running > 0 ? ' running' : ''}`} aria-hidden />
     </header>
   )
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const [navOpen, setNavOpen] = useState(false)
+  const { path } = useLocation()
+  useEffect(() => setNavOpen(false), [path])
   return (
     <div className="shell">
-      <Sidebar />
+      <a className="skip-link" href="#main">跳到正文</a>
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
+      {navOpen && <div className="sb-scrim" onClick={() => setNavOpen(false)} />}
       <div className="shell-main">
-        <Topbar />
-        <main className="shell-content">{children}</main>
+        <Topbar onMenu={() => setNavOpen(true)} />
+        <main className="shell-content" id="main">
+          {children}
+        </main>
       </div>
+      <CommandPalette />
     </div>
   )
 }

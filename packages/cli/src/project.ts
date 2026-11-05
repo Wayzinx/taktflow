@@ -5,6 +5,7 @@ import {
   createEngine,
   openProject,
   validateWorkflow,
+  listWorkflowFiles,
   loadPlugins,
   type LoadedPlugins,
   type Engine,
@@ -15,6 +16,7 @@ import {
   type WorkflowDefinition,
 } from '@taktflow/core'
 import { createHarnesses, createMockHarness, loadMockScript, type MockScript } from '@taktflow/harness'
+import { createRepoManager } from '@taktflow/sandbox'
 import { knowledgeFromConfig } from './knowledge.js'
 import { tsImport } from 'tsx/esm/api'
 import { UsageError } from './args.js'
@@ -54,7 +56,7 @@ export async function loadRuntime(project: string | undefined, options: { mock?:
     stores.config = normalizeConfig(stores.config)
     const plugins = await loadProjectPlugins(stores)
     const providers = runtimeProviders(stores.config, plugins.providers)
-    const [profiles, workflows] = await Promise.all([loadRuntimeProfiles(stores.taktDir, plugins.roles), loadWorkflows(stores)])
+    const [profiles, workflows] = await Promise.all([loadRuntimeProfiles(stores.paths.agents, plugins.roles), loadWorkflows(stores)])
     for (const workflow of plugins.workflows) {
       if (workflows.some((item) => item.id === workflow.id)) throw new Error(`workflow 名称冲突：${workflow.id}`)
       workflows.push(workflow)
@@ -117,8 +119,9 @@ async function readMock(file: string, required = false): Promise<MockScript | un
 async function loadWorkflows(stores: ProjectStores): Promise<WorkflowDefinition[]> {
   const table: WorkflowDefinition[] = []
   const seen = new Set<string>()
-  for (const entry of stores.config.workflows) {
-    const definition = await importWorkflow(isAbsolute(entry) ? entry : resolve(stores.projectDir, entry))
+  const files = [...new Set([...await listWorkflowFiles(stores.paths), ...stores.config.workflows.map((entry) => isAbsolute(entry) ? entry : resolve(stores.projectDir, entry))])]
+  for (const file of files) {
+    const definition = await importWorkflow(file)
     if (seen.has(definition.id)) throw new Error(`workflow ID 重复：${definition.id}`)
     seen.add(definition.id)
     table.push(definition)
@@ -186,5 +189,7 @@ export function createRunEngine(
     harnesses: context.harnesses,
     profiles: context.profiles,
     knowledge: context.knowledge,
+    repos: createRepoManager({ projectDir: context.stores.projectDir, taktDir: context.stores.taktDir, repos: context.stores.config.repos ?? [] }),
+    skillsDir: context.stores.paths.skills,
   }, engineOptions)
 }
