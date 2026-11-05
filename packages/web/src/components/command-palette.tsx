@@ -18,9 +18,7 @@ interface PaletteState {
   /** 直接打开到某条命令的表单（openCommand） */
   direct?: { id: string; input?: Record<string, unknown> }
 }
-// ?cmdk=1 首屏直接打开；?cmdk=<命令 id> 直接进该命令表单（截图与端到端测试用）
-const initial = new URLSearchParams(location.search).get('cmdk')
-let state: PaletteState = initial ? { open: true, direct: initial !== '1' ? { id: initial } : undefined } : { open: false }
+let state: PaletteState = { open: false }
 const subs = new Set<() => void>()
 function set(next: PaletteState) {
   state = next
@@ -50,6 +48,11 @@ export function CommandPalette() {
   const s = usePaletteState()
   const p = usePresence(s.open, 150)
   useRestoreFocus(s.open)
+  // ?cmdk=1 首屏直接打开；?cmdk=<命令 id> 直接进该命令表单（截图与端到端测试用）。挂载时读，模块加载不碰 location
+  useEffect(() => {
+    const initial = new URLSearchParams(location.search).get('cmdk')
+    if (initial) set({ open: true, direct: initial !== '1' ? { id: initial } : undefined })
+  }, [])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
