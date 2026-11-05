@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, Map as MapIcon, Maximize2 } from 'lucide-react'
+import { Bot, Crosshair, Fingerprint, Map as MapIcon, Maximize2 } from 'lucide-react'
 import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
@@ -17,6 +17,7 @@ import { edgeTypes } from './dag-edges'
 import { EventTicker } from '../../components/event-ticker'
 import { NodeDrawer } from './node-drawer'
 import { RunCounters } from './run-counters'
+import { RunAgentsPanel } from './agents-tab'
 import './run.css'
 import './run-motion.css'
 
@@ -168,6 +169,12 @@ export function RunPage({ runId }: { runId: string }) {
                 <label>成本</label>
                 <span className="mono num">{fmtCost(counts.usage?.costUsd)}</span>
               </span>
+              {ds.agents && (
+                <button className="btn btn-sm" onClick={() => setQuery({ panel: query.get('panel') === 'agents' ? undefined : 'agents', node: undefined, dtab: undefined })}>
+                  <Bot />
+                  子 Agent
+                </button>
+              )}
               {audit.data && (
                 <span className={`audit-pill${audit.data.ok ? '' : ' broken'}`} title="events.jsonl 哈希链校验（takt audit verify）">
                   <Fingerprint />
@@ -181,6 +188,9 @@ export function RunPage({ runId }: { runId: string }) {
       </header>
       <div className="run-body">
         {d ? <RunCanvas detail={d} selected={selected} /> : <div className="run-canvas-skeleton"><Skeleton w="100%" h={9999} r={0} /></div>}
+        {d && ds.agents && !drawer.id && query.get('panel') === 'agents' && (
+          <RunAgentsPanel runId={runId} liveTick={liveTick} onClose={() => setQuery({ panel: undefined })} />
+        )}
         {d && drawer.id && d.run.nodes[drawer.id] && (
           <NodeDrawer closing={drawer.closing} runId={runId} requirementId={d.run.requirementId} nodeId={drawer.id} graphNode={d.graph.nodes.find((n) => n.id === drawer.id)} expansions={d.run.expansions} liveTick={liveTick} />
         )}

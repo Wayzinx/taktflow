@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import type { DataSource } from './source'
 
-export type { DataSource, EvalOutputSnapshot, RepoPatch, ScorecardBy, WorkflowRevisionDetail } from './source'
+export type { AgentTraceView, DataSource, EvalOutputSnapshot, NodeView, RepoPatch, ScorecardBy, WorkflowRevisionDetail } from './source'
 export { WorkflowConflictError } from './source'
 
 const SourceContext = createContext<DataSource | null>(null)
