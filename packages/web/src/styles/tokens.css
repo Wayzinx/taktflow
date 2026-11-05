@@ -3,11 +3,6 @@
  * 深浅主题用 light-dark() 写在同一处：color-scheme 跟随系统，data-theme 手动覆盖。
  * 旧变量名（--accent、--st-*、--c-*）保持不变，页面不用改就能换上新外观。
  */
-@import '@fontsource/ibm-plex-sans/latin-400.css';
-@import '@fontsource/ibm-plex-sans/latin-500.css';
-@import '@fontsource/ibm-plex-sans/latin-600.css';
-@import '@fontsource/ibm-plex-mono/latin-400.css';
-@import '@fontsource/ibm-plex-mono/latin-500.css';
 
 :root {
   color-scheme: light dark;
