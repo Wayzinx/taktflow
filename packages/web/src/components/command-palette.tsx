@@ -10,8 +10,7 @@ import './command-palette.css'
 
 // ---------------------------------------------------------------- 开关：⌘K / Ctrl+K，或顶栏按钮
 
-// ?cmdk=1 首屏直接打开（截图与端到端测试用）
-let open = new URLSearchParams(location.search).get('cmdk') === '1'
+let open = false
 const subs = new Set<() => void>()
 export function setPaletteOpen(v: boolean) {
   open = v
@@ -103,6 +102,10 @@ function filter(items: Item[], q: string): Item[] {
 
 export function CommandPalette() {
   const isOpen = usePaletteOpen()
+  // ?cmdk=1 首屏直接打开（截图与端到端测试用）；在挂载时读，模块加载不碰 location
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('cmdk') === '1') setPaletteOpen(true)
+  }, [])
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
