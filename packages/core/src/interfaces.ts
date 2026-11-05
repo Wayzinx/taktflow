@@ -22,8 +22,13 @@ import type {
   Requirement,
   RequirementId,
   RequirementMetrics,
+  RepoBinding,
+  Room,
+  RoomMember,
+  RoomMessage,
   RunId,
   RunState,
+  SandboxProvider,
   TaktConfig,
   TraceGraph,
   WorkflowDefinition,
@@ -117,15 +122,52 @@ export interface AttentionStore {
 }
 
 /** 一个项目的全部存储。 */
+/** 需求群聊：每个需求一个房间，消息只追加（.takt/chat/<REQ>.jsonl）。 */
+export interface ChatStore {
+  getRoom(requirementId: RequirementId): Promise<Room | undefined>
+  /** 需求创建时调用：建房间，默认成员为需求负责人 + Lead。已存在则返回现有房间。 */
+  ensureRoom(requirementId: RequirementId, input?: { title?: string; members?: RoomMember[] }): Promise<Room>
+  addMembers(requirementId: RequirementId, members: RoomMember[]): Promise<Room>
+  list(requirementId: RequirementId, opts?: { afterSeq?: number; limit?: number }): Promise<RoomMessage[]>
+  post(requirementId: RequirementId, message: Omit<RoomMessage, 'id' | 'roomId' | 'seq' | 'at'>): Promise<RoomMessage>
+  /** 实时订阅（跨进程轮询 tail，与 EventStore 一致）。 */
+  subscribe(requirementId: RequirementId, onMessage: (m: RoomMessage) => void): () => void
+}
+
+/** 外部 IM 适配（飞书 / Slack …）：消息双向同步，审计以 taktflow 侧为准。 */
+export interface ChatBridge {
+  id: string
+  createRoom(room: Room): Promise<{ chatId: string }>
+  invite(room: Room, members: RoomMember[]): Promise<void>
+  post(room: Room, message: RoomMessage): Promise<void>
+  onMessage(handler: (chatId: string, message: Omit<RoomMessage, 'id' | 'roomId' | 'seq' | 'at'>) => void): () => void
+}
+
+/** 代码仓库：镜像 + 每个任务一个 worktree（docs/design/17）。 */
+export interface RepoManager {
+  list(): RepoBinding[]
+  /** 确保本地镜像存在且是最新（有 url 时 fetch）。 */
+  sync(repoId: string): Promise<{ head: string }>
+  createWorktree(input: { repoId: string; runId: RunId; nodeId: NodeId; base?: string }): Promise<{ path: string; branch: string; base: string }>
+  /** worktree 相对 base 的改动（统一 diff 文本 + 改动文件列表）。 */
+  diff(worktreePath: string, base: string): Promise<{ patch: string; files: string[] }>
+  removeWorktree(worktreePath: string): Promise<void>
+}
+
+/** 一个项目空间的全部存储。 */
 export interface ProjectStores {
   projectDir: string
   /** `.takt/` 的绝对路径。 */
   taktDir: string
   config: TaktConfig
+  /** 解析后的目录约定（新空间为顶层目录，旧项目为 .takt/ 下的目录）。M2 space 任务实现后改为必填。 */
+  paths?: { agents: string; workflows: string; skills: string; knowledge: string; requirements: string }
   workspaces: WorkspaceStore
   events: EventStore
   runs: RunStore
   attention: AttentionStore
+  /** M2 chat 任务实现后改为必填。 */
+  chat?: ChatStore
 }
 
 export interface EngineDeps {
@@ -133,6 +175,12 @@ export interface EngineDeps {
   harnesses: Record<string, HarnessAdapter>
   profiles: Record<string, AgentProfile>
   knowledge: KnowledgeSource[]
+  /** 不传时用 local（不隔离）。 */
+  sandbox?: SandboxProvider
+  /** 不传时节点的 repo 字段不可用。 */
+  repos?: RepoManager
+  /** 空间技能目录下的 SKILL.md，运行前同步进沙箱里 harness 认识的技能目录。 */
+  skillsDir?: string
 }
 
 export interface StartRunInput {

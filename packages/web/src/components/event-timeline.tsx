@@ -164,6 +164,9 @@ function describe(e: EventEnvelope): Described {
       const x = d(e, 'log')
       return { icon: ChevronRight, tone: x.level === 'error' ? 'failed' : x.level === 'warn' ? 'waiting' : 'neutral', title: x.message }
     }
+    // 评审、打回、worktree、临时任务等 M2 事件：先通用展示，M2 Web 任务替换为专门的样式
+    default:
+      return { icon: ChevronRight, tone: 'neutral', title: <span className="mono">{e.type}</span> }
   }
 }
 

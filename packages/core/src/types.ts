@@ -128,7 +128,7 @@ export interface StageDef {
   title: string
 }
 
-export type NodeKind = 'script' | 'agent' | 'gate' | 'human' | 'judge' | 'loop' | 'planner' | 'subflow'
+export type NodeKind = 'script' | 'agent' | 'gate' | 'human' | 'judge' | 'loop' | 'planner' | 'review' | 'subflow'
 
 /** 节点声明要读的产物：路径支持 glob；required=false 时缺失不阻塞。 */
 export interface InputSpec {
@@ -171,6 +171,8 @@ export interface NodeContext {
   /** planner 展开出的条目，非展开节点为 undefined。 */
   item?: PlannedItem
   args: Record<string, unknown>
+  /** 打回重做 / 重试时附带的意见（评审问题、上次失败原因），由引擎注入。 */
+  feedback?: string
   /** 运行被取消时触发；脚本函数自己启动的子进程应监听它并结束。 */
   signal?: AbortSignal
   /** 读上游节点的结构化结果。 */
@@ -224,6 +226,8 @@ export interface AgentNodeDef extends BaseNodeDef {
   session?: 'fresh' | 'resume'
   /** 让 agent 以 JSON 输出结构化结果。 */
   resultSchema?: Record<string, unknown>
+  /** 在哪个绑定代码仓库里工作：引擎为节点创建独立 worktree 并作为 cwd。 */
+  repo?: string
 }
 
 /** 门禁里的单项检查。fail-closed：检查本身出错按不通过处理。 */
@@ -332,6 +336,85 @@ export interface PlannerNodeDef extends BaseNodeDef {
   harness?: HarnessSelector
 }
 
+// ------------------------------------------------------------ 评审（docs/design/18）
+
+export interface ReviewerSpec {
+  role: string
+  /** 评审侧重点，拼进评审者的 prompt。 */
+  focus?: string
+  /** 覆盖角色默认的 harness（推荐与作者不同厂商）。 */
+  harness?: HarnessSelector
+  checklist?: string[]
+}
+
+/** 打回重做：评审轮次用完后回到上游节点重新产出。 */
+export interface ReworkPolicy {
+  rework: NodeId
+  /** 打回次数上限，超过后交人（默认 1）。 */
+  maxReworks?: number
+}
+
+/**
+ * 评审节点：多个评审者各自独立上下文评审产物；不通过时作者按问题清单修改，进入下一轮。
+ * 每轮的评审记录与作者回应写入存放区 reviews/<节点>/round-<n>.json。
+ */
+export interface ReviewNodeDef extends BaseNodeDef {
+  kind: 'review'
+  /** 被评审的产物路径（存放区，支持 glob）；或代码评审：某个绑定仓库在本运行中的改动。 */
+  target: string[] | { code: { repo: string; base?: string } }
+  /** 负责按意见修改的作者（新会话）。 */
+  author: { role: string; prompt?: string | ((ctx: NodeContext) => string | Promise<string>); harness?: HarnessSelector }
+  reviewers: ReviewerSpec[]
+  /** 通过规则，默认 'all'。 */
+  pass?: 'all' | 'majority' | { minScore: number }
+  /** 评审轮次上限（含首轮）。 */
+  maxRounds: number
+  onExhausted: 'human' | 'fail' | ReworkPolicy
+  /** agent 全部通过后再交人确认。 */
+  humanSignoff?: boolean
+  rubric?: string
+}
+
+export type ReviewVerdict = 'approve' | 'request_changes' | 'reject'
+
+export interface ReviewIssue {
+  id: string
+  severity: 'blocker' | 'major' | 'minor' | 'nit'
+  location?: string
+  description: string
+  suggestion?: string
+}
+
+export interface ReviewRecord {
+  round: number
+  reviewer: string
+  verdict: ReviewVerdict
+  score?: number
+  summary: string
+  issues: ReviewIssue[]
+  /** 本轮评审看到的产物版本。 */
+  artifacts: ArtifactRef[]
+  at: Timestamp
+}
+
+export interface ReviewResponse {
+  round: number
+  issueId: string
+  reviewer: string
+  action: 'fixed' | 'declined' | 'deferred'
+  note: string
+}
+
+export interface ReviewRound {
+  round: number
+  passed: boolean
+  records: ReviewRecord[]
+  /** 作者对本轮问题的回应（未通过时才有）。 */
+  responses: ReviewResponse[]
+  /** 作者修改后产生的新版本。 */
+  revised: ArtifactRef[]
+}
+
 export interface SubflowNodeDef extends BaseNodeDef {
   kind: 'subflow'
   workflow: WorkflowDefinition
@@ -346,6 +429,7 @@ export type NodeDef =
   | JudgeNodeDef
   | LoopNodeDef
   | PlannerNodeDef
+  | ReviewNodeDef
   | SubflowNodeDef
 
 export interface WorkflowDefinition {
@@ -386,6 +470,18 @@ export interface SnapshotNode {
   ask?: string
   form?: HumanNodeDef['form']
   choices?: string[]
+  /** review：评审配置（作者、评审者、规则、轮次与打回策略）。 */
+  review?: {
+    target: ReviewNodeDef['target']
+    author: string
+    reviewers: Array<{ role: string; focus?: string; harness?: string }>
+    pass: NonNullable<ReviewNodeDef['pass']>
+    maxRounds: number
+    onExhausted: ReviewNodeDef['onExhausted']
+    humanSignoff?: boolean
+  }
+  /** 写代码的节点绑定的仓库（TaktConfig.repos 的 id）。 */
+  repo?: string
 }
 
 export interface WorkflowSnapshot {
@@ -428,6 +524,12 @@ export interface NodeState {
   /** harness 会话 ID，用于续聊和回看 transcript。 */
   sessionRef?: { harness: string; sessionId: string }
   usage?: Usage
+  /** review 节点：当前评审轮次。 */
+  round?: number
+  /** 被打回重做的次数（rework 目标节点上累计）。 */
+  reworks?: number
+  /** 写代码节点使用的 worktree。 */
+  worktree?: { repo: string; path: string; branch: string; base: string }
 }
 
 /** planner 动态展开记录：可视化时把这些节点画到 planner 下面。 */
@@ -479,6 +581,12 @@ export interface EventPayloads {
   'knowledge.query': { query: KnowledgeQuery; sources: string[]; hits: number }
   'dag.expanded': Expansion
   'guard.violation': { rule: string; paths: string[]; action: 'reverted' | 'blocked' | 'flagged' }
+  'review.round': { round: number; passed: boolean; verdicts: Array<{ reviewer: string; verdict: ReviewVerdict; score?: number; issues: number }> }
+  'review.response': { round: number; responses: ReviewResponse[]; revised: ArtifactRef[] }
+  'review.exhausted': { rounds: number; action: 'rework' | 'human' | 'fail' }
+  'rework.started': { from: NodeId; to: NodeId; count: number; feedback: string; reset: NodeId[] }
+  'worktree.created': { repo: string; path: string; branch: string; base: string }
+  'task.dispatched': { taskRunId: string; role: string; title: string; by: Actor }
   log: { level: 'info' | 'warn' | 'error'; message: string }
 }
 
@@ -564,6 +672,8 @@ export interface HarnessRequest {
   provider?: { id: string } & ProviderConfig
   /** 引擎解析出的模型元数据（成本计算、压缩阈值用）。 */
   modelConfig?: Pick<ModelConfig, 'price' | 'contextWindow'>
+  /** 在哪个沙箱里启动 harness 进程；不传则直接在本机启动（local）。 */
+  sandbox?: Sandbox
   /** native harness 的工具约束：写权限（glob，相对 cwd）与是否允许 bash。 */
   tools?: { writeScope?: string[]; allowBash?: boolean }
   signal?: AbortSignal
@@ -803,10 +913,166 @@ export interface RequirementMetrics {
   acCoverage?: Array<{ ac: string; title: string; cases: number; passed: number; failed: number; status: 'covered' | 'partial' | 'uncovered' }>
 }
 
+// ============================================================ 沙箱（docs/design/17）
+
+export interface SandboxMount {
+  /** 宿主机路径。 */
+  source: string
+  /** 沙箱内路径（local 提供方下与 source 相同）。 */
+  target: string
+  mode: 'ro' | 'rw'
+}
+
+export interface SandboxSpec {
+  /** 沙箱内工作目录。 */
+  workdir: string
+  mounts: SandboxMount[]
+  /** 只注入该任务需要的环境变量（密钥按 apiKeyEnv 精确注入）。 */
+  env?: Record<string, string>
+  network?: 'none' | 'egress' | 'full'
+  /** docker 镜像。 */
+  image?: string
+  limits?: { cpus?: number; memoryMb?: number; timeoutMs?: number }
+}
+
+export interface SandboxSpawnOptions {
+  cwd?: string
+  env?: Record<string, string>
+  stdin?: 'pipe' | 'ignore'
+}
+
+export interface Sandbox {
+  id: string
+  provider: string
+  spec: SandboxSpec
+  /** 在沙箱内启动进程；返回值与 child_process.spawn 一致，适配器无需区分。 */
+  spawn(command: string, args: string[], opts?: SandboxSpawnOptions): import('node:child_process').ChildProcess
+  exec(command: string, args: string[], opts?: SandboxSpawnOptions & { input?: string; timeoutMs?: number }): Promise<{ code: number; stdout: string; stderr: string }>
+  /** 沙箱内路径 → 宿主机路径（用于收集产物、算 diff）。 */
+  hostPath(path: string): string
+  dispose(): Promise<void>
+}
+
+export interface SandboxProvider {
+  /** local / bwrap / docker …… */
+  id: string
+  available(): Promise<{ ok: boolean; reason?: string }>
+  create(spec: SandboxSpec): Promise<Sandbox>
+}
+
+// ============================================================ 项目空间（docs/design/14）
+
+export interface SpaceMember {
+  id: string
+  name: string
+  role: 'owner' | 'maintainer' | 'member' | 'viewer'
+  email?: string
+}
+
+export interface RepoBinding {
+  id: string
+  /** 远程地址；没有时 path 必须是本地已有的 git 仓库。 */
+  url?: string
+  /** 本地路径（相对空间根目录或绝对路径）。 */
+  path: string
+  defaultBranch: string
+  purpose?: 'app' | 'library' | 'test' | 'docs' | (string & {})
+  description?: string
+}
+
+export interface SkillRecord {
+  name: string
+  /** 相对空间根目录的 SKILL.md 路径。 */
+  path: string
+  description: string
+}
+
+// ============================================================ 需求群聊与 Lead Agent（docs/design/15）
+
+export interface RoomMember {
+  id: string
+  kind: 'human' | 'lead' | 'agent'
+  name: string
+  role?: string
+}
+
+export type RoomMessageKind = 'text' | 'system' | 'attention' | 'task' | 'artifact' | 'progress'
+
+export interface RoomMessage {
+  id: string
+  roomId: string
+  seq: number
+  author: Actor
+  at: Timestamp
+  kind: RoomMessageKind
+  text: string
+  /** 被 @ 的成员 id（含 'lead'）。 */
+  mentions?: string[]
+  replyTo?: string
+  refs?: { artifacts?: ArtifactRef[]; runId?: RunId; nodeId?: NodeId; taskRunId?: RunId; requestId?: string }
+}
+
+export interface Room {
+  id: string
+  requirementId: RequirementId
+  title: string
+  members: RoomMember[]
+  createdAt: Timestamp
+  /** 绑定的外部 IM 群（飞书 / Slack …）。 */
+  external?: { kind: string; chatId: string }
+}
+
+/** 临时任务：Lead 派发给某个角色的一次性工作，执行时是一次普通运行（可审计）。 */
+export interface TaskSpec {
+  role: string
+  title: string
+  instructions: string
+  inputs?: string[]
+  outputs?: Array<{ path: string; kind: ArtifactKind }>
+  writeScope?: string[]
+  /** 在哪个绑定代码仓库里改代码。 */
+  repo?: string
+  /** 完成后是否走一轮评审（默认按角色：改代码的任务默认评审）。 */
+  review?: { reviewers: string[]; maxRounds: number } | false
+}
+
+export type LeadAction =
+  | { type: 'reply'; text: string; mentions?: string[] }
+  | { type: 'dispatch_task'; task: TaskSpec }
+  | { type: 'start_run'; workflowId: string; args?: Record<string, unknown> }
+  | { type: 'resume_run'; runId: RunId }
+  | { type: 'cancel_run'; runId: RunId; reason: string }
+  | { type: 'request_human'; to: string; ask: string; form: HumanNodeDef['form']; choices?: string[] }
+  | { type: 'propose_workflow_change'; workflowId: string; description: string; source?: string }
+  | { type: 'update_notes'; content: string }
+
+/** Lead 每次被触发的输出：一条回复 + 一组动作（由服务端校验后执行）。 */
+export interface LeadTurn {
+  reply: string
+  actions: LeadAction[]
+}
+
+export interface LeadActionResult {
+  action: LeadAction['type']
+  ok: boolean
+  message: string
+  refs?: RoomMessage['refs']
+}
+
 // ============================================================ 项目配置
 
 export interface TaktConfig {
   project: { name: string; description?: string }
+  /** 项目空间：id 用于多空间 serve 的路由。 */
+  space?: { id: string }
+  members?: SpaceMember[]
+  /** 绑定的代码仓库。 */
+  repos?: RepoBinding[]
+  /** 目录约定；不写时新空间用顶层 agents/ workflows/ skills/ knowledge/ requirements/，旧项目沿用 .takt/ 下的目录。 */
+  paths?: { agents?: string; workflows?: string; skills?: string; knowledge?: string; requirements?: string }
+  sandbox?: { provider: 'local' | 'bwrap' | 'docker' | (string & {}); image?: string; network?: SandboxSpec['network'] }
+  /** 需求群的 Lead Agent。 */
+  lead?: { harness?: HarnessSelector; progressUpdates?: boolean }
   /** 角色 → 默认 harness（AgentProfile 可覆盖）。 */
   roles?: Record<string, HarnessSelector>
   /** 已注册的 workflow 文件（相对项目根目录）。 */

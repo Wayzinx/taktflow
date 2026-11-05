@@ -85,6 +85,7 @@ export const NODE_KIND: Record<NodeKind, { label: string; icon: LucideIcon }> = 
   judge: { label: '判决', icon: Scale },
   loop: { label: '循环', icon: Repeat },
   planner: { label: '规划', icon: Network },
+  review: { label: '评审', icon: ShieldCheck },
   subflow: { label: '子流程', icon: Layers },
 }
 
