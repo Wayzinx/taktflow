@@ -12,8 +12,12 @@ const allowed = (scope: Scope, file: string) => scope.profile.some((p) => matchG
 
 function metadata(file: string): boolean {
   return /^\.takt\/(runs|objects)\//.test(file) ||
-    /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
-    /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
+    /^\.takt\/attention\.jsonl(?:\.tmp|\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/lease\.json(?:\.tmp|\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/status\/[^/]+\.(?:md|json)(?:\.tmp|\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/cache\//.test(file) ||
+    /^\.takt\/dsh\/bindings\.json(?:\.tmp|\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.tmp|\.[\da-f]+\.tmp|\.lock)?$/.test(file)
 }
 
 async function snapshot(root: string): Promise<Map<string, string>> {

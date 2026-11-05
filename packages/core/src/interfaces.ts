@@ -68,14 +68,17 @@ export interface WorkspaceStore {
   addComment(id: RequirementId, comment: Omit<ArtifactComment, 'id' | 'createdAt'>): Promise<ArtifactComment>
 }
 
+/** verify 的断链原因：有链尾锚点时才可能返回；旧日志保持原有形状。 */
+export type EventVerifyReason = 'tampered' | 'truncated' | 'missing' | 'incomplete'
+
 /** 事件日志：只追加、哈希链。 */
 export interface EventStore {
   append<T extends EventType>(runId: RunId, e: { type: T; actor: Actor; nodeId?: NodeId; data: EventPayloads[T] }): Promise<EventEnvelope<T>>
   read(runId: RunId, opts?: { afterSeq?: number; nodeId?: NodeId; types?: EventType[] }): Promise<EventEnvelope[]>
   /** 实时订阅（server 的 SSE 用）。返回取消订阅函数。 */
   subscribe(runId: RunId, onEvent: (e: EventEnvelope) => void): () => void
-  /** 校验哈希链；返回第一处断链的 seq。 */
-  verify(runId: RunId): Promise<{ ok: boolean; brokenAt?: number }>
+  /** 校验哈希链和链尾锚点；返回第一处断链的 seq。 */
+  verify(runId: RunId): Promise<{ ok: boolean; brokenAt?: number; reason?: EventVerifyReason }>
 }
 
 export interface RunStore {
@@ -104,6 +107,10 @@ export interface AttentionItem {
   form: 'approve' | 'answer' | 'choice'
   choices?: string[]
   createdAt: string
+  /** 创建待办时冻结的节点尝试次数；历史待办没有该字段。 */
+  attempt?: number
+  /** 创建待办时冻结的待审产物及版本（NodeState.inputs 的拷贝）；历史待办没有该字段。 */
+  subjects?: ArtifactRef[]
   answeredAt?: string
   /** 谁回答的（审计用）。 */
   answeredBy?: Actor

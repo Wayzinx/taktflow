@@ -1,15 +1,16 @@
 import { addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
-import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
+import { ApiError } from './errors.js'
+import { relativePath, runId as validRunId, safeId } from './validation.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
   const value = await stores.workspaces.getRequirement(safeId(id))
-  if (!value) throw new HttpError(404, '需求不存在')
+  if (!value) throw new ApiError(404, '需求不存在')
   return value
 }
 
 export async function run(stores: ProjectStores, id: string): Promise<RunState> {
   const value = await stores.runs.get(validRunId(id))
-  if (!value) throw new HttpError(404, '运行不存在')
+  if (!value) throw new ApiError(404, '运行不存在')
   return value
 }
 
@@ -60,7 +61,7 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
     stores.events.read(runId, { nodeId }), stores.runs.getContext(runId, nodeId), stores.workspaces.listArtifacts(state.requirementId),
   ])
   const graphNode = buildRunGraph(snapshot, state, await loadRunGraph(stores, runId), events).nodes.find((item) => item.id === nodeId)
-  if (!node || !graphNode) throw new HttpError(404, '节点不存在')
+  if (!node || !graphNode) throw new ApiError(404, '节点不存在')
   const snapshots = definitions(snapshot.nodes)
   for (const expansion of state.expansions) {
     for (const [id, definition] of definitions(expansion.nodes ?? [])) snapshots.set(id, definition)

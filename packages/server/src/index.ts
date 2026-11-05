@@ -1,10 +1,13 @@
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { openProject, type AttentionItem } from '@taktflow/core'
+import type { WriteLease } from './api-core.js'
 import type { CatalogCallbacks } from './catalog.js'
 import { fail, HttpError, json } from './http.js'
 import { routes, STREAMING } from './routes.js'
 import { staticFile } from './static.js'
+
+export { createApiCore, ApiError, type ApiCore, type EventStream, type ReadOp, type WriteLease, type WriteOp } from './api-core.js'
 
 export interface ServerOptions extends CatalogCallbacks {
   projectDir: string
@@ -12,6 +15,8 @@ export interface ServerOptions extends CatalogCallbacks {
   host?: string
   webDir?: string
   onAnswer?: (item: AttentionItem) => void | Promise<void>
+  /** 单写者钩子：所有写操作和答复后的 onAnswer 都在它里面执行；由 CLI / dsh 注入租约实现。 */
+  withWriteLease?: WriteLease
 }
 
 export interface RunningServer { url: string; close(): Promise<void> }
@@ -19,7 +24,7 @@ export interface RunningServer { url: string; close(): Promise<void> }
 export async function createServer(options: ServerOptions): Promise<RunningServer> {
   const stores = await openProject(options.projectDir)
   const connections = new Set<() => void>()
-  const router = routes(connections, options.onAnswer, options)
+  const router = routes(connections, options.onAnswer, options, options.withWriteLease)
   let closing = false
   const server = httpServer((request, response) => {
     void (async () => {

@@ -1,0 +1,304 @@
+import { isUtf8 } from 'node:buffer'
+import {
+  AttentionAlreadyAnsweredError, buildRunGraph, createInsights, loadRunGraph, markArtifactEdited,
+  stageProgress, validateAnswer,
+  type Actor, type ArtifactContent, type AttentionItem, type EventEnvelope, type ProjectStores,
+} from '@taktflow/core'
+import type { CatalogCallbacks } from './catalog.js'
+import { ApiError } from './errors.js'
+import { createEventFeed } from './event-feed.js'
+import { nodeDetail, overview, requirement, run, runSummaries, summary, summaries, workflow } from './read-model.js'
+import { serialize } from './stale.js'
+import { artifactPath, integer, relativePath, safeId, text } from './validation.js'
+
+export { ApiError }
+
+export type ReadOp =
+  | 'project' | 'requirements' | 'requirement' | 'artifacts' | 'artifact' | 'comments'
+  | 'trace' | 'metrics' | 'runs' | 'run' | 'events' | 'node' | 'audit' | 'attention'
+  | 'harnesses' | 'models'
+
+export type WriteOp = 'artifact.edit' | 'comment.add' | 'attention.answer'
+
+export interface ApiCore {
+  read(stores: ProjectStores, op: ReadOp, params: Record<string, string | undefined>): Promise<unknown>
+  write(stores: ProjectStores, op: WriteOp, params: Record<string, string | undefined>, body: unknown, actor: Actor): Promise<unknown>
+  /** 运行事件流：从 cursor 之后开始，signal 结束时停止并清理订阅。 */
+  events(stores: ProjectStores, runId: string, cursor: number | undefined, signal: AbortSignal): AsyncIterable<EventEnvelope>
+}
+
+export type WriteLease = <T>(stores: ProjectStores, fn: () => Promise<T>) => Promise<T>
+
+export interface ApiCoreOptions {
+  onAnswer?: (item: AttentionItem) => void | Promise<void>
+  catalog?: CatalogCallbacks
+  /** 单写者：所有写操作和答复后的 onAnswer 都在这里面执行；不传则直接执行。 */
+  withWriteLease?: WriteLease
+}
+
+/** 事件流在历史读取完成前的就绪信号，HTTP SSE 用它保留"读失败返回 JSON 错误"的行为。 */
+export interface EventStream extends AsyncIterable<EventEnvelope> {
+  readonly ready: Promise<void>
+}
+
+export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
+  const catalog = options.catalog ?? {}
+
+  return {
+    async read(stores, op, params) {
+      switch (op) {
+        case 'project':
+          return overview(stores)
+        case 'requirements':
+          return summaries(stores)
+        case 'requirement': {
+          const item = await requirement(stores, params.id!)
+          const [info, artifacts, runs] = await Promise.all([
+            summary(stores, item),
+            stores.workspaces.listArtifacts(item.id),
+            stores.runs.list({ requirementId: item.id }),
+          ])
+          return { ...info, artifacts, runs: await runSummaries(stores, runs) }
+        }
+        case 'artifacts':
+          await requirement(stores, params.id!)
+          return stores.workspaces.listArtifacts(params.id!)
+        case 'artifact': {
+          await requirement(stores, params.id!)
+          const path = artifactPath(params.path)
+          const requestedVersion = integer(params.version, 'version', 1)
+          const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+          const version = requestedVersion ?? record?.versions.at(-1)?.version
+          if (!record || version === undefined || !record.versions.some((item) => item.version === version)) throw new ApiError(404, '产物或版本不存在')
+          const content = await stores.workspaces.readArtifact({ workspace: params.id!, path, version })
+          if (!content) throw new ApiError(404, '产物内容不存在')
+          const encoding = isUtf8(content) && !content.includes(0) ? 'utf8' : 'base64'
+          return { path, version, mediaType: record.mediaType, content: content.toString(encoding), encoding } satisfies ArtifactContent
+        }
+        case 'comments': {
+          await requirement(stores, params.id!)
+          const path = params.path !== undefined ? artifactPath(params.path) : undefined
+          return stores.workspaces.listComments(params.id!, path)
+        }
+        case 'trace':
+          await requirement(stores, params.id!)
+          return createInsights(stores).traceGraph(params.id!)
+        case 'metrics':
+          await requirement(stores, params.id!)
+          return createInsights(stores).metrics(params.id!)
+        case 'runs': {
+          const id = params.requirement !== undefined ? safeId(params.requirement) : undefined
+          return stores.runs.list(id === undefined ? undefined : { requirementId: id }).then((runs) => runSummaries(stores, runs))
+        }
+        case 'run': {
+          const state = await run(stores, params.runId!)
+          const snapshot = await workflow(stores, state.runId)
+          const [records, events] = await Promise.all([loadRunGraph(stores, state.runId), stores.events.read(state.runId)])
+          return {
+            run: state,
+            stages: stageProgress(snapshot, state, records),
+            workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages },
+            graph: buildRunGraph(snapshot, state, records, events),
+          }
+        }
+        case 'events': {
+          await run(stores, params.runId!)
+          const nodeId = params.node !== undefined ? relativePath(params.node) : undefined
+          return stores.events.read(params.runId!, { afterSeq: integer(params.after, 'after'), nodeId })
+        }
+        case 'node':
+          return nodeDetail(stores, params.runId!, params.nodeId!)
+        case 'audit':
+          await run(stores, params.runId!)
+          return stores.events.verify(params.runId!)
+        case 'attention': {
+          const pending = params.pending
+          if (pending !== undefined && pending !== '0' && pending !== '1') throw new ApiError(400, 'pending 必须是 0 或 1')
+          return stores.attention.list({ pending: pending === '1' })
+        }
+        case 'harnesses':
+          if (catalog.getHarnesses) return catalog.getHarnesses(stores)
+          if (catalog.getCatalog) return catalog.getCatalog(stores).then((value) => value.harnesses)
+          throw new ApiError(501, '未接入运行时 harnesses 目录')
+        case 'models':
+          if (catalog.getModels) return catalog.getModels(stores)
+          if (catalog.getCatalog) return catalog.getCatalog(stores).then((value) => value.models)
+          throw new ApiError(501, '未接入运行时 models 目录')
+        default:
+          throw new ApiError(400, `未知读操作：${String(op)}`)
+      }
+    },
+
+    async write(stores, op, params, body, actor) {
+      const execute = () => dispatchWrite(stores, op, params, body, actor)
+      if (!options.withWriteLease) return execute()
+      try {
+        return await options.withWriteLease(stores, execute)
+      } catch (error) {
+        if (isLeaseHeld(error)) throw new ApiError(409, errorMessage(error))
+        throw error
+      }
+    },
+
+    events(stores, runId, cursor, signal) {
+      return createEventStream(stores, runId, cursor, signal)
+    },
+  }
+
+  async function dispatchWrite(stores: ProjectStores, op: WriteOp, params: Record<string, string | undefined>, body: unknown, actor: Actor): Promise<unknown> {
+    switch (op) {
+      case 'artifact.edit': {
+        await requirement(stores, params.id!)
+        const path = artifactPath(params.path)
+        const input = await inputOf(body)
+        const content = text(input.content, 'content', true)
+        const reason = text(input.reason, 'reason')
+        return serialize(stores.projectDir, async () => {
+          const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+          const ref = await stores.workspaces.writeArtifact({
+            ref: { workspace: params.id!, path }, content, reason, author: actor,
+            kind: record?.kind ?? 'other', title: record?.title, tags: record?.tags,
+          })
+          const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markArtifactEdited(stores, ref, actor, reason)
+          return { version: ref.version, staleNodes }
+        })
+      }
+      case 'comment.add': {
+        await requirement(stores, params.id!)
+        const input = await inputOf(body)
+        const path = artifactPath(input.path)
+        if (typeof input.version !== 'number' || !Number.isSafeInteger(input.version) || input.version < 1) throw new ApiError(400, 'version 必须是正整数')
+        const version = input.version
+        const content = text(input.body, 'body')
+        const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+        if (!record?.versions.some((item) => item.version === version)) throw new ApiError(404, '产物或版本不存在')
+        return stores.workspaces.addComment(params.id!, { path, version, body: content, author: actor })
+      }
+      case 'attention.answer': {
+        const input = await inputOf(body)
+        const decision = input.decision === undefined ? undefined : text(input.decision, 'decision')
+        const answer = input.answer === undefined ? undefined : text(input.answer, 'answer')
+        if (decision === undefined && answer === undefined) throw new ApiError(400, 'decision 或 answer 至少填写一项')
+        const item = await serialize(stores.projectDir, async () => {
+          const current = (await stores.attention.list()).find((item) => item.requestId === params.requestId)
+          if (!current) throw new ApiError(404, '待办不存在')
+          if (current.answeredAt !== undefined) throw new ApiError(409, '待办已处理')
+          try { validateAnswer(current, { decision, answer }) } catch (error) {
+            if (error instanceof AttentionAlreadyAnsweredError) throw new ApiError(409, error.message)
+            throw new ApiError(400, error instanceof Error ? error.message : String(error))
+          }
+          try {
+            return await stores.attention.answer(current.requestId, { decision, answer, by: actor })
+          } catch (error) {
+            if (error instanceof AttentionAlreadyAnsweredError) throw new ApiError(409, error.message)
+            throw error
+          }
+        })
+        await options.onAnswer?.(item)
+        return item
+      }
+      default:
+        throw new ApiError(400, `未知写操作：${String(op)}`)
+    }
+  }
+}
+
+/** HTTP 路由可以传 `() => body(request)` 延迟读取请求体，让参数校验保持在校验失败优先的原有顺序。 */
+async function inputOf(source: unknown): Promise<Record<string, unknown>> {
+  const value = typeof source === 'function' ? await (source as () => unknown)() : await source
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ApiError(400, '请求体必须是对象')
+  return value as Record<string, unknown>
+}
+
+function isLeaseHeld(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'TAKT_LEASE_HELD'
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error !== null) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string') return message
+  }
+  return String(error)
+}
+
+function cursorValue(cursor: number | undefined): number {
+  if (cursor === undefined) return 0
+  if (!Number.isSafeInteger(cursor) || cursor < 0) throw new ApiError(400, 'after 不合法')
+  return cursor
+}
+
+function createEventStream(stores: ProjectStores, runId: string, cursor: number | undefined, signal: AbortSignal): EventStream {
+  const queue: EventEnvelope[] = []
+  let feed: ReturnType<typeof createEventFeed> | undefined
+  let wake: (() => void) | undefined
+  let closed = false
+  let started: Promise<void> | undefined
+  let releaseClosed: (() => void) | undefined
+  // abort 与 return 共用同一个关闭完成信号，所有等待都和它竞速，关闭后不再等待校验或历史读取。
+  const closedPromise = new Promise<void>((resolve) => { releaseClosed = resolve })
+
+  const stop = () => {
+    if (closed) return
+    closed = true
+    feed?.close()
+    signal.removeEventListener('abort', stop)
+    releaseClosed?.()
+    wake?.()
+    wake = undefined
+    queue.length = 0
+  }
+
+  // 先装监听再开始校验：run 读取期间 abort 也能立即结束，不会晚一步才订阅。
+  signal.addEventListener('abort', stop, { once: true })
+  if (signal.aborted) stop()
+
+  const start = (): Promise<void> => {
+    if (started) return started
+    started = (async () => {
+      try {
+        if (closed) return
+        await Promise.race([run(stores, runId), closedPromise])
+        if (closed) return
+        const after = cursorValue(cursor)
+        if (closed) return
+        feed = createEventFeed(stores.events, runId, after, (event) => {
+          queue.push(event)
+          wake?.()
+          wake = undefined
+        })
+        await Promise.race([feed.ready, closedPromise])
+        if (closed) stop()
+      } catch (error) {
+        // 启动失败也必须走 stop()，否则构造时装的 abort 监听会一直挂在 signal 上。
+        stop()
+        throw error
+      }
+    })()
+    // 关闭后可能没人再等 start()，后台校验或历史读取的失败不能变成未处理拒绝。
+    started.catch(() => {})
+    return started
+  }
+
+  const iterator: AsyncIterator<EventEnvelope> = {
+    async next() {
+      await start()
+      while (!closed) {
+        const event = queue.shift()
+        if (event) return { done: false, value: event }
+        await Promise.race([new Promise<void>((resolve) => { wake = resolve }), closedPromise])
+      }
+      return { done: true, value: undefined }
+    },
+    async return() {
+      stop()
+      return { done: true, value: undefined }
+    },
+  }
+
+  return {
+    get ready() { return start() },
+    [Symbol.asyncIterator]() { return iterator },
+  }
+}

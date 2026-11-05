@@ -4,7 +4,7 @@ import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EventEnvelope } from '../types.js'
 import { FsEventStore } from './fs-events.js'
-import { eventsFile } from './paths.js'
+import { chainFile, eventsFile } from './paths.js'
 import { canonicalJson, sha256 } from '../util/hash.js'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -51,6 +51,20 @@ describe('FsEventStore', () => {
     expect(await store.verify(runId)).toEqual({ ok: true })
   })
 
+  it('Actor 可选字段缺省或新增时哈希链都有效', async () => {
+    await store.append(runId, { type: 'log', actor: { type: 'human', id: 'u' }, data: { level: 'info', message: 'legacy' } })
+    await store.append(runId, { type: 'log', actor: { type: 'agent', role: 'dev', harness: 'mock' }, data: { level: 'info', message: 'legacy-agent' } })
+    await store.append(runId, { type: 'log', actor: { type: 'human', id: 'u', via: 'dsh-web' }, data: { level: 'info', message: 'via' } })
+    await store.append(runId, { type: 'log', actor: { type: 'agent', role: 'dev', harness: 'mock', model: 'm', onBehalfOf: 'lead' }, data: { level: 'info', message: 'on-behalf' } })
+    expect(await store.verify(runId)).toEqual({ ok: true })
+    expect((await store.read(runId)).map((event) => event.actor)).toEqual([
+      { type: 'human', id: 'u' },
+      { type: 'agent', role: 'dev', harness: 'mock' },
+      { type: 'human', id: 'u', via: 'dsh-web' },
+      { type: 'agent', role: 'dev', harness: 'mock', model: 'm', onBehalfOf: 'lead' },
+    ])
+  })
+
   it('read 支持 afterSeq / nodeId / types 过滤', async () => {
     for (let i = 1; i <= 5; i++) await store.append(runId, logEvent(`e${i}`))
     for (let i = 1; i <= 3; i++) await store.append(runId, { ...logEvent(`n${i}`), nodeId: 'node-a' })
@@ -74,7 +88,7 @@ describe('FsEventStore', () => {
     const lines = (await readFile(file, 'utf8')).split('\n').filter((line) => line !== '')
     lines[24] = JSON.stringify({ ...(JSON.parse(lines[24]!) as EventEnvelope), data: { level: 'warn', message: 'tampered' } })
     await writeFile(file, `${lines.join('\n')}\n`)
-    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 25 })
+    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 25, reason: 'tampered' })
   })
 
   it('损坏行（非法 JSON）也报它应有的 seq', async () => {
@@ -83,7 +97,7 @@ describe('FsEventStore', () => {
     const lines = (await readFile(file, 'utf8')).split('\n').filter((line) => line !== '')
     lines[9] = '{ 这不是 JSON'
     await writeFile(file, `${lines.join('\n')}\n`)
-    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 10 })
+    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 10, reason: 'tampered' })
     expect(await store.verify('run-20261104-000404')).toEqual({ ok: true })
   })
 
@@ -141,7 +155,7 @@ describe('FsEventStore', () => {
   it.each([null, false, 7, 'text', [], {}, { seq: 2, actor: null }])('不合法信封 %j 返回首个坏序号', async (invalid) => {
     await store.append(runId, logEvent('valid'))
     await appendFile(eventsFile(taktDir, runId), `${JSON.stringify(invalid)}\n`)
-    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 2 })
+    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 2, reason: 'tampered' })
   })
 
   it('即使重算哈希也拒绝错误 runId 和不合法字段', async () => {
@@ -150,7 +164,7 @@ describe('FsEventStore', () => {
       const { hash: _hash, prevHash, ...payload } = { ...envelope, ...patch }
       const invalid = { ...payload, prevHash, hash: sha256(prevHash + canonicalJson(payload)) }
       await writeFile(eventsFile(taktDir, runId), `${JSON.stringify(invalid)}\n`)
-      expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 1 })
+      expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 1, reason: 'tampered' })
     }
   })
 
@@ -203,8 +217,9 @@ describe('FsEventStore', () => {
       unsubscribe()
     }
   })
-  it('外部追加刷新缓存，截断和替换重新读取尾部，损坏尾部拒绝追加', async () => {
+  it('外部追加刷新缓存，截断和替换重新读取尾部，损坏尾部拒绝追加（旧运行无锚点）', async () => {
     const first = await store.append(runId, logEvent('first'))
+    await rm(chainFile(taktDir, runId), { force: true })
     const second = { ...first, seq: 2, prevHash: first.hash, data: { level: 'info', message: 'external' } }
     const { hash: _hash, prevHash, ...payload } = second
     second.hash = sha256(prevHash + canonicalJson(payload))
@@ -212,6 +227,7 @@ describe('FsEventStore', () => {
     await appendFile(file, `${JSON.stringify(second)}\n`)
     expect((await store.append(runId, logEvent('third'))).seq).toBe(3)
     expect(await store.verify(runId)).toEqual({ ok: true })
+    await rm(chainFile(taktDir, runId), { force: true })
     await writeFile(file, `${JSON.stringify(first)}\n`)
     expect((await store.append(runId, logEvent('after-truncate'))).seq).toBe(2)
     expect(await store.verify(runId)).toEqual({ ok: true })
@@ -221,10 +237,11 @@ describe('FsEventStore', () => {
     await expect(store.append(runId, logEvent('blocked'))).rejects.toThrow('损坏')
   })
 
-  it('同大小替换与截断后重写更长的有效链会重建缓存，非法追加不写入', async () => {
+  it('同大小替换与截断后重写更长的有效链会重建缓存，非法追加不写入（旧运行无锚点）', async () => {
     const first = await store.append(runId, logEvent('original'))
     await store.append(runId, logEvent('second'))
     const file = eventsFile(taktDir, runId)
+    await rm(chainFile(taktDir, runId), { force: true })
     const make = (seq: number, prevHash: string, message: string) => {
       const payload = { seq, ts: first.ts, runId, ...logEvent(message) }
       return { ...payload, prevHash, hash: sha256(prevHash + canonicalJson(payload)) }
@@ -234,6 +251,7 @@ describe('FsEventStore', () => {
     await writeFile(file, `${JSON.stringify(replacement)}\n${JSON.stringify(next)}\n`)
     expect((await store.append(runId, logEvent('after-rewrite'))).seq).toBe(3)
     expect(await store.verify(runId)).toEqual({ ok: true })
+    await rm(chainFile(taktDir, runId), { force: true })
     const lines = (await readFile(file, 'utf8')).trim().split('\n')
     const last = JSON.parse(lines.at(-1)!) as EventEnvelope
     const sameSize = { ...last, data: { level: 'info', message: 'equal-rewrite' } }
@@ -251,4 +269,41 @@ describe('FsEventStore', () => {
     expect(await readFile(file, 'utf8')).toBe(before)
   })
 
+  it('外部追加后锚点不一致：拒绝继续追加、锚点不变、verify 报 incomplete', async () => {
+    const first = await store.append(runId, logEvent('first'))
+    const anchorBefore = await readFile(chainFile(taktDir, runId), 'utf8')
+    const second = { ...first, seq: 2, prevHash: first.hash, data: { level: 'info', message: 'external' } }
+    const { hash: _hash, prevHash, ...payload } = second
+    second.hash = sha256(prevHash + canonicalJson(payload))
+    const file = eventsFile(taktDir, runId)
+    await appendFile(file, `${JSON.stringify(second)}\n`)
+    await expect(store.append(runId, logEvent('must-not-write'))).rejects.toThrow('事件日志与锚点不一致')
+    expect(await readFile(chainFile(taktDir, runId), 'utf8')).toBe(anchorBefore)
+    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 2, reason: 'incomplete' })
+  })
+
+  it('截掉最后 N 行后 verify 报 truncated，追加被拒绝', async () => {
+    for (let i = 1; i <= 5; i++) await store.append(runId, logEvent(`e${i}`))
+    const file = eventsFile(taktDir, runId)
+    const lines = (await readFile(file, 'utf8')).split('\n').filter((line) => line !== '')
+    await writeFile(file, `${lines.slice(0, 3).join('\n')}\n`)
+    const anchorBefore = await readFile(chainFile(taktDir, runId))
+    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 4, reason: 'truncated' })
+    await expect(store.append(runId, logEvent('blocked'))).rejects.toThrow('事件日志与锚点不一致')
+    // 被拒绝的追加不能改写锚点，原始字节保持不变。
+    expect(await readFile(chainFile(taktDir, runId))).toEqual(anchorBefore)
+  })
+
+  it('有锚点但事件日志缺失时 verify 报 missing', async () => {
+    await store.append(runId, logEvent('only'))
+    await rm(eventsFile(taktDir, runId), { force: true })
+    expect(await store.verify(runId)).toEqual({ ok: false, brokenAt: 0, reason: 'missing' })
+    await expect(store.append(runId, logEvent('blocked'))).rejects.toThrow('事件日志与锚点不一致')
+  })
+
+  it('没有锚点的旧运行保持原有 verify 行为', async () => {
+    for (let i = 1; i <= 3; i++) await store.append(runId, logEvent(`e${i}`))
+    await rm(chainFile(taktDir, runId), { force: true })
+    expect(await store.verify(runId)).toEqual({ ok: true })
+  })
 })

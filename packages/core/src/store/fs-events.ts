@@ -2,12 +2,12 @@ import { statSync, type Stats } from 'node:fs'
 import path from 'node:path'
 import { open, stat } from 'node:fs/promises'
 import { StringDecoder } from 'node:string_decoder'
-import type { EventStore } from '../interfaces.js'
+import type { EventStore, EventVerifyReason } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
 import { canonicalJson, sha256 } from '../util/hash.js'
-import { appendLine, isEnoent, readFileIfExists } from './fs-utils.js'
+import { appendLine, isEnoent, readFileIfExists, readJsonFile, toJsonText, writeFileAtomic } from './fs-utils.js'
 import { withFileLock } from './file-lock.js'
-import { eventsFile } from './paths.js'
+import { chainFile, eventsFile } from './paths.js'
 
 const ZERO_HASH = '0'.repeat(64)
 const POLL_INTERVAL_MS = 300
@@ -49,6 +49,28 @@ function hashPayload(envelope: EventEnvelope): Record<string, unknown> {
     actor: envelope.actor,
     data: envelope.data,
   }
+}
+
+/** 链尾锚点：追加事件后原子写入，用于发现截尾和正常追加掩盖截尾。 */
+interface ChainAnchor { lastSeq: number; lastHash: string; updatedAt: string }
+
+async function readAnchor(file: string): Promise<ChainAnchor | undefined> {
+  const value = await readJsonFile<unknown>(file)
+  if (value === undefined) return undefined
+  const anchor = value as Partial<ChainAnchor> | null
+  if (anchor === null || typeof anchor !== 'object'
+    || !Number.isSafeInteger(anchor.lastSeq) || (anchor.lastSeq as number) < 1
+    || typeof anchor.lastHash !== 'string' || !/^[a-f0-9]{64}$/.test(anchor.lastHash)
+    || typeof anchor.updatedAt !== 'string') {
+    throw new Error(`链尾锚点损坏：${file}`)
+  }
+  return anchor as ChainAnchor
+}
+
+function lastEnvelope(buf: Buffer): EventEnvelope | undefined {
+  const lines = buf.toString('utf8').split('\n').filter((line) => line.trim() !== '')
+  const line = lines.at(-1)
+  return line === undefined ? undefined : JSON.parse(line) as EventEnvelope
 }
 
 function verifyContent(buf: Buffer, runId: string): { ok: boolean; brokenAt?: number } {
@@ -150,16 +172,22 @@ export class FsEventStore implements EventStore {
     e: { type: T; actor: EventEnvelope['actor']; nodeId?: string; data: EventPayloads[T] },
   ): Promise<EventEnvelope<T>> {
     const file = path.resolve(eventsFile(this.taktDir, runId))
+    const anchorFile = chainFile(this.taktDir, runId)
     return withFileLock(file, async () => {
       const last = await appendTail(file, runId)
+      const anchor = await readAnchor(anchorFile)
+      // 锁内先核对磁盘尾部和旧锚点：截尾后的正常追加不能把锚点覆盖掉。
+      if (anchor && (last.seq !== anchor.lastSeq || last.hash !== anchor.lastHash)) {
+        throw new Error(`事件日志与锚点不一致：${runId}`)
+      }
       const envelope: EventEnvelope<T> = {
-        seq: (last?.seq ?? 0) + 1,
+        seq: last.seq + 1,
         ts: new Date().toISOString(),
         runId,
         type: e.type,
         actor: e.actor,
         data: e.data,
-        prevHash: last?.hash ?? ZERO_HASH,
+        prevHash: last.hash,
         hash: '',
       }
       if (e.nodeId !== undefined) envelope.nodeId = e.nodeId
@@ -167,6 +195,11 @@ export class FsEventStore implements EventStore {
       await appendLine(file, JSON.stringify(envelope))
       const info = await stat(file)
       appendTails.set(file, { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, seq: envelope.seq, hash: envelope.hash, start: last.size })
+      await writeFileAtomic(anchorFile, toJsonText({
+        lastSeq: envelope.seq,
+        lastHash: envelope.hash,
+        updatedAt: new Date().toISOString(),
+      }))
       return envelope
     })
   }
@@ -257,11 +290,37 @@ export class FsEventStore implements EventStore {
     }
   }
 
-  /** 校验哈希链；返回第一处断链的 seq（损坏行按它应有的 seq 报）。 */
-  async verify(runId: string): Promise<{ ok: boolean; brokenAt?: number }> {
-    const buf = await readFileIfExists(eventsFile(this.taktDir, runId))
-    if (buf === undefined) return { ok: true }
-    return verifyContent(buf, runId)
+  /** 校验哈希链和链尾锚点；返回第一处断链的 seq（损坏行按它应有的 seq 报）。 */
+  async verify(runId: string): Promise<{ ok: boolean; brokenAt?: number; reason?: EventVerifyReason }> {
+    const file = path.resolve(eventsFile(this.taktDir, runId))
+    const anchorFile = chainFile(this.taktDir, runId)
+    // 与 append 共用跨进程锁，避免读到"事件已追加、锚点未更新"的中间态。
+    return withFileLock(file, async () => {
+      let anchor: ChainAnchor | undefined
+      try {
+        anchor = await readAnchor(anchorFile)
+      } catch {
+        return { ok: false, brokenAt: 0, reason: 'tampered' as const }
+      }
+      const buf = await readFileIfExists(file)
+      if (anchor === undefined) {
+        if (buf === undefined) return { ok: true }
+        return verifyContent(buf, runId)
+      }
+      if (buf === undefined) return { ok: false, brokenAt: 0, reason: 'missing' as const }
+      const chain = verifyContent(buf, runId)
+      if (!chain.ok) return { ...chain, reason: 'tampered' as const }
+      const last = lastEnvelope(buf)
+      const lastSeq = last?.seq ?? 0
+      if (lastSeq === anchor.lastSeq && last?.hash === anchor.lastHash) return { ok: true }
+      // 恰好多一条且前缀 hash 对得上：追加后、写锚点前中断，不能自动修复成可信。
+      if (lastSeq === anchor.lastSeq + 1 && last?.prevHash === anchor.lastHash) {
+        return { ok: false, brokenAt: anchor.lastSeq + 1, reason: 'incomplete' as const }
+      }
+      if (lastSeq < anchor.lastSeq) return { ok: false, brokenAt: lastSeq + 1, reason: 'truncated' as const }
+      if (lastSeq === anchor.lastSeq) return { ok: false, brokenAt: anchor.lastSeq, reason: 'tampered' as const }
+      return { ok: false, brokenAt: anchor.lastSeq + 1, reason: 'tampered' as const }
+    })
   }
 
   private async readEvents(runId: string): Promise<EventEnvelope[]> {

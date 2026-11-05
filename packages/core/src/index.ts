@@ -13,6 +13,7 @@ export * from './store/fs-workspace.js'
 export * from './store/fs-events.js'
 export * from './store/fs-runs.js'
 export * from './store/fs-attention.js'
+export * from './store/lease.js'
 export * from './store/snapshot.js'
 export { buildRunGraph, stageProgress } from './insights/graph.js'
 export { summarizeRun } from './insights/run.js'
@@ -21,7 +22,12 @@ export { FsInsights, createInsights } from './insights/fs-insights.js'
 export { createEngine, type EngineOptions } from './engine/index.js'
 export { assertRunId, assertRequirementId, assertNodeId, assertArtifactPath } from './store/paths.js'
 export { withLock } from './store/locks.js'
-export { validateAnswer, AttentionAlreadyAnsweredError } from './store/attention-rules.js'
+export {
+  validateAnswer,
+  checkAnswerFreshness,
+  AttentionAlreadyAnsweredError,
+  type AnswerFreshness,
+} from './store/attention-rules.js'
 export { loadRunGraph, type RunGraphNode } from './store/run-graph.js'
 export { markArtifactEdited, persistArtifactInvalidation } from './store/artifact-edits.js'
 export { deriveRequirementState } from './insights/requirement.js'

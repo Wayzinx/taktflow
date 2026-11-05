@@ -9,6 +9,7 @@ import { snapshotWorkflow } from '../store/snapshot.js'
 import { runDir } from '../store/paths.js'
 import { collectOutputs, readCurrent, resolveInputs } from './artifacts.js'
 import { expandPlanner, qualify, validateDag, type Entry, type Graph } from './graph.js'
+import { assertSupportedNode } from './kinds.js'
 import { WriteGuard } from './guard.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
@@ -85,6 +86,7 @@ export class Runtime implements HarnessHost {
   }
   add(nodes: NodeDef[], parent?: string, scope = '', item?: PlannedItem, iteration?: number): string[] {
     for (const def of nodes) {
+      assertSupportedNode(def, scope)
       if (this.graph.has(def.id)) throw new Error(`节点 ID 冲突：${def.id}`)
       this.graph.set(def.id, { def, parent, scope, item, iteration })
       if (!this.state.nodes[def.id]) {
@@ -233,6 +235,9 @@ export class Runtime implements HarnessHost {
     const requestId = prior.length ? `${base}#${prior.length + 1}` : base
     const item = await this.deps.stores.attention.create({
       requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices,
+      attempt: ns.attempts,
+      // 拷贝冻结：后续 NodeState.inputs 被改写不能影响待办的待审版本。
+      subjects: (ns.inputs ?? []).map((ref) => ({ ...ref })),
     })
     this.requests[ns.id] = requestId
     if (!this.signal.aborted) ns.status = 'waiting_human'
@@ -401,6 +406,7 @@ export class Runtime implements HarnessHost {
       case 'loop': await runLoop(this, entry, ctx); break
       case 'planner': await runPlanner(this, entry, ctx); break
       case 'subflow': throw new Error('not implemented')
+      default: throw new Error(`不支持的节点类型：${node.kind}（节点 ${node.id}）`)
     }
     return system
   }

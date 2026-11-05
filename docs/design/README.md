@@ -23,6 +23,7 @@
 | 16 | [workflow 协同编辑](16-工作流协同编辑.md) | `.workflow.ts` 受限子集是唯一事实源；画布做 AST 最小文本替换，AI 直接改文件；修订与合并 |
 | 17 | [文件系统、沙箱与部署](17-文件系统与沙箱.md) | 空间 / 仓库镜像 + worktree / 对象存储；local、bwrap、docker 三档沙箱；Linux 与容器部署 |
 | 18 | [评审机制与默认流水线](18-评审机制与默认流水线.md) | review 节点：交叉评审、独立上下文、轮次上限、打回重做、全程留痕；作者版标准流水线 |
+| — | [taktflow-dsh](https://github.com/Wayzinx/taktflow-dsh)（独立仓库） | 作为 DeepSeek Harness 插件发布：需求群 = Lead 会话，引擎跑在 dsh 宿主内；本仓库提供它依赖的租约、链尾锚点、传输无关的 api-core |
 
 ## 参考资料
 

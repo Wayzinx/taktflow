@@ -8,6 +8,7 @@ import { runReqList, runReqNew } from './commands/req.js'
 import { runWsGet, runWsList, runWsLog, runWsPut } from './commands/ws.js'
 import { runWorkflow, resumeWorkflow } from './commands/run.js'
 import { runAnswer } from './commands/answer.js'
+import { runCancel } from './commands/cancel.js'
 import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
 import { runKbQuery } from './commands/kb.js'
@@ -102,6 +103,9 @@ async function dispatch(cli: ParsedCli): Promise<number> {
     case 'answer':
       expectPositionals('answer', args, 1, 1)
       return runAnswer(cli)
+    case 'cancel':
+      expectPositionals('cancel', args, 1, 1)
+      return runCancel(cli)
     case 'status':
       expectPositionals('status', args, 0, 0)
       await runStatus(options.project, options.req, options.json)

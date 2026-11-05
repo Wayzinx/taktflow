@@ -21,6 +21,7 @@ export interface CliOptions {
   answer?: string
   choice?: string
   noResume: boolean
+  takeover: boolean
   req?: string
   intent?: string
   port?: string
@@ -44,9 +45,10 @@ export const HELP = `用法：takt <命令> [选项]
   ws get <REQ> <path> [--version n]             读产物
   ws ls <REQ>                                   列出产物
   ws log <REQ> <path>                           产物版本历史
-  run <workflowId> --req <REQ> [--arg k=v]... [--harness <id>] [--mock <file>] [--auto-approve]
-  resume <runId> [--auto-approve] [--harness <id>] [--mock <file>]
-  answer <requestId> (--approve | --reject | --answer "<text>" | --choice <c>) [--no-resume]
+  run <workflowId> --req <REQ> [--arg k=v]... [--harness <id>] [--mock <file>] [--auto-approve] [--takeover]
+  resume <runId> [--auto-approve] [--harness <id>] [--mock <file>] [--takeover]
+  answer <requestId> (--approve | --reject | --answer "<text>" | --choice <c>) [--no-resume] [--takeover]
+  cancel <runId> [--takeover]                  取消运行并结束在途节点
   status [--req <REQ>]
   trace <REQ>
   audit verify <runId>
@@ -59,6 +61,7 @@ export const HELP = `用法：takt <命令> [选项]
 全局选项：
   --project <dir>   项目目录（默认 cwd，并向上查找 takt.config.json）
   --json            机器可读输出
+  --takeover        显式接管已失效的空间租约（run/resume/answer/cancel）
   --help            显示帮助`
 
 const OPTIONS = {
@@ -79,6 +82,7 @@ const OPTIONS = {
   answer: { type: 'string' },
   choice: { type: 'string' },
   'no-resume': { type: 'boolean' },
+  takeover: { type: 'boolean' },
   req: { type: 'string' },
   intent: { type: 'string' },
   port: { type: 'string' },
@@ -101,6 +105,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     approve: values.approve === true,
     reject: values.reject === true,
     noResume: values['no-resume'] === true,
+    takeover: values.takeover === true,
   }
   for (const key of ['project', 'name', 'link', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host'] as const) {
     const value = values[key]

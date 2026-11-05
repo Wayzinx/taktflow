@@ -51,6 +51,12 @@ export const runDir = (taktDir: string, runId: string): string => path.join(runs
 
 export const eventsFile = (taktDir: string, runId: string): string => path.join(runDir(taktDir, runId), 'events.jsonl')
 
+/** 链尾锚点：记录最后一次正常追加的 seq/hash，用来发现截尾。 */
+export const chainFile = (taktDir: string, runId: string): string => path.join(runDir(taktDir, runId), 'chain.json')
+
+/** 空间租约：跨进程执行所有权。 */
+export const leaseFile = (taktDir: string): string => path.join(taktDir, 'lease.json')
+
 export const contextFile = (taktDir: string, runId: string, nodeId: string): string =>
   path.join(runDir(taktDir, runId), 'context', `${assertNodeId(nodeId).replaceAll('/', '__')}.json`)
 
