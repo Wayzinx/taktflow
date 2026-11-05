@@ -110,3 +110,50 @@
     display: none;
   }
 }
+
+/* 嵌入模式：没有侧栏，主要入口是顶栏左侧的 Tab（components/layout.tsx 的 EmbeddedTabs） */
+.shell-embedded .topbar {
+  padding: 0 var(--sp-4);
+}
+.embed-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  padding-right: var(--sp-3);
+  margin-right: var(--sp-1);
+  border-right: 1px solid var(--border);
+}
+.embed-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.embed-tab svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.embed-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.embed-tab.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.embed-tab.active svg {
+  color: var(--accent);
+}
+.embed-tab .sb-badge {
+  margin-left: 2px;
+}

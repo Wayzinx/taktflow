@@ -126,16 +126,45 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   )
 }
 
-function Topbar({ onMenu }: { onMenu: () => void }) {
+/** 嵌入模式没有侧栏：主要入口放到顶栏左侧的 Tab。 */
+function EmbeddedTabs() {
+  const { path, query } = useLocation()
+  const project = useAsync((ds) => ds.project(), [])
+  const pending = project.data?.attention.length ?? 0
+  const items = [
+    { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
+    { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run') },
+    { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
+    { to: '/workflows', label: 'Workflow', icon: Workflow, active: path.startsWith('/workflows') },
+    { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') && query.get('tab') !== 'knowledge' },
+  ]
+  return (
+    <nav className="embed-tabs" aria-label="taktflow">
+      {items.map(({ to, label, icon: Icon, active, badge }) => (
+        <Link key={to} to={to} className={`embed-tab${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
+          <Icon aria-hidden />
+          <span>{label}</span>
+          {badge ? <span className="sb-badge num" aria-label={`${badge} 项待办`}>{badge}</span> : null}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
+function Topbar({ onMenu, embedded = false }: { onMenu: () => void; embedded?: boolean }) {
   const items = useCrumbState()
   const ds = useSource()
   const project = useAsync((d) => d.project(), [])
   const running = project.data?.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length ?? 0
   return (
     <header className="topbar">
-      <button className="btn btn-ghost btn-icon topbar-menu" onClick={onMenu} aria-label="打开导航">
-        <Menu aria-hidden />
-      </button>
+      {embedded ? (
+        <EmbeddedTabs />
+      ) : (
+        <button className="btn btn-ghost btn-icon topbar-menu" onClick={onMenu} aria-label="打开导航">
+          <Menu aria-hidden />
+        </button>
+      )}
       <nav className="crumbs" aria-label="面包屑">
         <ol>
           {items.map((c, i) => (
@@ -159,16 +188,22 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         </span>
       )}
       {project.data && <TaktBeat count={running} />}
-      <button className="btn btn-sm topbar-search" onClick={() => setPaletteOpen(true)} aria-label="打开命令面板">
-        <Search aria-hidden />
-        <span className="kbd">{isMac ? '⌘K' : 'Ctrl K'}</span>
-      </button>
+      {!embedded && (
+        <button className="btn btn-sm topbar-search" onClick={() => setPaletteOpen(true)} aria-label="打开命令面板">
+          <Search aria-hidden />
+          <span className="kbd">{isMac ? '⌘K' : 'Ctrl K'}</span>
+        </button>
+      )}
       <span className={`takt-track${running > 0 ? ' running' : ''}`} aria-hidden />
     </header>
   )
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+/**
+ * 应用外壳。embedded：嵌入宿主时没有侧栏、空间切换和命令面板（⌘K 归宿主），入口在顶栏 Tab；
+ * 内容在 shell-main 里滚动。
+ */
+export function AppShell({ children, variant = 'standalone' }: { children: ReactNode; variant?: 'standalone' | 'embedded' }) {
   const [navOpen, setNavOpen] = useState(false)
   const { path, spaceId } = useLocation()
   useEffect(() => setNavOpen(false), [path])
@@ -179,6 +214,18 @@ export function AppShell({ children }: { children: ReactNode }) {
     lastSpace.current = spaceId
     invalidate()
   }, [spaceId])
+  if (variant === 'embedded') {
+    return (
+      <div className="shell shell-embedded">
+        <div className="shell-main">
+          <Topbar onMenu={() => undefined} embedded />
+          <main className="shell-content" id="main">
+            {children}
+          </main>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="shell">
       <a className="skip-link" href="#main">跳到正文</a>

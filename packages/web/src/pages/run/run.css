@@ -19,7 +19,7 @@
 .run-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--topbar-h));
+  height: calc(var(--viewport-h) - var(--topbar-h));
 }
 .run-header {
   flex: none;

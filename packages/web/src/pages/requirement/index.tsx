@@ -13,6 +13,7 @@ import { MetricsTab } from './metrics-tab'
 import { ReviewsTab } from './reviews-tab'
 import { RunsTab } from './runs-tab'
 import { TraceTab } from './trace-tab'
+import { isEmbedded } from '../../lib/embed'
 import './requirement.css'
 
 const LINK_LABEL: Record<string, string> = { meego: 'Meego', feishu: '飞书', github: 'GitHub', jira: 'Jira' }
@@ -79,7 +80,8 @@ export function RequirementPage({ id }: { id: string }) {
         onChange={(t) => setQuery({ tab: t === 'artifacts' ? undefined : t, path: undefined, v: undefined })}
         tabs={[
           { id: 'artifacts', label: '公共产物', icon: FolderOpen, count: r?.artifacts.length },
-          { id: 'chat', label: '群聊', icon: MessagesSquare },
+          // 嵌入 dsh 时需求群就是宿主会话，不重复显示群聊
+          ...(isEmbedded() ? [] : [{ id: 'chat', label: '群聊', icon: MessagesSquare }]),
           { id: 'reviews', label: '评审', icon: ClipboardCheck },
           { id: 'runs', label: '运行', icon: GitBranch, count: r?.runs.length },
           { id: 'trace', label: '追溯', icon: Network },
@@ -89,7 +91,7 @@ export function RequirementPage({ id }: { id: string }) {
       />
       <div className="req-tab-body">
         {tab === 'artifacts' && <ArtifactsTab id={id} detail={r} />}
-        {tab === 'chat' && <ChatTab id={id} detail={r} />}
+        {tab === 'chat' && !isEmbedded() && <ChatTab id={id} detail={r} />}
         {tab === 'reviews' && <ReviewsTab id={id} />}
         {tab === 'runs' && <RunsTab runs={r?.runs} />}
         {tab === 'trace' && <TraceTab id={id} />}

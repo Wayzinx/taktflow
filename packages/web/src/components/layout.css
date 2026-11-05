@@ -1,7 +1,7 @@
 /* 外壳：深石墨导轨（侧栏）+ 暖色工作区。顶栏与面包屑见 topbar.css。 */
 .shell {
   display: flex;
-  min-height: 100vh;
+  min-height: var(--viewport-h);
   background: var(--bg);
 }
 .skip-link {
@@ -22,7 +22,7 @@
 .sidebar {
   position: sticky;
   top: 0;
-  height: 100vh;
+  height: var(--viewport-h);
   width: var(--sidebar-w);
   flex: none;
   display: flex;

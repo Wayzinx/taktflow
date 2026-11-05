@@ -1,6 +1,4 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { createHttpSource, probeApi } from './client'
-import { createMockSource } from './mock-source'
 import type { DataSource } from './source'
 
 export type { DataSource, NodeView, WorkflowRevisionDetail } from './source'
@@ -8,20 +6,25 @@ export { WorkflowConflictError } from './source'
 
 const SourceContext = createContext<DataSource | null>(null)
 
-/** ?mock=1 或 VITE_MOCK=1 强制演示数据；否则探测真实 API，不可达时回退到演示数据。 */
-async function pickSource(): Promise<DataSource> {
-  const forced = new URLSearchParams(location.search).get('mock') === '1' || import.meta.env.VITE_MOCK === '1'
-  if (!forced && (await probeApi())) return createHttpSource()
-  return createMockSource()
-}
-
-export function DataProvider({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
-  const [source, setSource] = useState<DataSource | null>(null)
+/**
+ * 数据源注入点：直接给一个 DataSource（嵌入模式），或给一个异步选择函数（独立页面，见 ./pick）。
+ * 本模块不引用演示数据，嵌入产物里没有 mock 代码路径。
+ */
+export function DataProvider({ source, children, fallback }: { source: DataSource | (() => Promise<DataSource>); children: ReactNode; fallback: ReactNode }) {
+  const [picked, setPicked] = useState<DataSource | null>(typeof source === 'function' ? null : source)
   useEffect(() => {
-    void pickSource().then(setSource)
-  }, [])
-  if (!source) return <>{fallback}</>
-  return <SourceContext.Provider value={source}>{children}</SourceContext.Provider>
+    if (typeof source !== 'function') {
+      setPicked(source)
+      return
+    }
+    let alive = true
+    void source().then((ds) => alive && setPicked(ds))
+    return () => {
+      alive = false
+    }
+  }, [source])
+  if (!picked) return <>{fallback}</>
+  return <SourceContext.Provider value={picked}>{children}</SourceContext.Provider>
 }
 
 export function useSource(): DataSource {
