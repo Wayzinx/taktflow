@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { Bot, FileInput, Layers, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
+import { Bot, ClipboardCheck, FileInput, Layers, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, Tabs, type TabDef } from '../../components/ui'
@@ -7,6 +7,7 @@ import { setQuery, useLocation } from '../../lib/router'
 import { NODE_STATUS } from '../../lib/status'
 import { nodeLabel } from './node-label'
 import { ContextTab, GateTab, IoTab, JudgeTab, OverviewTab, PromptTab, TraceTab } from './drawer-tabs'
+import { ReviewTab } from './review/review-tab'
 import './drawer.css'
 
 const MIN_W = 440
@@ -70,6 +71,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
     { id: 'context', label: '上下文', icon: Layers, hidden: !d || d.context.snapshots.length === 0 },
     { id: 'judge', label: '判决', icon: Scale, hidden: d?.kind !== 'judge', count: d?.verdicts?.length },
     { id: 'gate', label: '门禁', icon: ShieldCheck, hidden: d?.kind !== 'gate' },
+    { id: 'review', label: '评审', icon: ClipboardCheck, hidden: d?.kind !== 'review', count: d?.review?.rounds.length },
     { id: 'prompt', label: 'Prompt', icon: Bot, hidden: !d?.prompt },
   ]
   const visible = tabs.filter((t) => !t.hidden).map((t) => t.id)
@@ -117,6 +119,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             {tab === 'context' && <ContextTab d={d} />}
             {tab === 'judge' && <JudgeTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'gate' && <GateTab d={d} />}
+            {tab === 'review' && <ReviewTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'prompt' && <PromptTab d={d} />}
           </div>
         )}

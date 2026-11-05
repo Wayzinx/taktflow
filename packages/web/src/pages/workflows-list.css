@@ -1,0 +1,78 @@
+/* workflow 列表（/workflows 与空间设置 · Workflow Tab 共用，A 负责）。 */
+.wf-table-wrap {
+  overflow-x: auto;
+}
+.wf-table {
+  min-width: 640px;
+}
+.wf-table td {
+  height: 56px;
+  font-size: var(--text-ui);
+}
+.wf-cell-title {
+  max-width: 360px;
+}
+.wf-title {
+  display: block;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+}
+.wf-title:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+}
+.wf-file {
+  display: block;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.wf-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.wf-mode svg {
+  width: 13px;
+  height: 13px;
+}
+.wf-mode.readonly {
+  color: var(--text-3);
+}
+.wf-rev {
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.wf-cell-go {
+  width: 32px;
+  color: var(--text-3);
+}
+.wf-cell-go svg {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.wf-table tbody tr:hover .wf-cell-go svg {
+  color: var(--text);
+  transform: translateX(2px);
+}
+.wf-page {
+  max-width: 1120px;
+}
+.wf-page-foot {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-cell-go svg {
+    transition: none;
+  }
+  .wf-table tbody tr:hover .wf-cell-go svg {
+    transform: none;
+  }
+}

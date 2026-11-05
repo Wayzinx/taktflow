@@ -266,6 +266,10 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
             <i className="lg-expand" />
             动态展开
           </span>
+          <span>
+            <i className="lg-rework" />
+            打回
+          </span>
         </Panel>
         <Panel position="top-right" className="dag-tools" style={{ marginRight: drawerOpen ? 'calc(var(--drawer-w, 560px) + 16px)' : undefined }}>
           <button className={`btn btn-sm${miniMap ? ' on' : ''}`} onClick={() => setMiniMap(!miniMap)} title={miniMap ? '隐藏小地图' : '显示小地图'} aria-pressed={miniMap}>

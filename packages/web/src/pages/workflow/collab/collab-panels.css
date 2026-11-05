@@ -1,0 +1,350 @@
+/* 协同组件的浮层与大块视图：修订抽屉、冲突对话框、源码视图。 */
+
+.wfc-drawer-layer,
+.wfc-modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+}
+.wfc-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  animation: wfc-fade var(--dur-slow) var(--ease) both;
+}
+
+/* ---------------------------------------------------------------- 修订抽屉 */
+.wfc-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(880px, 94vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+  animation: wfc-slide 460ms var(--ease-spring) both;
+}
+.wfc-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 14px var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.wfc-drawer-head > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--text-2);
+}
+.wfc-drawer-title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.wfc-drawer-close {
+  margin-left: auto;
+}
+.wfc-drawer-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 272px minmax(0, 1fr);
+}
+.wfc-rev-list {
+  margin: 0;
+  padding: var(--sp-2);
+  list-style: none;
+  overflow: auto;
+  border-right: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+.wfc-rev {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: var(--sp-2) 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.wfc-rev:hover {
+  background: var(--surface-hover);
+}
+.wfc-rev.is-selected {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.wfc-rev-top,
+.wfc-rev-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.wfc-rev-author {
+  font-weight: 500;
+  font-size: var(--text-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wfc-rev-top .wfc-muted {
+  margin-left: auto;
+  flex: none;
+}
+.wfc-rev-summary {
+  font-size: var(--text-ui);
+  color: var(--text-2);
+}
+.wfc-rev-tags .chip {
+  height: 18px;
+  padding: 0 6px;
+  font-size: var(--text-label);
+}
+.wfc-chip-current {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.wfc-chip-remote {
+  color: var(--st-running);
+  background: var(--st-running-soft);
+  border-color: transparent;
+}
+.wfc-rev-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  min-height: 0;
+  padding: var(--sp-4);
+  overflow: auto;
+}
+.wfc-rev-heading {
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.wfc-rev-reason {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--text-body);
+  color: var(--text-2);
+  max-width: 72ch;
+}
+.wfc-kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px var(--sp-4);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--text-meta);
+}
+.wfc-kv dt {
+  color: var(--text-3);
+}
+.wfc-kv dd {
+  margin: 0;
+}
+.wfc-rev-actions,
+.wfc-actions,
+.wfc-modal-tools,
+.wfc-modal-foot,
+.wfc-source-bar,
+.wfc-source-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.wfc-rev-actions {
+  margin-top: var(--sp-3);
+}
+.wfc-rollback {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+.wfc-field-label {
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.wfc-actions {
+  justify-content: flex-end;
+}
+
+/* ---------------------------------------------------------------- 冲突对话框 */
+.wfc-modal-layer {
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+}
+.wfc-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  max-height: min(820px, calc(100vh - 32px));
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+  animation: wfc-pop var(--dur-slow) var(--ease) both;
+}
+.wfc-modal-head {
+  display: flex;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-5) var(--sp-3);
+}
+.wfc-modal-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius);
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.wfc-modal-icon svg {
+  width: 17px;
+  height: 17px;
+}
+.wfc-modal-title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.wfc-modal-desc,
+.wfc-hint {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-2);
+  font-size: var(--text-ui);
+  max-width: 80ch;
+}
+.wfc-hint {
+  margin: 0 0 var(--sp-2);
+}
+.wfc-modal-tools {
+  padding: 0 var(--sp-5) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.wfc-modal-body {
+  flex: 1;
+  min-height: 240px;
+  overflow: auto;
+  padding: var(--sp-4) var(--sp-5);
+}
+.wfc-merge-input,
+.wfc-source-input {
+  display: block;
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  font-size: var(--text-meta);
+  line-height: 1.65;
+  tab-size: 2;
+  white-space: pre;
+}
+.wfc-modal-foot {
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+
+/* ---------------------------------------------------------------- 源码视图 */
+.wfc-source {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.wfc-source-bar {
+  font-size: var(--text-ui);
+}
+.wfc-source-bar > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-2);
+}
+.wfc-source .wfc-code {
+  max-height: 70vh;
+}
+.wfc-source-input {
+  min-height: 60vh;
+}
+.wfc-source-foot .input {
+  flex: 1;
+  min-width: 200px;
+}
+.wfc-note-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+}
+.wfc-note-row svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.wfc-note-row.is-warning {
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+}
+
+@media (max-width: 720px) {
+  .wfc-drawer-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 38%) minmax(0, 1fr);
+  }
+  .wfc-rev-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* ---------------------------------------------------------------- 动效（全局 reduced-motion 规则会把它们压成瞬时） */
+@keyframes wfc-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes wfc-slide {
+  from {
+    transform: translateX(32px);
+    opacity: 0;
+  }
+}
+@keyframes wfc-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+}
+@keyframes wfc-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+/* 远端变更的行先亮一拍再回落到常亮底色 */
+@keyframes wfc-flash {
+  0%,
+  50% {
+    background: var(--st-running-soft);
+    box-shadow: inset 0 0 0 1px var(--st-running);
+  }
+  100% {
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}

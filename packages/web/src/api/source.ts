@@ -15,6 +15,7 @@ import type {
   RequirementMetrics,
   RepoBinding,
   RequirementSummary,
+  ReviewSummary,
   Room,
   RoomMember,
   RoomMessage,
@@ -25,9 +26,31 @@ import type {
   SpaceMember,
   SpaceSummary,
   TraceGraph,
+  WorkflowChangedEvent,
+  WorkflowConflict,
+  WorkflowDocument,
+  WorkflowEditRequest,
+  WorkflowLayout,
+  WorkflowRevision,
+  WorkflowSourceRequest,
+  WorkflowSummary,
 } from '@taktflow/core'
 
 export type SpaceFileKind = SpaceFile['kind']
+
+/** GET /api/workflows/:id/revisions/:rev 的响应；diff 是相对父修订的统一 diff（首个修订为空串）。 */
+export interface WorkflowRevisionDetail {
+  revision: WorkflowRevision
+  source: string
+  diff: string
+}
+
+/** PATCH / PUT source 返回 409：基线已变化且自动三方合并失败。两个数据源都抛这个错误。 */
+export class WorkflowConflictError extends Error {
+  constructor(readonly conflict: WorkflowConflict) {
+    super('workflow 已被其他人修改，自动合并失败')
+  }
+}
 
 /**
  * 门禁 Tab 要画 rubric 阈值线，阈值在 SnapshotNode.checks 里，但 NodeDetail 还没带检查定义（见交付说明里的协议变更请求）。
@@ -76,4 +99,21 @@ export interface DataSource {
   postChat(requirementId: string, body: ChatPostRequest): Promise<RoomMessage>
   /** 新消息实时到达（SSE）；同一个 id 再次到达表示消息被更新。 */
   subscribeChat(requirementId: string, onMessage: (m: RoomMessage) => void): () => void
+
+  // ---- 评审（docs/design/18）
+  requirementReviews(requirementId: string): Promise<ReviewSummary[]>
+
+  // ---- workflow 协同编辑（docs/design/16），作用于当前空间
+  workflows(): Promise<WorkflowSummary[]>
+  workflow(id: string): Promise<WorkflowDocument>
+  /** 409 时抛 WorkflowConflictError。 */
+  editWorkflow(id: string, body: WorkflowEditRequest): Promise<WorkflowDocument>
+  /** 整文件替换；409 时抛 WorkflowConflictError。 */
+  replaceWorkflowSource(id: string, body: WorkflowSourceRequest): Promise<WorkflowDocument>
+  saveWorkflowLayout(id: string, layout: WorkflowLayout): Promise<WorkflowLayout>
+  workflowRevisions(id: string): Promise<WorkflowRevision[]>
+  workflowRevision(id: string, rev: string): Promise<WorkflowRevisionDetail>
+  rollbackWorkflow(id: string, body: { rev: string; reason: string }): Promise<WorkflowDocument>
+  /** workflow 文件被修改（人、Lead 或 Agent）时到达；包括自己的保存。 */
+  subscribeWorkflow(id: string, onChange: (e: WorkflowChangedEvent) => void): () => void
 }

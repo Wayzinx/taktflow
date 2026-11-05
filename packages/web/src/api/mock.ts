@@ -15,11 +15,13 @@ import type {
 } from '@taktflow/core'
 import { createMockChat } from './mock-chat'
 import { addUsage, ZERO, type MockDb, type MockRun } from './mock-data'
+import { createMockReviews } from './mock-reviews'
 import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
+import type { WorkflowApi } from './mock-workflows'
 import type { DataSource, NodeView } from './source'
 
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
-export type ProjectSource = Omit<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'>
+export type ProjectSource = Omit<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi>
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const LOADED = Date.now()
@@ -27,6 +29,7 @@ const LOADED = Date.now()
 /** 演示数据源：实现与 HTTP 客户端相同的接口，状态保存在内存里（刷新即复位）。 */
 export function createProjectMock(db: MockDb): ProjectSource {
   const chat = createMockChat(db)
+  const reviews = createMockReviews(db)
   const delay = <T,>(v: T, ms = 90): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
   const fail = (msg: string) => Promise.reject(new Error(msg))
 
@@ -228,6 +231,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
         verdicts: t.kind === 'judge' ? verdicts : undefined,
         gate: gateEvent ? (gateEvent.data as NodeDetail['gate']) : undefined,
         checks: t.checks,
+        review: t.kind === 'review' ? reviews.detail(runId, nodeId) : undefined,
         events,
       }
       return delay(detail)
@@ -277,6 +281,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
       return m ? delay(m, 60) : fail(`需求 ${id} 不存在`)
     },
     subscribeChat: (id, on) => chat.subscribe(id, on),
+    requirementReviews: (id) => (db.requirements.some((r) => r.id === id) ? delay(reviews.list(id), 100) : fail(`需求 ${id} 不存在`)),
     subscribe(runId, onEvent) {
       const run = getRun(runId)
       if (!run || run.live.length === 0) return () => {}

@@ -2,10 +2,12 @@ import { useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Bot,
   CheckCheck,
+  ClipboardCheck,
   ChevronRight,
   CircleDot,
   FilePen,
   FilePlus2,
+  GitBranch,
   FileWarning,
   Flag,
   Hammer,
@@ -14,17 +16,21 @@ import {
   MessageSquare,
   Network,
   Play,
+  Reply,
   Scale,
   Search,
   ShieldAlert,
   ShieldCheck,
   Shrink,
+  Send,
   SquareStack,
+  TimerOff,
+  Undo2,
   UserRound,
   X,
   type LucideIcon,
 } from 'lucide-react'
-import type { EventEnvelope, EventPayloads } from '@taktflow/core'
+import type { EventEnvelope, EventPayloads, ReviewResponse, ReviewVerdict } from '@taktflow/core'
 import { actorName, fmtDate, fmtTime, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
 import { NODE_STATUS, VERDICT, toneVar, type Tone } from '../lib/status'
@@ -36,6 +42,14 @@ interface Described {
   title: ReactNode
   detail?: ReactNode
 }
+
+const REVIEW_VERDICT: Record<ReviewVerdict, { label: string; tone: Tone; mark: string }> = {
+  approve: { label: '通过', tone: 'success', mark: '✓' },
+  request_changes: { label: '要求修改', tone: 'waiting', mark: '!' },
+  reject: { label: '否决', tone: 'failed', mark: '✕' },
+}
+const RESPONSE_ACTION: Record<ReviewResponse['action'], string> = { fixed: '已修', declined: '不采纳', deferred: '延后' }
+const EXHAUSTED_ACTION = { rework: '打回上游重做', human: '交人处理', fail: '节点失败' } as const
 
 const d = <T extends keyof EventPayloads>(e: EventEnvelope, _t: T) => e.data as EventPayloads[T]
 
@@ -164,7 +178,63 @@ function describe(e: EventEnvelope): Described {
       const x = d(e, 'log')
       return { icon: ChevronRight, tone: x.level === 'error' ? 'failed' : x.level === 'warn' ? 'waiting' : 'neutral', title: x.message }
     }
-    // 评审、打回、worktree、临时任务等 M2 事件：先通用展示，M2 Web 任务替换为专门的样式
+    case 'review.round': {
+      const x = d(e, 'review.round')
+      const issues = x.verdicts.reduce((n, v) => n + v.issues, 0)
+      return {
+        icon: ClipboardCheck,
+        tone: x.passed ? 'success' : 'waiting',
+        title: <>评审第 {x.round} 轮{x.passed ? '通过' : `未通过 · ${issues} 个问题`}</>,
+        detail: (
+          <ul className="ev-list">
+            {x.verdicts.map((v) => (
+              <li key={v.reviewer}>
+                <span style={{ color: toneVar(REVIEW_VERDICT[v.verdict].tone) }}>{REVIEW_VERDICT[v.verdict].mark}</span> <span className="mono">{v.reviewer}</span> {REVIEW_VERDICT[v.verdict].label}
+                {v.score !== undefined && <b className="num"> {v.score}</b>}
+                {v.issues > 0 && <span className="muted"> — {v.issues} 个问题</span>}
+              </li>
+            ))}
+          </ul>
+        ),
+      }
+    }
+    case 'review.response': {
+      const x = d(e, 'review.response')
+      const count = (a: ReviewResponse['action']) => x.responses.filter((r) => r.action === a).length
+      const parts = (['fixed', 'declined', 'deferred'] as const).filter((a) => count(a)).map((a) => `${RESPONSE_ACTION[a]} ${count(a)}`)
+      return {
+        icon: Reply,
+        tone: 'neutral',
+        title: <>作者回应第 {x.round} 轮评审 · {parts.join(' · ')}</>,
+        detail: x.revised.length > 0 && <span className="mono faint">修改后 {x.revised.map((r) => `${r.path}@v${r.version}`).join(', ')}</span>,
+      }
+    }
+    case 'review.exhausted': {
+      const x = d(e, 'review.exhausted')
+      return { icon: TimerOff, tone: x.action === 'fail' ? 'failed' : x.action === 'human' ? 'waiting' : 'stale', title: <>评审 {x.rounds} 轮仍未通过 · {EXHAUSTED_ACTION[x.action]}</> }
+    }
+    case 'rework.started': {
+      const x = d(e, 'rework.started')
+      return {
+        icon: Undo2,
+        tone: 'stale',
+        title: <>打回 <span className="mono">{x.to}</span> 重做 · 第 {x.count} 次</>,
+        detail: (
+          <>
+            <span className="mono faint">重置 {x.reset.join(', ')}</span>
+            {x.feedback && <pre className="ev-pre">{x.feedback}</pre>}
+          </>
+        ),
+      }
+    }
+    case 'worktree.created': {
+      const x = d(e, 'worktree.created')
+      return { icon: GitBranch, tone: 'neutral', title: <>创建 worktree <span className="mono">{x.repo}:{x.branch}</span></>, detail: <span className="mono faint">基于 {x.base} · {x.path}</span> }
+    }
+    case 'task.dispatched': {
+      const x = d(e, 'task.dispatched')
+      return { icon: Send, tone: 'running', title: <>派发任务「{x.title}」给 <span className="mono">{x.role}</span></>, detail: <span className="mono faint">{x.taskRunId} · 由 {actorName(x.by)} 派发</span> }
+    }
     default:
       return { icon: ChevronRight, tone: 'neutral', title: <span className="mono">{e.type}</span> }
   }
@@ -184,7 +254,7 @@ export function EventTimeline({ events, showNode, showRun, showDate }: { events:
 
 function EventRow({ e, showNode, showRun, showDate }: { e: EventEnvelope; showNode?: boolean; showRun?: boolean; showDate?: boolean }) {
   const info = describe(e)
-  const collapsible = e.type === 'harness.tool_call' || e.type === 'harness.started'
+  const collapsible = e.type === 'harness.tool_call' || e.type === 'harness.started' || e.type === 'rework.started'
   const [open, setOpen] = useState(!collapsible)
   const Icon = info.icon
   return (

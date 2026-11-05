@@ -5,6 +5,7 @@ import { KindIcon } from '../../components/ui'
 import { fmtTokens, totalTokens } from '../../lib/format'
 import { NODE_KIND, NODE_STATUS, STAGE_STATUS, toneSoftVar, toneVar } from '../../lib/status'
 import type { DagNodeData, GroupData, LaneData } from './dag-layout'
+import { ReviewBadges, ReworkTargetBadge } from './review/dag-review'
 
 function Handles() {
   return (
@@ -45,12 +46,12 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
         <span style={{ flex: 1 }} />
         {tokens > 0 && <span className="mono num dag-tok">{fmtTokens(tokens)}</span>}
       </div>
-      {(showIteration || n.attempts > 1) && (
-        <span className="dag-badges">
-          {showIteration && <span className="dag-badge">第 {n.iteration} 轮</span>}
-          {n.attempts > 1 && <span className="dag-badge warn">×{n.attempts}</span>}
-        </span>
-      )}
+      <span className="dag-badges">
+        {showIteration && <span className="dag-badge">第 {n.iteration} 轮</span>}
+        <ReviewBadges node={n} />
+        <ReworkTargetBadge node={n} />
+        {n.attempts > 1 && <span className="dag-badge warn">×{n.attempts}</span>}
+      </span>
     </div>
   )
 }

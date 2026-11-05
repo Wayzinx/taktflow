@@ -1,0 +1,116 @@
+/* 需求页 · 评审汇总 */
+.rvs {
+  display: grid;
+  gap: var(--sp-4);
+}
+.rvs-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-2);
+}
+.rvs-stat {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.rvs-stat-label {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.rvs-stat-value {
+  font-size: var(--text-headline);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+.rvs-stat-value.toned {
+  color: var(--tone);
+}
+
+.rvs-title {
+  font-weight: 560;
+  color: var(--text);
+  text-decoration: none;
+}
+.rvs-title:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+}
+.rvs-title:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+.rvs-sub {
+  max-width: 340px;
+  font-size: var(--text-meta);
+}
+
+.rvs-rounds {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.rvs-ticks {
+  display: inline-flex;
+  gap: 3px;
+}
+.rvs-ticks > span {
+  width: 3px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--st-pending);
+}
+.rvs-ticks > span.on {
+  background: var(--ink);
+}
+.rvs-rework {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: var(--sp-2);
+  font-size: var(--text-meta);
+  color: var(--st-stale);
+}
+.rvs-rework svg {
+  width: 12px;
+  height: 12px;
+}
+
+.rvs-verdicts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.rvs-verdict {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.rvs-verdict svg {
+  width: 12px;
+  height: 12px;
+  color: var(--tone);
+}
+.rvs-score {
+  color: var(--text);
+  font-weight: 500;
+}
+.rvs-open {
+  color: var(--st-waiting);
+  font-weight: 600;
+}

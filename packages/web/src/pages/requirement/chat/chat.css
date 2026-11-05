@@ -1,0 +1,172 @@
+/* ---------------------------------------------------------------- 需求群聊（B） */
+.chat-layout {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.chat-loading {
+  min-height: 320px;
+  display: grid;
+  place-items: center;
+}
+/* ---- 成员栏 */
+.chat-members {
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--sp-4));
+  padding: var(--sp-3) var(--sp-2);
+}
+.chat-members-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--sp-2) var(--sp-2);
+  font-size: var(--text-meta);
+}
+.chat-members-group + .chat-members-group {
+  margin-top: var(--sp-3);
+}
+.chat-members-label {
+  padding: 0 var(--sp-2);
+  margin-bottom: var(--sp-1);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.chat-members ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.chat-member {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 40px;
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.chat-member:hover {
+  background: var(--surface-hover);
+}
+.chat-member:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+.chat-member-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.chat-member-name {
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.chat-member-role {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.chat-member-busy {
+  display: inline-flex;
+}
+
+/* ---- 头像：Lead / 子 Agent 用图标块，与真人的字母头像区分 */
+.chat-avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.chat-avatar svg {
+  width: 15px;
+  height: 15px;
+}
+.chat-avatar.who-lead {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--accent);
+}
+
+/* ---- 主区 */
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  height: clamp(440px, calc(100vh - 330px), 900px);
+  min-width: 0;
+}
+.chat-head svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+}
+.chat-head-count {
+  font-size: var(--text-meta);
+}
+.chat-feed-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chat-feed {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.chat-feed:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.chat-feed-inner {
+  padding: var(--sp-3) 0 var(--sp-4);
+}
+.chat-day {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: var(--sp-3) var(--sp-4) var(--sp-2);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.chat-day::before,
+.chat-day::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--divider);
+}
+.chat-unread {
+  position: absolute;
+  left: 50%;
+  bottom: var(--sp-3);
+  transform: translateX(-50%);
+  box-shadow: var(--shadow-md);
+}
+
+/* 新到达的消息：短促落位，不弹跳 */
+.chat-enter {
+  animation: chat-in var(--dur-slow) var(--ease) both;
+}
+@keyframes chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}

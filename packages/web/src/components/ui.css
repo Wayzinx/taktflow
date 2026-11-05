@@ -46,32 +46,32 @@
   width: 62%;
   height: 62%;
 }
-.kind-agent {
+.kind-icon.kind-agent {
   color: var(--accent-text);
   background: var(--accent-soft);
   border-color: transparent;
 }
-.kind-judge {
+.kind-icon.kind-judge {
   color: var(--c-5);
   background: color-mix(in srgb, var(--c-5) 12%, transparent);
   border-color: transparent;
 }
-.kind-gate {
+.kind-icon.kind-gate {
   color: var(--c-2);
   background: color-mix(in srgb, var(--c-2) 12%, transparent);
   border-color: transparent;
 }
-.kind-human {
+.kind-icon.kind-human {
   color: var(--st-waiting);
   background: var(--st-waiting-soft);
   border-color: transparent;
 }
-.kind-planner {
+.kind-icon.kind-planner {
   color: var(--c-6);
   background: color-mix(in srgb, var(--c-6) 12%, transparent);
   border-color: transparent;
 }
-.kind-loop {
+.kind-icon.kind-loop {
   color: var(--c-3);
   background: color-mix(in srgb, var(--c-3) 12%, transparent);
   border-color: transparent;

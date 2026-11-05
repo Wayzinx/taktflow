@@ -3,7 +3,8 @@ import { createHttpSource, probeApi } from './client'
 import { createMockSource } from './mock-source'
 import type { DataSource } from './source'
 
-export type { DataSource, NodeView } from './source'
+export type { DataSource, NodeView, WorkflowRevisionDetail } from './source'
+export { WorkflowConflictError } from './source'
 
 const SourceContext = createContext<DataSource | null>(null)
 

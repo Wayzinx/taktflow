@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { CornerDownLeft, FileText, Inbox, LayoutDashboard, ListTodo, Monitor, Moon, Play, Search, Settings, Sun, BookOpen, type LucideIcon } from 'lucide-react'
+import { CornerDownLeft, FileText, Inbox, LayoutDashboard, ListTodo, Monitor, Moon, Play, Search, Settings, Sun, BookOpen, Workflow, type LucideIcon } from 'lucide-react'
 import { useAsync } from '../api'
 import { fmtRelative } from '../lib/format'
 import { navigate } from '../lib/router'
@@ -44,8 +44,9 @@ const PAGES: Array<[string, string, LucideIcon, string]> = [
   ['/', '总览', LayoutDashboard, 'overview home zonglan'],
   ['/requirements', '需求列表', ListTodo, 'requirements xuqiu'],
   ['/attention', '待办', Inbox, 'attention todo daiban'],
-  ['/knowledge', '知识源', BookOpen, 'knowledge zhishi'],
-  ['/settings', '设置：模型与 harness', Settings, 'settings models harness shezhi'],
+  ['/settings?tab=knowledge', '知识源', BookOpen, 'knowledge zhishi'],
+  ['/workflows', 'Workflow', Workflow, 'workflows pipeline liushuixian bianji'],
+  ['/settings', '空间设置', Settings, 'settings space members repos models harness shezhi'],
 ]
 
 function useItems(active: boolean): { items: Item[]; loading: boolean } {

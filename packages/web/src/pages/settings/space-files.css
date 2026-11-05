@@ -1,0 +1,153 @@
+/* 技能 / 角色在线编辑：左列表 + 右编辑器。 */
+.files-layout {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.file-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-1);
+  position: sticky;
+  top: calc(var(--topbar-h) + var(--sp-4));
+  max-height: calc(100vh - var(--topbar-h) - var(--sp-8));
+  overflow: auto;
+}
+.file-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.file-item:hover {
+  background: var(--surface-hover);
+}
+.file-item.on {
+  background: var(--surface-active);
+}
+/* 当前位置：2px 节拍刻度，和导航、命令面板一致。 */
+.file-item.on::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.file-item-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  color: var(--text);
+}
+.file-item-title .faint {
+  font-size: var(--text-meta);
+  font-weight: 400;
+}
+.file-item-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.file-item-meta {
+  display: flex;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+.file-item-dirty {
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--accent-text);
+}
+
+.file-editor {
+  display: flex;
+  flex-direction: column;
+}
+.file-editor-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 44px;
+  padding: 0 var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+  font-size: var(--text-ui);
+}
+.file-editor-head > svg {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.file-dirty {
+  font-size: var(--text-meta);
+  color: var(--accent-text);
+}
+.file-text.textarea {
+  min-height: 440px;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  border-radius: 0;
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-ui);
+  line-height: 1.65;
+  tab-size: 2;
+}
+.file-text.textarea:focus {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.file-save {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--divider);
+}
+.file-save-hint {
+  padding: 0 var(--sp-4) var(--sp-3);
+  margin: calc(var(--sp-1) * -1) 0 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+@media (max-width: 960px) {
+  .files-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .file-list {
+    position: static;
+    max-height: 260px;
+  }
+  .file-text.textarea {
+    min-height: 320px;
+  }
+}
+@media (max-width: 600px) {
+  .file-save {
+    flex-wrap: wrap;
+  }
+  .file-save .grow {
+    flex-basis: 100%;
+  }
+}

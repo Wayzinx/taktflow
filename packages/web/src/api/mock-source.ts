@@ -3,6 +3,7 @@ import { currentSpaceId } from '../lib/space'
 import { createProjectMock, type ProjectSource } from './mock'
 import { createMockDb, type MockDb } from './mock-data'
 import { createMockSpaces, fakeHead, type MockSpace } from './mock-space'
+import { createMockWorkflows, type WorkflowApi } from './mock-workflows'
 import type { DataSource } from './source'
 
 const clone = <T,>(v: T): T => structuredClone(v)
@@ -22,6 +23,7 @@ function emptyDb(space: SpaceDetail): MockDb {
 export function createMockSource(): DataSource {
   const spaces = createMockSpaces()
   const projects = new Map<string, ProjectSource>()
+  const flows = new Map<string, WorkflowApi>()
 
   function current(): MockSpace | undefined {
     const id = currentSpaceId()
@@ -36,6 +38,36 @@ export function createMockSource(): DataSource {
     }
     return p
   }
+  function workflowsOf(sp: MockSpace): WorkflowApi {
+    let w = flows.get(sp.detail.id)
+    if (!w) {
+      w = createMockWorkflows(sp.seeded)
+      flows.set(sp.detail.id, w)
+    }
+    return w
+  }
+  // workflow 接口按调用时的空间转发
+  const wf = <K extends keyof WorkflowApi>(key: K) =>
+    ((...args: unknown[]) => {
+      const sp = current()
+      if (!sp) return fail(`空间 ${currentSpaceId()} 不存在`)
+      return (workflowsOf(sp)[key] as (...a: unknown[]) => unknown)(...args)
+    }) as WorkflowApi[K]
+  const workflowApi: WorkflowApi = {
+    workflows: wf('workflows'),
+    workflow: wf('workflow'),
+    editWorkflow: wf('editWorkflow'),
+    replaceWorkflowSource: wf('replaceWorkflowSource'),
+    saveWorkflowLayout: wf('saveWorkflowLayout'),
+    workflowRevisions: wf('workflowRevisions'),
+    workflowRevision: wf('workflowRevision'),
+    rollbackWorkflow: wf('rollbackWorkflow'),
+    subscribeWorkflow: (id, on) => {
+      const sp = current()
+      return sp ? workflowsOf(sp).subscribeWorkflow(id, on) : () => {}
+    },
+  }
+
   const withSpace = <T,>(fn: (sp: MockSpace) => T | Promise<T>): Promise<T> => {
     const sp = current()
     if (!sp) return fail(`空间 ${currentSpaceId()} 不存在`)
@@ -45,7 +77,8 @@ export function createMockSource(): DataSource {
 
   const spaceApi: Pick<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
     spaces: () => delay(spaces.map((s) => summary(s.detail)), 60),
-    space: () => withSpace((sp) => delay(sp.detail)),
+    // 空间详情里的 workflow 列表以 workflow 存储为准（编辑后 rev / 更新时间会变）
+    space: () => withSpace(async (sp) => ({ ...(await delay(sp.detail)), workflows: await workflowsOf(sp).workflows() })),
     setMembers: (members) =>
       withSpace((sp) => {
         if (!members.some((m) => m.role === 'owner')) return fail('至少保留一位 owner')
@@ -91,7 +124,7 @@ export function createMockSource(): DataSource {
   }
 
   // 所有需求 / 运行类接口按当前空间转发；方法在调用时取空间，切换空间不需要重建数据源
-  return new Proxy({ mock: true, ...spaceApi } as DataSource, {
+  return new Proxy({ mock: true, ...spaceApi, ...workflowApi } as DataSource, {
     get(target, key: string) {
       if (key in target) return target[key as keyof DataSource]
       const p = project() as unknown as Record<string, unknown>

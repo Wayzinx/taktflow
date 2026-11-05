@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { BookOpen, ChevronRight, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, X } from 'lucide-react'
+import { BookOpen, ChevronRight, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, Workflow, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
 import { REQ_STATUS } from '../lib/status'
@@ -69,15 +69,17 @@ function ThemeSwitch() {
 }
 
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { path } = useLocation()
+  const { path, query } = useLocation()
+  const onKnowledge = path === '/settings' && query.get('tab') === 'knowledge'
   const project = useAsync((ds) => ds.project(), [])
   const pending = project.data?.attention.length ?? 0
   const items = [
     { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
     { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements },
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
-    { to: '/knowledge', label: '知识源', icon: BookOpen, active: path === '/knowledge', soon: true },
-    { to: '/settings', label: '空间设置', icon: Settings, active: path === '/settings' || path.startsWith('/workflows') },
+    { to: '/settings?tab=knowledge', label: '知识源', icon: BookOpen, active: onKnowledge },
+    { to: '/workflows', label: 'Workflow', icon: Workflow, active: path.startsWith('/workflows') },
+    { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') && !onKnowledge },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []
   return (
@@ -95,13 +97,12 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
         <span className="sb-kbd mono">{isMac ? '⌘' : 'Ctrl'} K</span>
       </button>
       <nav className="sb-nav">
-        {items.map(({ to, label, icon: Icon, active, badge, count, soon }) => (
+        {items.map(({ to, label, icon: Icon, active, badge, count }) => (
           <Link key={to} to={to} className={`sb-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
             <Icon aria-hidden />
             <span>{label}</span>
             {badge ? <span className="sb-badge num" aria-label={`${badge} 项待办`}>{badge}</span> : null}
             {count !== undefined && !badge ? <span className="sb-count num">{count}</span> : null}
-            {soon && <span className="sb-soon">占位</span>}
           </Link>
         ))}
       </nav>

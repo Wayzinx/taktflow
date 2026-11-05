@@ -184,19 +184,6 @@
   font-size: var(--text-meta);
   color: var(--rail-text-3);
 }
-.sb-soon {
-  margin-left: auto;
-  font-size: var(--text-label);
-  color: var(--rail-text-3);
-  border: 1px solid var(--rail-border);
-  border-radius: var(--radius-xs);
-  padding: 0 5px;
-}
-
-.sb-item.active .sb-soon {
-  color: var(--rail-text-2);
-}
-
 .sb-section {
   margin-top: var(--sp-6);
   display: grid;

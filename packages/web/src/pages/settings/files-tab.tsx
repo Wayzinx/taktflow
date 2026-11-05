@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type KeyboardEvent } from 'react'
 import { FileText, Save, Sparkles, UserRoundCog } from 'lucide-react'
 import type { SpaceDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import type { SpaceFileKind } from '../../api/source'
 import { EmptyState, ErrorState, SkeletonRows, toast } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
+import './space-files.css'
 
 interface Entry {
   name: string
@@ -27,7 +28,7 @@ function changedLines(a: string, b: string): number {
   return n
 }
 
-function Editor({ kind, name }: { kind: SpaceFileKind; name: string }) {
+function Editor({ kind, name, onDirty }: { kind: SpaceFileKind; name: string; onDirty: (dirty: boolean) => void }) {
   const ds = useSource()
   const q = useAsync((d) => d.spaceFile(kind, name), [kind, name])
   const [text, setText] = useState('')
@@ -39,11 +40,16 @@ function Editor({ kind, name }: { kind: SpaceFileKind; name: string }) {
     setReason('')
   }, [original])
 
+  const changed = original === undefined ? 0 : changedLines(original, text)
+  useEffect(() => onDirty(changed > 0), [changed > 0])
+  useEffect(() => () => onDirty(false), [])
+
   if (q.error && !q.data) return <ErrorState error={q.error} onRetry={q.reload} />
   if (!q.data) return <SkeletonRows rows={10} />
-  const changed = original === undefined ? 0 : changedLines(original, text)
+  const canSave = changed > 0 && reason.trim() !== '' && !busy
 
   async function save() {
+    if (!canSave) return
     setBusy(true)
     try {
       await ds.saveSpaceFile(kind, name, { content: text, reason: reason.trim() })
@@ -57,7 +63,15 @@ function Editor({ kind, name }: { kind: SpaceFileKind; name: string }) {
   }
 
   return (
-    <div className="file-editor">
+    <div
+      className="file-editor"
+      onKeyDown={(e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+          e.preventDefault()
+          void save()
+        }
+      }}
+    >
       <div className="file-editor-head">
         <FileText aria-hidden />
         <span className="mono truncate">{q.data.path}</span>
@@ -68,22 +82,24 @@ function Editor({ kind, name }: { kind: SpaceFileKind; name: string }) {
       <div className="file-save">
         <label className="grow">
           <span className="field-label">修改原因（必填，写进修订记录）</span>
-          <input className="input" placeholder="例如：补充舍入方式示例" value={reason} onChange={(e) => setReason(e.target.value)} disabled={changed === 0} />
+          <input className="input" placeholder={changed ? '例如：补充舍入方式示例' : '修改内容后填写'} value={reason} onChange={(e) => setReason(e.target.value)} disabled={changed === 0} aria-required />
         </label>
         <button className="btn" onClick={() => setText(original ?? '')} disabled={changed === 0 || busy}>
           还原
         </button>
-        <button className="btn btn-primary" onClick={save} disabled={changed === 0 || !reason.trim() || busy}>
+        <button className="btn btn-primary" onClick={save} disabled={!canSave} title="⌘S / Ctrl+S">
           <Save />
           保存
         </button>
       </div>
+      {changed > 0 && !reason.trim() && <p className="file-save-hint">写一句修改原因才能保存：它和改动一起进修订记录，方便回看为什么这么改。</p>}
     </div>
   )
 }
 
 export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDetail }) {
   const { query } = useLocation()
+  const [dirty, setDirty] = useState(false)
   if (!space) return <div className="card"><SkeletonRows rows={6} /></div>
   const list = entries(kind, space)
   const isSkill = kind === 'skill'
@@ -110,10 +126,15 @@ export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDe
       <ul className="card file-list" aria-label={isSkill ? '技能列表' : '角色列表'}>
         {list.map((e) => (
           <li key={e.name}>
-            <button className={`file-item${e.name === selected.name ? ' on' : ''}`} aria-current={e.name === selected.name ? 'true' : undefined} onClick={() => setQuery({ name: e.name })}>
+            <button className={`file-item${e.name === selected.name ? ' on' : ''}`} aria-current={e.name === selected.name ? 'true' : undefined} onClick={() => {
+                if (e.name === selected.name) return
+                if (dirty && !window.confirm(`${selected.title} 有未保存的修改，切换后会丢失。继续？`)) return
+                setQuery({ name: e.name })
+              }}>
               <span className="file-item-title">
                 <span className={isSkill ? 'mono' : undefined}>{e.title}</span>
                 {!isSkill && <span className="faint mono">{e.name}</span>}
+                {dirty && e.name === selected.name && <span className="file-item-dirty">未保存</span>}
               </span>
               <span className="file-item-desc">{e.description}</span>
               {!isSkill && (
@@ -128,7 +149,7 @@ export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDe
         ))}
       </ul>
       <div className="card">
-        <Editor key={selected.name} kind={kind} name={selected.name} />
+        <Editor key={selected.name} kind={kind} name={selected.name} onDirty={setDirty} />
       </div>
     </div>
   )

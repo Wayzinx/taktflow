@@ -1,0 +1,181 @@
+/* workflow 编辑器外壳（D 负责）：三栏布局 + 面板与表单的共用样式。collab 组件的样式放 collab/collab.css（E 负责）。 */
+.wf-body {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr) 340px;
+  gap: var(--sp-3);
+  height: max(560px, calc(100dvh - var(--topbar-h) - 172px));
+}
+.wf-body > * {
+  min-height: 0;
+}
+@media (max-width: 1280px) {
+  .wf-body {
+    grid-template-columns: 188px minmax(0, 1fr) 300px;
+  }
+}
+@media (max-width: 960px) {
+  .wf-body {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 520px auto;
+    height: auto;
+  }
+}
+
+.wf-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.wf-readonly {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  color: var(--text-2);
+  max-width: 100ch;
+}
+.wf-readonly svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-top: 3px;
+  color: var(--st-waiting);
+}
+.wf-source {
+  margin: 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: auto;
+  max-height: 70vh;
+}
+
+/* ---------------------------------------------------------------- 侧栏面板（节点面板 / 属性面板共用） */
+.wf-pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--divider);
+}
+.wf-pane-title {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  font-size: var(--text-meta);
+}
+.wf-pane-name {
+  font-size: var(--text-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+.wf-pane-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+}
+.wf-pane-note {
+  display: flex;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.wf-pane-note svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-top: 3px;
+}
+
+/* ---------------------------------------------------------------- 表单 */
+.wf-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.wf-field > label,
+.wf-field > span:first-child {
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.wf-field-hint {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.wf-field-hint.is-error {
+  color: var(--st-failed);
+}
+.wf-num {
+  width: 88px;
+}
+.wf-check,
+.wf-radio-row label,
+.wf-radio-col label,
+.wf-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-ui);
+  color: var(--text);
+  white-space: nowrap;
+}
+.wf-check input,
+.wf-radio-row input,
+.wf-radio-col input {
+  accent-color: var(--ink);
+  margin: 0;
+}
+.wf-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+}
+.wf-radio-col {
+  display: grid;
+  gap: var(--sp-2);
+}
+.wf-inline-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.wf-stack {
+  display: grid;
+  gap: var(--sp-2);
+}
+.wf-list {
+  display: grid;
+  gap: 6px;
+}
+.wf-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.wf-list-row > .input,
+.wf-list-row > .select {
+  flex: 1;
+  min-width: 0;
+}
+.wf-list-row.cols-2 > .select {
+  flex: 0 0 42%;
+}
+.wf-add-row {
+  justify-self: start;
+}
+.wf-row-tools {
+  display: inline-flex;
+}
+.textarea.mono,
+.input.mono {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+}

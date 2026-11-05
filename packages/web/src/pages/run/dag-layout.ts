@@ -1,5 +1,5 @@
 import { MarkerType, type Edge, type Node, type BuiltInEdge } from '@xyflow/react'
-import type { FlowEdge } from './dag-edges'
+import type { FlowEdge, ReworkEdge } from './dag-edges'
 import type { Expansion, GraphEdge, GraphNode, StageDef, StageProgress, Usage } from '@taktflow/core'
 import { VERDICT } from '../../lib/status'
 import { nodeLabel, type NodeLabel } from './node-label'
@@ -12,6 +12,8 @@ import { nodeLabel, type NodeLabel } from './node-label'
  * - 边的连接点按相对位置选：左右相邻走右→左，同列相邻走下→上，同列跨行走左侧括号。
  */
 
+/** 打回边的标签（mock 与 server 都用 route 边 + label "打回"）。 */
+export const REWORK_LABEL = '打回'
 export const NW = 220
 export const NH = 66
 const GAP_Y = 18
@@ -245,7 +247,7 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
     }
     drawn.push(e)
   }
-  const edges: (BuiltInEdge | FlowEdge)[] = []
+  const edges: (BuiltInEdge | FlowEdge | ReworkEdge)[] = []
   drawn.forEach((e, i) => {
     if (e.kind === 'dep' && routePairs.has(`${e.from}→${e.to}`)) return
     const s = abs.get(e.from)
@@ -273,8 +275,10 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
     const source = byId.get(e.from)
     const inactive = target?.status === 'skipped' || target?.status === 'pending' || target?.status === 'cancelled'
     const live = target?.status === 'running' && (source?.status === 'succeeded' || source?.status === 'running')
-    const color =
-      e.kind === 'route'
+    const rework = e.kind === 'route' && e.label === REWORK_LABEL
+    const color = rework
+      ? 'var(--st-stale)'
+      : e.kind === 'route'
         ? (VERDICT[e.label as keyof typeof VERDICT]?.color ?? 'var(--accent)')
         : e.kind === 'expand'
           ? 'var(--c-6)'
@@ -302,7 +306,9 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
       className: flowing ? 'is-flowing' : undefined,
     }
     // 上下相邻的 b → t 边间距很小，默认 offset 会先下探再折回，画出一个驼峰
-    if (flowing) edges.push({ ...common, type: 'flow', data: { offset, borderRadius: 12, color } })
+    // 打回边自己选路线、画 stale 色箭头；count 取目标节点上累计的重做次数
+    if (rework) edges.push({ ...common, type: 'rework', data: { live: target?.status === 'running', count: (target as { reworks?: number } | undefined)?.reworks } })
+    else if (flowing) edges.push({ ...common, type: 'flow', data: { offset, borderRadius: 12, color } })
     else edges.push({ ...common, type: 'smoothstep', pathOptions: { borderRadius: 12, offset } })
   })
 

@@ -1,0 +1,99 @@
+/* DAG 上的评审角标与打回边 */
+.rv-dag-round {
+  gap: 5px;
+}
+.rv-dag-ticks {
+  display: inline-flex;
+  gap: 2px;
+}
+.rv-dag-ticks > i {
+  width: 2px;
+  height: 8px;
+  border-radius: 1px;
+  background: var(--st-pending);
+}
+.rv-dag-ticks > i.on {
+  background: var(--text-2);
+}
+.rv-dag-round.pass .rv-dag-ticks > i.on {
+  background: var(--st-success);
+}
+/* 评审进行中：当前轮那一格按节拍跳（The Quiet Until Live Rule） */
+.rv-dag-round.live .rv-dag-ticks > i.on:last-of-type,
+.rv-dag-round.live .rv-dag-ticks > i.on:has(+ i:not(.on)) {
+  background: var(--accent);
+  animation: rv-dag-tick var(--takt) steps(1, end) infinite;
+}
+@keyframes rv-dag-tick {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.rv-dag-rework {
+  gap: 3px;
+  color: var(--st-stale);
+  border-color: color-mix(in oklch, var(--st-stale) 40%, transparent);
+}
+.rv-dag-rework svg {
+  width: 11px;
+  height: 11px;
+}
+
+/* 打回边：回到上游的虚线弧，和判决路由（6 4 虚线）区分 */
+.react-flow__edge-path.rv-edge-path {
+  fill: none;
+  stroke: var(--st-stale);
+  stroke-width: 1.6;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+}
+.rv-edge-trail {
+  fill: none;
+  stroke: var(--st-stale);
+  stroke-width: 6;
+  stroke-opacity: 0.1;
+  stroke-linecap: round;
+}
+.react-flow__edge-path.rv-edge-path.live {
+  animation: rv-edge-march var(--takt) linear infinite;
+}
+@keyframes rv-edge-march {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.rv-edge-label {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  border: 1px dashed color-mix(in oklch, var(--st-stale) 50%, transparent);
+  background: var(--surface);
+  color: var(--st-stale);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: all;
+  box-shadow: var(--shadow-xs);
+}
+.rv-edge-label svg {
+  width: 11px;
+  height: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-dag-round.live .rv-dag-ticks > i.on:last-of-type,
+  .rv-dag-round.live .rv-dag-ticks > i.on:has(+ i:not(.on)),
+  .react-flow__edge-path.rv-edge-path.live {
+    animation: none;
+  }
+}
+.rv-edge-arrow {
+  fill: var(--st-stale);
+}

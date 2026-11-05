@@ -1,0 +1,188 @@
+/* 节点面板与评审配置向导（D 负责）。 */
+.wf-palette {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.wf-palette-note {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.wf-palette-note svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  margin-top: 3px;
+}
+.wf-palette-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: var(--sp-2);
+  list-style: none;
+}
+.wf-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: grab;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.wf-palette-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+.wf-palette-item:active:not(:disabled) {
+  cursor: grabbing;
+}
+.wf-palette-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.wf-palette-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.wf-palette-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.wf-palette-label {
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.wf-palette-hint {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.wf-palette-grip {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.wf-palette-item:hover:not(:disabled) .wf-palette-grip {
+  opacity: 1;
+}
+.wf-palette-stage {
+  display: grid;
+  gap: 6px;
+  margin-top: auto;
+  padding: var(--sp-3);
+  border-top: 1px solid var(--divider);
+}
+
+/* ---------------------------------------------------------------- 对话框 / 向导 */
+.wf-dialog {
+  width: min(560px, calc(100vw - 32px));
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+.wf-dialog[open] {
+  animation: wf-dialog-in var(--dur-slow) var(--ease);
+}
+.wf-dialog::backdrop {
+  background: var(--scrim);
+}
+@keyframes wf-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+.wf-dialog-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-5) var(--sp-3);
+}
+.wf-dialog-head h2 {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.wf-dialog-head .muted {
+  flex: 1;
+  font-size: var(--text-meta);
+}
+.wf-steps {
+  display: flex;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0 var(--sp-5) var(--sp-3);
+  list-style: none;
+  border-bottom: 1px solid var(--divider);
+}
+.wf-steps li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.wf-steps li > span {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  font-size: var(--text-label);
+}
+.wf-steps li > span svg {
+  width: 11px;
+  height: 11px;
+}
+.wf-steps li.is-current {
+  color: var(--text);
+  font-weight: 600;
+}
+.wf-steps li.is-current > span {
+  border-color: var(--accent);
+  color: var(--accent-text);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.wf-steps li.is-done > span {
+  border-color: var(--st-success);
+  color: var(--st-success);
+}
+.wf-dialog-body {
+  display: grid;
+  gap: var(--sp-4);
+  min-height: 248px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: var(--sp-4) var(--sp-5);
+}
+.wf-dialog-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5) var(--sp-4);
+  border-top: 1px solid var(--divider);
+}
+.wf-problem {
+  flex: 1;
+  font-size: var(--text-meta);
+  color: var(--st-waiting);
+}

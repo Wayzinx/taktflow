@@ -217,6 +217,9 @@
 .dag-legend .lg-expand {
   border-top: 2px dotted var(--c-6);
 }
+.dag-legend .lg-rework {
+  border-top: 2px dotted var(--st-stale);
+}
 .dag-tools {
   display: flex;
   gap: 6px;

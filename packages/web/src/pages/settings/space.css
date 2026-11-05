@@ -1,0 +1,310 @@
+/* 空间设置的成员 / 仓库 / 技能与角色 / workflow / 知识源 Tab 共用样式（A 负责）。 */
+
+.space-tab-body {
+  margin-top: var(--sp-4);
+}
+.space-tab-body .spacer {
+  flex: 1;
+}
+.space-tab-body .grow {
+  flex: 1;
+  min-width: 0;
+}
+.field-label {
+  display: block;
+  margin-bottom: var(--sp-1);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.field-error {
+  margin: 0;
+  padding: 0 var(--sp-4) var(--sp-3);
+  font-size: var(--text-meta);
+  color: var(--st-failed);
+}
+.select-sm {
+  width: auto;
+  height: 26px;
+  padding: 0 6px;
+  font-size: var(--text-meta);
+}
+.chip-sm {
+  height: 18px;
+  padding: 0 6px;
+  font-size: var(--text-label);
+}
+
+/* ---------------------------------------------------------------- 主列 + 说明侧栏 */
+.space-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: var(--sp-5);
+  align-items: start;
+}
+.space-aside {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-top: var(--sp-1);
+  font-size: var(--text-ui);
+  color: var(--text-2);
+}
+.space-aside p {
+  margin: 0;
+  line-height: 1.6;
+}
+.space-aside-note {
+  font-size: var(--text-meta);
+}
+.space-aside-note .mono {
+  font-size: var(--text-meta);
+}
+@media (max-width: 960px) {
+  .space-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------------------------------------------------------------- 成员 */
+.member-list,
+.repo-list,
+.knowledge-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.member-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 52px;
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+}
+.member-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: var(--text-meta);
+}
+.member-name {
+  font-size: var(--text-ui);
+  font-weight: 500;
+  color: var(--text);
+}
+.member-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px auto;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+}
+.member-add .select {
+  height: 32px;
+}
+.role-legend {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.role-legend > div {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+}
+.role-legend dt {
+  color: var(--text);
+}
+.role-legend dd {
+  margin: 0;
+  color: var(--text-2);
+}
+
+/* 未保存条：贴在卡片底部，滑入一次，不循环。 */
+.save-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--divider);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--accent-soft);
+  font-size: var(--text-meta);
+  color: var(--text);
+  animation: space-rise var(--dur) var(--ease) both;
+}
+@keyframes space-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---------------------------------------------------------------- 代码仓库 */
+.repo-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+}
+.repo-row:last-child,
+.member-row:last-child,
+.knowledge-row:last-child {
+  border-bottom: none;
+}
+.repo-icon,
+.knowledge-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-sm);
+  color: var(--text-2);
+}
+.repo-icon svg,
+.knowledge-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.repo-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.repo-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.repo-id {
+  font-weight: 600;
+  color: var(--text);
+}
+.repo-facts {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.repo-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.repo-branch svg {
+  width: 12px;
+  height: 12px;
+}
+.repo-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin: var(--sp-1) 0 0;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.repo-message.error {
+  color: var(--st-failed);
+}
+.repo-message svg {
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+}
+.repo-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-2);
+  animation: space-rise var(--dur) var(--ease) both;
+}
+.repo-add label:not(.grow) {
+  width: 150px;
+}
+.repo-add-hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--text-meta);
+}
+@media (max-width: 720px) {
+  .repo-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .repo-row > .status-badge,
+  .repo-row > .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .member-add {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .save-bar,
+  .repo-add,
+  .file-save-hint {
+    animation: none;
+  }
+}
+
+/* ---------------------------------------------------------------- 知识源 */
+.knowledge-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 200px;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+}
+.knowledge-main {
+  min-width: 0;
+}
+.knowledge-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+}
+.knowledge-id {
+  font-weight: 600;
+  color: var(--text);
+}
+.knowledge-desc {
+  margin: 2px 0 0;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.knowledge-answers {
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.knowledge-answers .field-label {
+  margin-bottom: 0;
+  color: var(--text-3);
+}
+@media (max-width: 720px) {
+  .knowledge-row {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .knowledge-answers {
+    grid-column: 2;
+  }
+}

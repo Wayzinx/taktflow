@@ -1,6 +1,6 @@
-import type { ApiError } from '@taktflow/core'
+import type { ApiError, WorkflowConflict } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
-import type { DataSource } from './source'
+import { WorkflowConflictError, type DataSource } from './source'
 
 export class ApiRequestError extends Error {
   constructor(
@@ -36,6 +36,7 @@ export function createHttpSource(base = '/api'): DataSource {
     })
     const text = await res.text()
     const data = text ? (JSON.parse(text) as unknown) : undefined
+    if (res.status === 409 && (data as WorkflowConflict | undefined)?.error === 'conflict') throw new WorkflowConflictError(data as WorkflowConflict)
     if (!res.ok) {
       const err = data as ApiError | undefined
       throw new ApiRequestError(res.status, err?.error ?? `${method} ${path} → ${res.status}`, err?.detail)
@@ -78,6 +79,16 @@ export function createHttpSource(base = '/api'): DataSource {
     chat: (id, opts = {}) => get(`/requirements/${enc(id)}/chat${qs({ after: opts.after, limit: opts.limit })}`),
     postChat: (id, body) => req('POST', `/requirements/${enc(id)}/chat`, body),
     subscribeChat: (id, onMessage) => stream(scoped(`/requirements/${enc(id)}/chat/stream`), onMessage),
+    requirementReviews: (id) => get(`/requirements/${enc(id)}/reviews`),
+    workflows: () => get('/workflows'),
+    workflow: (id) => get(`/workflows/${enc(id)}`),
+    editWorkflow: (id, body) => req('PATCH', `/workflows/${enc(id)}`, body),
+    replaceWorkflowSource: (id, body) => req('PUT', `/workflows/${enc(id)}/source`, body),
+    saveWorkflowLayout: (id, layout) => req('PUT', `/workflows/${enc(id)}/layout`, layout),
+    workflowRevisions: (id) => get(`/workflows/${enc(id)}/revisions`),
+    workflowRevision: (id, rev) => get(`/workflows/${enc(id)}/revisions/${enc(rev)}`),
+    rollbackWorkflow: (id, body) => req('POST', `/workflows/${enc(id)}/rollback`, body),
+    subscribeWorkflow: (id, onChange) => stream(scoped(`/workflows/${enc(id)}/stream`), onChange),
   }
 }
 

@@ -1,0 +1,222 @@
+/* ---- 单条消息 */
+.chat-msg {
+  position: relative;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  transition: background var(--dur-fast) var(--ease);
+}
+.chat-msg.grouped {
+  padding-top: 2px;
+}
+.chat-msg:hover {
+  background: var(--bg-sunken);
+}
+.chat-msg.mentions-me {
+  background: color-mix(in oklch, var(--accent-soft) 45%, transparent);
+}
+.chat-msg-gutter {
+  display: flex;
+  justify-content: center;
+  padding-top: 2px;
+}
+.chat-msg-time-hover {
+  font-size: var(--text-label);
+  color: var(--text-3);
+  opacity: 0;
+  line-height: 22px;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.chat-msg:hover .chat-msg-time-hover {
+  opacity: 1;
+}
+.chat-msg-main {
+  min-width: 0;
+  max-width: 76ch;
+}
+.chat-msg-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: 2px;
+}
+.chat-msg-name {
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.chat-msg-tag {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  color: var(--text-3);
+}
+.chat-msg-time {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.chat-msg-reply {
+  position: absolute;
+  top: var(--sp-1);
+  right: var(--sp-3);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.chat-msg:hover .chat-msg-reply,
+.chat-msg-reply:focus-visible {
+  opacity: 1;
+}
+.chat-text p {
+  margin: 0;
+  font-size: var(--text-body);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-text.progress {
+  margin-top: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.chat-progress-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--st-running);
+}
+.chat-progress-tag svg {
+  width: 12px;
+  height: 12px;
+}
+.chat-mention {
+  padding: 0 3px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-active);
+  color: var(--text);
+  font-weight: 500;
+}
+.chat-mention.who-lead {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.chat-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--accent);
+  animation: chat-caret var(--takt) steps(2, jump-none) infinite;
+}
+@keyframes chat-caret {
+  50% {
+    opacity: 0;
+  }
+}
+.chat-quote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 4px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  min-width: 0;
+}
+.chat-quote svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.chat-quote-who {
+  font-weight: 600;
+  color: var(--text-2);
+  flex: none;
+}
+.chat-refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.chat-ref {
+  max-width: 100%;
+  text-decoration: none;
+}
+.chat-ref:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+/* ---- 系统消息：居中一行，不抢戏 */
+.chat-system {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin: var(--sp-2) var(--sp-4);
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  text-align: center;
+}
+.chat-system > svg {
+  width: 13px;
+  height: 13px;
+}
+.chat-system .chat-refs {
+  flex-basis: 100%;
+  justify-content: center;
+  margin-top: 2px;
+}
+
+/* ---- 待办卡片 */
+.chat-attn {
+  margin-top: 4px;
+  border: 1px solid var(--st-waiting);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.chat-attn.answered {
+  border-color: var(--border);
+  box-shadow: none;
+}
+.chat-attn .att-card {
+  border-bottom: 0;
+  padding: var(--sp-3) var(--sp-4);
+}
+.chat-attn-fallback {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+}
+.chat-attn-fallback svg {
+  width: 14px;
+  height: 14px;
+  color: var(--st-waiting);
+}
+.chat-attn-fallback p {
+  flex: 1;
+  margin: 0;
+}
+
+/* ---- Lead 正在处理 */
+.chat-thinking {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}

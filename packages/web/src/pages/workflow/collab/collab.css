@@ -1,0 +1,320 @@
+/* workflow 编辑器协同组件（E 负责）：保存状态、诊断、远端变更、代码与 diff。浮层样式在 collab-panels.css。 */
+@import './collab-panels.css';
+
+.wfc-muted {
+  color: var(--text-3);
+  font-size: var(--text-meta);
+}
+.wfc-spacer {
+  flex: 1;
+}
+.wfc-inline-icon {
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+}
+
+/* ---------------------------------------------------------------- 顶栏：保存状态 */
+.wfc-bar {
+  gap: var(--sp-2);
+}
+.wfc-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 var(--sp-2);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.wfc-status svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.wfc-status.is-saved svg {
+  color: var(--st-success);
+}
+.wfc-status.is-conflict,
+.wfc-status.is-error {
+  color: var(--st-failed);
+  font-weight: 500;
+}
+.wfc-rev {
+  color: var(--text-3);
+}
+.wfc-status-retry {
+  margin-left: var(--sp-1);
+}
+.wfc-undo {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* ---------------------------------------------------------------- 诊断 */
+.wfc-diag {
+  position: relative;
+}
+.wfc-diag-btn {
+  color: var(--st-waiting);
+}
+.wfc-diag-btn.is-error {
+  color: var(--st-failed);
+}
+.wfc-diag-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: min(380px, 86vw);
+  max-height: 320px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--sp-1);
+  list-style: none;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  animation: wfc-pop var(--dur) var(--ease) both;
+}
+.wfc-diag-item {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  gap: 2px var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+}
+.wfc-diag-item svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+}
+.wfc-diag-item.is-error svg {
+  color: var(--st-failed);
+}
+.wfc-diag-item.is-warning svg {
+  color: var(--st-waiting);
+}
+.wfc-diag-where {
+  grid-column: 2;
+  color: var(--text-3);
+  font-size: var(--text-meta);
+}
+.wfc-diag-where:empty {
+  display: none;
+}
+
+/* ---------------------------------------------------------------- 远端变更提示 */
+.wfc-remote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-3);
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm), 0 0 0 1px var(--st-running-soft);
+  animation: wfc-drop var(--dur-slow) var(--ease) both;
+}
+.wfc-remote-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--st-running-soft);
+  color: var(--st-running);
+}
+.wfc-remote-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.wfc-remote-main {
+  flex: 1;
+  min-width: 0;
+}
+.wfc-remote-title {
+  font-weight: 600;
+  font-size: var(--text-ui);
+}
+.wfc-remote-reason {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: var(--text-ui);
+}
+.wfc-remote-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) 6px;
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-meta);
+}
+.wfc-node-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px 0 3px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.wfc-node-chip-kind {
+  padding: 0 5px;
+  border-radius: 2px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 16px;
+}
+.wfc-node-chip.is-add .wfc-node-chip-kind {
+  background: var(--st-success-soft);
+  color: var(--st-success);
+}
+.wfc-node-chip.is-mod .wfc-node-chip-kind {
+  background: var(--st-running-soft);
+  color: var(--st-running);
+}
+.wfc-node-chip.is-del .wfc-node-chip-kind {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.wfc-remote-actions {
+  display: flex;
+  gap: var(--sp-1);
+  flex: none;
+}
+
+/* ---------------------------------------------------------------- 代码与 diff */
+.wfc-code,
+.wfc-diff {
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  line-height: 1.65;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: auto;
+  padding: var(--sp-2) 0;
+  font-variant-numeric: tabular-nums;
+}
+.wfc-line,
+.wfc-diff-line {
+  display: grid;
+  grid-template-columns: 44px minmax(max-content, 1fr) auto;
+  min-width: max-content;
+}
+.wfc-diff-line {
+  grid-template-columns: 40px 40px 18px minmax(max-content, 1fr);
+}
+.wfc-ln {
+  padding-right: var(--sp-3);
+  text-align: right;
+  color: var(--text-3);
+  user-select: none;
+}
+.wfc-src {
+  white-space: pre;
+  padding-right: var(--sp-4);
+}
+.wfc-line.is-error {
+  background: var(--st-failed-soft);
+}
+.wfc-line.is-warning {
+  background: var(--st-waiting-soft);
+}
+.wfc-line.is-hl {
+  background: var(--st-running-soft);
+  animation: wfc-flash calc(var(--takt) * 2) var(--ease) both;
+}
+.wfc-line.is-focus .wfc-ln {
+  color: var(--text);
+  font-weight: 600;
+}
+.wfc-note {
+  position: sticky;
+  right: 0;
+  padding: 0 var(--sp-3);
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
+.wfc-note.is-error {
+  color: var(--st-failed);
+}
+.wfc-note.is-warning {
+  color: var(--st-waiting);
+}
+.wfc-diff-line.is-add {
+  background: var(--st-success-soft);
+}
+.wfc-diff-line.is-del {
+  background: var(--st-failed-soft);
+}
+.wfc-sign {
+  user-select: none;
+  color: var(--text-3);
+}
+.is-add > .wfc-sign {
+  color: var(--st-success);
+}
+.is-del > .wfc-sign {
+  color: var(--st-failed);
+}
+.wfc-diff-gap,
+.wfc-diff-hunk {
+  padding: 2px var(--sp-4);
+  color: var(--text-3);
+  background: var(--bg-sunken);
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+}
+.wfc-diff-hunk {
+  font-family: var(--font-mono);
+}
+.wfc-diff-empty {
+  padding: var(--sp-6);
+  text-align: center;
+  color: var(--text-3);
+  font-size: var(--text-ui);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+.wfc-diffstat {
+  display: inline-flex;
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+}
+.wfc-diffstat .is-add {
+  color: var(--st-success);
+}
+.wfc-diffstat .is-del {
+  color: var(--st-failed);
+}
+.hl-c {
+  color: var(--text-3);
+  font-style: italic;
+}
+.hl-s {
+  color: var(--code-str);
+}
+.hl-n {
+  color: var(--code-num);
+}
+.hl-k {
+  color: var(--code-lit);
+}
+.hl-p {
+  color: var(--code-key);
+}
+.hl-f {
+  color: var(--text);
+  font-weight: 600;
+}
+.hl-u {
+  color: var(--code-punc);
+}

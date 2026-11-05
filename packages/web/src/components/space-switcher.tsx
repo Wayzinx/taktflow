@@ -31,11 +31,17 @@ export function SpaceSwitcher({ fallbackName }: { fallbackName?: string }) {
       root.current?.querySelector<HTMLElement>('.space-trigger')?.focus()
       return
     }
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-    e.preventDefault()
+    if (e.key === 'Tab' && open) {
+      setOpen(false)
+      return
+    }
     const items = [...(root.current?.querySelectorAll<HTMLElement>('.space-option') ?? [])]
+    if (!open || items.length === 0) return
     const i = items.indexOf(document.activeElement as HTMLElement)
-    items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus()
+    const next = { ArrowDown: (i + 1) % items.length, ArrowUp: (i + items.length - 1) % items.length, Home: 0, End: items.length - 1 }[e.key]
+    if (next === undefined) return
+    e.preventDefault()
+    items[next]?.focus()
   }
 
   function pick(id: string) {
