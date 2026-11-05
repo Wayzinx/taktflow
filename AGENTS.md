@@ -11,6 +11,7 @@
 - **只改你负责的目录。** 简报里写了负责范围，越界的改动会被还原。需要改协议（`packages/core/src/types.ts / interfaces.ts / api.ts`）时不要直接改，在交付说明里写"协议变更请求"，说明原因和建议。
 - **不要运行 `npm install` 或修改依赖**，除非简报明确允许（web 包例外）。需要的依赖都已预装：`yaml`（core）、`tsx`（cli）、`vitest`、`typescript`、`@types/node`；web 有 react、react-dom、@xyflow/react、lucide-react、vite。
 - **不要提交 git，不要推送。** 由调度方统一提交。
+- **不要再派发子 agent / 子 worker，不要自己开 git worktree。** 你就是被派发的执行者，直接在仓库里完成；需要并行时在交付说明里建议拆分，由调度方决定。
 - TypeScript strict、ESM（`.js` 后缀导入）、Node ≥ 20；只用 Node 内置模块 + 已预装依赖。
 - 单测用 vitest，放在 `src/**/*.test.ts`，测试用临时目录（`os.tmpdir()`），不写仓库目录。
 

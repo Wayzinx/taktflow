@@ -25,6 +25,8 @@
     "@taktflow/harness": "0.0.0",
     "@taktflow/knowledge": "0.0.0",
     "@taktflow/server": "0.0.0",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "@taktflow/workflow-source": "0.0.0",
+    "@taktflow/sandbox": "0.0.0"
   }
 }

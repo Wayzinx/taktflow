@@ -1,7 +1,33 @@
 {
   "extends": "../../tsconfig.base.json",
-  "references": [{ "path": "../core" }, { "path": "../harness" }, { "path": "../knowledge" }, { "path": "../server" }],
-  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../harness"
+    },
+    {
+      "path": "../knowledge"
+    },
+    {
+      "path": "../server"
+    },
+    {
+      "path": "../workflow-source"
+    },
+    {
+      "path": "../sandbox"
+    }
+  ],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
 }

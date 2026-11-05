@@ -9,3 +9,7 @@ examples/*/.takt/objects/
 .taktdev/
 # 调度过程产物（简报、日志、截图）
 .taktdev/
+# impeccable：引擎二进制按平台本地下载；Claude Code 的本地设置不入库
+.claude/skills/*/scripts/bin/
+.agents/skills/*/scripts/bin/
+.claude/settings.local.json
