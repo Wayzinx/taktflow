@@ -10,6 +10,9 @@
   overflow: hidden;
   container-type: size;
   --viewport-h: 100cqh;
+  /* 不加载字体文件，跟随宿主的系统字体 */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, Menlo, Consolas, 'PingFang SC', monospace;
 
   --bg: var(--dsw-alias-bg-base);
   --bg-sunken: var(--dsw-alias-bg-layer-1);
