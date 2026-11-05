@@ -10,13 +10,20 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   const node = entry.def
   if (node.kind !== 'judge') throw new Error('内部错误：不是 judge')
   const ns = host.state.nodes[node.id]!
-  const target = ctx.resultOf(node.target) as { failures?: Array<{ subject: string }> } | undefined
+  const target = ctx.resultOf(node.target) as { failures?: Array<{ subject: string; status?: string; evidence?: string }> } | undefined
   const failures = target?.failures ?? []
   if (!Array.isArray(failures)) throw new Error('judge target.failures 必须是数组')
   let verdicts: JudgeVerdict[] = []
+  const environment = failures.filter((failure) => failure.subject === 'environment' && failure.status === 'error'
+    && /^evidence\/env\/round-\d+\.json$/.test(failure.evidence ?? ''))
+  const remaining = failures.filter((failure) => !environment.includes(failure))
+  verdicts = environment.map((failure) => ({ subject: failure.subject, category: 'env_issue', confidence: 1,
+    rationale: '部署或健康检查在自动重试后仍失败，未执行用例', evidence: [failure.evidence!] }))
+  if (remaining.length) {
+    const value = await host.model(entry, ctx, node.role, `判断以下失败的根因。环境部署、就绪检查失败应归 env_issue。输出 { verdicts: JudgeVerdict[] }，每个 subject 恰好一个判决：\n${JSON.stringify(remaining)}`, JUDGE_SCHEMA) as { verdicts: JudgeVerdict[] }
+    verdicts.push(...value.verdicts)
+  }
   if (failures.length) {
-    const value = await host.model(entry, ctx, node.role, `判断以下失败的根因。输出 { verdicts: JudgeVerdict[] }，每个 subject 恰好一个判决：\n${JSON.stringify(failures)}`, JUDGE_SCHEMA) as { verdicts: JudgeVerdict[] }
-    verdicts = value.verdicts
     assertVerdictsCover(failures, verdicts)
   }
   const routed: Record<string, string[]> = {}

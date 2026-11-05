@@ -4,7 +4,7 @@ import { createPrinter } from '../output.js'
 import { openStores } from '../project.js'
 import { handleInterrupts, withCliLease } from '../lease.js'
 
-/** 取消等待中或已中断的运行：只改状态、答复待办，不重新执行节点。 */
+/** 取消等待中或已中断的运行：答复待办并回收已配置的被测环境。 */
 export async function runCancel(cli: ParsedCli): Promise<number> {
   const options = cli.options
   const runId = cli.positionals[0]!

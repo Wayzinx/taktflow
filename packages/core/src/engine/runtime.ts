@@ -16,6 +16,8 @@ import { saveWorktreeDiff } from './execution.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
 import { validateWorkflowHarnesses } from './selection.js'
+import { bindEnvironment } from './environment-config.js'
+import { finalizeEnvironment } from './environment-cleanup.js'
 
 export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
 export type GraphRecord = RunGraphNode
@@ -170,7 +172,7 @@ export class Runtime implements HarnessHost {
       scopes.push(ancestor.scope)
       parent = ancestor.parent
     }
-    return {
+    const ctx: NodeContext = {
       runId: this.state.runId, requirementId: this.state.requirementId, nodeId: node.id,
       projectDir: this.deps.stores.projectDir, workspaceDir: this.deps.stores.workspaces.dir(this.state.requirementId),
       signal: this.signal, args: this.state.args, feedback: this.feedback[node.id], iteration: node.kind === 'loop' ? ns.iteration : entry.iteration, item: entry.item,
@@ -185,6 +187,8 @@ export class Runtime implements HarnessHost {
         this.logs.push(pending)
       },
     }
+    bindEnvironment(ctx, this.deps.stores.config.environment)
+    return ctx
   }
   private async flushLogs(): Promise<void> { await Promise.all(this.logs.splice(0)) }
   private async finish(entry: Entry, actor = system): Promise<void> {
@@ -484,12 +488,21 @@ export class Runtime implements HarnessHost {
     }
     await this.save()
     await updateRequirement(this.deps.stores, this.state, snapshotWorkflow(this.workflow))
-    await this.schedule(this.workflow.nodes.map((node) => node.id))
-    await this.flushLogs()
-    if (this.signal.aborted) this.state.status = 'cancelled'
-    else if (Object.values(this.state.nodes).some((node) => node.status === 'waiting_human')) this.state.status = 'waiting_human'
-    else if (this.workflow.nodes.every((node) => done(this.state.nodes[node.id]!))) this.state.status = 'succeeded'
-    else this.state.status = 'failed'
+    try {
+      await this.schedule(this.workflow.nodes.map((node) => node.id))
+      await this.flushLogs()
+      if (this.signal.aborted) this.state.status = 'cancelled'
+      else if (Object.values(this.state.nodes).some((node) => node.status === 'waiting_human')) this.state.status = 'waiting_human'
+      else if (this.workflow.nodes.every((node) => done(this.state.nodes[node.id]!))) this.state.status = 'succeeded'
+      else this.state.status = 'failed'
+    } catch (error) {
+      this.state.status = this.signal.aborted ? 'cancelled' : 'failed'
+      throw error
+    } finally {
+      if (this.state.status !== 'waiting_human') {
+        await this.guard.system([], () => finalizeEnvironment(this.deps.stores, this.state), true)
+      }
+    }
     this.state.endedAt = this.timestamp()
     await this.emit('run.finished', { status: this.state.status })
     await updateRequirement(this.deps.stores, this.state, snapshotWorkflow(this.workflow))

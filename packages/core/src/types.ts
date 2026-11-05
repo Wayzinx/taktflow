@@ -1065,6 +1065,19 @@ export interface LeadActionResult {
 
 export interface TaktConfig {
   project: { name: string; description?: string }
+  /** 被测环境；未配置时跳过准备、部署与回收。 */
+  environment?: {
+    /** 在空间根或集成 worktree 部署 / 启动。 */
+    deploy: string
+    /** command / url 二选一；默认 120 秒，每 2 秒探测。 */
+    healthcheck?: { command?: string; url?: string; timeoutMs?: number }
+    /** 每次运行只执行一次。 */
+    setup?: string
+    /** 成功、失败、取消都回收；失败只记日志。 */
+    teardown?: string
+    /** 支持 ${ENV_NAME} 宿主变量引用，日志脱敏。 */
+    env?: Record<string, string>
+  }
   /** 项目空间：id 用于多空间 serve 的路由。 */
   space?: { id: string }
   members?: SpaceMember[]

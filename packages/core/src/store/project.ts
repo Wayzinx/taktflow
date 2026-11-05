@@ -3,6 +3,7 @@ import { mkdir, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ProjectStores } from '../interfaces.js'
 import type { AgentProfile, HarnessSelector, SkillRecord, TaktConfig } from '../types.js'
+import { validateEnvironment } from '../engine/environment-config.js'
 import { parseFrontmatter } from '../util/frontmatter.js'
 import { FsChatStore } from './fs-chat.js'
 import { FsAttentionStore } from './fs-attention.js'
@@ -104,6 +105,7 @@ async function findProjectRoot(start: string): Promise<string> {
 function assertConfig(value: unknown, file: string): TaktConfig {
   if (typeof value !== 'object' || value === null) throw new Error(`配置不是对象：${file}`)
   const config = value as TaktConfig
+  validateEnvironment(config.environment)
   if (typeof config.project?.name !== 'string' || config.project.name === '' || !Array.isArray(config.workflows)) {
     throw new Error(`配置缺 project.name 或 workflows：${file}`)
   }

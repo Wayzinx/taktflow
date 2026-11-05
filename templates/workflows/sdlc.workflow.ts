@@ -11,13 +11,9 @@
  * - caseCommand：执行全部用例的命令（默认 `npm test`），必须产出 evidence/summary.json；
  * - maxLoop：研发测试 Loop 最大轮次（默认 5）。
  */
-import { execFile } from 'node:child_process'
 import { readdir, writeFile, mkdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { promisify } from 'node:util'
-import { agent, defineWorkflow, gate, human, judge, loop, planner, script, type NodeContext, type JudgeVerdict } from '@taktflow/core'
-
-const execute = promisify(execFile)
+import { agent, defineWorkflow, gate, human, judge, loop, planner, script, hasEnvironment, hasEnvironmentSetup, hasEnvironmentTeardown, setupEnvironment, deployEnvironment, teardownEnvironment, environmentFailure, runEnvironmentCaseCommand, type NodeContext, type JudgeVerdict } from '@taktflow/core'
 
 const AC_ID = /\bAC-\d+(?:-\d+)?\b/g
 
@@ -49,14 +45,11 @@ async function readSummary(ctx: NodeContext): Promise<CaseSummary> {
 
 /** 执行全部用例并把失败列表交给判决节点。COMPLETED ≠ PASS：只认 summary 里的用例结论。 */
 async function runCases(ctx: NodeContext) {
+  const failure = await environmentFailure(ctx)
+  if (failure) return failure
   const command = String(ctx.args.caseCommand ?? 'npm test')
   await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
-  try {
-    await execute('/bin/sh', ['-c', command], { cwd: ctx.projectDir, signal: ctx.signal, env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir }, maxBuffer: 16 * 1024 * 1024 })
-  } catch (err) {
-    ctx.signal?.throwIfAborted()
-    ctx.log(`用例命令退出码非 0（失败用例会在 summary 里体现）：${(err as Error).message.slice(0, 300)}`)
-  }
+  await runEnvironmentCaseCommand(ctx, ctx.projectDir, command)
   const summary = await readSummary(ctx)
   if (summary.cases.length === 0) return { status: 'blocked' as const, message: 'evidence/summary.json 为空：用例执行器没有产出结论' }
   const failures = summary.cases.filter((c) => c.status !== 'passed').map((c) => ({ subject: c.id, status: c.status, evidence: c.evidence }))
@@ -78,7 +71,7 @@ export default defineWorkflow({
   id: 'sdlc',
   title: '标准交付流水线',
   description: '需求理解 → 系分 → 测分 → 对齐冻结 → 研发测试 Loop → 影响面 → 质量报告',
-  version: '0.1.0',
+  version: '0.2.0',
   stages: [
     { id: 'understand', title: '需求理解' },
     { id: 'design', title: '系分设计' },
@@ -190,6 +183,8 @@ export default defineWorkflow({
       },
     }),
 
+    script({ id: 'env-setup', title: '准备被测环境', stage: 'loop', needs: ['freeze'], when: hasEnvironmentSetup, run: setupEnvironment }),
+
     // ------------------------------------------------ 研发测试 Loop
     planner({
       id: 'implement',
@@ -218,7 +213,7 @@ export default defineWorkflow({
       id: 'dev-test-loop',
       title: '研发测试 Loop',
       stage: 'loop',
-      needs: ['implement', 'automate'],
+      needs: ['implement', 'automate', 'env-setup'],
       maxIterations: 5,
       onExhausted: 'human',
       until: (ctx) => {
@@ -226,7 +221,8 @@ export default defineWorkflow({
         return Array.isArray(r?.failures) && r.failures.length === 0
       },
       body: [
-        script({ id: 'run-cases', title: '执行用例', run: runCases, outputs: [{ path: 'evidence/summary.json', kind: 'evidence' }, { path: 'evidence/**', kind: 'evidence' }] }),
+        script({ id: 'deploy-env', title: '部署并检查被测环境', when: hasEnvironment, run: deployEnvironment, outputs: [{ path: 'evidence/env/round-*.json', kind: 'evidence' }] }),
+        script({ id: 'run-cases', title: '执行用例', needs: ['deploy-env'], run: runCases, outputs: [{ path: 'evidence/summary.json', kind: 'evidence' }, { path: 'evidence/**', kind: 'evidence' }] }),
         judge({
           id: 'judge',
           title: '失败判决',
@@ -241,13 +237,15 @@ export default defineWorkflow({
       ],
     }),
 
+    script({ id: 'env-teardown', title: '回收被测环境', stage: 'loop', needs: ['dev-test-loop'], when: hasEnvironmentTeardown, run: teardownEnvironment }),
+
     // ------------------------------------------------ 影响面评估
     agent({
       id: 'impact',
       title: '影响面评估',
       stage: 'impact',
       role: 'reviewer',
-      needs: ['dev-test-loop'],
+      needs: ['env-teardown'],
       knowledge: [{ text: '本次改动涉及的调用方和下游', intent: 'impact' }],
       outputs: [{ path: 'reports/impact.md', kind: 'report' }],
       prompt: '根据本需求的代码改动和调用链，列出可能受影响的存量功能、需要回归的范围和建议补测项。',

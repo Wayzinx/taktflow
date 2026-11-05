@@ -15,6 +15,8 @@ import { assertSupportedNodes } from './kinds.js'
 import { validateWorkflowHarnesses } from './selection.js'
 import { WriteGuard } from './guard.js'
 import { Runtime, system, type EngineOptions } from './runtime.js'
+import { finalizeEnvironment } from './environment-cleanup.js'
+import { validateEnvironment } from './environment-config.js'
 
 export type { EngineOptions } from './runtime.js'
 
@@ -38,6 +40,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   }
   return {
     async start(input) {
+      validateEnvironment(deps.stores.config.environment)
       input = { ...input, workflow: configureRepositories(configureReviews(input.workflow, input.args ?? {}), input.args ?? {}) }
       assertSupportedNodes(input.workflow.nodes)
       validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
@@ -59,6 +62,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       return execute(new Runtime(deps, state, input.workflow, opts, guard))
     },
     async resume(runId, workflow) {
+      validateEnvironment(deps.stores.config.environment)
       if (active.has(runId)) throw new Error(`运行正在执行：${runId}`)
       const state = await deps.stores.runs.get(runId)
       if (!state) throw new Error(`运行不存在：${runId}`)
@@ -93,6 +97,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       }
       await updateRequirement(deps.stores, state)
       if (!runtime) {
+        await finalizeEnvironment(deps.stores, state)
         const event = await deps.stores.events.append(runId, { type: 'run.finished', actor: system, data: { status: 'cancelled' } })
         await postEventMessage(deps.stores, state, event)
       }

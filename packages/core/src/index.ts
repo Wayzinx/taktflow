@@ -42,6 +42,8 @@ export * from './plugins/workflow.js'
 export { withFileLock } from './store/file-lock.js'
 export { assertNoSymlinks, readJsonFile, toJsonText, writeFileAtomic } from './store/fs-utils.js'
 export { command as runShellCommand } from './engine/process.js'
+export { hasEnvironment, hasEnvironmentSetup, hasEnvironmentTeardown, setupEnvironment, deployEnvironment,
+  teardownEnvironment, environmentFailure, runEnvironmentCaseCommand } from './engine/environment.js'
 export { updateRequirement } from './engine/requirement.js'
 
 export * from './store/fs-chat.js'
