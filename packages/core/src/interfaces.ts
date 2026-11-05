@@ -18,6 +18,7 @@ import type {
   HarnessAdapter,
   AgentProfile,
   KnowledgeSource,
+  Lesson,
   NodeId,
   Requirement,
   RequirementId,
@@ -26,6 +27,8 @@ import type {
   Room,
   RoomMember,
   RoomMessage,
+  RouteDecision,
+  RunBudget,
   RunId,
   RunState,
   SandboxProvider,
@@ -113,12 +116,21 @@ export interface AttentionItem {
    */
   decision?: string
   answer?: string
+  /** 待办类别：缺省为节点的审批 / 回答；其余由引擎在预算、重复失败、路由改档时产生。 */
+  kind?: 'node' | 'budget' | 'retry' | 'route' | 'workflow_change'
+  /** 审批对象的产物版本；产物之后有新版本时 stale 为 true（由读模型计算）。 */
+  boundTo?: ArtifactRef[]
+  stale?: boolean
+  /** 节点 owner（职责标签）与据此派给的空间成员 id。 */
+  owner?: string
+  assignees?: string[]
 }
 
 export interface AttentionStore {
   list(filter?: { pending?: boolean; requirementId?: RequirementId }): Promise<AttentionItem[]>
   create(item: Omit<AttentionItem, 'createdAt'>): Promise<AttentionItem>
-  answer(requestId: string, input: { decision?: string; answer?: string; by: Actor }): Promise<AttentionItem>
+  /** boundTo：回答时看到的产物版本（审批绑定版本，docs/design/19）。 */
+  answer(requestId: string, input: { decision?: string; answer?: string; by: Actor; boundTo?: ArtifactRef[] }): Promise<AttentionItem>
 }
 
 /** 一个项目的全部存储。 */
@@ -148,7 +160,11 @@ export interface RepoManager {
   list(): RepoBinding[]
   /** 确保本地镜像存在且是最新（有 url 时 fetch）。 */
   sync(repoId: string): Promise<{ head: string }>
-  createWorktree(input: { repoId: string; runId: RunId; nodeId: NodeId; base?: string }): Promise<{ path: string; branch: string; base: string }>
+  /**
+   * 建 worktree 后按 RepoBinding.share 软链共享目录、执行 bootstrap；引导失败时抛错（错误信息带输出末尾），
+   * 调用方据此把节点置为 blocked。
+   */
+  createWorktree(input: { repoId: string; runId: RunId; nodeId: NodeId; base?: string }): Promise<{ path: string; branch: string; base: string; bootstrap?: { command?: string; shared: string[]; ok: boolean; ms: number; output?: string } }>
   /** worktree 相对 base 的改动（统一 diff 文本 + 改动文件列表）。 */
   diff(worktreePath: string, base: string): Promise<{ patch: string; files: string[] }>
   removeWorktree(worktreePath: string): Promise<void>
@@ -167,6 +183,25 @@ export interface ProjectStores {
   runs: RunStore
   attention: AttentionStore
   chat: ChatStore
+  /** 经验库（knowledge/lessons/*.md）；未启用时不传。 */
+  lessons?: LessonStore
+}
+
+/** 经验库存储：每条经验一个带 frontmatter 的 Markdown 文件，修改记 space-events。 */
+export interface LessonStore {
+  list(filter?: { status?: Lesson['status'] }): Promise<Lesson[]>
+  get(id: string): Promise<Lesson | undefined>
+  /** 新建或更新（按 id）；返回写入后的经验。 */
+  upsert(lesson: Omit<Lesson, 'createdAt' | 'updatedAt'> & { createdAt?: string }, by: Actor, reason: string): Promise<Lesson>
+  setStatus(id: string, status: Lesson['status'], by: Actor, reason: string): Promise<Lesson>
+}
+
+/** 引擎在 agent 节点开始 / 结束时调用的经验挂点（实现见 core/lessons）。 */
+export interface LessonRecall {
+  /** 按触发条件召回；holdout 为 true 时本次不注入（对照组），但仍返回命中的 id 用于统计。 */
+  recall(input: { runId: RunId; nodeId: NodeId; role?: string; paths: string[]; feedback?: string }): Promise<{ lessons: Lesson[]; holdout: boolean; text: string; tokens: number }>
+  /** 节点结束：首次执行成功记帮助，失败记坑（对照组不记坑）；达到阈值时改状态并返回变化。 */
+  record(input: { runId: RunId; nodeId: NodeId; ids: string[]; holdout: boolean; outcome: 'helped' | 'hurt' }): Promise<Array<{ id: string; status: Lesson['status']; reason: string; stats: Lesson['stats'] }>>
 }
 
 export interface EngineDeps {
@@ -180,12 +215,20 @@ export interface EngineDeps {
   repos?: RepoManager
   /** 空间技能目录下的 SKILL.md，运行前同步进沙箱里 harness 认识的技能目录。 */
   skillsDir?: string
+  /** 经验召回挂点；不传时不召回。 */
+  lessons?: LessonRecall
 }
 
 export interface StartRunInput {
   workflow: WorkflowDefinition
   requirementId: RequirementId
   args?: Record<string, unknown>
+  /** 覆盖配置与 workflow 的默认预算。 */
+  budget?: RunBudget
+  /** 由路由器产生的路由卡（记入 RunState.route 并发 route.decided）。 */
+  route?: RouteDecision
+  kind?: RunState['kind']
+  origin?: RunState['origin']
 }
 
 /**

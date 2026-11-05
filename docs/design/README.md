@@ -23,9 +23,12 @@
 | 16 | [workflow 协同编辑](16-工作流协同编辑.md) | `.workflow.ts` 受限子集是唯一事实源；画布做 AST 最小文本替换，AI 直接改文件；修订与合并 |
 | 17 | [文件系统、沙箱与部署](17-文件系统与沙箱.md) | 空间 / 仓库镜像 + worktree / 对象存储；local、bwrap、docker 三档沙箱；Linux 与容器部署 |
 | 18 | [评审机制与默认流水线](18-评审机制与默认流水线.md) | review 节点：交叉评审、独立上下文、轮次上限、打回重做、全程留痕；作者版标准流水线 |
+| 19 | [外部参考与改进](19-外部参考与改进.md) | 分档路由、完成标准防假完成、失败指纹、评审修订与正交状态、审批绑定版本、交付校验与拦截度量、命令注册表、预算、经验库、动效规范 |
 
 ## 参考资料
 
 - 原型：[browser-nav-assistant](https://github.com/Wayzinx/browser-nav-assistant) 的 `.workflow/browser-nav-sdlc.workflow.js` 与 `CONVENTIONS.md`。
 - 视频：皮皮虾说《公司正式宣布开始 AI 自动化实现需求》（BV1Rex26dEWF）：物料仓库、spec → task → 门禁 DAG、全程留痕与度量。
 - 常见的需求协作平台：阶段条 + 公共产物分类 + 共享上下文的 Agent 任务。
+- [Metis](https://github.com/Wholiver/metis)：按改动形状分档、门禁由运行时记账、失败指纹、自学习软层；`docs/ale-metis-agent-failure-modes.md` 的失败分析。
+- [OpenBitFun](https://github.com/GCWing/OpenBitFun)：`docs/sdlc-harness/`、`docs/architecture/review-lifecycle.md`（评审记录 / 修订 / 正交状态）、`src/web-ui/MOTION_AUDIT.md`（动效审计）。

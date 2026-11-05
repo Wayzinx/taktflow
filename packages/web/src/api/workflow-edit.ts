@@ -113,6 +113,10 @@ function applyOne(m: EditableWorkflow, e: WorkflowEdit): void {
     case 'setMeta':
       m.meta[e.key] = lit(e.value)
       return
+    case 'setMetaValue':
+      if (e.value) m.meta[e.key] = e.value
+      else delete m.meta[e.key]
+      return
   }
 }
 
@@ -155,6 +159,10 @@ function inverseOne(m: EditableWorkflow, e: WorkflowEdit): WorkflowEdit[] {
     }
     case 'setMeta':
       return [{ op: 'setMeta', key: e.key, value: literalOf<string>(m.meta[e.key]) ?? '' }]
+    case 'setMetaValue': {
+      const old = m.meta[e.key]
+      return [{ op: 'setMetaValue', key: e.key, value: old ? structuredClone(old) : null }]
+    }
   }
 }
 
@@ -185,7 +193,8 @@ export function summarizeEdits(edits: WorkflowEdit[]): string {
       case 'setNeeds': return `修改 ${e.id} 的依赖`
       case 'moveNode': return `移动 ${e.id}`
       case 'setStages': return '修改阶段'
-      case 'setMeta': return `修改 ${e.key}`
+      case 'setMeta':
+      case 'setMetaValue': return `修改 ${e.key}`
     }
   }
   return [...new Set(edits.map(part))].join('；')

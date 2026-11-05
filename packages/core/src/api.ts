@@ -49,6 +49,16 @@
  * | GET  | /api/requirements/:id/chat/stream              | text/event-stream，data 为 RoomMessage |
  * | --- 评审（docs/design/18） | | |
  * | GET  | /api/requirements/:id/reviews                  | ReviewSummary[] |
+ * | POST | /api/runs/:runId/nodes/:nodeId/dispositions    | 请求体 ReviewDispositionRequest → ReviewDisposition（人对评审问题的处置，进审计） |
+ * | --- 外部参考改进（docs/design/19） | | |
+ * | POST | /api/requirements/:id/route                    | 请求体 RoutePreviewRequest → RouteDecision（只预览，不启动） |
+ * | GET  | /api/commands                                  | CommandInfo[]（⌘K、Lead、CLI 共用的命令注册表） |
+ * | POST | /api/commands/:id                              | 请求体 CommandRunRequest → CommandRunResponse |
+ * | GET  | /api/lessons?status=                           | Lesson[] |
+ * | PATCH| /api/lessons/:id                               | 请求体 LessonUpdateRequest → Lesson |
+ *
+ * 任务卡片（RoomMessage kind=task）是只追加的：同一 taskRunId 每次状态变化追加一条，前端按 taskRunId 只显示最新一条。
+ * 群聊 SSE 除 RoomMessage 外还会发 `event: lead`，data 为 LeadPresence。
  *
  * 多空间时所有路由都可加前缀 /api/s/:spaceId（例如 /api/s/shop/requirements），不加前缀即默认空间。
  */
@@ -56,13 +66,22 @@ import type { AttentionItem } from './interfaces.js'
 import type {
   Actor,
   AgentProfile,
+  CompletionCheck,
+  FailureRecord,
+  Lesson,
+  LeadPresence,
+  QualityMetrics,
   RepoBinding,
+  ReviewContinuity,
+  ReviewDisposition,
   ReviewNodeDef,
   ReviewRound,
   ReviewVerdict,
   Room,
   RoomMember,
   RoomMessage,
+  RouteDecision,
+  RunBudget,
   SkillRecord,
   SpaceMember,
   WorkflowSnapshot,
@@ -81,6 +100,7 @@ import type {
   RunState,
   SnapshotNode,
   StageDef,
+  Tier,
   Usage,
 } from './types.js'
 
@@ -103,6 +123,11 @@ export interface RequirementSummary extends Requirement {
   latestRunId?: string
   pendingAttention: number
   usage: Usage
+  /** 最近一次流水线运行的当前节点（运行中或等人的那个）。 */
+  current?: { runId: string; nodeId: string; title: string; status: NodeStatus }
+  /** 最近一次流水线运行的档位。 */
+  tier?: Tier
+  quality?: QualityMetrics
 }
 
 export interface ProjectOverview {
@@ -117,6 +142,9 @@ export interface ProjectOverview {
     blocked: number
     runs: number
     usage: Usage
+    /** 全部需求的"已校验 / 已拦截"合计。 */
+    verified?: number
+    intercepted?: number
   }
 }
 
@@ -138,6 +166,8 @@ export interface ArtifactEditRequest {
   content: string
   /** 人工修改必须写原因（进审计）。 */
   reason: string
+  /** cosmetic：措辞调整，不让下游过期；缺省 semantic。 */
+  impact?: 'cosmetic' | 'semantic'
 }
 
 export interface ArtifactEditResponse {
@@ -155,10 +185,9 @@ export interface RunSummary {
   endedAt?: string
   progress: { done: number; total: number; failed: number }
   usage: Usage
-  /** workflow：流水线运行；task：Lead 派发的临时任务。 */
-  kind?: 'workflow' | 'task'
-  /** 临时任务的来源（哪条群消息、谁发起）。 */
-  origin?: { kind: 'chat'; messageId: string; by: Actor; title: string }
+  kind?: RunState['kind']
+  origin?: RunState['origin']
+  tier?: Tier
 }
 
 /** DAG 画布用的图：静态定义 + 运行状态 + 动态展开合并后的结果。 */
@@ -175,6 +204,12 @@ export interface GraphNode {
   attempts: number
   iteration?: number
   usage?: Usage
+  /** review 节点：当前修订与轮次、打回次数（画轮次角标用）。 */
+  revision?: number
+  round?: number
+  reworks?: number
+  goal?: string
+  summary?: string
 }
 
 export interface GraphEdge {
@@ -193,6 +228,16 @@ export interface RunDetail {
   /** 本次运行的总用量（按全部 node.finished 事件累加）。 */
   usage?: Usage
   graph: { nodes: GraphNode[]; edges: GraphEdge[] }
+  budget?: BudgetStatus
+  quality?: QualityMetrics
+}
+
+export interface BudgetStatus {
+  budget: RunBudget
+  used: { tokens: number; costUsd?: number; minutes: number }
+  /** 各项用量 / 预算的最大值；没有预算时为 0。 */
+  ratio: number
+  state: 'ok' | 'warning' | 'exhausted'
 }
 
 export interface NodeDetail {
@@ -210,8 +255,14 @@ export interface NodeDetail {
   gate?: { pass: boolean; checks: Array<{ id: string; pass: boolean; score?: number; message?: string }> }
   /** gate 节点的检查定义（来自快照，含 rubric 阈值）。 */
   checks?: SnapshotNode['checks']
-  /** review 节点：配置与每轮记录。 */
-  review?: { config: NonNullable<SnapshotNode['review']>; rounds: ReviewRound[]; status: ReviewStatus }
+  /** review 节点：配置与每轮记录（含历史修订）、正交状态与人工处置。 */
+  review?: { config: NonNullable<SnapshotNode['review']>; rounds: ReviewRound[]; status: ReviewStatus; facets?: ReviewFacets; dispositions?: ReviewDisposition[] }
+  goal?: string
+  summary?: string
+  /** 完成标准与最近一次自检。 */
+  completion?: string[]
+  completionChecks?: CompletionCheck[]
+  failures?: FailureRecord[]
   events: EventEnvelope[]
 }
 
@@ -264,7 +315,18 @@ export interface WorkflowDiagnostic {
 }
 
 export interface EditableWorkflow {
-  meta: { id: string; title: EditableValue; description?: EditableValue; version: EditableValue }
+  meta: {
+    id: string
+    title: EditableValue
+    description?: EditableValue
+    version: EditableValue
+    /** 路由与总负责元数据（docs/design/19）；缺省表示源码里没写。 */
+    useWhen?: EditableValue
+    tiers?: EditableValue
+    leadInstructions?: EditableValue
+    dynamicRules?: EditableValue
+    budget?: EditableValue
+  }
   stages: EditableValue
   nodes: EditableNode[]
   /** 不满足受限子集时为 false：画布只读。 */
@@ -279,6 +341,8 @@ export type WorkflowEdit =
   | { op: 'moveNode'; id: string; after: string | null; parent?: string | null }
   | { op: 'setStages'; stages: Array<{ id: string; title: string }> }
   | { op: 'setMeta'; key: 'title' | 'description' | 'version'; value: string }
+  /** 设置 / 删除（null）路由与总负责元数据。 */
+  | { op: 'setMetaValue'; key: 'useWhen' | 'tiers' | 'leadInstructions' | 'dynamicRules' | 'budget'; value: EditableValue | null }
 
 export interface WorkflowLayout {
   nodes: Record<string, { x: number; y: number }>
@@ -370,9 +434,76 @@ export interface ReviewSummary {
   reworks: number
   /** 最近一轮每个评审者的结论。 */
   latest: Array<{ reviewer: string; verdict: ReviewVerdict; score?: number; openIssues: number }>
+  revision?: number
+  facets?: ReviewFacets
 }
 
-export type { Room, RoomMember, RoomMessage }
+/**
+ * 评审的正交状态（docs/design/19）：阶段、结论、覆盖、新鲜度分别给出，不压成一个词。
+ * "no_findings" 表示没发现问题，界面上不显示为"通过"。
+ */
+export interface ReviewFacets {
+  phase: 'pending' | 'reviewing' | 'revising' | 'signoff' | 'done' | 'exhausted' | 'reworked' | 'failed'
+  outcome?: 'approved' | 'changes_requested' | 'rejected' | 'no_findings' | 'escalated'
+  /** full：所有评审者都给出结论且目标都可读；partial：有缺失。 */
+  coverage: 'full' | 'partial'
+  /** stale：评审之后目标产物 / 代码又变了。 */
+  freshness: 'current' | 'stale' | 'unknown'
+  /** 按人工处置过滤后的未关闭问题（groupKey 去重）。 */
+  open: { blocker: number; major: number; minor: number; nit: number }
+  /** 最近一轮的问题观察统计。 */
+  observed?: Partial<Record<ReviewContinuity['observation'], number>> & { regressed?: number }
+}
+
+export interface ReviewDispositionRequest {
+  groupKey: string
+  state: ReviewDisposition['state']
+  reason: string
+}
+
+export interface RoutePreviewRequest {
+  /** 不给时由路由器从需求标题、产物与群聊推断。 */
+  hint?: string
+  /** 人工指定档位（改档），需要 reason。 */
+  tier?: Tier
+  reason?: string
+}
+
+export interface CommandInfo {
+  id: string
+  title: string
+  kind: 'query' | 'command'
+  /** read：只读；write：改状态；dangerous：不可逆或外部写入。 */
+  risk: 'read' | 'write' | 'dangerous'
+  minRole?: SpaceMember['role']
+  /** 输入的 JSON Schema（⌘K 按它生成简单表单）。 */
+  input: Record<string, unknown>
+  keywords?: string[]
+  /** 适用范围：需求页、运行页等上下文里自动带入的参数名。 */
+  scope?: Array<'requirement' | 'run' | 'node'>
+}
+
+export interface CommandRunRequest {
+  input: Record<string, unknown>
+  /** 写审计的原因（write / dangerous 必填）。 */
+  reason?: string
+}
+
+export interface CommandRunResponse {
+  ok: boolean
+  message: string
+  result?: unknown
+}
+
+export interface LessonUpdateRequest {
+  status?: Lesson['status']
+  title?: string
+  body?: string
+  trigger?: Lesson['trigger']
+  reason: string
+}
+
+export type { LeadPresence, Room, RoomMember, RoomMessage }
 
 export interface HarnessInfo {
   id: string
@@ -397,4 +528,4 @@ export interface ModelInfo {
   keyPresent: boolean
 }
 
-export type { AttentionItem, RequirementMetrics }
+export type { AttentionItem, Lesson, QualityMetrics, RequirementMetrics, RouteDecision }

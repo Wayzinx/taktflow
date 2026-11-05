@@ -193,6 +193,10 @@ interface BaseNodeDef {
   id: NodeId
   kind: NodeKind
   title: string
+  /** 一句话目标：节点卡片只显示目标与小结（docs/design/19）。 */
+  goal?: string
+  /** 负责人职责标签（如 pm / rd / qa）：本节点产生的待办派给 duties 含此标签的空间成员。 */
+  owner?: string
   /** 所属阶段（StageDef.id）。 */
   stage?: string
   /** 依赖的上游节点。 */
@@ -228,6 +232,23 @@ export interface AgentNodeDef extends BaseNodeDef {
   resultSchema?: Record<string, unknown>
   /** 在哪个绑定代码仓库里工作：引擎为节点创建独立 worktree 并作为 cwd。 */
   repo?: string
+  /**
+   * 完成标准：逐条可验证。引擎要求结果带 checks（每条一项、pass 为 true 时必须有证据），
+   * 任何一条缺失 / 未通过 / 无证据即节点失败，不以进程退出码为准。
+   */
+  completion?: string[]
+  /** 往存放区写了未声明的文件时移入隔离区并记 guard.violation（rule: output-contract）。 */
+  strictOutputs?: boolean
+}
+
+/** 完成标准的逐条自检结果（agent 输出，引擎校验）。 */
+export interface CompletionCheck {
+  /** 'c1'、'c2' …，与 completion 的下标对应。 */
+  id: string
+  criterion: string
+  pass: boolean
+  /** 证据：产物路径、命令与输出摘要、用例 ID 等；pass 为 true 时必填。 */
+  evidence?: string
 }
 
 /** 门禁里的单项检查。fail-closed：检查本身出错按不通过处理。 */
@@ -235,6 +256,11 @@ export type GateCheck =
   | { id: string; kind: 'command'; run: string; title?: string }
   | { id: string; kind: 'function'; title?: string; fn: (ctx: NodeContext) => Promise<GateCheckResult> }
   | { id: string; kind: 'rubric'; title?: string; role: string; rubric: string; threshold: number }
+  /**
+   * 交付校验：每条 AC 有用例、用例最近一次执行通过、有证据（读追溯图）。
+   * 给了 role 时再请该角色独立复核（不得与产出角色相同）。
+   */
+  | { id: string; kind: 'acceptance'; title?: string; role?: string }
 
 export interface GateCheckResult {
   id: string
@@ -268,6 +294,10 @@ export type VerdictCategory =
   | 'env_issue' // 环境 / 数据 / 依赖问题 → 执行底座
   | 'flaky' // 不稳定 → 重跑并记录
   | 'requirement_gap' // 需求或契约不清、互相矛盾 → 产品 / 人
+  | 'test_data' // 测试数据缺失或脏 → 数据准备
+  | 'deployment' // 部署未完成 / 部署版本不对 → 发布
+  | 'permission' // 账号、权限、鉴权 → 人
+  | 'external_dependency' // 外部服务不可用 → 记录并等待
   | 'unknown' // 判不了 → 人
 
 export type FixScope = 'mechanical' | 'semantic'
@@ -373,6 +403,10 @@ export interface ReviewNodeDef extends BaseNodeDef {
   /** agent 全部通过后再交人确认。 */
   humanSignoff?: boolean
   rubric?: string
+  /** 连续这么多轮没有新增 / 变化的 blocker、major 问题仍不通过，就提前按 onExhausted 处理（默认 2，0 关闭）。 */
+  stopAfterNoProgress?: number
+  /** 裁决者：只在评审者结论冲突时调用（有人通过、有人要求修改且含 blocker）。 */
+  arbiter?: ReviewerSpec
 }
 
 export type ReviewVerdict = 'approve' | 'request_changes' | 'reject'
@@ -381,8 +415,16 @@ export interface ReviewIssue {
   id: string
   severity: 'blocker' | 'major' | 'minor' | 'nit'
   location?: string
+  /** 短标题；问题延续用它和 location、category 算 groupKey。 */
+  title?: string
+  /** correctness / testability / security / performance / readability …… */
+  category?: string
   description: string
   suggestion?: string
+  /** 引擎计算：同一类问题跨轮次的稳定键（位置 + 类别 + 标题归一化）。 */
+  groupKey?: string
+  /** 引擎计算：位置、严重度、描述的指纹；groupKey 相同但指纹变了 = 问题有变化。 */
+  fingerprint?: string
 }
 
 export interface ReviewRecord {
@@ -395,6 +437,34 @@ export interface ReviewRecord {
   /** 本轮评审看到的产物版本。 */
   artifacts: ArtifactRef[]
   at: Timestamp
+  /** 裁决者的记录（只在冲突时出现，决定本轮是否通过）。 */
+  arbiter?: boolean
+}
+
+/** 系统对问题的观察：与上一轮相比。只由引擎计算，不代表问题已解决。 */
+export type IssueObservation = 'new' | 'repeated' | 'changed' | 'not_observed'
+
+export interface ReviewContinuity {
+  groupKey: string
+  /** 本轮的问题（not_observed 时没有）。 */
+  issueId?: string
+  reviewer?: string
+  /** 上一轮对应的问题。 */
+  prevIssueId?: string
+  observation: IssueObservation
+  /** 作者上轮回应"已修"但本轮重复出现。 */
+  regressed?: boolean
+}
+
+/** 人对问题的显式处置（留痕）；模型没再提到不会自动改变处置。 */
+export interface ReviewDisposition {
+  groupKey: string
+  state: 'open' | 'resolved' | 'dismissed'
+  reason: string
+  by: Actor
+  at: Timestamp
+  /** 处置时问题的指纹：指纹变了处置自动失效、重新打开。 */
+  fingerprint?: string
 }
 
 export interface ReviewResponse {
@@ -406,13 +476,24 @@ export interface ReviewResponse {
 }
 
 export interface ReviewRound {
+  /** 修订内的轮次（从 1 开始）。 */
   round: number
+  /** 第几个修订：首次评审为 1，每次打回重做 +1。 */
+  revision?: number
+  /** 全局递增序号（跨修订不重置）。 */
+  seq?: number
   passed: boolean
   records: ReviewRecord[]
   /** 作者对本轮问题的回应（未通过时才有）。 */
   responses: ReviewResponse[]
   /** 作者修改后产生的新版本。 */
   revised: ArtifactRef[]
+  /** 本轮评审目标的指纹（产物版本或代码 HEAD）；目标之后变了，这轮结论就过期。 */
+  targetFingerprint?: string
+  /** 与上一轮相比的问题观察。 */
+  continuity?: ReviewContinuity[]
+  /** 提前结束的原因：no_progress（连续无新增问题）。 */
+  stopReason?: 'no_progress'
 }
 
 export interface SubflowNodeDef extends BaseNodeDef {
@@ -432,7 +513,31 @@ export type NodeDef =
   | ReviewNodeDef
   | SubflowNodeDef
 
-export interface WorkflowDefinition {
+/** 档位只看改动形状（docs/design/19）：T0 已写死 / T1 单一改动面 / T2 多面串行 / T3 多面不相交并行。 */
+export type Tier = 'T0' | 'T1' | 'T2' | 'T3'
+
+export interface RunBudget {
+  tokens?: number
+  costUsd?: number
+  minutes?: number
+  /** 同时运行的节点数上限。 */
+  concurrency?: number
+}
+
+/** workflow 的路由与总负责元数据（都是自然语言或字面量，可在画布上编辑）。 */
+export interface WorkflowMeta {
+  /** 适用场景：路由器据此选择流程。 */
+  useWhen?: string
+  /** 适用档位；不写表示不限。 */
+  tiers?: Tier[]
+  /** 给 Lead 的总负责准则。 */
+  leadInstructions?: string
+  /** 运行中允许 Lead 提议的调整规则（提议仍需人批准）。 */
+  dynamicRules?: string
+  budget?: RunBudget
+}
+
+export interface WorkflowDefinition extends WorkflowMeta {
   id: string
   title: string
   description?: string
@@ -441,16 +546,38 @@ export interface WorkflowDefinition {
   nodes: NodeDef[]
 }
 
+/** 路由卡：选哪个档位、哪个流程、为什么。 */
+export interface RouteDecision {
+  tier: Tier
+  workflowId: string
+  reason: string
+  /** 改动面；T3 要求 paths 两两不相交。 */
+  surfaces: Array<{ id: string; paths: string[]; repo?: string }>
+  /** 本流程要过的门禁 / 评审（节点标题）。 */
+  gates: string[]
+  roles: string[]
+  /** 确定性校验做过的调整，例如"改动面路径相交，T3 降为 T2"。 */
+  adjustments?: string[]
+  decidedBy: Actor
+  at: Timestamp
+  /** 人改过档位。 */
+  overridden?: { by: Actor; reason: string; from: Tier }
+}
+
 // ============================================================ Workflow 快照（去掉函数后的纯数据，供 server / web 画图）
 
 export interface SnapshotNode {
   id: NodeId
   kind: NodeKind
   title: string
+  goal?: string
+  owner?: string
   stage?: string
   needs: NodeId[]
   role?: string
   harness?: string
+  /** agent：完成标准。 */
+  completion?: string[]
   inputs?: InputSpec[]
   outputs?: OutputSpec[]
   /** 静态 prompt 原文；动态 prompt 记为 undefined（实际 prompt 见 NodeDetail.prompt）。 */
@@ -479,12 +606,14 @@ export interface SnapshotNode {
     maxRounds: number
     onExhausted: ReviewNodeDef['onExhausted']
     humanSignoff?: boolean
+    stopAfterNoProgress?: number
+    arbiter?: { role: string; focus?: string; harness?: string }
   }
   /** 写代码的节点绑定的仓库（TaktConfig.repos 的 id）。 */
   repo?: string
 }
 
-export interface WorkflowSnapshot {
+export interface WorkflowSnapshot extends WorkflowMeta {
   id: string
   title: string
   description?: string
@@ -530,6 +659,28 @@ export interface NodeState {
   reworks?: number
   /** 写代码节点使用的 worktree。 */
   worktree?: { repo: string; path: string; branch: string; base: string }
+  /** review 节点：当前修订（首次为 1，每次打回 +1）。 */
+  revision?: number
+  /** 一句话小结（agent 结果的 summary 字段）。 */
+  summary?: string
+  /** 完成标准自检结果（最近一次）。 */
+  checks?: CompletionCheck[]
+  /** 失败指纹计数；同一指纹在输入不变时第 2 次出现即停止重试。 */
+  failures?: FailureRecord[]
+}
+
+export interface FailureRecord {
+  /** sha256(节点 : 失败码 : 目标 : 输入身份) 的前 16 位。 */
+  fingerprint: string
+  /** 失败码：completion.unmet / gate:<检查 id> / judge:<类别> / exit:<码> / error …… */
+  code: string
+  target?: string
+  /** 输入身份：输入产物版本 + worktree HEAD 的摘要。 */
+  inputs: string
+  count: number
+  firstAt: Timestamp
+  lastAt: Timestamp
+  message?: string
 }
 
 /** planner 动态展开记录：可视化时把这些节点画到 planner 下面。 */
@@ -553,6 +704,13 @@ export interface RunState {
   args: Record<string, unknown>
   nodes: Record<NodeId, NodeState>
   expansions: Expansion[]
+  /** workflow：流水线运行；task：Lead 派发的临时任务。 */
+  kind?: 'workflow' | 'task'
+  /** 临时任务的来源。 */
+  origin?: { kind: 'chat'; messageId: string; by: Actor; title: string }
+  route?: RouteDecision
+  /** 生效的预算（配置 < workflow 默认 < 启动参数）。 */
+  budget?: RunBudget
 }
 
 // ============================================================ 事件（审计日志）
@@ -566,12 +724,14 @@ export interface EventPayloads {
   'node.failed': { error: string; attempt: number }
   'node.stale': { cause: ArtifactRef }
   'artifact.written': { ref: ArtifactRef; kind: ArtifactKind; sha256: string }
-  'artifact.edited': { ref: ArtifactRef; reason: string }
+  /** impact 为 cosmetic（措辞调整）时只记录，不传播 stale；缺省按 semantic。 */
+  'artifact.edited': { ref: ArtifactRef; reason: string; impact?: 'cosmetic' | 'semantic' }
   'artifact.untracked': { path: string; sha256: string }
   'gate.result': { pass: boolean; checks: GateCheckResult[] }
   'judge.verdict': { verdicts: JudgeVerdict[]; routed: Array<{ subject: string; to: string }> }
   'human.requested': { requestId: string; ask: string; form: HumanNodeDef['form']; choices?: string[] }
-  'human.answered': { requestId: string; decision?: string; answer?: string }
+  /** boundTo：回答 / 审批时看到的产物版本；之后产物有新版本，这次确认即过期。 */
+  'human.answered': { requestId: string; decision?: string; answer?: string; boundTo?: ArtifactRef[] }
   'harness.started': { harness: string; model?: string; sessionId?: string }
   'harness.message': { role: 'assistant' | 'user' | 'system'; text: string }
   'harness.tool_call': { tool: string; input: string; output?: string; ok?: boolean }
@@ -583,10 +743,21 @@ export interface EventPayloads {
   'guard.violation': { rule: string; paths: string[]; action: 'reverted' | 'blocked' | 'flagged' }
   'review.round': { round: number; passed: boolean; verdicts: Array<{ reviewer: string; verdict: ReviewVerdict; score?: number; issues: number }> }
   'review.response': { round: number; responses: ReviewResponse[]; revised: ArtifactRef[] }
-  'review.exhausted': { rounds: number; action: 'rework' | 'human' | 'fail' }
+  'review.exhausted': { rounds: number; action: 'rework' | 'human' | 'fail'; reason?: 'max_rounds' | 'no_progress' }
+  'review.arbitrated': { round: number; arbiter: string; verdict: ReviewVerdict; conflict: string }
+  'review.disposition': ReviewDisposition
   'rework.started': { from: NodeId; to: NodeId; count: number; feedback: string; reset: NodeId[] }
   'worktree.created': { repo: string; path: string; branch: string; base: string }
+  'worktree.bootstrapped': { repo: string; path: string; command?: string; shared?: string[]; ok: boolean; ms: number; output?: string }
   'task.dispatched': { taskRunId: string; role: string; title: string; by: Actor }
+  'node.checks': { checks: CompletionCheck[]; unmet: string[] }
+  'retry.suppressed': { fingerprint: string; code: string; count: number; reason: string }
+  'budget.warning': { budget: RunBudget; used: { tokens: number; costUsd?: number; minutes: number }; ratio: number }
+  'budget.exhausted': { budget: RunBudget; used: { tokens: number; costUsd?: number; minutes: number }; ratio: number }
+  'route.decided': RouteDecision
+  'lesson.recalled': { ids: string[]; holdout: boolean; tokens: number }
+  'lesson.learned': { id: string; title: string; source: Lesson['source'] }
+  'lesson.updated': { id: string; status: Lesson['status']; reason: string; stats: Lesson['stats'] }
   log: { level: 'info' | 'warn' | 'error'; message: string }
 }
 
@@ -616,6 +787,7 @@ export type ContextSource =
   | 'skill'
   | 'artifact' // 公共存放区产物
   | 'knowledge' // 知识检索结果
+  | 'lesson' // 经验库召回（docs/design/19）
   | 'prompt' // 节点 prompt
   | 'history' // 续聊带入的历史
   | 'tool_result' // 运行中工具返回
@@ -911,6 +1083,53 @@ export interface RequirementMetrics {
   leadTimeHours?: number
   /** 验收标准覆盖：每条 AC 有没有用例、用例过没过。 */
   acCoverage?: Array<{ ac: string; title: string; cases: number; passed: number; failed: number; status: 'covered' | 'partial' | 'uncovered' }>
+  quality?: QualityMetrics
+}
+
+/**
+ * 校验与拦截（docs/design/19）。
+ * verified：通过的门禁检查（含交付校验）与通过的评审轮；intercepted：交付前被拦下的问题。
+ */
+export interface QualityMetrics {
+  verified: number
+  intercepted: number
+  interceptedBy: {
+    /** 未通过的门禁检查。 */
+    gate: number
+    /** 未通过评审轮里的 blocker / major 问题。 */
+    review: number
+    /** 判决为 product_bug 的失败。 */
+    judge: number
+    /** 完成标准未满足。 */
+    completion: number
+    /** 被失败指纹抑制的重复重试。 */
+    fingerprint: number
+  }
+}
+
+// ============================================================ 经验库（docs/design/19）
+
+export interface Lesson {
+  id: string
+  title: string
+  /** 正文：现象、原因、做法；召回时注入，≤ 600 token。 */
+  body: string
+  trigger: {
+    roles?: string[]
+    /** glob：节点写权限或输入路径命中其一即触发。 */
+    paths?: string[]
+    /** 错误签名（正则源码）：在打回意见 / 上次失败原因里命中即触发。 */
+    signatures?: string[]
+    categories?: VerdictCategory[]
+  }
+  /** tentative：试用（参与对照组）；active：启用；retired：退役（文件保留，不再召回）。 */
+  status: 'tentative' | 'active' | 'retired'
+  source: { kind: 'judge' | 'review' | 'human'; runId?: RunId; nodeId?: NodeId; ref?: string }
+  /** 人明确写下的经验：直接启用，不进对照组。 */
+  userStated?: boolean
+  stats: { recalled: number; helped: number; hurt: number }
+  createdAt: Timestamp
+  updatedAt: Timestamp
 }
 
 // ============================================================ 沙箱（docs/design/17）
@@ -967,6 +1186,8 @@ export interface SpaceMember {
   name: string
   role: 'owner' | 'maintainer' | 'member' | 'viewer'
   email?: string
+  /** 职责标签（pm / rd / qa / arch ……）：节点 owner 匹配时待办派给此人。 */
+  duties?: string[]
 }
 
 export interface RepoBinding {
@@ -978,6 +1199,10 @@ export interface RepoBinding {
   defaultBranch: string
   purpose?: 'app' | 'library' | 'test' | 'docs' | (string & {})
   description?: string
+  /** worktree 建好后在其中执行的引导命令（如 npm ci）；失败则节点 blocked。 */
+  bootstrap?: string
+  /** 从仓库主检出软链进 worktree 的目录（如 node_modules），避免每个 worktree 重装。 */
+  share?: string[]
 }
 
 export interface SkillRecord {
@@ -996,7 +1221,7 @@ export interface RoomMember {
   role?: string
 }
 
-export type RoomMessageKind = 'text' | 'system' | 'attention' | 'task' | 'artifact' | 'progress'
+export type RoomMessageKind = 'text' | 'system' | 'attention' | 'task' | 'artifact' | 'progress' | 'route'
 
 export interface RoomMessage {
   id: string
@@ -1010,6 +1235,16 @@ export interface RoomMessage {
   mentions?: string[]
   replyTo?: string
   refs?: { artifacts?: ArtifactRef[]; runId?: RunId; nodeId?: NodeId; taskRunId?: RunId; requestId?: string }
+  /** kind 为 route 时：路由卡内容。 */
+  route?: RouteDecision
+}
+
+/** Lead 当前在做什么（服务端按回合与运行状态推导，供状态灯显示）。 */
+export interface LeadPresence {
+  state: 'idle' | 'thinking' | 'working' | 'waiting'
+  since: Timestamp
+  /** 例如"正在派发 PM 任务""等 @alice 确认 PRD v3"。 */
+  detail?: string
 }
 
 export interface Room {
@@ -1020,6 +1255,7 @@ export interface Room {
   createdAt: Timestamp
   /** 绑定的外部 IM 群（飞书 / Slack …）。 */
   external?: { kind: string; chatId: string }
+  lead?: LeadPresence
 }
 
 /** 临时任务：Lead 派发给某个角色的一次性工作，执行时是一次普通运行（可审计）。 */
@@ -1034,17 +1270,23 @@ export interface TaskSpec {
   repo?: string
   /** 完成后是否走一轮评审（默认按角色：改代码的任务默认评审）。 */
   review?: { reviewers: string[]; maxRounds: number } | false
+  /** 对已有产物的修改是措辞调整还是语义变更（措辞调整不让下游过期）；缺省 semantic。 */
+  impact?: 'cosmetic' | 'semantic'
+  completion?: string[]
 }
 
 export type LeadAction =
   | { type: 'reply'; text: string; mentions?: string[] }
   | { type: 'dispatch_task'; task: TaskSpec }
-  | { type: 'start_run'; workflowId: string; args?: Record<string, unknown> }
+  /** workflowId 为 'auto' 时先走路由器，并把路由卡发到群里。 */
+  | { type: 'start_run'; workflowId: string; args?: Record<string, unknown>; budget?: RunBudget }
   | { type: 'resume_run'; runId: RunId }
   | { type: 'cancel_run'; runId: RunId; reason: string }
   | { type: 'request_human'; to: string; ask: string; form: HumanNodeDef['form']; choices?: string[] }
   | { type: 'propose_workflow_change'; workflowId: string; description: string; source?: string }
   | { type: 'update_notes'; content: string }
+  /** 调用命令注册表里风险为 read 的命令（查询类）；写类命令走上面的专用动作。 */
+  | { type: 'command'; id: string; input?: Record<string, unknown> }
 
 /** Lead 每次被触发的输出：一条回复 + 一组动作（由服务端校验后执行）。 */
 export interface LeadTurn {
@@ -1073,6 +1315,14 @@ export interface TaktConfig {
   sandbox?: { provider: 'local' | 'bwrap' | 'docker' | (string & {}); image?: string; network?: SandboxSpec['network'] }
   /** 需求群的 Lead Agent。 */
   lead?: { harness?: HarnessSelector; progressUpdates?: boolean }
+  /** 路由器：用哪个模型判档；没有合适流程时的兜底流程。 */
+  route?: { harness?: HarnessSelector; defaultWorkflow?: string }
+  /** 默认预算（workflow 与启动参数可覆盖）。 */
+  budget?: RunBudget
+  /** 同一失败指纹在输入不变时允许出现的次数（默认 2，达到即停止重试）。 */
+  retry?: { maxSameFailure?: number }
+  /** 经验库。 */
+  lessons?: { enabled?: boolean; holdoutPercent?: number; maxRecall?: number; maxTokens?: number; learner?: HarnessSelector; dailyCalls?: number }
   /** 角色 → 默认 harness（AgentProfile 可覆盖）。 */
   roles?: Record<string, HarnessSelector>
   /** 已注册的 workflow 文件（相对项目根目录）。 */

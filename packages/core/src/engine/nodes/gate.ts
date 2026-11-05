@@ -21,6 +21,9 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
         host.signal.throwIfAborted()
         const result = await host.guard.system(host.workspacePaths(node.outputs?.map((output) => output.path)), () => check.fn(ctx), true)
         checks.push({ ...result, id: check.id, pass: result.pass === true })
+      } else if (check.kind === 'acceptance') {
+        // 交付校验由 m3-engine 实现；实现前按 fail-closed 处理
+        checks.push({ id: check.id, pass: false, message: '交付校验尚未实现' })
       } else {
         const value = await host.model(entry, ctx, check.role, `按以下 rubric 检查并输出 score、pass、message：\n${check.rubric}`, RUBRIC_SCHEMA) as GateCheckResult
         checks.push({ ...value, id: check.id, pass: value.pass && value.score! >= check.threshold })

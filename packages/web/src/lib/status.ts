@@ -96,10 +96,14 @@ export const VERDICT: Record<VerdictCategory, { label: string; color: string; ow
   env_issue: { label: '环境问题', color: 'var(--c-2)', owner: '执行底座' },
   flaky: { label: '不稳定', color: 'var(--c-7)', owner: '重跑' },
   requirement_gap: { label: '需求缺口', color: 'var(--c-6)', owner: '产品 / 人' },
+  test_data: { label: '测试数据', color: 'var(--c-3)', owner: '数据准备' },
+  deployment: { label: '部署问题', color: 'var(--c-2)', owner: '发布' },
+  permission: { label: '权限问题', color: 'var(--c-6)', owner: '人' },
+  external_dependency: { label: '外部依赖', color: 'var(--c-7)', owner: '等待外部' },
   unknown: { label: '无法判定', color: 'var(--c-5)', owner: '人' },
 }
 
-export const VERDICT_ORDER: VerdictCategory[] = ['product_bug', 'case_defect', 'script_defect', 'env_issue', 'flaky', 'requirement_gap', 'unknown']
+export const VERDICT_ORDER: VerdictCategory[] = ['product_bug', 'case_defect', 'script_defect', 'env_issue', 'test_data', 'deployment', 'permission', 'external_dependency', 'flaky', 'requirement_gap', 'unknown']
 
 export const ARTIFACT_KIND: Record<ArtifactKind, string> = {
   input: '输入物料',
@@ -147,6 +151,7 @@ export const CONTEXT_SOURCE: Record<ContextSource, { label: string; color: strin
   skill: { label: '技能', color: 'var(--c-5)' },
   artifact: { label: '产物', color: 'var(--c-1)' },
   knowledge: { label: '知识', color: 'var(--c-2)' },
+  lesson: { label: '经验', color: 'var(--c-3)' },
   prompt: { label: 'Prompt', color: 'var(--c-3)' },
   history: { label: '历史', color: 'var(--c-4)' },
   tool_result: { label: '工具结果', color: 'var(--c-8)' },

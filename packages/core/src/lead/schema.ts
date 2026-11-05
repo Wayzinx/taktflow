@@ -14,6 +14,7 @@ const schemas: Record<LeadAction['type'], Record<string, unknown>> = {
   request_human: { required: ['to', 'ask', 'form'], properties: { to: text, ask: text, form: { type: 'string', enum: ['approve', 'answer', 'choice'] }, choices: strings } },
   propose_workflow_change: { required: ['workflowId', 'description'], properties: { workflowId: text, description: text, source: text } },
   update_notes: { required: ['content'], properties: { content: text } },
+  command: { required: ['id'], properties: { id: text, input: { type: 'object' } } },
 }
 export const LEAD_TURN_SCHEMA: Record<string, unknown> = {
   title: 'LeadTurn', type: 'object', required: ['reply', 'actions'],
