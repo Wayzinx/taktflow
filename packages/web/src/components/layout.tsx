@@ -119,11 +119,35 @@ function Sidebar() {
   )
 }
 
-function Topbar() {
+/** 嵌入模式没有侧栏：主要入口放到顶栏左侧的 Tab。 */
+function EmbeddedTabs() {
+  const { path } = useLocation()
+  const project = useAsync((ds) => ds.project(), [])
+  const pending = project.data?.attention.length ?? 0
+  const items = [
+    { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
+    { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run') },
+    { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
+  ]
+  return (
+    <nav className="embed-tabs" aria-label="taktflow">
+      {items.map(({ to, label, icon: Icon, active, badge }) => (
+        <Link key={to} to={to} className={`embed-tab${active ? ' active' : ''}`}>
+          <Icon />
+          <span>{label}</span>
+          {badge ? <span className="sb-badge num">{badge}</span> : null}
+        </Link>
+      ))}
+    </nav>
+  )
+}
+
+function Topbar({ embedded = false }: { embedded?: boolean }) {
   const items = useCrumbState()
   const ds = useSource()
   return (
     <header className="topbar">
+      {embedded && <EmbeddedTabs />}
       <nav className="crumbs" aria-label="面包屑">
         {items.map((c, i) => (
           <span key={i} className="crumb">
@@ -143,7 +167,17 @@ function Topbar() {
   )
 }
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({ children, variant = 'standalone' }: { children: ReactNode; variant?: 'standalone' | 'embedded' }) {
+  if (variant === 'embedded') {
+    return (
+      <div className="shell shell-embedded">
+        <div className="shell-main">
+          <Topbar embedded />
+          <main className="shell-content">{children}</main>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="shell">
       <Sidebar />

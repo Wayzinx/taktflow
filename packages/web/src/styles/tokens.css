@@ -11,6 +11,8 @@
 
   --sidebar-w: 224px;
   --topbar-h: 48px;
+  /* 页面可用高度；嵌入模式改成面板容器的高度。 */
+  --viewport-h: 100vh;
 
   color-scheme: light;
   --bg: #f7f7f8;

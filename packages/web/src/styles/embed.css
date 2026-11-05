@@ -1,0 +1,32 @@
+/*
+ * 嵌入 dsh 时的覆盖：根节点就是视口（size 容器），基础色板改用 dsh 的主题 token，
+ * 状态色和图表色保留 taktflow 自己的（深浅色由根节点的 data-theme 决定）。
+ * 构建插件时整份样式会被加上 .takt-root 前缀，这里直接写 .takt-root。
+ */
+.takt-root[data-embedded] {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  container-type: size;
+  --viewport-h: 100cqh;
+  font-size: 13px;
+
+  --bg: var(--dsw-alias-bg-base);
+  --bg-sunken: var(--dsw-alias-bg-layer-1);
+  --surface: var(--dsw-alias-bg-layer-1);
+  --surface-2: var(--dsw-alias-bg-layer-2);
+  --surface-hover: var(--dsw-alias-interactive-bg-hover);
+  --surface-active: var(--dsw-alias-interactive-bg-active);
+  --border: var(--dsw-alias-border-l1);
+  --border-strong: var(--dsw-alias-border-l2);
+  --divider: var(--dsw-alias-border-l1);
+  --text: var(--dsw-alias-label-primary);
+  --text-2: var(--dsw-alias-label-secondary);
+  --text-3: var(--dsw-alias-label-tertiary);
+  --accent: var(--dsw-alias-brand-primary);
+}
+
+.takt-root[data-embedded] .toaster {
+  position: absolute;
+}
