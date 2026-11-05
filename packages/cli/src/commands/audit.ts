@@ -1,9 +1,10 @@
+import { withCliLease } from '../lease.js'
 import { withLock, type EventPayloads } from '@taktflow/core'
 import { join } from 'node:path'
 import { createPrinter } from '../output.js'
 import { openStores } from '../project.js'
 
-export async function runAuditVerify(project: string | undefined, runId: string, json: boolean): Promise<boolean> {
+export async function runAuditVerify(project: string | undefined, runId: string, json: boolean, takeover = false): Promise<boolean> {
   const stores = await openStores(project)
   const printer = createPrinter(json)
   // verify 对缺失的日志返回 ok:true；先确认运行本身存在，否则会把"没跑过"误报为审计通过。
@@ -24,7 +25,7 @@ export async function runAuditVerify(project: string | undefined, runId: string,
     }))
     for (const data of untracked) {
       if (reported.get(data.path) === data.sha256) continue
-      await stores.events.append(runId, { type: 'artifact.untracked', actor: { type: 'system', id: 'audit' }, data })
+      await withCliLease(stores.taktDir, () => stores.events.append(runId, { type: 'artifact.untracked', actor: { type: 'system', id: 'audit' }, data }), { takeover })
     }
     // 追加发现记录后再校验整条链，审计记录本身也必须有效。
     const chain = await stores.events.verify(runId)

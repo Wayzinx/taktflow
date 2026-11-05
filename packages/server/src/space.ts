@@ -8,7 +8,8 @@ import { randomUUID } from 'node:crypto'
 import { FsEventStore, listSkills, loadProfiles, openProject, type Actor, type ProjectStores, type RepoBinding, type SpaceDetail, type SpaceFile, type SpaceMember, type SpaceSummary, type TaktConfig } from '@taktflow/core'
 import { createRepoManager } from '@taktflow/sandbox'
 import { createWorkflowStore } from '@taktflow/workflow-source'
-import { HttpError, safeId, text } from './http.js'
+import { ApiError as HttpError } from './errors.js'
+import { safeId, text } from './validation.js'
 
 const execute = promisify(execFile)
 
@@ -34,7 +35,7 @@ export async function spaceSummary(stores: ProjectStores): Promise<SpaceSummary>
   const requirements = await stores.workspaces.listRequirements()
   return { id: spaceId(stores), ...stores.config.project, requirements: requirements.length, active: requirements.filter((req) => req.status === 'active').length }
 }
-export async function spaceDetail(stores: ProjectStores): Promise<SpaceDetail> {
+export async function spaceDetail(stores: ProjectStores, workflows = () => workflowStore(stores).list()): Promise<SpaceDetail> {
   const profiles = await loadProfiles(stores.paths)
   const repos = await Promise.all((stores.config.repos ?? []).map(async (repo) => {
     const path = repo.url ? join(stores.taktDir, 'repos', repo.id) : resolve(stores.projectDir, repo.path)
@@ -49,7 +50,7 @@ export async function spaceDetail(stores: ProjectStores): Promise<SpaceDetail> {
   const runs = await stores.runs.list()
   return { ...await spaceSummary(stores), members: stores.config.members ?? [], repos, skills: await listSkills(stores.paths.skills),
     agents: Object.values(profiles).map(({ role, title, description, harness, writeScope }) => ({ role, title, description, harness, writeScope })),
-    workflows: (await workflowStore(stores).list()).map((item) => ({ ...item, runs: runs.filter((run) => run.workflowId === item.id).length })),
+    workflows: (await workflows()).map((item) => ({ ...item, runs: runs.filter((run) => run.workflowId === item.id).length })),
     knowledge: (stores.config.knowledge ?? []).map(({ id, kind }) => ({ id, kind, description: '' })) }
 }
 
@@ -57,16 +58,20 @@ export async function spaceDetail(stores: ProjectStores): Promise<SpaceDetail> {
 export async function auditSpace(stores: ProjectStores, author: Actor, reason: string, message: string): Promise<void> {
   text(reason, 'reason')
   const file = join(stores.taktDir, 'space-events.jsonl')
+  const anchor = join(stores.taktDir, 'space-chain.json')
   await spaceLock(file, async () => {
     const scratch = await mkdtemp(join(tmpdir(), 'takt-space-audit-'))
     try {
       const target = join(scratch, 'runs/space/events.jsonl')
       await mkdir(dirname(target), { recursive: true })
       try { await copyFile(file, target) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      const targetAnchor = join(scratch, 'runs/space/chain.json')
+      try { await copyFile(anchor, targetAnchor) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
       const events = new FsEventStore(scratch)
       if (!(await events.verify('space')).ok) throw new Error('空间审计链已损坏，拒绝写入')
       await events.append('space', { type: 'log', actor: author, data: { level: 'info', message: JSON.stringify({ message, reason }) } })
       await atomicWrite(file, await readFile(target))
+      await atomicWrite(anchor, await readFile(targetAnchor))
     } finally { await rm(scratch, { recursive: true, force: true }) }
   })
 }

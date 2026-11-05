@@ -1,3 +1,5 @@
+import { withSpaceLease } from '../store/lease-scope.js'
+import { assertAnswerFreshness } from '../store/attention-freshness.js'
 import type { AttentionItem, Engine } from '../interfaces.js'
 import type { Actor, AgentProfile, EventEnvelope, LeadActionResult, LeadTurn, RoomMessage, RunState, WorkflowDefinition } from '../types.js'
 import { stageProgress } from '../insights/graph.js'
@@ -30,7 +32,10 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   const engines = new Map<string, Engine>()
   const post = (id: string, message: Omit<RoomMessage, 'id' | 'seq' | 'roomId' | 'at'>) => stores.chat.post(id, message)
   const audit = (runId: string, message: unknown) => stores.events.append(runId, { type: 'log', actor: author, data: { level: 'info', message: JSON.stringify(message) } })
-  const scopedEngine = createLeadEngine(options, profiles, onRunEvent, audit)
+  const cancelAll = async () => { await Promise.all([...engines].map(([id, engine]) => engine.cancel(id))) }
+  const withWriteLease: NonNullable<LeadRuntimeOptions['withWriteLease']> = options.withWriteLease ??
+    ((stores, fn) => withSpaceLease(stores.taktDir, `lead:${process.pid}`, fn, { onRenewError: cancelAll }))
+  const scopedEngine = createLeadEngine({ ...options, withWriteLease }, profiles, onRunEvent, audit)
   const serial = <T>(id: string, fn: () => Promise<T>): Promise<T> => {
     const next = (queues.get(id) ?? Promise.resolve()).catch(() => undefined).then(fn)
     queues.set(id, next)
@@ -173,7 +178,8 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return state
   }
   async function request(runId: string, index: number, requirementId: string, ask: string, form: AttentionItem['form'], to?: string, choices?: string[]): Promise<LeadActionResult> {
-    const item = await stores.attention.create({ requestId: `${runId}:lead-action-${index}`, runId, nodeId: 'lead', requirementId, ask, form, choices })
+    const node = (await stores.runs.get(runId))!.nodes.lead!
+    const item = await stores.attention.create({ requestId: `${runId}:lead-action-${index}`, runId, nodeId: 'lead', requirementId, ask, form, choices, attempt: node.attempts, subjects: (node.inputs ?? []).map((ref) => ({ ...ref })) })
     await stores.events.append(runId, { type: 'human.requested', actor: author, nodeId: 'lead', data: { requestId: item.requestId, ask, form, choices } })
     await post(requirementId, { author, kind: 'attention', text: ask, mentions: to ? [to] : undefined, refs: { requestId: item.requestId, runId } })
     return { action: 'request_human', ok: true, message: ask, refs: { requestId: item.requestId, runId } }
@@ -223,6 +229,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return serial(state.requirementId, () => withFileLock(join(stores.taktDir, 'runs', input.runId, 'lead-approval'), async () => {
       const item = (await stores.attention.list()).find((item) => item.requestId === input.requestId)
       if (!item?.answeredAt || item.answeredBy?.type !== 'human') throw new Error('必须由人先回答待办')
+      await assertAnswerFreshness(stores, item)
       const events = await stores.events.read(item.runId, { types: ['log'] })
       const logs = events.map((event) => { try { return JSON.parse((event.data as { message: string }).message) } catch { return {} } })
       if (logs.some((log) => log.kind === 'lead.approval-result' && log.requestId === item.requestId)) return true
@@ -251,9 +258,12 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     onMessage(requirementId: string, message: RoomMessage, input: { private?: boolean } = {}): Promise<LeadTurnResult | undefined> {
       if (message.author.type !== 'human' || !(input.private || message.mentions?.includes('lead') || /(^|\s)@lead\b/i.test(message.text))) return Promise.resolve(undefined)
       if (message.roomId !== requirementId) return Promise.reject(new Error('消息不属于当前需求'))
-      return serial(requirementId, () => turn(requirementId, message))
+      return withWriteLease(stores, () => serial(requirementId, () => turn(requirementId, message)))
     },
-    onRunEvent, onAttention, resumeTask,
+    onRunEvent: (runId: string, event: EventEnvelope) => withWriteLease(stores, () => onRunEvent(runId, event)),
+    onAttention: (item: AttentionItem) => withWriteLease(stores, () => onAttention(item)),
+    resumeTask: (runId: string) => withWriteLease(stores, () => resumeTask(runId)),
+    cancelAll,
     async drain(): Promise<void> {
       while (queues.size || jobs.size) await Promise.all([...queues.values(), ...jobs])
     },

@@ -34,8 +34,8 @@ export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<s
   }
   const engine = options.engineFactory({ stores: { ...stores, runs, events }, profiles: scopedProfiles, harnesses: options.harnesses })
   return (scope) => ({
-    start: (input) => invocation.run(scope, () => engine.start(input)),
-    resume: (runId, workflow) => invocation.run(scope, () => engine.resume(runId, workflow)),
+    start: (input) => options.withWriteLease!(stores, () => invocation.run(scope, () => engine.start(input))),
+    resume: (runId, workflow) => options.withWriteLease!(stores, () => invocation.run(scope, () => engine.resume(runId, workflow))),
     cancel: (runId) => invocation.run(scope, () => engine.cancel(runId)),
     markStale: (runId, cause) => invocation.run(scope, () => engine.markStale(runId, cause)),
   })

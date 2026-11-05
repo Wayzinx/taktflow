@@ -3,11 +3,14 @@ import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parseCliArgs, expectPositionals, parsePositiveInt, HELP, UsageError, type ParsedCli } from './args.js'
 import { createPrinter } from './output.js'
+import { withCliLease } from './lease.js'
+import { openStores } from './project.js'
 import { runInit } from './commands/init.js'
 import { runReqList, runReqNew } from './commands/req.js'
 import { runWsGet, runWsList, runWsLog, runWsPut } from './commands/ws.js'
 import { runWorkflow, resumeWorkflow } from './commands/run.js'
 import { runAnswer } from './commands/answer.js'
+import { runCancel } from './commands/cancel.js'
 import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
 import { runKbQuery } from './commands/kb.js'
@@ -29,6 +32,10 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
     return cli.command === undefined && !cli.options.help ? 1 : 0
   }
   try {
+    if ((cli.command === 'req' && cli.positionals[0] === 'new') || (cli.command === 'ws' && cli.positionals[0] === 'put')) {
+      const stores = await openStores(cli.options.project)
+      return await withCliLease(stores.taktDir, () => dispatch(cli), { takeover: cli.options.takeover })
+    }
     return await dispatch(cli)
   } catch (error) {
     return fail(error, cli.options.json)
@@ -110,6 +117,9 @@ async function dispatch(cli: ParsedCli): Promise<number> {
     case 'answer':
       expectPositionals('answer', args, 1, 1)
       return runAnswer(cli)
+    case 'cancel':
+      expectPositionals('cancel', args, 1, 1)
+      return runCancel(cli)
     case 'status':
       expectPositionals('status', args, 0, 0)
       await runStatus(options.project, options.req, options.json)
@@ -121,7 +131,7 @@ async function dispatch(cli: ParsedCli): Promise<number> {
     case 'audit': {
       if (args[0] !== 'verify') throw new UsageError('audit 子命令：verify')
       expectPositionals('audit verify', args.slice(1), 1, 1)
-      return await runAuditVerify(options.project, args[1]!, options.json) ? 0 : 1
+      return await runAuditVerify(options.project, args[1]!, options.json, options.takeover) ? 0 : 1
     }
     case 'kb': {
       if (args[0] !== 'query') throw new UsageError('kb 子命令：query')

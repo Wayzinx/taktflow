@@ -1,3 +1,4 @@
+import { assertAnswerFreshness } from './attention-freshness.js'
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ProjectStores } from '../interfaces.js'
@@ -50,7 +51,7 @@ export async function openProject(projectDir: string): Promise<ProjectStores> {
   const checked = assertConfig(config, configFile)
   const paths = await resolvePaths(root, checked)
   const chat = new FsChatStore(taktDir)
-  return {
+  const stores: ProjectStores = {
     projectDir: root,
     taktDir,
     config: checked,
@@ -58,8 +59,9 @@ export async function openProject(projectDir: string): Promise<ProjectStores> {
     workspaces: new FsWorkspaceStore(taktDir, paths.requirements, chat),
     events: new FsEventStore(taktDir),
     runs: new FsRunStore(taktDir),
-    attention: new FsAttentionStore(taktDir),
+    attention: new FsAttentionStore(taktDir, (item) => assertAnswerFreshness(stores, item)),
   }
+  return stores
 }
 
 /** 优先传解析后的 paths；兼容旧调用方传 .takt 或模板根目录。 */

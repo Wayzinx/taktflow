@@ -1,14 +1,15 @@
+import { withCliLease, type WriteLeaseHook } from './lease.js'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createLeadRuntime, type AttentionItem, type RoomMessage } from '@taktflow/core'
 import { workflowStore } from '@taktflow/server'
 import { createRunEngine, loadRuntime, resolveWorkflow, templatesDir, type ProjectContext } from './project.js'
 
-export async function createProjectLead(context: ProjectContext) {
+export async function createProjectLead(context: ProjectContext, withWriteLease?: WriteLeaseHook) {
   const source = workflowStore(context.stores)
   const instructions = context.profiles.lead?.instructions ?? await readFile(join(templatesDir, 'agents', 'lead.md'), 'utf8')
   const runtime = createLeadRuntime({
-    stores: context.stores, harnesses: context.harnesses, profiles: context.profiles, instructions,
+    withWriteLease: withWriteLease ?? ((stores, fn) => withCliLease(stores.taktDir, fn, { onRenewError: () => runtime.cancelAll() })), stores: context.stores, harnesses: context.harnesses, profiles: context.profiles, instructions,
     engineFactory: (deps) => createRunEngine({ ...context, ...deps }),
     workflows: {
       load: async (id) => resolveWorkflow(await loadRuntime(context.stores.projectDir), id),

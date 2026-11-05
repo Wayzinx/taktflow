@@ -1,9 +1,9 @@
 import { spawn } from 'node:child_process'
 import { realpathSync } from 'node:fs'
-import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { access, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { hostname, tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { createInsights, openProject, type AttentionItem, type RunState } from '@taktflow/core'
 import { repoRoot } from './project.js'
 
@@ -308,3 +308,85 @@ it('audit 检出直接修改及未登记的逐条证据，重复扫描去重；w
   await json(dir, ['ws', 'put', 'REQ-001', 'evidence/TC-1/result.json', join(workspace, 'evidence/TC-1/result.json'), '--kind', 'evidence'])
   expect(await json(dir, ['audit', 'verify', run.runId])).toMatchObject({ ok: true, untracked: [] })
 }, 30000)
+
+it('空间被占用时 run 拒绝并提示去 dsh 释放', async () => {
+  const dir = await runtimeProject(`[${human}]`)
+  await writeFile(join(dir, '.takt/lease.json'), JSON.stringify({
+    owner: 'serve:42', pid: process.pid, host: hostname(),
+    acquiredAt: '2020-01-01T00:00:00.000Z', heartbeatAt: new Date().toISOString(), ttlMs: 60_000,
+  }))
+  const result = await cli(dir, ['run', 'custom.workflow.ts', '--req', 'REQ-001'])
+  expect(result.code).toBe(2)
+  expect(result.stderr).toContain('空间正被 serve:42 使用')
+  expect(result.stderr).toContain('请在 dsh 里操作')
+})
+
+it('--takeover 接管失效租约后运行并释放', async () => {
+  const dir = await runtimeProject(`[${human}]`)
+  await writeFile(join(dir, '.takt/lease.json'), JSON.stringify({
+    owner: 'serve:42', pid: 1, host: 'another-host',
+    acquiredAt: '2020-01-01T00:00:00.000Z', heartbeatAt: '2020-01-01T00:00:00.000Z', ttlMs: 1,
+  }))
+  const run = await json<State>(dir, ['run', 'custom.workflow.ts', '--req', 'REQ-001', '--takeover'])
+  expect(run.status).toBe('waiting_human')
+  await expect(readFile(join(dir, '.takt/lease.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('cancel 取消等待中的运行并答复待办', async () => {
+  const dir = await runtimeProject(`[${human}]`)
+  const run = await json<State>(dir, ['run', 'custom.workflow.ts', '--req', 'REQ-001'])
+  expect(run.status).toBe('waiting_human')
+  const cancelled = await json<RunState>(dir, ['cancel', run.runId])
+  expect(cancelled.status).toBe('cancelled')
+  const stores = await openProject(dir)
+  const item = (await stores.attention.list()).find((entry) => entry.runId === run.runId)
+  expect(item?.decision).toBe('cancelled')
+  expect(await stores.events.verify(run.runId)).toEqual({ ok: true })
+  await expect(readFile(join(dir, '.takt/lease.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+}, 30000)
+
+it('信号早于业务启动时也取消运行并释放租约', async () => {
+  const dir = await runtimeProject(`[{ id: 'slow', kind: 'script', title: '慢', run: 'sleep 30' }]`)
+  const child = spawn(process.execPath, ['--import', 'tsx', entry, '--project', dir, 'run', 'custom.workflow.ts', '--req', 'REQ-001'], { cwd: repoRoot, stdio: 'pipe' })
+  const stderr: Buffer[] = []
+  child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
+  const closed = new Promise<number | null>((resolve, reject) => { child.on('error', reject); child.on('close', resolve) })
+  const lease = join(dir, '.takt/lease.json')
+  try {
+    // 租约文件出现说明信号监听已安装、acquire 已完成；此时通常还没走到 run.started。
+    await vi.waitFor(async () => { await access(lease) }, { timeout: 15000, interval: 5 })
+    child.kill('SIGINT')
+    expect(await closed).toBe(130)
+    const runs = await (await openProject(dir)).runs.list()
+    expect(runs.every((run) => run.status === 'cancelled')).toBe(true)
+    await expect(readFile(lease)).rejects.toMatchObject({ code: 'ENOENT' })
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL')
+    await closed.catch(() => undefined)
+    expect(stderr.toString()).not.toContain('取消失败')
+  }
+}, 40000)
+
+it('Ctrl-C 取消在途运行、等待收敛并释放租约', async () => {
+  const dir = await runtimeProject(`[{ id: 'slow', kind: 'script', title: '慢', run: 'sleep 30' }]`)
+  const child = spawn(process.execPath, ['--import', 'tsx', entry, '--project', dir, 'run', 'custom.workflow.ts', '--req', 'REQ-001'], { cwd: repoRoot, stdio: 'pipe' })
+  const stderr: Buffer[] = []
+  child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
+  const closed = new Promise<number | null>((resolve, reject) => { child.on('error', reject); child.on('close', resolve) })
+  const stores = await openProject(dir)
+  try {
+    await vi.waitFor(async () => {
+      const runs = await stores.runs.list()
+      expect(runs).toHaveLength(1)
+      expect(await stores.events.read(runs[0]!.runId, { types: ['node.started'] })).not.toHaveLength(0)
+    }, { timeout: 15000, interval: 50 })
+    child.kill('SIGINT')
+    expect(await closed).toBe(130)
+    expect((await stores.runs.list())[0]?.status).toBe('cancelled')
+    await expect(readFile(join(dir, '.takt/lease.json'))).rejects.toMatchObject({ code: 'ENOENT' })
+  } finally {
+    if (child.exitCode === null) child.kill('SIGKILL')
+    await closed.catch(() => undefined)
+    expect(stderr.toString()).not.toContain('取消失败')
+  }
+}, 40000)

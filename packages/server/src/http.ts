@@ -1,9 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { assertArtifactPath, assertNodeId, assertRequirementId, assertRunId, type Actor } from '@taktflow/core'
-
-export class HttpError extends Error {
-  constructor(readonly status: number, message: string) { super(message) }
-}
+import type { Actor } from '@taktflow/core'
+import { ApiError as HttpError } from './errors.js'
+export { ApiError as HttpError } from './errors.js'
+export { artifactPath, relativePath, runId, safeId, integer, text } from './validation.js'
 
 export function json(response: ServerResponse, value: unknown, status = 200): void {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -12,35 +11,11 @@ export function json(response: ServerResponse, value: unknown, status = 200): vo
 
 export function fail(response: ServerResponse, error: unknown): void {
   if (response.headersSent) { response.destroy(); return }
-  json(response, { error: error instanceof HttpError ? error.message : '服务器内部错误' }, error instanceof HttpError ? error.status : 500)
+  json(response, { error: error instanceof HttpError ? error.message : '服务器内部错误', ...(error instanceof HttpError && error.detail !== undefined ? { detail: error.detail } : {}) }, error instanceof HttpError ? error.status : 500)
 }
 
 export function decode(value: string): string {
   try { return decodeURIComponent(value) } catch { throw new HttpError(400, 'URL 编码不合法') }
-}
-
-function validated(value: unknown, validate: (value: string) => string): string {
-  if (typeof value !== 'string') throw new HttpError(400, '必须提供字符串路径或 ID')
-  try { return validate(value) } catch (error) {
-    throw new HttpError(400, error instanceof Error ? error.message : String(error))
-  }
-}
-
-export const safeId = (value: string): string => validated(value, assertRequirementId)
-export const runId = (value: string): string => validated(value, assertRunId)
-export const relativePath = (value: unknown): string => validated(value, assertNodeId)
-
-export const artifactPath = (value: unknown): string => validated(value, assertArtifactPath)
-
-export function integer(value: string | null, name: string, min = 0): number | undefined {
-  if (value === null) return undefined
-  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < min) throw new HttpError(400, `${name} 不合法`)
-  return Number(value)
-}
-
-export function text(value: unknown, name: string, empty = false): string {
-  if (typeof value !== 'string' || (!empty && !value.trim())) throw new HttpError(400, `${name} 必须是${empty ? '' : '非空'}字符串`)
-  return value
 }
 
 export async function jsonBody(request: IncomingMessage): Promise<unknown> {

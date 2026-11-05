@@ -14,7 +14,7 @@ function assertRequestId(requestId: string): string {
 }
 
 export class FsAttentionStore implements AttentionStore {
-  constructor(private readonly taktDir: string) {}
+  constructor(private readonly taktDir: string, private readonly checkFreshness?: (item: AttentionItem) => Promise<void>) {}
 
   async list(filter?: { pending?: boolean; requirementId?: string }): Promise<AttentionItem[]> {
     const merged = await this.merged()
@@ -44,6 +44,7 @@ export class FsAttentionStore implements AttentionStore {
       const current = merged.get(rid)
       if (!current) throw new Error(`待办不存在：${rid}`)
       if (current.answeredAt !== undefined) throw new AttentionAlreadyAnsweredError(rid)
+      if (!(input.decision === 'cancelled' && input.by.type === 'system')) await this.checkFreshness?.(current)
       const answered: AttentionItem = { ...current, answeredAt: new Date().toISOString(), answeredBy: input.by }
       if (input.decision !== undefined) answered.decision = input.decision
       if (input.answer !== undefined) answered.answer = input.answer

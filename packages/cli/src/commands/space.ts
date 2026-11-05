@@ -1,3 +1,4 @@
+import { withCliLease } from '../lease.js'
 import { cp, lstat, mkdir, readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { listSkills, type Actor, type WorkflowEdit, type WorkflowEditRequest, type RoomMessage } from '@taktflow/core'
@@ -9,6 +10,15 @@ import { createPrinter } from '../output.js'
 import { currentUser } from './ws.js'
 
 export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
+  const writes: Record<string, string[]> = { repo: ['add', 'sync'], skill: ['add'], member: ['add'], workflow: ['edit', 'rollback'], chat: ['post'] }
+  if (writes[cli.command ?? '']?.includes(cli.positionals[0]!)) {
+    const stores = await openStores(cli.options.project)
+    return withCliLease(stores.taktDir, () => dispatchSpaceCommand(cli), { takeover: cli.options.takeover })
+  }
+  return dispatchSpaceCommand(cli)
+}
+
+async function dispatchSpaceCommand(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
   const [sub, ...rest] = args
   const printer = createPrinter(options.json)

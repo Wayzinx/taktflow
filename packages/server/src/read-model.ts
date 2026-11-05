@@ -1,5 +1,6 @@
 import { reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
-import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
+import { ApiError as HttpError } from './errors.js'
+import { relativePath, runId as validRunId, safeId } from './validation.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
   const value = await stores.workspaces.getRequirement(safeId(id))

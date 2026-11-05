@@ -12,9 +12,16 @@ const allowed = (scope: Scope, file: string) => scope.profile.some((p) => matchG
 
 function metadata(file: string, requirements: string): boolean {
   const relative = file.startsWith(`${requirements}/`) ? file.slice(requirements.length + 1) : ''
-  if (/^[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp|\.lock)?$/.test(relative)) return true
-  return /^\.takt\/(runs|objects|chat)\//.test(file) ||
-    /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+  if (/^[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(relative)) return true
+  return /^\.takt\/(runs|objects)\//.test(file) ||
+    /^\.takt\/chat\/[^/]+\/(?:room\.json|messages\.jsonl)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/(?:space-events\.jsonl|space-chain\.json)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/workflow-revisions\/[^/]+\/(?:log\.jsonl|[a-f0-9]{64}\.ts)(?:\.[\w-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/lease\.json(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/status\/[^/]+\.(?:md|json)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/cache\//.test(file) ||
+    /^\.takt\/dsh\/bindings\.json(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/attention\.jsonl(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
 }
 

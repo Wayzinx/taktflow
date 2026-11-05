@@ -1,3 +1,6 @@
+import { acquireLease, releaseLease, readLease, withSpaceLease, type RoomMessage } from '@taktflow/core'
+import { createApiCore, type WriteOp } from './api-core.js'
+import { auditSpace, workflowStore } from './space.js'
 import { execFileSync } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -163,4 +166,109 @@ it('多空间前缀隔离数据、回调与默认空间，并拒绝重复空间 
     const config = JSON.parse(await readFile(file, 'utf8')); config.space = { id: 'duplicate' }; await writeFile(file, JSON.stringify(config))
   }
   await expect(createServer({ spacesDir: parent, port: 0 })).rejects.toThrow('重复')
+})
+
+
+it('api-core 覆盖 M2 读写操作，宿主 Actor 字段与工作流修订可回读', async () => {
+  const { stores, req } = await fixture()
+  let leased = 0
+  const core = createApiCore({ withWriteLease: async (_, fn) => { leased++; return fn() } })
+  const author = { type: 'human' as const, id: 'alice', via: 'dsh-web' }
+  expect(await core.read(stores, 'reviews', { id: req.id })).toEqual([])
+  expect(await core.read(stores, 'room', { id: req.id })).toMatchObject({ id: req.id })
+  await core.write(stores, 'space.members', {}, { members: [{ id: 'alice', name: 'Alice', role: 'owner' }], reason: '设置' }, author)
+  expect(await core.read(stores, 'space', {})).toMatchObject({ members: [{ id: 'alice' }] })
+  await core.write(stores, 'room.members', { id: req.id }, { members: [{ id: 'bob', name: 'Bob', kind: 'human' }] }, author)
+  const message = await core.write(stores, 'chat.send', { id: req.id }, { text: '讨论' }, author) as RoomMessage
+  expect(await core.read(stores, 'chat', { id: req.id, after: String(message.seq - 1), limit: '1' })).toMatchObject([{ id: message.id, author }])
+  await core.write(stores, 'space.file.edit', { kind: 'skill', name: 'demo' }, { content: 'skill', reason: '示例' }, author)
+  expect(await core.read(stores, 'space.file', { kind: 'skill', name: 'demo' })).toMatchObject({ content: 'skill' })
+  const first = await core.read(stores, 'workflow.source', { id: 'test' }) as WorkflowDocument
+  expect(await core.read(stores, 'workflows', {})).toMatchObject([{ id: 'test' }])
+  const edited = await core.write(stores, 'workflow.edit', { id: 'test' }, { baseRev: first.rev, edits: [{ op: 'setMeta', key: 'title', value: '宿主修改' }] }, author) as WorkflowDocument
+  expect(edited.source).toContain('宿主修改')
+  expect(await core.read(stores, 'workflow.revisions', { id: 'test' })).toMatchObject([{}, { author }])
+  expect(await core.read(stores, 'workflow.revision', { id: 'test', rev: edited.rev })).toMatchObject({ source: edited.source, revision: { author } })
+  expect(leased).toBeGreaterThanOrEqual(5)
+})
+
+it('每个 M2 写操作在处理请求体前经过租约；多空间只拦截被占用的空间', async () => {
+  const { root, stores, req } = await fixture()
+  const ops: WriteOp[] = ['artifact.edit', 'comment.add', 'attention.answer', 'space.members', 'space.repo.add', 'space.repo.sync', 'space.file.edit', 'room.members', 'chat.send', 'workflow.edit', 'workflow.source.replace', 'workflow.layout', 'workflow.rollback']
+  const hook = <T>(stores: import('@taktflow/core').ProjectStores, fn: () => Promise<T>) => withSpaceLease(stores.taktDir, 'serve:test', fn)
+  const core = createApiCore({ withWriteLease: hook })
+  await acquireLease(stores.taktDir, 'dsh:busy')
+  try {
+    for (const op of ops) await expect(core.write(stores, op, {}, () => { throw new Error('不应读取请求体') }, { type: 'human', id: 'alice' })).rejects.toMatchObject({ status: 409 })
+    const server = await start({ projectDir: root, withWriteLease: hook })
+    expect((await request(server, `/api/requirements/${req.id}/chat`, 'POST', { text: '拒绝' })).status).toBe(409)
+    expect((await request(server, `/api/requirements/${req.id}/chat`)).status).toBe(200)
+    expect((await stores.chat.list(req.id)).map((message) => message.text)).toEqual(['需求已创建'])
+  } finally { await releaseLease(stores.taktDir, 'dsh:busy') }
+  const parent = await mkdtemp(join(tmpdir(), 'takt-multi-lease-')); roots.push(parent)
+  const a = await initProject(join(parent, 'a')); const b = await initProject(join(parent, 'b'))
+  const ra = await a.workspaces.createRequirement({ title: 'A' }); const rb = await b.workspaces.createRequirement({ title: 'B' })
+  const server = await start({ spacesDir: parent, withWriteLease: hook })
+  await acquireLease(a.taktDir, 'dsh:a')
+  try {
+    expect((await request(server, `/api/s/a/requirements/${ra.id}/chat`, 'POST', { text: '拒绝' })).status).toBe(409)
+    expect((await request(server, `/api/s/b/requirements/${rb.id}/chat`, 'POST', { text: '允许' })).status).toBe(200)
+    expect((await b.chat.list(rb.id)).at(-1)?.text).toBe('允许')
+  } finally { await releaseLease(a.taktDir, 'dsh:a') }
+})
+
+it('后台 Lead 回调在 HTTP 返回后仍持有租约，结束后释放', async () => {
+  const { root, stores, req } = await fixture()
+  let release!: () => void; let started!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const ready = new Promise<void>((resolve) => { started = resolve })
+  let complete!: () => void
+  const completed = new Promise<void>((resolve) => { complete = resolve })
+  const server = await start({ projectDir: root,
+    withWriteLease: async (stores, fn) => { try { return await withSpaceLease(stores.taktDir, 'serve:callback', fn) } finally { if (!await readLease(stores.taktDir)) complete() } },
+    onLeadMention: async () => { started(); await gate },
+  })
+  try {
+    expect((await request(server, `/api/requirements/${req.id}/chat`, 'POST', { text: '@lead hi' })).status).toBe(200)
+    await ready
+    expect((await acquireLease(stores.taktDir, 'dsh:other')).ok).toBe(false)
+  } finally { release(); await completed }
+  expect(await readLease(stores.taktDir)).toBeUndefined()
+})
+
+it('空间审计保留链尾锚点，截尾后拒绝追加掩盖损坏', async () => {
+  const { stores } = await fixture()
+  const author = { type: 'human' as const, id: 'alice' }
+  await auditSpace(stores, author, '测试', '一')
+  await auditSpace(stores, author, '测试', '二')
+  const file = join(stores.taktDir, 'space-events.jsonl')
+  const text = await import('node:fs/promises').then((fs) => fs.readFile(file, 'utf8'))
+  await writeFile(file, text.split('\n')[0] + '\n')
+  await expect(auditSpace(stores, author, '测试', '三')).rejects.toThrow('空间审计链已损坏')
+})
+
+
+it('workflow 读取和 SSE 的外部修订登记也遵守租约，释放后恢复通知', async () => {
+  const { stores } = await fixture()
+  const core = createApiCore({ withWriteLease: (stores, fn) => withSpaceLease(stores.taktDir, 'serve:watch', fn) })
+  await acquireLease(stores.taktDir, 'dsh:other')
+  try {
+    await expect(core.read(stores, 'workflow', { id: 'test' })).rejects.toMatchObject({ status: 409 })
+    expect(await workflowStore(stores).revisions('test')).toEqual([])
+  } finally { await releaseLease(stores.taktDir, 'dsh:other') }
+  const document = await core.read(stores, 'workflow', { id: 'test' }) as WorkflowDocument
+  let receive!: (event: import('@taktflow/core').WorkflowChangedEvent) => void
+  const notification = new Promise<import('@taktflow/core').WorkflowChangedEvent>((resolve) => { receive = resolve })
+  const errors: unknown[] = []
+  const stop = core.subscribeWorkflow(stores, 'test', receive, (error) => errors.push(error))
+  try {
+    await acquireLease(stores.taktDir, 'dsh:other')
+    try {
+      await writeFile(join(stores.paths.workflows, 'test.workflow.ts'), document.source.replace('初始', '外部变更'))
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      expect(await workflowStore(stores).revisions('test')).toHaveLength(1)
+    } finally { await releaseLease(stores.taktDir, 'dsh:other') }
+    expect((await notification).revision.author).toMatchObject({ type: 'agent', harness: 'external' })
+    expect(errors).toEqual([])
+  } finally { await stop() }
 })

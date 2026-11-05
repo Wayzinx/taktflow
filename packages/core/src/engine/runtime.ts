@@ -1,3 +1,5 @@
+import { assertAnswerFreshness } from '../store/attention-freshness.js'
+import { assertSupportedNode } from './kinds.js'
 import { join, relative } from 'node:path'
 import type { AttentionItem, EngineDeps } from '../interfaces.js'
 import type { Actor, AgentNodeDef, HumanNodeDef, NodeContext, NodeDef, NodeState, PlannedItem, RunState, WorkflowDefinition } from '../types.js'
@@ -92,6 +94,7 @@ export class Runtime implements HarnessHost {
   }
   add(nodes: NodeDef[], parent?: string, scope = '', item?: PlannedItem, iteration?: number): string[] {
     for (const def of nodes) {
+      assertSupportedNode(def, scope)
       if (this.graph.has(def.id)) throw new Error(`节点 ID 冲突：${def.id}`)
       this.graph.set(def.id, { def, parent, scope, item, iteration })
       if (!this.state.nodes[def.id]) {
@@ -203,6 +206,7 @@ export class Runtime implements HarnessHost {
   }
   private async consume(entry: Entry, item: AttentionItem, actor = item.answeredBy ?? system): Promise<void> {
     const ns = this.state.nodes[entry.def.id]!
+    if (item.decision !== 'cancelled') await assertAnswerFreshness(this.deps.stores, item, ns)
     await this.recordAnswer(item, actor)
     if (entry.def.kind === 'review') { await answerReview(this, entry, item); await this.save(); return }
     const answer = { decision: item.decision, answer: item.answer }
@@ -247,6 +251,9 @@ export class Runtime implements HarnessHost {
     const requestId = prior.length ? `${base}#${prior.length + 1}` : base
     const item = await this.deps.stores.attention.create({
       requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices,
+      attempt: ns.attempts,
+      // 拷贝冻结：后续 NodeState.inputs 被改写不能影响待办的待审版本。
+      subjects: (ns.inputs ?? []).map((ref) => ({ ...ref })),
     })
     this.requests[ns.id] = requestId
     if (!this.signal.aborted) ns.status = 'waiting_human'
@@ -417,6 +424,7 @@ export class Runtime implements HarnessHost {
       case 'planner': await runPlanner(this, entry, ctx); break
       case 'review': await runReview(this, entry, ctx); break
       case 'subflow': throw new Error('not implemented')
+      default: throw new Error(`不支持的节点类型：${String((node as NodeDef).kind)}（节点 ${String((node as NodeDef).id)}）`)
     }
     return system
   }

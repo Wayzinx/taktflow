@@ -1,3 +1,4 @@
+import type { WriteLease } from './api-core.js'
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { openProject, type AttentionItem } from '@taktflow/core'
@@ -9,6 +10,7 @@ import { routes, STREAMING } from './routes.js'
 import { staticFile } from './static.js'
 
 export interface ServerOptions extends CatalogCallbacks {
+  withWriteLease?: WriteLease
   projectDir?: string
   spacesDir?: string
   onLeadMention?: LeadMention
@@ -30,7 +32,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const connections = new Set<() => void>()
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, options,
-    options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
+    options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention, options.withWriteLease)]))
   let closing = false
   const server = httpServer((request, response) => {
     void (async () => {
@@ -94,3 +96,5 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
 
 export { discoverSpaces, spaceId, spaceSummary, spaceDetail, workflowStore, repoManager, auditSpace, changeConfig, members, repoBinding, spaceFile, atomicWrite } from './space.js'
 export type { LeadMention } from './space-routes.js'
+
+export { createApiCore, ApiError, type ApiCore, type ApiCoreOptions, type EventStream, type ReadOp, type WriteOp, type WriteLease } from './api-core.js'

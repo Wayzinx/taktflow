@@ -1,98 +1,35 @@
-import { join } from 'node:path'
-import { access } from 'node:fs/promises'
-import { listReviews, type RoomMember, type RoomMessage } from '@taktflow/core'
-import { actor, body, jsonBody, HttpError, integer, text } from './http.js'
-import { atomicWrite, auditSpace, changeConfig, members, repoBinding, repoManager, spaceDetail, spaceFile } from './space.js'
+import type { ApiCore, ReadOp, WriteOp } from './api-core.js'
+import { actor, body, jsonBody, integer } from './http.js'
 import { requirement } from './read-model.js'
-import { stream } from './stream.js'
-import { STREAMING, type Handler } from './routes.js'
+import { streamEvents } from './stream.js'
+import { apiParams, STREAMING, type Handler } from './routes.js'
+export type { LeadMention } from './api-space.js'
 
-export type LeadMention = (requirementId: string, message: RoomMessage) => void | Promise<void>
-export function spaceRoutes(add: (method: string, path: string, handler: Handler) => void, connections: Set<() => void>, onLeadMention?: LeadMention) {
-  add('GET', '/api/space', ({ stores }) => spaceDetail(stores))
-  add('PUT', '/api/space/members', async ({ stores, request }) => {
-    const input = await jsonBody(request)
-    const record = input as Record<string, unknown> | null
-    const value = members(Array.isArray(input) ? input : record?.members)
-    const reason = Array.isArray(input) ? request.headers['x-takt-reason'] : record?.reason
-    await changeConfig(stores, actor(request), text(reason, 'reason'), '更新空间成员', (config) => { config.members = value })
-    return spaceDetail(stores)
-  })
-  add('POST', '/api/space/repos', async ({ stores, request }) => {
-    const input = await body(request)
-    const repo = repoBinding(input)
-    await changeConfig(stores, actor(request), text(input.reason, 'reason'), `绑定仓库 ${repo.id}`, (config) => {
-      if (config.repos?.some((item) => item.id === repo.id)) throw new HttpError(409, '仓库已绑定')
-      config.repos = [...config.repos ?? [], repo]
-    })
-    return spaceDetail(stores)
-  })
-  add('POST', '/api/space/repos/:repoId/sync', async ({ stores, request, params }) => {
-    const input = await body(request)
-    const reason = text(input.reason, 'reason')
-    if (!stores.config.repos?.some((repo) => repo.id === params.repoId)) throw new HttpError(404, '仓库不存在')
-    const result = await repoManager(stores).sync(params.repoId!)
-    await auditSpace(stores, actor(request), reason, `同步仓库 ${params.repoId}：${result.head}`)
-    return result
-  })
-  add('GET', '/api/space/files', async ({ stores, url }) => {
-    const file = await spaceFile(stores, url.searchParams.get('kind'), url.searchParams.get('name'))
-    if (!await access(join(stores.projectDir, file.path)).then(() => true, () => false)) throw new HttpError(404, '文件不存在')
-    return file
-  })
-  add('PUT', '/api/space/files', async ({ stores, url, request }) => {
-    const input = await body(request)
-    const content = text(input.content, 'content', true)
-    const reason = text(input.reason, 'reason')
-    const file = await spaceFile(stores, url.searchParams.get('kind'), url.searchParams.get('name'))
-    await auditSpace(stores, actor(request), reason, `编辑 ${file.path}`)
-    await atomicWrite(join(stores.projectDir, file.path), content)
-    return { ...file, content }
-  })
-  add('GET', '/api/requirements/:id/reviews', async ({ stores, params }) => {
-    await requirement(stores, params.id!)
-    return listReviews(stores, params.id!)
-  })
-  add('GET', '/api/requirements/:id/room', async ({ stores, params }) => {
-    const req = await requirement(stores, params.id!)
-    return stores.chat.ensureRoom(req.id, { title: req.title })
-  })
-  add('POST', '/api/requirements/:id/room/members', async ({ stores, params, request }) => {
-    await requirement(stores, params.id!)
-    const input = await jsonBody(request)
-    const entries = Array.isArray(input) ? input : (input as Record<string, unknown> | null)?.members
-    if (!Array.isArray(entries)) throw new HttpError(400, 'members 必须是数组')
-    const value = entries.map((member: RoomMember) => {
-      if (!member || !['human', 'lead', 'agent'].includes(member.kind)) throw new HttpError(400, '群成员类型不合法')
-      return { id: text(member.id, 'id'), name: text(member.name, 'name'), kind: member.kind, ...(member.role ? { role: text(member.role, 'role') } : {}) }
-    })
-    return stores.chat.addMembers(params.id!, value)
-  })
-  add('GET', '/api/requirements/:id/chat', async ({ stores, params, url }) => {
-    await requirement(stores, params.id!)
-    return stores.chat.list(params.id!, { afterSeq: integer(url.searchParams.get('after'), 'after'), limit: integer(url.searchParams.get('limit'), 'limit', 1) })
-  })
-  add('POST', '/api/requirements/:id/chat', async ({ stores, params, request }) => {
-    await requirement(stores, params.id!)
-    const input = await body(request)
-    const content = text(input.text, 'text')
-    if (input.mentions !== undefined && (!Array.isArray(input.mentions) || input.mentions.some((id) => typeof id !== 'string'))) throw new HttpError(400, 'mentions 必须是字符串数组')
-    const mentions = [...new Set([...(input.mentions as string[] ?? []), ...(/(^|\s)@lead\b/i.test(content) ? ['lead'] : [])])]
-    const message = await stores.chat.post(params.id!, { text: content, kind: 'text', author: actor(request), mentions,
-      ...(input.replyTo === undefined ? {} : { replyTo: text(input.replyTo, 'replyTo') }) })
-    if (mentions.includes('lead') && onLeadMention) void Promise.resolve().then(() => onLeadMention(params.id!, message)).catch(async (error: unknown) => {
-      await stores.chat.post(params.id!, { kind: 'system', author: { type: 'system', id: 'server' }, replyTo: message.id, text: `Lead 回调失败：${error instanceof Error ? error.message : String(error)}` })
-    }).catch(() => {})
-    return message
-  })
+export function spaceRoutes(add: (method: string, path: string, handler: Handler) => void, connections: Set<() => void>, core: ApiCore) {
+  const read = (op: ReadOp): Handler => (ctx) => core.read(ctx.stores, op, apiParams(ctx.url, ctx.params))
+  const write = (op: WriteOp): Handler => (ctx) => core.write(ctx.stores, op, apiParams(ctx.url, ctx.params), async () => {
+    if (op === 'space.members' || op === 'room.members') {
+      const input = await jsonBody(ctx.request)
+      return Array.isArray(input) ? { members: input, reason: ctx.request.headers['x-takt-reason'] } : input
+    }
+    return body(ctx.request)
+  }, actor(ctx.request))
+  add('GET', '/api/space', read('space'))
+  add('PUT', '/api/space/members', write('space.members'))
+  add('POST', '/api/space/repos', write('space.repo.add'))
+  add('POST', '/api/space/repos/:repoId/sync', write('space.repo.sync'))
+  add('GET', '/api/space/files', read('space.file'))
+  add('PUT', '/api/space/files', write('space.file.edit'))
+  add('GET', '/api/requirements/:id/reviews', read('reviews'))
+  add('GET', '/api/requirements/:id/room', read('room'))
+  add('POST', '/api/requirements/:id/room/members', write('room.members'))
+  add('GET', '/api/requirements/:id/chat', read('chat'))
+  add('POST', '/api/requirements/:id/chat', write('chat.send'))
   add('GET', '/api/requirements/:id/chat/stream', async ({ stores, params, request, response, url }) => {
     await requirement(stores, params.id!)
     const cursor = url.searchParams.get('after') ?? (typeof request.headers['last-event-id'] === 'string' ? request.headers['last-event-id'] : null)
-    // 复用运行 SSE 的先订阅再回放和 seq 去重；消息仍保持原协议，未转换为事件信封。
-    const chat = stores.chat
-    const id = params.id!
-    await stream({ read: (_, opts) => chat.list(id, opts), subscribe: (_, send) => chat.subscribe(id, send) },
-      id, integer(cursor, 'after') ?? 0, response, connections)
+    const controller = new AbortController()
+    await streamEvents(core.chat(stores, params.id!, integer(cursor, 'after'), controller.signal), controller, response, connections)
     return STREAMING
   })
 }

@@ -19,8 +19,10 @@ export type NodeId = string
 
 /** 谁做的事：人、某个角色的 agent、或系统本身。审计里的每一条记录都带 actor。 */
 export type Actor =
-  | { type: 'human'; id: string }
-  | { type: 'agent'; role: string; harness: string; model?: string }
+  /** via：入口渠道（dsh-web / dsh:user-questions / cli / web 等）。 */
+  | { type: 'human'; id: string; via?: string }
+  /** onBehalfOf：agent 代表谁执行（例如 dsh 里的 Lead 会话）。 */
+  | { type: 'agent'; role: string; harness: string; model?: string; onBehalfOf?: string }
   | { type: 'system'; id: string }
 
 export interface Usage {
