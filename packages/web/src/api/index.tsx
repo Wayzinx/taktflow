@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createHttpSource, probeApi } from './client'
-import { createMockSource } from './mock'
+import { createMockSource } from './mock-source'
 import type { DataSource } from './source'
 
 export type { DataSource, NodeView } from './source'

@@ -1,10 +1,11 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { BookOpen, ChevronRight, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, X } from 'lucide-react'
-import { useAsync, useSource } from '../api'
+import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
 import { REQ_STATUS } from '../lib/status'
 import { useTheme, type ThemePref } from '../lib/theme'
 import { CommandPalette, setPaletteOpen } from './command-palette'
+import { SpaceSwitcher } from './space-switcher'
 import { TaktBeat } from './takt'
 import { StatusDot } from './ui'
 import './layout.css'
@@ -76,17 +77,14 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements },
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
     { to: '/knowledge', label: '知识源', icon: BookOpen, active: path === '/knowledge', soon: true },
-    { to: '/settings', label: '设置', icon: Settings, active: path === '/settings' },
+    { to: '/settings', label: '空间设置', icon: Settings, active: path === '/settings' || path.startsWith('/workflows') },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []
   return (
     <aside className={`sidebar${open ? ' open' : ''}`} aria-label="主导航">
       <div className="sb-brand">
         <Logo />
-        <div className="sb-brand-text">
-          <div className="sb-product">taktflow</div>
-          <div className="sb-project truncate">{project.data?.name ?? '…'}</div>
-        </div>
+        <SpaceSwitcher fallbackName={project.data?.name} />
         <button className="sb-close btn-icon" onClick={onClose} aria-label="收起导航">
           <X aria-hidden />
         </button>
@@ -171,8 +169,15 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false)
-  const { path } = useLocation()
+  const { path, spaceId } = useLocation()
   useEffect(() => setNavOpen(false), [path])
+  // 切换空间：所有查询按新空间重新拉取
+  const lastSpace = useRef(spaceId)
+  useEffect(() => {
+    if (lastSpace.current === spaceId) return
+    lastSpace.current = spaceId
+    invalidate()
+  }, [spaceId])
   return (
     <div className="shell">
       <a className="skip-link" href="#main">跳到正文</a>

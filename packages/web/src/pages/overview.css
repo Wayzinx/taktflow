@@ -27,6 +27,15 @@
 .attention-panel {
   position: sticky;
   top: calc(var(--topbar-h) + 16px);
+  display: flex;
+  flex-direction: column;
+  /* 吸顶时整列不能比视口高，否则最后几条待办永远滚不到 */
+  max-height: calc(100dvh - var(--topbar-h) - 32px);
+}
+.attention-panel-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .req-table td {
@@ -87,6 +96,7 @@
   }
   .attention-panel {
     position: static;
+    max-height: none;
   }
 }
 .req-table {
@@ -95,7 +105,9 @@
 
 /* ---------------------------------------------------------------- 待办页 */
 .attention-page {
+  /* 与其他页同一左缘起排：面包屑、标题、卡片对齐同一条线 */
   max-width: 920px;
+  margin-inline: 0;
 }
 .att-groups {
   display: grid;

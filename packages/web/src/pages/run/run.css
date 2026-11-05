@@ -40,14 +40,14 @@
   white-space: nowrap;
 }
 .run-wf {
-  font-size: 11.5px;
+  font-size: var(--text-meta);
   color: var(--text-3);
 }
 .run-facts {
   display: flex;
   align-items: center;
   gap: 18px;
-  font-size: 12.5px;
+  font-size: var(--text-ui);
   min-width: 0;
   overflow: hidden;
 }
@@ -58,7 +58,7 @@
   white-space: nowrap;
 }
 .run-facts label {
-  font-size: 11.5px;
+  font-size: var(--text-meta);
   color: var(--text-3);
 }
 .audit-pill {
@@ -68,7 +68,7 @@
   height: 22px;
   padding: 0 8px;
   border-radius: var(--radius-pill);
-  font-size: 11.5px;
+  font-size: var(--text-meta);
   font-weight: 560;
   color: var(--st-success);
   background: var(--st-success-soft);
@@ -194,7 +194,7 @@
   gap: 14px;
   padding: 6px 10px;
   border-radius: 8px;
-  font-size: 11.5px;
+  font-size: var(--text-meta);
   color: var(--text-2);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   border: 1px solid var(--border);
@@ -249,7 +249,7 @@
   position: relative;
   width: 220px;
   height: 66px;
-  padding: 9px 10px 8px 13px;
+  padding: 9px 10px 8px 11px;
   border-radius: 10px;
   background: var(--surface);
   border: 1px solid var(--border-strong);
@@ -260,16 +260,6 @@
 .dag-node:hover {
   border-color: color-mix(in srgb, var(--tone) 55%, var(--border-strong));
   box-shadow: var(--shadow-md);
-}
-.dag-bar {
-  position: absolute;
-  left: -1px;
-  top: -1px;
-  bottom: -1px;
-  width: 4px;
-  border-radius: 10px 0 0 10px;
-  background: var(--tone);
-  transition: background 300ms var(--ease);
 }
 .dag-row {
   display: flex;
@@ -320,7 +310,7 @@
   height: 17px;
   padding: 0 6px;
   border-radius: var(--radius-pill);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-2);
   background: var(--surface);
@@ -332,8 +322,8 @@
   color: var(--st-waiting);
   border-color: color-mix(in srgb, var(--st-waiting) 40%, transparent);
 }
-.dag-node.st-succeeded .dag-bar {
-  background: var(--st-success);
+.dag-node.st-succeeded {
+  border-color: color-mix(in srgb, var(--st-success) 34%, var(--border-strong));
 }
 .dag-node.st-running {
   border-color: color-mix(in srgb, var(--st-running) 55%, transparent);
@@ -358,9 +348,9 @@
   box-shadow: none;
   background: var(--surface-2);
 }
-.dag-node.st-skipped > *:not(.dag-bar),
-.dag-node.st-cancelled > *:not(.dag-bar) {
-  opacity: 0.55;
+.dag-node.st-skipped > *,
+.dag-node.st-cancelled > * {
+  opacity: 0.75;
 }
 .dag-node.st-pending,
 .dag-node.st-ready {
@@ -370,9 +360,6 @@
 .dag-node.st-pending .dag-title,
 .dag-node.st-ready .dag-title {
   color: var(--text-2);
-}
-.dag-node.st-pending .dag-bar {
-  background: var(--border-strong);
 }
 .dag-node.selected {
   border-color: var(--accent);
@@ -420,7 +407,7 @@
   white-space: nowrap;
   align-items: center;
   gap: 4px;
-  font-size: 11.5px;
+  font-size: var(--text-meta);
   font-weight: 560;
   color: var(--tone);
 }
@@ -430,7 +417,7 @@
 }
 .dag-group-note {
   min-width: 0;
-  font-size: 11.5px;
+  font-size: var(--text-meta);
   color: var(--text-3);
 }
 
@@ -450,11 +437,11 @@
   border-bottom: 1px solid var(--divider);
 }
 .dag-lane-idx {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-3);
 }
 .dag-lane-title {
-  font-size: 12.5px;
+  font-size: var(--text-ui);
   font-weight: 620;
   color: var(--text);
 }

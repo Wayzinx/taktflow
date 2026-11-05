@@ -682,7 +682,7 @@
 }
 .hbar {
   display: grid;
-  grid-template-columns: 170px minmax(0, 1fr) 48px auto;
+  grid-template-columns: 204px minmax(0, 1fr) 48px auto;
   align-items: center;
   gap: 12px;
   font-size: var(--text-ui);
@@ -700,7 +700,7 @@
 .hbar-key {
   font-size: var(--text-label);
   color: var(--text-3);
-  width: 92px;
+  width: 124px;
   flex: none;
   overflow: hidden;
   text-overflow: ellipsis;

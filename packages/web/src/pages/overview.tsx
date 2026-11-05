@@ -126,7 +126,7 @@ export function OverviewPage() {
               {p.attention.length === 0 ? (
                 <EmptyState compact icon={Inbox} title="没有等你处理的事" hint="审批、澄清问题、门禁裁决会出现在这里。" />
               ) : (
-                <div>
+                <div className="attention-panel-list">
                   {p.attention.map((a) => (
                     <AttentionCard key={a.requestId} item={a} reqTitle={titleOf(a.requirementId)} compact />
                   ))}

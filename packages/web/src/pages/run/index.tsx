@@ -13,8 +13,10 @@ import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
 import { useIsDark } from '../../lib/theme'
 import { layoutRun, type FlowNode } from './dag-layout'
 import { nodeTypes } from './dag-nodes'
+import { edgeTypes } from './dag-edges'
 import { NodeDrawer } from './node-drawer'
 import './run.css'
+import './run-motion.css'
 
 /** 图例和右上角工具条大约占 52px，fitView 时顶部至少留这么多，泳道列头才不会被盖住。 */
 const PANEL_CLEARANCE = 60
@@ -37,6 +39,24 @@ function useMiniMapPref(): [boolean, (v: boolean) => void] {
     }
   }
   return [on, set]
+}
+
+/** 抽屉收起动画的时长，与 run-motion.css 的 drawer-out 保持一致。 */
+const DRAWER_EXIT_MS = 180
+
+/** 关抽屉时让它多留一会儿播完收起动画；切换节点则立即换内容。 */
+function useLinger(id: string | undefined, ms: number): { id?: string; closing: boolean } {
+  const [last, setLast] = useState(id)
+  useEffect(() => {
+    if (id) {
+      setLast(id)
+      return
+    }
+    const t = setTimeout(() => setLast(undefined), ms)
+    return () => clearTimeout(t)
+  }, [id, ms])
+  if (id) return { id, closing: false }
+  return { id: last, closing: last !== undefined }
 }
 
 function useNow(active: boolean) {
@@ -99,6 +119,7 @@ export function RunPage({ runId }: { runId: string }) {
   const running = d?.run.status === 'running'
   const now = useNow(running)
   const stages = d?.stages ?? []
+  const drawer = useLinger(selected, DRAWER_EXIT_MS)
 
   if (q.error && !d) return <ErrorState error={q.error} onRetry={q.reload} />
 
@@ -161,7 +182,9 @@ export function RunPage({ runId }: { runId: string }) {
       </header>
       <div className="run-body">
         {d ? <RunCanvas detail={d} selected={selected} /> : <div className="run-canvas-skeleton"><Skeleton w="100%" h={9999} r={0} /></div>}
-        {d && selected && d.run.nodes[selected] && <NodeDrawer runId={runId} requirementId={d.run.requirementId} nodeId={selected} graphNode={d.graph.nodes.find((n) => n.id === selected)} expansions={d.run.expansions} liveTick={liveTick} />}
+        {d && drawer.id && d.run.nodes[drawer.id] && (
+          <NodeDrawer closing={drawer.closing} runId={runId} requirementId={d.run.requirementId} nodeId={drawer.id} graphNode={d.graph.nodes.find((n) => n.id === drawer.id)} expansions={d.run.expansions} liveTick={liveTick} />
+        )}
       </div>
     </div>
   )
@@ -196,6 +219,7 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
         nodes={layout.nodes}
         edges={layout.edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         colorMode={dark ? 'dark' : 'light'}
         onInit={(i) => {
           rf.current = i

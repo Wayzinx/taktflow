@@ -1,4 +1,5 @@
 import { MarkerType, type Edge, type Node, type BuiltInEdge } from '@xyflow/react'
+import type { FlowEdge } from './dag-edges'
 import type { Expansion, GraphEdge, GraphNode, StageDef, StageProgress, Usage } from '@taktflow/core'
 import { VERDICT } from '../../lib/status'
 import { nodeLabel, type NodeLabel } from './node-label'
@@ -244,7 +245,7 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
     }
     drawn.push(e)
   }
-  const edges: BuiltInEdge[] = []
+  const edges: (BuiltInEdge | FlowEdge)[] = []
   drawn.forEach((e, i) => {
     if (e.kind === 'dep' && routePairs.has(`${e.from}→${e.to}`)) return
     const s = abs.get(e.from)
@@ -281,25 +282,28 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
             ? 'var(--st-running)'
             : 'var(--edge)'
     const dash = e.kind === 'route' ? '6 4' : e.kind === 'expand' ? '1 5' : undefined
-    edges.push({
+    const offset = sourceHandle === 'ls' ? 28 : sourceHandle === 'b' ? Math.max(4, Math.min(18, (t.y - s.y - s.h) / 2 - 2)) : 18
+    // 数据正在流过（上游已产出、下游在跑）：换成带节拍光点的 flow 边；planner 展开线不算数据流
+    const flowing = live && e.kind !== 'expand'
+    const common = {
       id: `e${i}-${e.from}-${e.to}`,
       source: e.from,
       target: e.to,
       sourceHandle,
       targetHandle,
-      type: 'smoothstep',
-      // 上下相邻的 b → t 边间距很小，默认 offset 会先下探再折回，画出一个驼峰
-      pathOptions: { borderRadius: 12, offset: sourceHandle === 'ls' ? 28 : sourceHandle === 'b' ? Math.max(4, Math.min(18, (t.y - s.y - s.h) / 2 - 2)) : 18 },
-      animated: live,
       label: e.kind === 'route' ? (VERDICT[e.label as keyof typeof VERDICT]?.label ?? e.label) : undefined,
-      labelStyle: { fontSize: 10.5, fontWeight: 600, fill: color },
+      labelStyle: { fontSize: 11, fontWeight: 600, fill: color },
       labelBgStyle: { fill: 'var(--surface)', stroke: color, strokeOpacity: 0.35 },
       labelBgPadding: [6, 3] as [number, number],
       labelBgBorderRadius: 4,
       markerEnd: e.kind === 'expand' ? undefined : { type: MarkerType.ArrowClosed, width: 14, height: 14, color },
-      style: { stroke: color, strokeWidth: e.kind === 'dep' ? 1.4 : 1.6, strokeDasharray: dash, strokeLinecap: 'round', opacity: inactive ? 0.4 : 1 },
-      zIndex: 3,
-    })
+      style: { stroke: color, strokeWidth: flowing ? 1.8 : e.kind === 'dep' ? 1.4 : 1.6, strokeDasharray: dash, strokeLinecap: 'round' as const, opacity: inactive ? 0.4 : 1 },
+      zIndex: flowing ? 5 : 3,
+      className: flowing ? 'is-flowing' : undefined,
+    }
+    // 上下相邻的 b → t 边间距很小，默认 offset 会先下探再折回，画出一个驼峰
+    if (flowing) edges.push({ ...common, type: 'flow', data: { offset, borderRadius: 12, color } })
+    else edges.push({ ...common, type: 'smoothstep', pathOptions: { borderRadius: 12, offset } })
   })
 
   flow.push(...lanes, ...groups, ...leaves)

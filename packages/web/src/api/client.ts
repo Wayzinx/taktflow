@@ -1,4 +1,5 @@
 import type { ApiError } from '@taktflow/core'
+import { currentSpaceId } from '../lib/space'
 import type { DataSource } from './source'
 
 export class ApiRequestError extends Error {
@@ -22,8 +23,13 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
 
 /** 基于 fetch 的类型化客户端，路由与 packages/core/src/api.ts 顶部的接口表一一对应。 */
 export function createHttpSource(base = '/api'): DataSource {
+  // 多空间：当前 URL 带 /s/:spaceId 时所有接口加同样的前缀；/spaces 列表本身不加
+  const scoped = (path: string) => {
+    const sid = currentSpaceId()
+    return sid && path !== '/spaces' ? `${base}/s/${enc(sid)}${path}` : base + path
+  }
   async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(base + path, {
+    const res = await fetch(scoped(path), {
       method,
       headers: body === undefined ? undefined : { 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
@@ -59,18 +65,32 @@ export function createHttpSource(base = '/api'): DataSource {
     answer: (requestId, body) => req('POST', `/attention/${enc(requestId)}`, body),
     harnesses: () => get('/harnesses'),
     models: () => get('/models'),
-    subscribe(runId, onEvent) {
-      const es = new EventSource(`${base}/runs/${enc(runId)}/stream`)
-      es.onmessage = (m) => {
-        try {
-          onEvent(JSON.parse(m.data as string))
-        } catch {
-          // 非 JSON 的保活行忽略
-        }
-      }
-      return () => es.close()
-    },
+    subscribe: (runId, onEvent) => stream(scoped(`/runs/${enc(runId)}/stream`), onEvent),
+    spaces: () => get('/spaces'),
+    space: () => get('/space'),
+    setMembers: (members) => req('PUT', '/space/members', members),
+    addRepo: (repo) => req('POST', '/space/repos', repo),
+    syncRepo: (repoId) => req('POST', `/space/repos/${enc(repoId)}/sync`),
+    spaceFile: (kind, name) => get(`/space/files${qs({ kind, name })}`),
+    saveSpaceFile: (kind, name, body) => req('PUT', `/space/files${qs({ kind, name })}`, body),
+    room: (id) => get(`/requirements/${enc(id)}/room`),
+    addRoomMembers: (id, members) => req('POST', `/requirements/${enc(id)}/room/members`, members),
+    chat: (id, opts = {}) => get(`/requirements/${enc(id)}/chat${qs({ after: opts.after, limit: opts.limit })}`),
+    postChat: (id, body) => req('POST', `/requirements/${enc(id)}/chat`, body),
+    subscribeChat: (id, onMessage) => stream(scoped(`/requirements/${enc(id)}/chat/stream`), onMessage),
   }
+}
+
+function stream<T>(url: string, on: (v: T) => void): () => void {
+  const es = new EventSource(url)
+  es.onmessage = (m) => {
+    try {
+      on(JSON.parse(m.data as string) as T)
+    } catch {
+      // 非 JSON 的保活行忽略
+    }
+  }
+  return () => es.close()
 }
 
 /** 真实 API 是否可达（1.5 秒超时）。 */

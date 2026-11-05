@@ -1,0 +1,135 @@
+import { useEffect, useState } from 'react'
+import { FileText, Save, Sparkles, UserRoundCog } from 'lucide-react'
+import type { SpaceDetail } from '@taktflow/core'
+import { useAsync, useSource } from '../../api'
+import type { SpaceFileKind } from '../../api/source'
+import { EmptyState, ErrorState, SkeletonRows, toast } from '../../components/ui'
+import { setQuery, useLocation } from '../../lib/router'
+
+interface Entry {
+  name: string
+  title: string
+  description: string
+  meta: string[]
+}
+
+function entries(kind: SpaceFileKind, sp: SpaceDetail): Entry[] {
+  if (kind === 'skill') return sp.skills.map((s) => ({ name: s.name, title: s.name, description: s.description, meta: [s.path] }))
+  return sp.agents.map((a) => ({ name: a.role, title: a.title, description: a.description, meta: [a.role, [a.harness.harness, a.harness.model].filter(Boolean).join(' · '), `写 ${a.writeScope.join(' ')}`] }))
+}
+
+/** 粗略的改动行数：按行号逐行比较，够用来提示"改了多少"。 */
+function changedLines(a: string, b: string): number {
+  const x = a.split('\n')
+  const y = b.split('\n')
+  let n = Math.abs(x.length - y.length)
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) n++
+  return n
+}
+
+function Editor({ kind, name }: { kind: SpaceFileKind; name: string }) {
+  const ds = useSource()
+  const q = useAsync((d) => d.spaceFile(kind, name), [kind, name])
+  const [text, setText] = useState('')
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const original = q.data?.content
+  useEffect(() => {
+    if (original !== undefined) setText(original)
+    setReason('')
+  }, [original])
+
+  if (q.error && !q.data) return <ErrorState error={q.error} onRetry={q.reload} />
+  if (!q.data) return <SkeletonRows rows={10} />
+  const changed = original === undefined ? 0 : changedLines(original, text)
+
+  async function save() {
+    setBusy(true)
+    try {
+      await ds.saveSpaceFile(kind, name, { content: text, reason: reason.trim() })
+      toast(`已保存 ${q.data!.path}`, { body: `原因：${reason.trim()}。运行前会同步到各 harness 的技能目录。` })
+      q.reload()
+    } catch (e) {
+      toast('保存失败', { body: (e as Error).message, tone: 'failed' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="file-editor">
+      <div className="file-editor-head">
+        <FileText aria-hidden />
+        <span className="mono truncate">{q.data.path}</span>
+        <span className="spacer" />
+        {changed > 0 ? <span className="file-dirty">改动 <span className="num">{changed}</span> 行</span> : <span className="faint">未修改</span>}
+      </div>
+      <textarea className="textarea mono file-text" spellCheck={false} aria-label={`${q.data.path} 内容`} value={text} onChange={(e) => setText(e.target.value)} />
+      <div className="file-save">
+        <label className="grow">
+          <span className="field-label">修改原因（必填，写进修订记录）</span>
+          <input className="input" placeholder="例如：补充舍入方式示例" value={reason} onChange={(e) => setReason(e.target.value)} disabled={changed === 0} />
+        </label>
+        <button className="btn" onClick={() => setText(original ?? '')} disabled={changed === 0 || busy}>
+          还原
+        </button>
+        <button className="btn btn-primary" onClick={save} disabled={changed === 0 || !reason.trim() || busy}>
+          <Save />
+          保存
+        </button>
+      </div>
+    </div>
+  )
+}
+
+export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDetail }) {
+  const { query } = useLocation()
+  if (!space) return <div className="card"><SkeletonRows rows={6} /></div>
+  const list = entries(kind, space)
+  const isSkill = kind === 'skill'
+  if (list.length === 0) {
+    return (
+      <div className="card">
+        <EmptyState
+          icon={isSkill ? Sparkles : UserRoundCog}
+          title={isSkill ? '还没有技能' : '还没有角色'}
+          hint={
+            isSkill ? (
+              <>技能是团队沉淀的做事方法，运行前同步进每个 harness 的技能目录。用 <span className="mono">takt skill add &lt;目录&gt;</span> 导入，或在 <span className="mono">skills/&lt;名字&gt;/SKILL.md</span> 新建。</>
+            ) : (
+              <>角色决定节点由谁来做：说明、默认 harness 与写权限。在 <span className="mono">agents/&lt;角色&gt;.md</span> 新建后刷新。</>
+            )
+          }
+        />
+      </div>
+    )
+  }
+  const selected = list.find((e) => e.name === query.get('name')) ?? list[0]!
+  return (
+    <div className="files-layout">
+      <ul className="card file-list" aria-label={isSkill ? '技能列表' : '角色列表'}>
+        {list.map((e) => (
+          <li key={e.name}>
+            <button className={`file-item${e.name === selected.name ? ' on' : ''}`} aria-current={e.name === selected.name ? 'true' : undefined} onClick={() => setQuery({ name: e.name })}>
+              <span className="file-item-title">
+                <span className={isSkill ? 'mono' : undefined}>{e.title}</span>
+                {!isSkill && <span className="faint mono">{e.name}</span>}
+              </span>
+              <span className="file-item-desc">{e.description}</span>
+              {!isSkill && (
+                <span className="file-item-meta mono">
+                  {e.meta.slice(1).map((m) => (
+                    <span key={m} className="truncate">{m}</span>
+                  ))}
+                </span>
+              )}
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="card">
+        <Editor key={selected.name} kind={kind} name={selected.name} />
+      </div>
+    </div>
+  )
+}

@@ -103,7 +103,7 @@
   align-items: center;
 }
 .avatar-stack > * + * {
-  margin-left: -5px;
+  margin-left: -2px;
 }
 .avatar.more {
   width: 22px;
@@ -186,6 +186,8 @@
   color: var(--text-2);
   font-size: var(--text-ui);
   font-weight: 500;
+  white-space: nowrap;
+  flex: none;
   transition: color var(--dur) var(--ease);
 }
 .tab svg {

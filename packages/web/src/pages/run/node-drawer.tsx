@@ -48,7 +48,7 @@ function useDrawerWidth(): [number, (e: ReactMouseEvent) => void] {
   return [w, start]
 }
 
-export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions, liveTick }: { runId: string; requirementId: string; nodeId: string; graphNode?: GraphNode; expansions: Expansion[]; liveTick: number }) {
+export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions, liveTick, closing = false }: { runId: string; requirementId: string; nodeId: string; graphNode?: GraphNode; expansions: Expansion[]; liveTick: number; closing?: boolean }) {
   const { query } = useLocation()
   const q = useAsync((ds) => ds.node(runId, nodeId), [runId, nodeId, liveTick])
   const [width, startResize] = useDrawerWidth()
@@ -79,7 +79,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
   const status = d?.state.status ?? graphNode?.status
 
   return (
-    <aside className="drawer" style={{ width } as CSSProperties} aria-label="节点详情">
+    <aside className={`drawer${closing ? ' closing' : ''}`} style={{ width } as CSSProperties} aria-label="节点详情" inert={closing || undefined}>
       <div className="drawer-resize" onMouseDown={startResize} title="拖动调整宽度" />
       <div className="drawer-head">
         <div className="drawer-title-row">

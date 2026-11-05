@@ -53,7 +53,7 @@ export const BUDGET = 32_000
 
 // ============================================================ workflow 模板（与 templates/workflows/sdlc.workflow.ts 对齐）
 
-interface TplNode {
+export interface TplNode {
   id: string
   kind: NodeKind
   title: string

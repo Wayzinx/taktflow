@@ -1,6 +1,10 @@
 import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react'
+import { splitSpace, spacePath } from './space'
 
-/** 极简路由：history.pushState + useSyncExternalStore。mock / theme 两个全局查询参数在跳转时自动保留。 */
+/**
+ * 极简路由：history.pushState + useSyncExternalStore。mock / theme 两个全局查询参数在跳转时自动保留。
+ * 当前 URL 带空间前缀（/s/:spaceId）时，站内绝对路径自动补上同一个前缀，页面里照常写 /req/xxx。
+ */
 
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((l) => l())
@@ -10,6 +14,8 @@ const STICKY = ['mock', 'theme']
 
 function withSticky(to: string): string {
   const url = new URL(to, location.origin)
+  const { spaceId } = splitSpace(location.pathname)
+  if (spaceId && !url.pathname.startsWith('/s/')) url.pathname = spacePath(spaceId, url.pathname)
   const current = new URLSearchParams(location.search)
   for (const key of STICKY) {
     const v = current.get(key)
@@ -49,10 +55,12 @@ const subscribe = (cb: () => void) => {
 }
 const snapshot = () => location.pathname + location.search
 
-export function useLocation(): { path: string; query: URLSearchParams } {
+/** path 是去掉空间前缀后的站内路径；spaceId 为 undefined 表示默认空间。 */
+export function useLocation(): { path: string; query: URLSearchParams; spaceId?: string } {
   const s = useSyncExternalStore(subscribe, snapshot)
   const i = s.indexOf('?')
-  return { path: i < 0 ? s : s.slice(0, i), query: new URLSearchParams(i < 0 ? '' : s.slice(i)) }
+  const { spaceId, rest } = splitSpace(i < 0 ? s : s.slice(0, i))
+  return { path: rest, spaceId, query: new URLSearchParams(i < 0 ? '' : s.slice(i)) }
 }
 
 export function matchPath(pattern: string, path: string): Record<string, string> | null {

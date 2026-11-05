@@ -13,16 +13,20 @@ import type {
   StageStatus,
   Usage,
 } from '@taktflow/core'
-import { addUsage, createMockDb, STAGES, ZERO, type MockRun } from './mock-data'
+import { createMockChat } from './mock-chat'
+import { addUsage, ZERO, type MockDb, type MockRun } from './mock-data'
 import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
 import type { DataSource, NodeView } from './source'
+
+/** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
+export type ProjectSource = Omit<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'>
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const LOADED = Date.now()
 
 /** 演示数据源：实现与 HTTP 客户端相同的接口，状态保存在内存里（刷新即复位）。 */
-export function createMockSource(): DataSource {
-  const db = createMockDb()
+export function createProjectMock(db: MockDb): ProjectSource {
+  const chat = createMockChat(db)
   const delay = <T,>(v: T, ms = 90): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
   const fail = (msg: string) => Promise.reject(new Error(msg))
 
@@ -44,7 +48,7 @@ export function createMockSource(): DataSource {
   /** 与 core 的 stageProgress（insights/graph.ts）同一套规则：演示数据扮演 server，web 页面本身不再推导。 */
   function stageProgress(run: MockRun | undefined): StageProgress[] {
     if (!run) return []
-    return STAGES.map((s) => {
+    return run.workflow.stages.map((s) => {
       const ns = run.graph.nodes.filter((n) => n.stage === s.id)
       const done = ns.filter((n) => n.status === 'succeeded' || n.status === 'skipped').length
       const has = (...st: GraphNode['status'][]) => ns.some((n) => st.includes(n.status))
@@ -82,7 +86,8 @@ export function createMockSource(): DataSource {
   function summary(id: string): RequirementSummary {
     const req = db.requirements.find((r) => r.id === id)!
     const runs = runsOf(id)
-    const latest = runs[0]
+    // 临时任务也是运行，但阶段条按需求的主流水线算
+    const latest = runs.find((r) => r.state.workflowId !== 'task')
     const stages = stageProgress(latest)
     const current = stages.find((s) => s.status !== 'done')?.id ?? stages[stages.length - 1]?.id
     return {
@@ -249,10 +254,29 @@ export function createMockSource(): DataSource {
           run.state.nodes[item.nodeId]!.status = 'succeeded'
         }
       }
+      chat.onAnswered(item)
       return delay(item, 160)
     },
     harnesses: () => delay(MOCK_HARNESSES, 140),
     models: () => delay(MOCK_MODELS, 140),
+    room(id) {
+      const room = chat.room(id)
+      return room ? delay(room, 60) : fail(`需求 ${id} 不存在`)
+    },
+    addRoomMembers(id, members) {
+      const room = chat.addMembers(id, members)
+      return room ? delay(room) : fail(`需求 ${id} 不存在`)
+    },
+    chat(id, opts) {
+      const list = chat.list(id, opts)
+      return list ? delay(list, 120) : fail(`需求 ${id} 不存在`)
+    },
+    postChat(id, body) {
+      if (!body.text.trim()) return fail('消息不能为空')
+      const m = chat.post(id, body, { type: 'human', id: 'web' })
+      return m ? delay(m, 60) : fail(`需求 ${id} 不存在`)
+    },
+    subscribeChat: (id, on) => chat.subscribe(id, on),
     subscribe(runId, onEvent) {
       const run = getRun(runId)
       if (!run || run.live.length === 0) return () => {}

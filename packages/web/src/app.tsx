@@ -13,7 +13,11 @@ import { RunPage } from './pages/run'
 import { SettingsPage } from './pages/settings'
 
 function Routes() {
-  const { path } = useLocation()
+  const { path, spaceId } = useLocation()
+  return <SpaceRoutes key={spaceId ?? ''} path={path} />
+}
+
+function SpaceRoutes({ path }: { path: string }) {
   if (path === '/' || path === '') return <OverviewPage />
   if (path === '/requirements') return <RequirementsPage />
   if (path === '/attention') return <AttentionPage />
@@ -21,6 +25,8 @@ function Routes() {
   if (path === '/settings') return <SettingsPage />
   const req = matchPath('/req/:id', path)
   if (req) return <RequirementPage key={req.id} id={req.id!} />
+  const wf = matchPath('/workflows/:id', path)
+  if (wf) return <PlaceholderPage kind="workflow" />
   const run = matchPath('/run/:runId', path)
   if (run) return <RunPage key={run.runId} runId={run.runId!} />
   return <NotFoundPage />

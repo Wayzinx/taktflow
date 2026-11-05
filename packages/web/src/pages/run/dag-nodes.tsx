@@ -33,7 +33,6 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
       title={`${data.label.title}\n${n.id} · ${meta.label}`}
     >
       <Handles />
-      <span className="dag-bar" />
       <div className="dag-row">
         <KindIcon kind={n.kind} size={22} />
         <span className="dag-title truncate">{data.label.title}</span>
