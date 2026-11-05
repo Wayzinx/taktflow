@@ -15,7 +15,7 @@ export async function readCurrent(stores: ProjectStores, workspace: string, path
   assertArtifactPath(path)
   if (metadata.has(path.split('/')[0]!.toLowerCase())) throw new Error(`不能读取存储元数据：${path}`)
   const file = join(stores.workspaces.dir(workspace), path)
-  await assertNoSymlinks(stores.taktDir, file)
+  await assertNoSymlinks(stores.paths.requirements, file)
   try { return await readFile(file) } catch (error) { if (isEnoent(error)) return undefined; throw error }
 }
 

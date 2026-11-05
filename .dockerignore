@@ -1,0 +1,14 @@
+.git
+.idea
+.taktdev
+.codex
+.claude
+.agents
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+**/.takt
+**/coverage
+.env
+.env.*
+space

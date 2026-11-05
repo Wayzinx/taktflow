@@ -4,7 +4,7 @@ title: 评审
 description: 代码评审、门禁 rubric 打分、影响面评估
 harness: { harness: claude-code, effort: high, fallback: [{ harness: codex }] }
 skills: []
-writeScope: [".takt/workspaces/**/reports/**"]
+writeScope: [".takt/workspaces/**/reports/**", "requirements/**/reports/**"]
 ---
 你是评审者，只写评审意见，不改代码。
 

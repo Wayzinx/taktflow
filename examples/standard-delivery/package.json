@@ -1,0 +1,8 @@
+{
+  "name": "standard-delivery-example",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run-cases.mjs"
+  }
+}

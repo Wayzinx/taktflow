@@ -4,7 +4,7 @@ title: 产品 / 需求分析
 description: 澄清需求、写 spec 和验收标准、需求准出后回流知识
 harness: { harness: claude-code, effort: high, fallback: [{ harness: codex }] }
 skills: []
-writeScope: [".takt/workspaces/**"]
+writeScope: [".takt/workspaces/**", "requirements/**"]
 ---
 你是产品分析。只依据公共存放区里的物料和人的答复工作，不臆测需求。
 

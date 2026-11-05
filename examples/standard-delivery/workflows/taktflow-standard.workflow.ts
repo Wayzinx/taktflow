@@ -1,0 +1,73 @@
+/**
+ * 作者版标准流水线。args.review = { maxRounds, maxReworks, humanSignoff } 可覆盖默认值；
+ * args.reviews[节点ID] = { rework, ... } 可覆盖某一评审。动态展开节点使用局部 ID。
+ * 默认 3 轮、1 次打回、人工确认；caseCommand / testScript 指定项目测试入口。
+ */
+import { agent, defineWorkflow, gate, human, judge, loop, planner, review, script } from '@taktflow/core'
+import { codeWasFixed, converged, expandTask, freezeBaseline, qualityReport, repairPrompt, runCases, traceCoverage } from './taktflow-standard.hooks.js'
+
+export default defineWorkflow({
+  id: 'taktflow-standard', title: '作者版标准交付流水线', version: '0.2.0',
+  stages: [
+    { id: 'understand', title: '需求理解' }, { id: 'design', title: '系分设计' },
+    { id: 'test-design', title: '测分设计' }, { id: 'align', title: '对齐冻结' },
+    { id: 'develop', title: '研发' }, { id: 'automate', title: '用例转自动化' },
+    { id: 'loop', title: '研发测试 Loop' }, { id: 'impact', title: '影响面评估' }, { id: 'report', title: '准出' },
+  ],
+  nodes: [
+    agent({ id: 'clarify', title: '需求澄清', stage: 'understand', role: 'pm', inputs: [{ path: 'inputs/**' }],
+      outputs: [{ path: 'spec/clarify.md', kind: 'clarification' }], prompt: '阅读原始物料，列出待确认问题及依据。信息完整时明确写无待确认问题。' }),
+    human({ id: 'answer-clarify', title: '回答澄清', stage: 'understand', needs: ['clarify'], form: 'answer', ask: '请回答 spec/clarify.md 中的问题。' }),
+    agent({ id: 'prd', title: '编写 PRD', stage: 'understand', role: 'pm', needs: ['answer-clarify'],
+      inputs: [{ path: 'inputs/**' }, { path: 'spec/clarify.md' }], outputs: [{ path: 'spec/prd.md', kind: 'spec' }],
+      prompt: '编写 spec/prd.md：背景、范围、约束、可验证的验收标准 AC-<n>。纳入澄清结论。' }),
+    review({ id: 'review-prd', title: 'PRD 交叉评审', stage: 'understand', needs: ['prd'], target: ['spec/prd.md'], author: { role: 'pm' },
+      reviewers: [{ role: 'architect', focus: '研发视角：可实现性、接口与数据影响' }, { role: 'test-designer', focus: '可测性、验收标准' }],
+      maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'prd', maxReworks: 1 } }),
+    agent({ id: 'design', title: '系分与接口契约', stage: 'design', role: 'architect', needs: ['review-prd'], inputs: [{ path: 'spec/prd.md' }],
+      outputs: [{ path: 'design/design.md', kind: 'design' }, { path: 'design/contracts.json', kind: 'contract' }],
+      prompt: '设计改动范围、接口字段、错误码、数据影响、复用与回滚。分别写 design/design.md 和 design/contracts.json。' }),
+    review({ id: 'review-design', title: '系分交叉评审', stage: 'design', needs: ['design'], target: ['design/**'], author: { role: 'architect' },
+      reviewers: [{ role: 'pm', focus: '需求完整性' }, { role: 'test-designer', focus: '契约可验证性' }, { role: 'reviewer', focus: '架构视角：模块边界、复用、风险与回滚' }],
+      maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'design', maxReworks: 1 } }),
+    agent({ id: 'test-design', title: '测分与用例', stage: 'test-design', role: 'test-designer', needs: ['review-design'],
+      inputs: [{ path: 'spec/prd.md' }, { path: 'design/contracts.json' }],
+      outputs: [{ path: 'test-plan/plan.md', kind: 'test-plan' }, { path: 'cases/*.json', kind: 'case' }],
+      prompt: '只根据 PRD 和接口契约设计黑盒测试，不读产品代码。写测分和 cases/<CaseID>.json，每条用例含 id、covers: [AC-<n>]、步骤与业务断言。' }),
+    review({ id: 'review-cases', title: '测分交叉评审', stage: 'test-design', needs: ['test-design'], target: ['test-plan/**', 'cases/*.json'], author: { role: 'test-designer' },
+      reviewers: [{ role: 'pm', focus: '需求覆盖' }, { role: 'architect', focus: '契约与边界' }],
+      maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'test-design', maxReworks: 1 } }),
+    gate({ id: 'trace-gate', title: '追溯对齐', stage: 'align', needs: ['review-cases'], checks: [{ id: 'ac-covered', kind: 'function', fn: traceCoverage }] }),
+    script({ id: 'freeze', title: '冻结基线', stage: 'align', needs: ['trace-gate'], run: freezeBaseline, outputs: [{ path: 'decisions/baseline.json', kind: 'decision' }] }),
+    planner({ id: 'implement', title: '拆任务、实现与代码评审', stage: 'develop', needs: ['freeze'], role: 'architect', maxItems: 12, allowedRoles: ['dev'],
+      inputs: [{ path: 'spec/prd.md' }, { path: 'design/**' }], prompt: '将实现拆为有边界的任务，给出 key、title、dependsOn、role=dev、params.repo（默认 app）。', expand: expandTask }),
+    agent({ id: 'automate', title: '实现自动化脚本', stage: 'automate', needs: ['freeze'], role: 'automation', inputs: [{ path: 'cases/*.json' }, { path: 'design/contracts.json' }],
+      prompt: '实现 tests/run-cases.mjs，逐条运行用例，验证业务结果；将每条证据和 evidence/summary.json 写入公共存放区。将待评审脚本副本写到 scripts/run-cases.mjs。',
+      outputs: [{ path: 'scripts/run-cases.mjs', kind: 'script' }] }),
+    review({ id: 'review-scripts', title: '脚本评审', stage: 'automate', needs: ['automate'], target: ['scripts/**'],
+      author: { role: 'automation', prompt: '同时更新公共存放区 scripts/ 副本与项目 tests/ 下实际执行的脚本，保持一致。' },
+      reviewers: [{ role: 'test-designer', focus: '断言有效性、覆盖完整性；禁止弱化断言' }],
+      maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'automate', maxReworks: 1 } }),
+    loop({ id: 'dev-test-loop', title: '研发测试 Loop', stage: 'loop', needs: ['implement', 'review-scripts'], maxIterations: 5, onExhausted: 'human', until: converged,
+      body: [
+        script({ id: 'run-cases', title: '执行用例', run: runCases, outputs: [{ path: 'evidence/**', kind: 'evidence' }] }),
+        judge({ id: 'judge', title: '失败判决', role: 'judge', needs: ['run-cases'], target: 'run-cases',
+          routes: { product_bug: 'fix-code', script_defect: 'fix-script', case_defect: 'fix-case', flaky: 'ignore', env_issue: 'human', requirement_gap: 'human', unknown: 'human' } }),
+        agent({ id: 'fix-code', title: '修复产品代码', role: 'dev', repo: 'app', needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
+          outputs: [{ path: 'tasks/repair.diff', kind: 'code-change' }], prompt: repairPrompt('fix-code', '按证据修复产品代码，禁止改用例与测试。将修复 diff 写入 tasks/repair.diff。') }),
+        review({ id: 'review-fix', title: '修复代码评审', needs: ['fix-code'], when: codeWasFixed, target: { code: { repo: 'app' } },
+          author: { role: 'dev' }, reviewers: [{ role: 'reviewer', focus: '修复有效性、无弱化测试' }], maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'fix-code', maxReworks: 1 } }),
+        agent({ id: 'fix-script', title: '修复脚本', role: 'automation', needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
+          prompt: repairPrompt('fix-script', '只修定位、等待与取值问题，禁止弱化断言。') }),
+        agent({ id: 'fix-case', title: '修正用例', role: 'test-designer', needs: ['judge'], inputs: [{ path: 'spec/prd.md' }, { path: 'reports/verdicts/**' }],
+          prompt: repairPrompt('fix-case', '按需求依据修正用例，记录原因；语义修改须经人工确认。') }),
+      ],
+    }),
+    agent({ id: 'impact', title: '影响面评估', stage: 'impact', needs: ['dev-test-loop'], role: 'reviewer',
+      inputs: [{ path: 'tasks/**' }, { path: 'evidence/**' }], outputs: [{ path: 'reports/impact.md', kind: 'report' }], prompt: '评估改动影响，列回归范围与未覆盖风险。' }),
+    script({ id: 'quality-report', title: '质量报告', stage: 'report', needs: ['impact'], run: qualityReport, outputs: [{ path: 'reports/quality.md', kind: 'report' }] }),
+    human({ id: 'acceptance', title: '人工准出', stage: 'report', needs: ['quality-report'], form: 'approve', ask: '审阅质量报告、影响面与评审记录，是否准出？' }),
+    agent({ id: 'knowledge-writeback', title: '知识回流', stage: 'report', needs: ['acceptance'], role: 'pm',
+      inputs: [{ path: 'reports/**' }, { path: 'decisions/**' }], outputs: [{ path: 'reports/knowledge-diff.md', kind: 'knowledge' }], prompt: '整理业务规则、决策与问题教训，写成知识库修改建议供人合入。' }),
+  ],
+})

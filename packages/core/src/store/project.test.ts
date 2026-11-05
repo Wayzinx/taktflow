@@ -30,9 +30,9 @@ describe('project / profiles', () => {
     expect(stores.projectDir).toBe(path.resolve(projectDir))
     expect(stores.taktDir).toBe(path.join(path.resolve(projectDir), '.takt'))
     expect(stores.config.project.name).toBe('演示项目')
-    expect(stores.config.workflows).toEqual(['.takt/workflows/sdlc.workflow.ts'])
-    for (const dir of ['agents', 'workflows', 'workspaces', 'objects', 'runs']) {
-      expect(await fileExists(path.join(stores.taktDir, dir))).toBe(true)
+    expect(stores.config.workflows).toEqual(['workflows/sdlc.workflow.ts'])
+    for (const dir of ['agents', 'workflows', 'skills', 'knowledge', 'requirements', '.takt']) {
+      expect(await fileExists(path.join(stores.projectDir, dir))).toBe(true)
     }
 
     const configFile = path.join(projectDir, 'takt.config.json')

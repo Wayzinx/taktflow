@@ -10,7 +10,7 @@ async function temp() { const dir = await mkdtemp(join(tmpdir(), 'takt-bash-'));
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(dirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true }))) })
 
 const available = await sandboxAvailable()
-describe.skipIf(!available)('real macOS bash sandbox', () => {
+describe.skipIf(process.platform !== 'darwin' || !available)('real macOS bash sandbox', () => {
   it('actually creates and updates allowed files', async () => {
     const cwd = await temp(); await mkdir(join(cwd, 'allowed'))
     const paths = await ToolPaths.create(cwd, ['allowed/**'], new AbortController().signal)
@@ -96,7 +96,7 @@ describe.skipIf(!available)('real macOS bash sandbox', () => {
 })
 
 it('refuses unsupported platforms without executing a shell', async () => {
-  vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
+  vi.spyOn(process, 'platform', 'get').mockReturnValue('freebsd')
   const cwd = await temp(); const paths = await ToolPaths.create(cwd, ['**'], new AbortController().signal)
   await expect(runBash('printf unsafe > escaped', paths)).rejects.toThrow('unsupported host')
   await expect(access(join(cwd, 'escaped'))).rejects.toThrow()

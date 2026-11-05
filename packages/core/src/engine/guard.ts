@@ -10,24 +10,26 @@ type Window = { scope: Scope; start: number; end: number; uncertain?: boolean }
 const allowed = (scope: Scope, file: string) => scope.profile.some((p) => matchGlob(p, file)) &&
   (scope.node === undefined || scope.node.some((p) => matchGlob(p, file)))
 
-function metadata(file: string): boolean {
-  return /^\.takt\/(runs|objects)\//.test(file) ||
+function metadata(file: string, requirements: string): boolean {
+  const relative = file.startsWith(`${requirements}/`) ? file.slice(requirements.length + 1) : ''
+  if (/^[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp|\.lock)?$/.test(relative)) return true
+  return /^\.takt\/(runs|objects|chat)\//.test(file) ||
     /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
 }
 
-async function snapshot(root: string): Promise<Map<string, string>> {
+async function snapshot(root: string, requirements: string): Promise<Map<string, string>> {
   const files = await listFiles(root, ['**'], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects'] })
   const map = new Map<string, string>()
-  await Promise.all(files.filter((file) => !metadata(file)).map(async (file) => {
+  await Promise.all(files.filter((file) => !metadata(file, requirements)).map(async (file) => {
     try { map.set(file, sha256(await readFile(join(root, file)))) } catch (error) { if (!isEnoent(error)) throw error }
   }))
   return map
 }
 
-async function humanVersions(root: string): Promise<Map<string, string>> {
+async function humanVersions(root: string, requirements: string): Promise<Map<string, string>> {
   const versions = new Map<string, string>()
-  const manifests = await listFiles(root, ['.takt/workspaces/*/manifest.json'], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects'] })
+  const manifests = await listFiles(root, [`${requirements}/*/manifest.json`], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects'] })
   for (const file of manifests) {
     const manifest = await readJsonFile<{ artifacts: ArtifactRecord[] }>(join(root, file))
     for (const artifact of manifest?.artifacts ?? []) {
@@ -41,7 +43,7 @@ async function humanVersions(root: string): Promise<Map<string, string>> {
 export class WriteGuard {
   private clock = 0
   private readonly windows: Window[] = []
-  constructor(private readonly root: string) {}
+  constructor(private readonly root: string, private readonly requirements = '.takt/workspaces') {}
 
   async system<T>(paths: string[], fn: () => Promise<T>, uncertain = false): Promise<T> {
     const window: Window = { scope: { profile: paths }, start: ++this.clock, end: Infinity, uncertain }
@@ -62,10 +64,10 @@ export class WriteGuard {
     this.windows.push(window)
     let before: Map<string, string>
     let humans: Map<string, string>
-    try { [before, humans] = await Promise.all([snapshot(this.root), humanVersions(this.root)]) } catch (error) { this.close(window); throw error }
+    try { [before, humans] = await Promise.all([snapshot(this.root, this.requirements), humanVersions(this.root, this.requirements)]) } catch (error) { this.close(window); throw error }
     return async () => {
       try {
-        const [after, latestHumans] = await Promise.all([snapshot(this.root), humanVersions(this.root)])
+        const [after, latestHumans] = await Promise.all([snapshot(this.root, this.requirements), humanVersions(this.root, this.requirements)])
         const peers = this.windows.filter((w) => w.end >= window.start)
         const paths = [...new Set([...before.keys(), ...after.keys()])].filter((file) =>
           before.get(file) !== after.get(file) && !peers.some((peer) => allowed(peer.scope, file)))

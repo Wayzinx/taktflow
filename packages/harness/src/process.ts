@@ -49,7 +49,7 @@ export async function runProcess(
   options: ProcessOptions = {},
 ): Promise<ProcessResult> {
   const result: ProcessResult = { ok: false, stdout: '', stderr: '' }
-  const redact = createRedactor(collectSecrets(req))
+  const redact = createRedactor(collectSecrets({ ...req, env: { ...req.sandbox?.spec.env, ...req.env } }))
   // 原始输出仅在内存拼接，结束时整体脱敏，兼容分块与无换行输出。
   let rawStdout = ''
   let rawStderr = ''
@@ -79,7 +79,9 @@ export async function runProcess(
       addError('Process cancelled before spawn')
     } else {
       await new Promise<void>(resolve => {
-        const child = spawn(command, args, {
+        const child = req.sandbox ? req.sandbox.spawn(command, args, {
+          cwd: req.cwd, env: req.env, stdin: options.stdin === undefined ? 'ignore' : 'pipe',
+        }) : spawn(command, args, {
           cwd: req.cwd,
           env: { ...process.env, ...req.env },
           stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
@@ -91,7 +93,7 @@ export async function runProcess(
         const kill = (signal: NodeJS.Signals) => {
           if (!child.pid || closed) return
           try {
-            if (process.platform === 'win32') child.kill(signal)
+            if (req.sandbox || process.platform === 'win32') child.kill(signal)
             else process.kill(-child.pid, signal)
           } catch (error) {
             if ((error as NodeJS.ErrnoException).code !== 'ESRCH') addError(`Process ${signal} failed: ${errorText(error)}`)
@@ -180,7 +182,7 @@ export async function runProcess(
 }
 
 export function finalizeResult(req: HarnessRequest, parsed: HarnessResult, proc: ProcessResult): HarnessResult {
-  const redact = createRedactor(collectSecrets(req))
+  const redact = createRedactor(collectSecrets({ ...req, env: { ...req.sandbox?.spec.env, ...req.env } }))
   const { structured: _structured, ...rest } = parsed
   const result: HarnessResult = {
     ...rest,

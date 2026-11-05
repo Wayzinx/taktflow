@@ -32,6 +32,19 @@ export function validateDag(nodes: NodeDef[], stages?: Set<string>, scope = ''):
       validateDag(node.body, stages, `${scope}/${node.id}`)
     }
     if (node.kind === 'planner' && (!Number.isInteger(node.maxItems) || node.maxItems < 1)) throw new Error('maxItems 必须是正整数')
+    if (node.kind === 'review') {
+      if (!node.reviewers.length) throw new Error('reviewers 不能为空')
+      if (!Number.isInteger(node.maxRounds) || node.maxRounds < 1) throw new Error('maxRounds 必须是正整数')
+      if (new Set(node.reviewers.map((reviewer) => reviewer.role)).size !== node.reviewers.length) throw new Error('同一评审的 reviewer.role 不能重复')
+      if (typeof node.onExhausted === 'object') {
+        const policy = node.onExhausted
+        if (!Number.isInteger(policy.maxReworks ?? 1) || (policy.maxReworks ?? 1) < 0) throw new Error('maxReworks 必须是非负整数')
+        const ancestors = new Set<string>()
+        const visit = (id: string): void => { for (const dep of map.get(id)?.needs ?? []) if (!ancestors.has(dep)) { ancestors.add(dep); visit(dep) } }
+        visit(node.id)
+        if (!map.has(policy.rework) || !ancestors.has(policy.rework)) throw new Error(`rework 目标必须在同作用域上游：${policy.rework}`)
+      }
+    }
     if (node.kind === 'judge') {
       if (!map.has(node.target)) throw new Error(`判决目标不存在于同一作用域：${node.target}`)
       for (const target of Object.values(node.routes)) {
@@ -44,7 +57,13 @@ export function validateDag(nodes: NodeDef[], stages?: Set<string>, scope = ''):
 
 export function qualify(nodes: NodeDef[], prefix: string): NodeDef[] {
   validateDag(nodes)
-  return nodes.map((node) => ({ ...node, id: prefix + node.id, needs: (node.needs ?? []).map((id) => prefix + id) }))
+  return nodes.map((node) => {
+    const qualified = { ...node, id: prefix + node.id, needs: (node.needs ?? []).map((id) => prefix + id) }
+    if (qualified.kind === 'review' && typeof qualified.onExhausted === 'object') {
+      qualified.onExhausted = { ...qualified.onExhausted, rework: prefix + qualified.onExhausted.rework }
+    }
+    return qualified
+  })
 }
 
 export function expandPlanner(node: PlannerNodeDef, items: PlannedItem[]): Array<{ nodes: NodeDef[]; item: PlannedItem; scope: string }> {

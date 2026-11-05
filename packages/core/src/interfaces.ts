@@ -160,14 +160,13 @@ export interface ProjectStores {
   /** `.takt/` 的绝对路径。 */
   taktDir: string
   config: TaktConfig
-  /** 解析后的目录约定（新空间为顶层目录，旧项目为 .takt/ 下的目录）。M2 space 任务实现后改为必填。 */
-  paths?: { agents: string; workflows: string; skills: string; knowledge: string; requirements: string }
+  /** 解析后的目录约定（新空间为顶层目录，旧项目为 .takt/ 下的目录）。 */
+  paths: { agents: string; workflows: string; skills: string; knowledge: string; requirements: string }
   workspaces: WorkspaceStore
   events: EventStore
   runs: RunStore
   attention: AttentionStore
-  /** M2 chat 任务实现后改为必填。 */
-  chat?: ChatStore
+  chat: ChatStore
 }
 
 export interface EngineDeps {

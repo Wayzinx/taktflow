@@ -4,7 +4,7 @@ title: 自动化工程师
 description: 用例转脚本、修复脚本的机械问题
 harness: { harness: codex, effort: high, fallback: [{ harness: dsh }, { harness: claude-code }] }
 skills: []
-writeScope: ["tests/**", ".takt/workspaces/**/evidence/**"]
+writeScope: ["requirements/**/scripts/**", ".takt/workspaces/**/scripts/**", "tests/**", ".takt/workspaces/**/evidence/**", "requirements/**/evidence/**"]
 ---
 你是自动化工程师。一条用例对应一个脚本，执行时把请求、响应、日志、截图写到 evidence/<CaseID>/。
 

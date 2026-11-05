@@ -1,9 +1,12 @@
+import { relative } from 'node:path'
 import type { Engine, EngineDeps } from '../interfaces.js'
 import type { RunState } from '../types.js'
 import { newRunId } from '../util/ids.js'
 import { snapshotWorkflow } from '../store/snapshot.js'
 import { persistArtifactInvalidation } from '../store/artifact-edits.js'
 import { withFileLock } from '../store/file-lock.js'
+import { configureReviews } from './review-options.js'
+import { postEventMessage } from './chat-events.js'
 import { answerOrRead, recordAnswerOnce } from './answers.js'
 import { requirementLock, updateRequirement } from './requirement.js'
 import { validateDag } from './graph.js'
@@ -17,7 +20,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   const concurrency = opts.concurrency ?? 4
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('concurrency 必须是正整数')
   const active = new Map<string, Runtime>()
-  const guard = new WriteGuard(deps.stores.projectDir)
+  const guard = new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements))
   const timestamp = () => (opts.now?.() ?? new Date()).toISOString()
   async function execute(runtime: Runtime, resume = false): Promise<RunState> {
     const id = runtime.state.runId
@@ -33,6 +36,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   }
   return {
     async start(input) {
+      input = { ...input, workflow: configureReviews(input.workflow, input.args ?? {}) }
       validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
@@ -45,9 +49,10 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       for (const node of input.workflow.nodes) state.nodes[node.id] = { id: node.id, status: 'pending', attempts: 0, outputs: [] }
       await withFileLock(requirementLock(deps.stores, state.requirementId), () => deps.stores.runs.create(state, snapshotWorkflow(input.workflow)))
       await updateRequirement(deps.stores, state, snapshotWorkflow(input.workflow))
-      await deps.stores.events.append(state.runId, { type: 'run.started', actor: system, data: {
+      const started = await deps.stores.events.append(state.runId, { type: 'run.started', actor: system, data: {
         workflowId: state.workflowId, workflowVersion: state.workflowVersion, args: state.args,
       } })
+      await postEventMessage(deps.stores, state, started)
       return execute(new Runtime(deps, state, input.workflow, opts, guard))
     },
     async resume(runId, workflow) {
@@ -56,6 +61,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       if (!state) throw new Error(`运行不存在：${runId}`)
       if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
       if (state.status === 'cancelled') return state
+      workflow = configureReviews(workflow, state.args)
       validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       return execute(new Runtime(deps, state, workflow, opts, guard), true)
     },
@@ -82,7 +88,10 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         await recordAnswerOnce(deps.stores, runId, answered)
       }
       await updateRequirement(deps.stores, state)
-      if (!runtime) await deps.stores.events.append(runId, { type: 'run.finished', actor: system, data: { status: 'cancelled' } })
+      if (!runtime) {
+        const event = await deps.stores.events.append(runId, { type: 'run.finished', actor: system, data: { status: 'cancelled' } })
+        await postEventMessage(deps.stores, state, event)
+      }
     },
     async markStale(runId, cause) {
       const runtime = active.get(runId)

@@ -4,8 +4,8 @@ title: 测试设计
 description: 黑盒视角写测分和用例，用例映射到验收标准
 harness: { harness: claude-code, effort: high, fallback: [{ harness: codex }] }
 skills: []
-writeScope: [".takt/workspaces/**"]
-readScope: [".takt/workspaces/**"]
+writeScope: [".takt/workspaces/**", "requirements/**"]
+readScope: [".takt/workspaces/**", "requirements/**"]
 ---
 你是测试设计。只依据 spec 和接口契约设计用例，**不读产品代码**，避免用例被实现绑死。
 

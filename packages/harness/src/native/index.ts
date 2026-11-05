@@ -9,6 +9,7 @@ import { instantiate, isProvider, selectModel, type NativeHarnessOptions } from 
 import { ToolPaths } from './paths.js'
 import { collectSecrets, createRedactor, redactValue } from '../redact.js'
 import { executeTool, toolSpecs } from './tools.js'
+import { sandboxAvailable } from './bash.js'
 
 export type { NativeHarnessOptions } from './model.js'
 
@@ -39,7 +40,8 @@ export function createNativeHarness(options: NativeHarnessOptions): HarnessAdapt
         const results = await abortable(Promise.all(Object.entries(options.providers).map(async ([id, config]) => {
           try { return await (await instantiate(id, config)).available() } catch (error) { return { ok: false, reason: String(error) } }
         })), deadline.signal)
-        return results.some((result) => result.ok) ? { ok: true } : { ok: false, reason: redact(results.map((result) => result.reason).join('; ')) }
+        if (!results.some((result) => result.ok)) return { ok: false, reason: redact(results.map((result) => result.reason).join('; ')) }
+        return await sandboxAvailable() ? { ok: true } : { ok: true, reason: 'bash disabled: requires macOS sandbox-exec or usable Linux bwrap' }
       } catch (error) { return { ok: false, reason: redact(String(error)) } }
       finally { deadline.dispose() }
     },
@@ -63,7 +65,9 @@ export function createNativeHarness(options: NativeHarnessOptions): HarnessAdapt
         emit({ type: 'message', role: 'user', text: req.prompt })
         let compacted = false
         let finalizing = false
-        const tools = toolSpecs(req.tools?.allowBash === true)
+        const allowBash = req.tools?.allowBash === true && await sandboxAvailable()
+        if (req.tools?.allowBash && !allowBash) emit({ type: 'message', role: 'system', text: 'bash disabled: requires macOS sandbox-exec or usable Linux bwrap' })
+        const tools = toolSpecs(allowBash)
         for (let round = 0; round < 50; round++) {
           checkAbort(signal)
           if (!compacted && selected.contextWindow) compacted = compact(messages, selected.contextWindow, emit)
@@ -95,7 +99,7 @@ export function createNativeHarness(options: NativeHarnessOptions): HarnessAdapt
               checkAbort(signal)
               let output: string
               let ok = true
-              try { output = await abortable(executeTool(call, paths, req.tools?.allowBash === true), signal) }
+              try { output = await abortable(executeTool(call, paths, allowBash), signal) }
               catch (error) { checkAbort(signal); output = `Tool error: ${error instanceof Error ? error.message : String(error)}`; ok = false }
               // 事件和工具回包分别脱敏，不改写 assistant 原始参数，防止破坏精确替换等工具调用。
               messages.push({ role: 'tool', toolCallId: call.id, content: redact(output) })

@@ -22,7 +22,7 @@ restore_bug() {
 trap restore_bug EXIT
 
 echo "==> 清理运行产物"
-rm -rf "$EXAMPLE/.takt/workspaces" "$EXAMPLE/.takt/runs" "$EXAMPLE/.takt/objects"
+rm -rf "$EXAMPLE/.takt/workspaces" "$EXAMPLE/.takt/runs" "$EXAMPLE/.takt/objects" "$EXAMPLE/.takt/chat"
 rm -f "$EXAMPLE/.takt/attention.jsonl"
 mkdir -p "$EXAMPLE/.takt/workspaces"
 

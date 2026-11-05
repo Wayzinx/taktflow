@@ -1,0 +1,23 @@
+{
+  "project": {
+    "name": "作者版标准交付示例"
+  },
+  "workflows": [
+    "workflows/taktflow-standard.workflow.ts"
+  ],
+  "repos": [
+    {
+      "id": "app",
+      "path": ".",
+      "defaultBranch": "main",
+      "purpose": "app"
+    }
+  ],
+  "members": [
+    {
+      "id": "demo-owner",
+      "name": "示例负责人",
+      "role": "owner"
+    }
+  ]
+}

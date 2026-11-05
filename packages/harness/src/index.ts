@@ -4,6 +4,7 @@ import { createCursorAgentHarness } from './adapters/cursor-agent.js'
 import { createQwenCodeHarness } from './adapters/qwen-code.js'
 import { createKimiCliHarness } from './adapters/kimi-cli.js'
 import { createOpenCodeHarness } from './adapters/opencode.js'
+import { createPiHarness } from './adapters/pi.js'
 import { createCliHarness } from './adapters/cli-generic.js'
 import { createClaudeCodeHarness } from './claude-code.js'
 import type { ClaudeCodeOptions } from './claude-code.js'
@@ -25,6 +26,8 @@ export { createKimiCliHarness, createKimiCliParser } from './adapters/kimi-cli.j
 export type { KimiCliOptions } from './adapters/kimi-cli.js'
 export { createOpenCodeHarness, createOpenCodeParser } from './adapters/opencode.js'
 export type { OpenCodeOptions } from './adapters/opencode.js'
+export { createPiHarness, createPiParser } from './adapters/pi.js'
+export type { PiOptions } from './adapters/pi.js'
 export { createCliHarness, createCliParser, inferCliCapabilities } from './adapters/cli-generic.js'
 export type { CliParserOptions } from './adapters/cli-generic.js'
 export { createClaudeCodeHarness, createClaudeCodeParser } from './claude-code.js'
@@ -53,6 +56,7 @@ export interface HarnessesOptions {
   qwenCode?: Parameters<typeof createQwenCodeHarness>[0]
   kimiCli?: Parameters<typeof createKimiCliHarness>[0]
   openCode?: Parameters<typeof createOpenCodeHarness>[0]
+  pi?: Parameters<typeof createPiHarness>[0]
   mockScript?: MockScript
   claudeCode?: ClaudeCodeOptions
   codex?: CodexOptions
@@ -71,6 +75,7 @@ export function createHarnesses(options: HarnessesOptions = {}): Record<string, 
     'qwen-code': createQwenCodeHarness(options.qwenCode),
     'kimi-cli': createKimiCliHarness(options.kimiCli),
     'opencode': createOpenCodeHarness(options.openCode),
+    pi: createPiHarness(options.pi),
   }
   for (const config of options.config?.harnesses ?? []) {
     if (Object.hasOwn(harnesses, config.id)) throw new Error(`重复的 harness ID: ${config.id}`)

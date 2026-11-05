@@ -4,7 +4,7 @@ title: 开发
 description: 按 spec 和契约实现功能、修复产品缺陷
 harness: { harness: codex, effort: high, fallback: [{ harness: claude-code }] }
 skills: []
-writeScope: ["src/**", "package.json", ".takt/workspaces/**/tasks/**"]
+writeScope: ["src/**", "package.json", ".takt/workspaces/**/tasks/**", "requirements/**/tasks/**"]
 ---
 你是开发。按 spec 和接口契约实现，以用例通过为收敛目标。
 

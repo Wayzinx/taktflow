@@ -1,22 +1,19 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir } from 'node:fs/promises'
 import path from 'node:path'
-import type { WorkspaceStore } from '../interfaces.js'
+import type { ChatStore, WorkspaceStore } from '../interfaces.js'
 import type { ArtifactComment, ArtifactRecord, ArtifactRef, ArtifactVersion, Requirement } from '../types.js'
 import { sha256 } from '../util/hash.js'
 import { listFiles } from '../util/glob.js'
 import { nextRequirementId } from '../util/ids.js'
 import { extractTraceIds } from '../util/trace-ids.js'
 import { appendLine, assertNoSymlinks, fileExists, isEnoent, readFileIfExists, readJsonFile, readJsonLines, toJsonText, writeFileAtomic } from './fs-utils.js'
+import { FsChatStore } from './fs-chat.js'
 import { withLock } from './locks.js'
 import {
   assertArtifactPath,
   assertRequirementId,
-  commentsFile,
-  manifestFile,
   objectsDir,
-  requirementFile,
-  workspaceDir,
   workspacesDir,
 } from './paths.js'
 
@@ -67,10 +64,12 @@ function traceIdsOf(content: Buffer): string[] {
 }
 
 export class FsWorkspaceStore implements WorkspaceStore {
-  constructor(private readonly taktDir: string) {}
+  constructor(private readonly taktDir: string, private readonly root = workspacesDir(taktDir), private readonly chat: ChatStore = new FsChatStore(taktDir)) {}
+
+  private metadata(id: string, name: string): string { return path.join(this.dir(id), name) }
 
   async listRequirements(): Promise<Requirement[]> {
-    const root = workspacesDir(this.taktDir)
+    const root = this.root
     let entries
     try {
       entries = await readdir(root, { withFileTypes: true })
@@ -88,15 +87,15 @@ export class FsWorkspaceStore implements WorkspaceStore {
   }
 
   async getRequirement(id: string): Promise<Requirement | undefined> {
-    return this.readRequirement(requirementFile(this.taktDir, id))
+    return this.readRequirement(this.metadata(id, 'requirement.json'))
   }
 
   async createRequirement(input: CreateRequirementInput): Promise<Requirement> {
-    const root = workspacesDir(this.taktDir)
+    const root = this.root
     return withLock(root, async () => {
       const existing = await this.listRequirements()
       const id = input.id !== undefined ? assertRequirementId(input.id) : nextRequirementId(existing.map((r) => r.id))
-      const file = requirementFile(this.taktDir, id)
+      const file = this.metadata(id, 'requirement.json')
       if (await fileExists(file)) throw new Error(`需求已存在：${id}`)
       const now = new Date().toISOString()
       const requirement: Requirement = {
@@ -108,11 +107,16 @@ export class FsWorkspaceStore implements WorkspaceStore {
         updatedAt: now,
       }
       if (input.owner !== undefined) requirement.owner = input.owner
-      await mkdir(workspaceDir(this.taktDir, id), { recursive: true })
+      await mkdir(this.dir(id), { recursive: true })
       await writeFileAtomic(file, toJsonText(requirement))
-      if (!(await fileExists(manifestFile(this.taktDir, id)))) {
-        await writeFileAtomic(manifestFile(this.taktDir, id), toJsonText({ artifacts: [] }))
+      if (!(await fileExists(this.metadata(id, 'manifest.json')))) {
+        await writeFileAtomic(this.metadata(id, 'manifest.json'), toJsonText({ artifacts: [] }))
       }
+      await this.chat.ensureRoom(id, { title: input.title, members: [
+        ...(input.owner ? [{ id: input.owner, kind: 'human' as const, name: input.owner }] : []),
+        { id: 'lead', kind: 'lead', name: 'Lead' },
+      ] })
+      await this.chat.post(id, { author: { type: 'system', id: 'engine' }, kind: 'system', text: '需求已创建' })
       return requirement
     })
   }
@@ -122,7 +126,7 @@ export class FsWorkspaceStore implements WorkspaceStore {
     patch: Partial<Omit<Requirement, 'id' | 'createdAt'>>,
   ): Promise<Requirement> {
     const rid = assertRequirementId(id)
-    const file = requirementFile(this.taktDir, rid)
+    const file = this.metadata(rid, 'requirement.json')
     return withLock(file, async () => {
       const current = await this.readRequirement(file)
       if (!current) throw new Error(`需求不存在：${rid}`)
@@ -139,7 +143,7 @@ export class FsWorkspaceStore implements WorkspaceStore {
   }
 
   dir(id: string): string {
-    return workspaceDir(this.taktDir, id)
+    return path.resolve(this.root, assertRequirementId(id))
   }
 
   async listArtifacts(id: string): Promise<ArtifactRecord[]> {
@@ -150,7 +154,7 @@ export class FsWorkspaceStore implements WorkspaceStore {
   async readArtifact(ref: ArtifactRef): Promise<Buffer | undefined> {
     const id = assertRequirementId(ref.workspace)
     const artifactPath = assertArtifactPath(ref.path)
-    await assertNoSymlinks(this.taktDir, path.join(this.dir(id), artifactPath))
+    await assertNoSymlinks(this.root, path.join(this.dir(id), artifactPath))
     const manifest = await this.readManifest(id)
     const record = manifest.artifacts.find((r) => r.path === artifactPath)
     if (record) {
@@ -175,9 +179,9 @@ export class FsWorkspaceStore implements WorkspaceStore {
     }
     const content = Buffer.isBuffer(input.content) ? input.content : Buffer.from(input.content, 'utf8')
     const sha = sha256(content)
-    const dir = workspaceDir(this.taktDir, id)
+    const dir = this.dir(id)
     return withLock(dir, async () => {
-      await assertNoSymlinks(this.taktDir, path.join(dir, artifactPath))
+      await assertNoSymlinks(this.root, path.join(dir, artifactPath))
       const manifest = await this.readManifest(id)
       const record = manifest.artifacts.find((r) => r.path === artifactPath)
       const latest = record?.versions.at(-1)
@@ -219,21 +223,21 @@ export class FsWorkspaceStore implements WorkspaceStore {
       if (!(await fileExists(objectFile))) await writeFileAtomic(objectFile, content)
       await writeFileAtomic(path.join(dir, artifactPath), content)
       // manifest 最后写：它是这次版本的提交点，崩在中途只会留下无害的孤儿对象
-      await writeFileAtomic(manifestFile(this.taktDir, id), toJsonText(manifest))
+      await writeFileAtomic(this.metadata(id, 'manifest.json'), toJsonText(manifest))
       return { workspace: id, path: artifactPath, version: version.version }
     })
   }
 
   async detectUntracked(id: string): Promise<Array<{ path: string; sha256: string }>> {
     const rid = assertRequirementId(id)
-    const dir = workspaceDir(this.taktDir, rid)
+    const dir = this.dir(rid)
     const manifest = await this.readManifest(rid)
     const tracked = new Map(manifest.artifacts.map((r) => [r.path, r.versions.at(-1)?.sha256 ?? '']))
     const untracked: Array<{ path: string; sha256: string }> = []
     if (!(await fileExists(dir))) return untracked
     for (const rel of await listFiles(dir, ['**'], { ignore: [] })) {
       if (META_FILES.has(rel.toLowerCase())) continue
-      await assertNoSymlinks(this.taktDir, path.join(dir, rel))
+      await assertNoSymlinks(this.root, path.join(dir, rel))
       const buf = await readFileIfExists(path.join(dir, rel))
       if (buf === undefined) continue
       const sha = sha256(buf)
@@ -245,7 +249,7 @@ export class FsWorkspaceStore implements WorkspaceStore {
   async listComments(id: string, artifactPath?: string): Promise<ArtifactComment[]> {
     const rid = assertRequirementId(id)
     if (artifactPath !== undefined) assertArtifactPath(artifactPath)
-    const comments = await readJsonLines<ArtifactComment>(commentsFile(this.taktDir, rid))
+    const comments = await readJsonLines<ArtifactComment>(this.metadata(rid, 'comments.jsonl'))
     return artifactPath === undefined ? comments : comments.filter((c) => c.path === artifactPath)
   }
 
@@ -256,7 +260,7 @@ export class FsWorkspaceStore implements WorkspaceStore {
       throw new Error(`评论的产物版本不合法：${comment.version}`)
     }
     const created: ArtifactComment = { ...comment, id: randomUUID(), createdAt: new Date().toISOString() }
-    const file = commentsFile(this.taktDir, rid)
+    const file = this.metadata(rid, 'comments.jsonl')
     await withLock(file, async () => {
       await appendLine(file, JSON.stringify(created))
     })
@@ -273,8 +277,8 @@ export class FsWorkspaceStore implements WorkspaceStore {
   }
 
   private async readManifest(id: string): Promise<Manifest> {
-    const file = manifestFile(this.taktDir, id)
-    await assertNoSymlinks(this.taktDir, file)
+    const file = this.metadata(id, 'manifest.json')
+    await assertNoSymlinks(this.root, file)
     const manifest = await readJsonFile<Manifest>(file)
     if (manifest === undefined) return { artifacts: [] }
     if (!manifest || !Array.isArray(manifest.artifacts)) throw new Error(`manifest.json 结构不合法：${file}`)

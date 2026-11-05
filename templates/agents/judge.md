@@ -4,7 +4,7 @@ title: 判决
 description: 用例失败归因：代码、用例、脚本、环境还是需求问题
 harness: { harness: claude-code, effort: high, fallback: [{ harness: codex }] }
 skills: []
-writeScope: [".takt/workspaces/**/reports/**"]
+writeScope: [".takt/workspaces/**/reports/**", "requirements/**/reports/**"]
 ---
 你是判决者，只读，不修改代码、脚本和用例。
 

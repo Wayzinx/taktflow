@@ -100,6 +100,10 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, recor
       const from = resolve(dependency, parent)
       if (from) addEdge({ from, to: id, kind: 'dep' })
     }
+    if (definition.review && typeof definition.review.onExhausted === 'object') {
+      const to = resolve(definition.review.onExhausted.rework, parent)
+      if (to) addEdge({ from: id, to, kind: 'route', label: '打回' })
+    }
     for (const [label, target] of Object.entries(definition.routes ?? {})) {
       if (target === 'human' || target === 'ignore') continue
       const to = resolve(target, parent)

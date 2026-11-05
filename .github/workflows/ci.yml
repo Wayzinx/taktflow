@@ -1,0 +1,41 @@
+name: CI
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install Linux sandbox tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap ripgrep
+          # Ubuntu 24.04 的 AppArmor 默认禁止未登记程序创建 user namespace。
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx vitest run
+      - name: Require working bubblewrap
+        if: runner.os == 'Linux'
+        env:
+          TAKT_REQUIRE_BWRAP: '1'
+        run: npx vitest run packages/sandbox/src/providers.test.ts packages/harness/src/native/linux-bash.test.ts
+      - run: npm run demo
+      - run: npm run build -w @taktflow/web
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag taktflow:ci .

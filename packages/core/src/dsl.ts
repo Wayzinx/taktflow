@@ -12,6 +12,7 @@ import type {
   LoopNodeDef,
   NodeDef,
   PlannerNodeDef,
+  ReviewNodeDef,
   ScriptNodeDef,
   SubflowNodeDef,
   TaktConfig,
@@ -30,6 +31,7 @@ export const human = (spec: Spec<HumanNodeDef>): HumanNodeDef => ({ kind: 'human
 export const judge = (spec: Spec<JudgeNodeDef>): JudgeNodeDef => ({ kind: 'judge', ...spec })
 export const loop = (spec: Spec<LoopNodeDef>): LoopNodeDef => ({ kind: 'loop', onExhausted: 'human', ...spec })
 export const planner = (spec: Spec<PlannerNodeDef>): PlannerNodeDef => ({ kind: 'planner', ...spec })
+export const review = (spec: Spec<ReviewNodeDef>): ReviewNodeDef => ({ kind: 'review', pass: 'all', ...spec })
 export const subflow = (spec: Spec<SubflowNodeDef>): SubflowNodeDef => ({ kind: 'subflow', ...spec })
 
 export class WorkflowDefinitionError extends Error {}

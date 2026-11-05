@@ -99,7 +99,7 @@ export function createDshParser(onEvent: EventSink = () => {}): StreamParser {
   })
 }
 
-const APP_BIN = '/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh'
+const APP_BIN = process.platform === 'darwin' ? '/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh' : undefined
 const CACHE_MS = 10 * 60_000
 
 export function createDshHarness(options: DshOptions = {}): HarnessAdapter {

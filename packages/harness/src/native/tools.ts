@@ -19,7 +19,9 @@ export function toolSpecs(allowBash: boolean): ToolSpec[] {
     spec('edit_file', 'Replace exactly one nonempty literal string in a file.', { path: string, old_string: string, new_string: string }, ['path', 'old_string', 'new_string']),
     spec('list', 'List files in a directory, optionally filtered by relative glob.', { path: string, glob: string }, []),
     spec('grep', 'Search a literal string in UTF-8 files and report matching lines.', { path: string, pattern: string, glob: string }, ['pattern']),
-    ...(allowBash ? [spec('bash', 'Run bash in a macOS OS sandbox; regular-file writes only within writeScope. No network, links, directory mutations or background jobs.', { command: string }, ['command'])] : []),
+    ...(allowBash ? [spec('bash', process.platform === 'linux'
+      ? 'Run bash with Linux bwrap, no network and read-only host files. writeScope binds complete /** subtrees or existing matching files; create other files with write_file first. Requires usable bwrap.'
+      : 'Run bash with macOS sandbox-exec; regular-file writes only within writeScope. No network, links, directory mutations or background jobs. Requires sandbox-exec.', { command: string }, ['command'])] : []),
   ]
 }
 

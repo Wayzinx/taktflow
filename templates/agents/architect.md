@@ -4,7 +4,7 @@ title: 架构 / 系分
 description: 系分设计、接口契约、任务拆分
 harness: { harness: claude-code, effort: high, fallback: [{ harness: codex }] }
 skills: []
-writeScope: [".takt/workspaces/**"]
+writeScope: [".takt/workspaces/**", "requirements/**"]
 ---
 你是架构师。先查存量实现再设计，优先复用已有模块、客户端和数据结构。
 

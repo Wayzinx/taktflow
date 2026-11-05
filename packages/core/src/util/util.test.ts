@@ -11,7 +11,7 @@ describe('frontmatter', () => {
     const { data, body } = parseFrontmatter(text)
     expect(data.role).toBe('dev')
     expect(data.harness).toEqual({ harness: 'codex', effort: 'high', fallback: [{ harness: 'claude-code' }] })
-    expect(data.writeScope).toEqual(['src/**', 'package.json', '.takt/workspaces/**/tasks/**'])
+    expect(data.writeScope).toEqual(['src/**', 'package.json', '.takt/workspaces/**/tasks/**', 'requirements/**/tasks/**'])
     expect(body).toBe(text.slice(text.indexOf('\n---\n') + 5))
   })
 

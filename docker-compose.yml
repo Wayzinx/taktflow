@@ -1,0 +1,10 @@
+services:
+  server:
+    build: .
+    ports:
+      - "4870:4870"
+    volumes:
+      - ./space:/space
+    env_file:
+      - .env
+    init: true

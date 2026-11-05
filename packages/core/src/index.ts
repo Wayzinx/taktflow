@@ -32,3 +32,6 @@ export { propagateStale } from './engine/stale.js'
 export * from './engine/selection.js'
 export * from './plugins/load.js'
 export * from './plugins/workflow.js'
+
+export * from './store/fs-chat.js'
+export { listReviews, reviewDetail } from './insights/reviews.js'

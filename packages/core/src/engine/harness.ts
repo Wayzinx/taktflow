@@ -37,7 +37,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const selection = { config: stores.config, profiles, harnesses }
     const base = selectHarness(node.role, node.harness, selection, host.override)
     const task = typeof node.prompt === 'function' ? await node.prompt(ctx) : node.prompt
-    const retryNote = ns.error ? `上一次失败原因：${ns.error}` : ''
+    const retryNote = [ns.error ? `上一次失败原因：${ns.error}` : '', ctx.feedback ? `上一次评审未通过，意见如下：${ctx.feedback}` : ''].filter(Boolean).join('\n')
     const items: ContextItem[] = []
     const add = (source: ContextItem['source'], title: string, text: string, ref?: string) => {
       items.push({ id: `${source}-${items.length}`, source, title, ref, tokens: estimateTokens(text), included: true })

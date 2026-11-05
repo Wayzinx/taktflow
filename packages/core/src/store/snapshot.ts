@@ -27,8 +27,14 @@ function snapshotNode(node: NodeDef): SnapshotNode {
   switch (node.kind) {
     case 'agent':
       snapshot.prompt = typeof node.prompt === 'string' ? node.prompt : undefined
+      snapshot.repo = node.repo
       snapshot.role = node.role
       snapshot.harness = node.harness?.harness
+      break
+    case 'review':
+      snapshot.review = { target: node.target, author: node.author.role,
+        reviewers: node.reviewers.map((reviewer) => ({ role: reviewer.role, focus: reviewer.focus, harness: reviewer.harness?.harness })),
+        pass: node.pass ?? 'all', maxRounds: node.maxRounds, onExhausted: node.onExhausted, humanSignoff: node.humanSignoff }
       break
     case 'judge':
       snapshot.role = node.role

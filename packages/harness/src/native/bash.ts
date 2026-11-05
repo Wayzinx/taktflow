@@ -1,4 +1,6 @@
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { promisify } from 'node:util'
+import { linuxBashArgs } from './linux-bash.js'
 import { access, lstat, readdir } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -10,6 +12,12 @@ const runtime = ['/bin', '/usr/bin', '/usr/lib', '/System/Library', '/Library/Ap
 const maxOutput = 1_000_000
 
 export async function sandboxAvailable(): Promise<boolean> {
+  if (process.platform === 'linux') {
+    try {
+      await promisify(execFile)('bwrap', ['--die-with-parent', '--unshare-pid', '--unshare-net', '--ro-bind', '/', '/', '--', '/bin/true'], { timeout: 5_000 })
+      return true
+    } catch { return false }
+  }
   if (process.platform !== 'darwin') return false
   try { await access(sandbox, constants.X_OK); return true } catch { return false }
 }
@@ -69,11 +77,13 @@ function profile(paths: ToolPaths): string {
 }
 
 export async function runBash(command: string, paths: ToolPaths): Promise<string> {
-  if (!await sandboxAvailable()) throw new Error('bash requires macOS /usr/bin/sandbox-exec; unsupported host, command was not executed')
+  if (!await sandboxAvailable()) throw new Error('bash requires macOS sandbox-exec or usable Linux bwrap; unsupported host, command was not executed')
   await inspectTree(paths)
+  const linux = process.platform === 'linux'
+  const args = linux ? await linuxBashArgs(paths) : ['-p', profile(paths)]
   checkAbort(paths.signal)
   return new Promise<string>((resolve, reject) => {
-    const child = spawn(sandbox, ['-p', profile(paths), '/bin/bash', '--noprofile', '--norc', '-c', command], {
+    const child = spawn(linux ? 'bwrap' : sandbox, [...args, ...(linux ? ['--'] : []), '/bin/bash', '--noprofile', '--norc', '-c', command], {
       cwd: paths.root, detached: true, stdio: ['ignore', 'pipe', 'pipe'],
       // 不继承 API key、BASH_ENV、DYLD_* 或用户的启动脚本。
       env: { PATH: '/usr/bin:/bin', HOME: paths.root, TMPDIR: paths.root, LANG: 'C', LC_ALL: 'C' },

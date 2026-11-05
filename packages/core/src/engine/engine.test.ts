@@ -42,7 +42,7 @@ async function fixture(respond: ConstructorParameters<typeof MemoryHarness>[0] =
 }) {
   const root = await mkdtemp(join(tmpdir(), 'takt-engine-basic-'))
   roots.push(root)
-  const stores = await initProject(root)
+  const stores = await initProject(root, { layout: 'legacy' })
   const requirement = await stores.workspaces.createRequirement({ title: '引擎基本验收' })
   const harness = new MemoryHarness(respond)
   const profiles: Record<string, AgentProfile> = Object.fromEntries(

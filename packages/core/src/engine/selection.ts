@@ -51,6 +51,7 @@ export function forEachRoleSelector(workflow: WorkflowDefinition, check: (role: 
   const visit = (nodes: NodeDef[]): void => {
     for (const node of nodes) {
       if (node.kind === 'agent' || node.kind === 'judge' || node.kind === 'planner') check(node.role, node.harness)
+      else if (node.kind === 'review') { check(node.author.role, node.author.harness); for (const reviewer of node.reviewers) check(reviewer.role, reviewer.harness) }
       else if (node.kind === 'gate') { for (const item of node.checks) { if (item.kind === 'rubric') check(item.role) } }
       else if (node.kind === 'loop') visit(node.body)
       else if (node.kind === 'subflow') visit(node.workflow.nodes)

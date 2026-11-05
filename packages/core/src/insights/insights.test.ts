@@ -45,6 +45,8 @@ function stores(input: {
       saveContext: vi.fn(), saveCompaction: vi.fn(), getContext: vi.fn(),
     },
     events: { append: vi.fn(), read: vi.fn(async (id) => input.events?.[id] ?? []), subscribe: vi.fn(), verify: vi.fn() },
+    paths: { agents: '/unused/agents', workflows: '/unused/workflows', skills: '/unused/skills', knowledge: '/unused/knowledge', requirements: '/unused/requirements' },
+    chat: { getRoom: vi.fn(), ensureRoom: vi.fn(), addMembers: vi.fn(), list: vi.fn(), post: vi.fn(), subscribe: vi.fn() },
     attention: { list: vi.fn(), create: vi.fn(), answer: vi.fn() },
   }
 }

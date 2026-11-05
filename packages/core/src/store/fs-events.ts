@@ -1,7 +1,7 @@
-import { statSync, type Stats } from 'node:fs'
+import { type Stats } from 'node:fs'
 import path from 'node:path'
 import { open, stat } from 'node:fs/promises'
-import { StringDecoder } from 'node:string_decoder'
+import { subscribeJsonLines } from './jsonl-tail.js'
 import type { EventStore } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
 import { canonicalJson, sha256 } from '../util/hash.js'
@@ -10,13 +10,12 @@ import { withFileLock } from './file-lock.js'
 import { eventsFile } from './paths.js'
 
 const ZERO_HASH = '0'.repeat(64)
-const POLL_INTERVAL_MS = 300
 const EVENT_TYPES = new Set<EventType>([
   'run.started', 'run.finished', 'node.ready', 'node.started', 'node.finished', 'node.failed', 'node.stale',
   'artifact.written', 'artifact.edited', 'artifact.untracked', 'gate.result', 'judge.verdict',
   'human.requested', 'human.answered', 'harness.started', 'harness.message', 'harness.tool_call',
   'harness.usage', 'context.assembled', 'context.compacted', 'knowledge.query', 'dag.expanded',
-  'guard.violation', 'log',
+  'guard.violation', 'log', 'review.round', 'review.response', 'review.exhausted', 'rework.started', 'worktree.created', 'task.dispatched',
 ])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,72 +188,7 @@ export class FsEventStore implements EventStore {
   }
 
   subscribe(runId: string, onEvent: (e: EventEnvelope) => void): () => void {
-    const file = eventsFile(this.taktDir, runId)
-    let decoder = new StringDecoder('utf8')
-    // 同步取当前字节偏移：订阅只关心之后追加的事件，不能漏掉 subscribe 返回后立刻写入的那条
-    let offset = 0
-    try {
-      offset = statSync(file).size
-    } catch (err) {
-      if (!isEnoent(err)) throw err
-    }
-    let pending = ''
-    let reading = false
-    let closed = false
-
-    const poll = async (): Promise<void> => {
-      if (closed || reading) return
-      reading = true
-      try {
-        let size: number
-        try {
-          size = (await stat(file)).size
-        } catch (err) {
-          if (isEnoent(err)) return
-          throw err
-        }
-        if (size < offset) {
-          // 文件被替换或截断：从头重新跟上
-          offset = 0
-          pending = ''
-          decoder = new StringDecoder('utf8')
-        }
-        if (size === offset) return
-        const handle = await open(file, 'r')
-        try {
-          const buf = Buffer.alloc(size - offset)
-          const { bytesRead } = await handle.read(buf, 0, buf.length, offset)
-          offset += bytesRead
-          pending += decoder.write(buf.subarray(0, bytesRead))
-        } finally {
-          await handle.close()
-        }
-        let idx: number
-        while (!closed && (idx = pending.indexOf('\n')) >= 0) {
-          const line = pending.slice(0, idx)
-          pending = pending.slice(idx + 1)
-          if (line.trim() === '') continue
-          try {
-            onEvent(JSON.parse(line) as EventEnvelope)
-          } catch {
-            // 坏行交给 verify 报告；订阅不能因为一条坏行停掉
-          }
-        }
-      } catch {
-        // 文件暂时不可读（例如正在被替换）时下个 tick 重试
-      } finally {
-        reading = false
-      }
-    }
-
-    const timer = setInterval(() => {
-      void poll()
-    }, POLL_INTERVAL_MS)
-    timer.unref()
-    return () => {
-      closed = true
-      clearInterval(timer)
-    }
+    return subscribeJsonLines(eventsFile(this.taktDir, runId), onEvent)
   }
 
   /** 校验哈希链；返回第一处断链的 seq（损坏行按它应有的 seq 报）。 */

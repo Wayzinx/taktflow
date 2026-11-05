@@ -237,6 +237,25 @@ describe('DSH parser', () => {
 })
 
 describe('DSH launch and fallback', () => {
+  it.each([
+    ['darwin', ['/configured/dsh', 'dsh', appBin]],
+    ['linux', ['/configured/dsh', 'dsh']],
+  ] as const)('%s 平台只尝试对应的可执行文件候选', async (platform, candidates) => {
+    vi.resetModules()
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue(platform)
+    let createForPlatform: typeof createDshHarness
+    try {
+      ;({ createDshHarness: createForPlatform } = await import('./dsh.js'))
+    } finally {
+      platformSpy.mockRestore()
+    }
+    vi.stubEnv('DSH_BIN', '/configured/dsh')
+    vi.mocked(runProcess).mockResolvedValue(missing)
+    expect((await createForPlatform().run(req, () => {})).ok).toBe(false)
+    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(candidates)
+    vi.resetModules()
+  })
+
   it('使用 headless/json/session-id/stdin，systemAppend 作为用户前缀，不虚构 model/effort flags', async () => {
     mockOutput(fixture)
     const request = { ...req, model: 'ignored', effort: 'high' as const, sessionId: 'old', systemAppend: 'role',
@@ -246,12 +265,15 @@ describe('DSH launch and fallback', () => {
       request, { stdin: `role\n\n${req.prompt}`, onLine: expect.any(Function) })
   })
 
-  it('req.env.DSH_BIN 覆盖 process.env，再按 PATH、app 顺序仅 ENOENT 回退', async () => {
+  it('req.env.DSH_BIN 覆盖 process.env，仅在 macOS 按 PATH、app 顺序回退', async () => {
     vi.stubEnv('DSH_BIN', '/process/dsh')
     mockOutput(fixture)
-    vi.mocked(runProcess).mockResolvedValueOnce(missing).mockResolvedValueOnce(missing)
+    vi.mocked(runProcess).mockResolvedValueOnce(missing)
+    if (process.platform === 'darwin') vi.mocked(runProcess).mockResolvedValueOnce(missing)
     expect((await createDshHarness().run({ ...req, env: { DSH_BIN: '/request/dsh' } }, () => {})).ok).toBe(true)
-    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(['/request/dsh', 'dsh', appBin])
+    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual([
+      '/request/dsh', 'dsh', ...(process.platform === 'darwin' ? [appBin] : []),
+    ])
   })
 
   it('未覆盖时使用 process.env.DSH_BIN；新会话没有 session-id', async () => {
@@ -265,7 +287,9 @@ describe('DSH launch and fallback', () => {
   it('没有 DSH_BIN 时优先 PATH dsh，所有候选 ENOENT 返回最后失败', async () => {
     vi.mocked(runProcess).mockResolvedValue(missing)
     expect(await createDshHarness().run(req, () => {})).toMatchObject({ ok: false, error: 'spawn ENOENT' })
-    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(['dsh', appBin])
+    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual([
+      'dsh', ...(process.platform === 'darwin' ? [appBin] : []),
+    ])
   })
 
   it.each([
@@ -338,10 +362,13 @@ describe('DSH availability', () => {
   })
 
   it('探测复用 ENOENT 回退，其他失败保留原始原因', async () => {
+    if (process.platform !== 'darwin') vi.stubEnv('DSH_BIN', '/configured/dsh')
     mockOutput('', { ok: false, error: 'timeout after 10ms' })
     vi.mocked(runProcess).mockResolvedValueOnce(missing)
     expect(await createDshHarness().available()).toEqual({ ok: false, reason: 'timeout after 10ms' })
-    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(['dsh', appBin])
+    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(
+      process.platform === 'darwin' ? ['dsh', appBin] : ['/configured/dsh', 'dsh'],
+    )
   })
 
   it('修改 DSH_BIN 后不复用其他二进制的缓存', async () => {

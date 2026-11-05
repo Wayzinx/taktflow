@@ -16,9 +16,11 @@ import { validateWorkflowHarnesses } from './selection.js'
 
 export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
 export type GraphRecord = RunGraphNode
-export interface RuntimeRecord { nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
+export interface RuntimeRecord { reviews?: Record<string, ReviewProgress>; feedback?: Record<string, string>; nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
 export { system } from './actor.js'
 import { system } from './actor.js'
+import { postEventMessage } from './chat-events.js'
+import { run as runReview, answerReview, type ReviewProgress } from './nodes/review.js'
 import { run as runGate } from './nodes/gate.js'
 import { run as runJudge } from './nodes/judge.js'
 import { run as runLoop } from './nodes/loop.js'
@@ -34,6 +36,8 @@ export class Runtime implements HarnessHost {
   readonly semaphore: Semaphore
   readonly guard: WriteGuard
   readonly override?: string
+  readonly reviews: Record<string, ReviewProgress> = {}
+  readonly feedback: Record<string, string> = {}
   readonly requests: Record<string, string> = {}
   private saves = Promise.resolve()
   private readonly restarting = new Set<string>()
@@ -42,7 +46,7 @@ export class Runtime implements HarnessHost {
   private logs: Promise<void>[] = []
   constructor(readonly deps: EngineDeps, readonly state: RunState, readonly workflow: WorkflowDefinition, readonly options: EngineOptions, guard?: WriteGuard) {
     this.semaphore = new Semaphore(options.concurrency ?? 4)
-    this.guard = guard ?? new WriteGuard(deps.stores.projectDir)
+    this.guard = guard ?? new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements))
     this.override = options.harnessOverride
   }
   get signal(): AbortSignal { return this.controller.signal }
@@ -70,12 +74,14 @@ export class Runtime implements HarnessHost {
     if (!['harness.message', 'harness.tool_call', 'log', 'knowledge.query', 'context.assembled', 'context.compacted'].includes(type)) await this.save()
     if (type === 'node.finished' && nodeId && this.state.nodes[nodeId]?.status === 'stale') return
     if (type === 'run.finished') data = { status: this.state.status } as typeof data
-    await this.deps.stores.events.append(this.state.runId, { type, data, nodeId, actor })
+    const event = await this.deps.stores.events.append(this.state.runId, { type, data, nodeId, actor })
+    await postEventMessage(this.deps.stores, this.state, event, snapshotWorkflow(this.workflow))
   }
   async persistGraph(): Promise<void> {
     for (const node of Object.values(this.state.nodes)) this.attempts[node.id] = Math.max(this.attempts[node.id] ?? 0, node.attempts)
     const record: RuntimeRecord = {
       requests: { ...this.requests },
+      reviews: structuredClone(this.reviews), feedback: { ...this.feedback },
       attempts: { ...this.attempts },
       reservedAttempts: { ...this.reservedAttempts },
     }
@@ -104,6 +110,8 @@ export class Runtime implements HarnessHost {
     validateDag(this.workflow.nodes, new Set(this.workflow.stages.map((stage) => stage.id)))
     const stored = await readJsonFile<RuntimeRecord>(runtimeFile(this.deps, this.state.runId))
     Object.assign(this.requests, stored?.requests)
+    Object.assign(this.reviews, stored?.reviews)
+    Object.assign(this.feedback, stored?.feedback)
     Object.assign(this.attempts, stored?.attempts)
     Object.assign(this.reservedAttempts, stored?.reservedAttempts)
     this.add(this.workflow.nodes)
@@ -136,6 +144,8 @@ export class Runtime implements HarnessHost {
       this.graph.delete(id)
       delete this.state.nodes[id]
       delete this.requests[id]
+      this.resetReview(id)
+      delete this.feedback[id]
       this.restarting.delete(id)
       delete this.reservedAttempts[id]
     }
@@ -159,7 +169,7 @@ export class Runtime implements HarnessHost {
     return {
       runId: this.state.runId, requirementId: this.state.requirementId, nodeId: node.id,
       projectDir: this.deps.stores.projectDir, workspaceDir: this.deps.stores.workspaces.dir(this.state.requirementId),
-      signal: this.signal, args: this.state.args, iteration: node.kind === 'loop' ? ns.iteration : entry.iteration, item: entry.item,
+      signal: this.signal, args: this.state.args, feedback: this.feedback[node.id], iteration: node.kind === 'loop' ? ns.iteration : entry.iteration, item: entry.item,
       resultOf: (id) => {
         for (const scope of scopes) if (Object.hasOwn(this.state.nodes, scope + id)) return this.state.nodes[scope + id]!.result
         return this.state.nodes[id]?.result
@@ -192,6 +202,7 @@ export class Runtime implements HarnessHost {
   private async consume(entry: Entry, item: AttentionItem, actor = item.answeredBy ?? system): Promise<void> {
     const ns = this.state.nodes[entry.def.id]!
     await this.recordAnswer(item, actor)
+    if (entry.def.kind === 'review') { await answerReview(this, entry, item); await this.save(); return }
     const answer = { decision: item.decision, answer: item.answer }
     ns.result = entry.def.kind === 'judge' ? { ...ns.result as object, ...answer } : answer
     if (item.decision === 'cancelled') {
@@ -218,6 +229,7 @@ export class Runtime implements HarnessHost {
       } else if (['running', 'ready', 'stale'].includes(ns.status)) {
         if (ns.status === 'stale') {
           this.restarting.add(ns.id)
+          this.resetReview(ns.id)
           delete this.reservedAttempts[ns.id]
         }
         ns.status = 'pending'
@@ -282,7 +294,7 @@ export class Runtime implements HarnessHost {
   private async runNode(entry: Entry): Promise<void> {
     this.state.nodes[entry.def.id]!.status = 'ready'
     await this.emit('node.ready', {}, entry.def.id)
-    if (entry.def.kind === 'loop' || entry.def.kind === 'planner') await this.runAttempts(entry)
+    if (entry.def.kind === 'loop' || entry.def.kind === 'planner' || entry.def.kind === 'review') await this.runAttempts(entry)
     else await this.semaphore.use(() => this.runAttempts(entry))
   }
   private async beginAttempt(ns: NodeState, announce = true): Promise<void> {
@@ -334,13 +346,14 @@ export class Runtime implements HarnessHost {
           await this.skipNode(node.id, true)
           return
         }
-        ns.inputs = await this.guard.system(this.workspacePaths(node.inputs?.map((input) => input.path)), () =>
+        const inputs = await this.guard.system(this.workspacePaths(node.inputs?.map((input) => input.path)), () =>
           resolveInputs(this.deps.stores, this.state, node, this.emit))
+        ns.inputs = node.kind === 'review' && this.reviews[node.id]?.rounds.length ? ns.inputs : inputs
         await this.save()
         if ((ns.status as NodeState['status']) === 'stale') return
         const actor = await this.execute(entry, ctx)
         await this.flushLogs()
-        if (ns.status === 'running') await this.finish(entry, actor)
+        if (this.state.nodes[node.id] === ns && ns.status === 'running') await this.finish(entry, actor)
         return
       } catch (error) {
         await this.flushLogs()
@@ -400,6 +413,7 @@ export class Runtime implements HarnessHost {
       case 'judge': await runJudge(this, entry, ctx); break
       case 'loop': await runLoop(this, entry, ctx); break
       case 'planner': await runPlanner(this, entry, ctx); break
+      case 'review': await runReview(this, entry, ctx); break
       case 'subflow': throw new Error('not implemented')
     }
     return system
@@ -409,6 +423,48 @@ export class Runtime implements HarnessHost {
     if (ids.every((id) => done(this.state.nodes[id]!))) return
     if (ids.some((id) => this.state.nodes[id]!.status === 'waiting_human')) ns.status = 'waiting_human'
     else throw new Error(`子 DAG 未完成：${ids.filter((id) => !done(this.state.nodes[id]!)).join(', ')}`)
+  }
+  private resetReview(id: string): void {
+    const progress = this.reviews[id]
+    if (progress) this.reviews[id] = { rounds: [], phase: 'review', history: [...(progress.history ?? []), ...progress.rounds] }
+  }
+  async rework(entry: Entry, target: string, feedback: string): Promise<void> {
+    const origin = entry.def.id
+    const scope = [...this.graph.values()].filter((candidate) => candidate.scope === entry.scope)
+    const ancestors = new Set<string>([origin])
+    const visit = (id: string): void => {
+      for (const dep of this.graph.get(id)?.def.needs ?? []) {
+        if (!scope.some((candidate) => candidate.def.id === dep) || ancestors.has(dep)) continue
+        ancestors.add(dep); visit(dep)
+      }
+    }
+    visit(origin)
+    if (!ancestors.has(target) || target === origin) throw new Error(`打回目标必须在同作用域上游：${target}`)
+    const reset = new Set([target])
+    for (let changed = true; changed;) {
+      changed = false
+      for (const candidate of scope) if (ancestors.has(candidate.def.id) && !reset.has(candidate.def.id)
+        && candidate.def.needs?.some((id) => reset.has(id))) { reset.add(candidate.def.id); changed = true }
+    }
+    const count = (this.state.nodes[target]!.reworks ?? 0) + 1
+    for (const id of reset) {
+      const old = this.state.nodes[id]!
+      const next = fresh(id, old.iteration, old.attempts + 1)
+      next.reworks = id === target ? count : old.reworks
+      this.state.nodes[id] = next
+      this.reservedAttempts[id] = next.attempts
+      this.restarting.add(id)
+      delete this.requests[id]
+      this.resetReview(id)
+      const kind = this.graph.get(id)!.def.kind
+      if (kind === 'loop' || kind === 'planner') {
+        this.removeChildren(id)
+        this.state.expansions = this.state.expansions.filter((expansion) => expansion.plannerId !== id)
+      }
+      this.feedback[id] = feedback
+    }
+    await this.persistGraph()
+    await this.emit('rework.started', { from: origin, to: target, count, feedback, reset: [...reset] }, origin)
   }
   async run(): Promise<RunState> {
     if (!this.signal.aborted) {
