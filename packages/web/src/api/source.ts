@@ -59,6 +59,37 @@ export class WorkflowConflictError extends Error {
 export type NodeView = NodeDetail
 
 /** Web 用到的全部数据接口：真实 HTTP 客户端和演示数据实现同一份。 */
+/**
+ * 一个职责子 Agent 的一次执行（节点的一次尝试）。由 dsh 插件提供（独立 serve 没有），
+ * 字段与插件的 AgentTrace 一致：状态、角色档案、preset 组合、prompt、工具调用、被拒操作。
+ */
+export interface AgentTraceView {
+  runId: string
+  nodeId: string
+  attempt: number
+  label: string
+  role: string
+  /** 宿主子会话 id，可在宿主里打开。 */
+  sessionId: string
+  status: 'starting' | 'running' | 'completed' | 'failed' | 'cancelled'
+  startedAt: string
+  endedAt?: string
+  durationMs?: number
+  preset: { id: string; cfgHash: string; plugins: string[] }
+  profile: { title: string; description: string; skills: string[]; writeScope: string[]; readOnly: boolean; source: 'space' | 'bundled' }
+  prompt: string
+  systemAppend?: string
+  outputSchema?: Record<string, unknown>
+  model?: string
+  effort?: string
+  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens?: number }
+  tools: Array<{ name: string; summary: string; ok?: boolean; at: string; durationMs?: number }>
+  denials: Array<{ tool: string; path?: string; reason: string; at: string }>
+  stopReason?: string
+  finalText?: string
+  error?: string
+}
+
 export interface DataSource {
   readonly mock: boolean
   project(): Promise<ProjectOverview>
@@ -116,4 +147,9 @@ export interface DataSource {
   rollbackWorkflow(id: string, body: { rev: string; reason: string }): Promise<WorkflowDocument>
   /** workflow 文件被修改（人、Lead 或 Agent）时到达；包括自己的保存。 */
   subscribeWorkflow(id: string, onChange: (e: WorkflowChangedEvent) => void): () => void
+
+  // ---- 子 Agent 追溯（可选，dsh 插件提供；不提供时相关界面隐藏）
+  agents?(runId: string, nodeId?: string): Promise<AgentTraceView[]>
+  /** 在宿主里打开该子 Agent 的会话。 */
+  openAgentSession?(trace: AgentTraceView): void
 }

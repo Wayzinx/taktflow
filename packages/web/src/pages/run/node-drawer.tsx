@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { Bot, ClipboardCheck, FileInput, Layers, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
-import { useAsync } from '../../api'
+import { useAsync, useSource } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, Tabs, type TabDef } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
 import { scopeRoot } from '../../lib/scope'
@@ -9,6 +9,7 @@ import { NODE_STATUS } from '../../lib/status'
 import { nodeLabel } from './node-label'
 import { ContextTab, GateTab, IoTab, JudgeTab, OverviewTab, PromptTab, TraceTab } from './drawer-tabs'
 import { ReviewTab } from './review/review-tab'
+import { AgentsTab } from './agents-tab'
 import './drawer.css'
 
 const MIN_W = 440
@@ -54,6 +55,7 @@ function useDrawerWidth(ref: RefObject<HTMLElement | null>): [number, (e: ReactM
 
 export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions, liveTick, closing = false }: { runId: string; requirementId: string; nodeId: string; graphNode?: GraphNode; expansions: Expansion[]; liveTick: number; closing?: boolean }) {
   const { query } = useLocation()
+  const ds = useSource()
   const q = useAsync((ds) => ds.node(runId, nodeId), [runId, nodeId, liveTick])
   const asideRef = useRef<HTMLElement>(null)
   const [width, startResize] = useDrawerWidth(asideRef)
@@ -77,6 +79,8 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
     { id: 'gate', label: '门禁', icon: ShieldCheck, hidden: d?.kind !== 'gate' },
     { id: 'review', label: '评审', icon: ClipboardCheck, hidden: d?.kind !== 'review', count: d?.review?.rounds.length },
     { id: 'prompt', label: 'Prompt', icon: Bot, hidden: !d?.prompt },
+    // 由宿主（dsh 插件）提供；独立 serve 没有子 Agent 追溯
+    { id: 'agents', label: '子 Agent', icon: Bot, hidden: !ds.agents },
   ]
   const visible = tabs.filter((t) => !t.hidden).map((t) => t.id)
   const requested = query.get('dtab') ?? 'overview'
@@ -125,6 +129,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             {tab === 'gate' && <GateTab d={d} />}
             {tab === 'review' && <ReviewTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'prompt' && <PromptTab d={d} />}
+            {tab === 'agents' && <AgentsTab runId={runId} nodeId={nodeId} liveTick={liveTick} />}
           </div>
         )}
       </div>

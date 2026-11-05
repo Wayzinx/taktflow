@@ -908,3 +908,88 @@
 .prompt-li {
   color: var(--text-2);
 }
+
+/* ---------------------------------------------------------------- 子 Agent 追溯（agents-tab.tsx） */
+.agent-stack {
+  display: grid;
+  gap: var(--sp-4);
+}
+.agent-card {
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.agent-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.agent-card-head > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
+  flex: none;
+}
+.agent-card-title {
+  font-weight: 600;
+}
+.agent-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.agent-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-row {
+  display: grid;
+  grid-template-columns: minmax(80px, max-content) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px var(--sp-2);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+.agent-row:nth-child(odd) {
+  background: var(--surface-2);
+}
+.agent-row.failed .agent-tool,
+.agent-row.denied {
+  color: var(--st-failed);
+}
+.agent-tool {
+  color: var(--text-2);
+}
+.agent-empty {
+  padding: 4px var(--sp-2);
+}
+.agent-fold-head {
+  display: flex;
+  align-items: center;
+}
+.agent-text {
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+.agent-pick {
+  width: 100%;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto auto;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.agent-pick:hover {
+  background: var(--surface-hover);
+}
+.agent-denied {
+  color: var(--st-failed);
+}
