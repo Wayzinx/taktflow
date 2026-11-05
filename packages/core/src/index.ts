@@ -38,3 +38,7 @@ export { propagateStale } from './engine/stale.js'
 export * from './engine/selection.js'
 export * from './plugins/load.js'
 export * from './plugins/workflow.js'
+// 宿主化（dsh 插件）需要的存储与进程工具：跨进程锁、原子写、进程组取消的 shell 命令。
+export { withFileLock } from './store/file-lock.js'
+export { assertNoSymlinks, readJsonFile, toJsonText, writeFileAtomic } from './store/fs-utils.js'
+export { command as runShellCommand } from './engine/process.js'
