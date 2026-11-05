@@ -11,7 +11,8 @@ import './styles/tokens.css'
 import './styles/base.css'
 import './styles/embed.css'
 
-export type { DataSource, NodeView } from './api'
+export type { AgentTraceView, DataSource, NodeView } from './api'
+export { WorkflowConflictError } from './api'
 export { ApiRequestError } from './api/client'
 export type { ThemeHost } from './lib/theme'
 
