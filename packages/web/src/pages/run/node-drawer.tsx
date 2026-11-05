@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type RefObject } from 'react'
 import { Bot, ClipboardCheck, FileInput, Fingerprint, Layers, ListChecks, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, Tabs, type TabDef } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
+import { scopeRoot } from '../../lib/scope'
 import { NODE_STATUS } from '../../lib/status'
 import { nodeLabel } from './node-label'
 import { ContextTab, GateTab, IoTab, JudgeTab, OverviewTab, PromptTab, TraceTab } from './drawer-tabs'
@@ -16,7 +17,7 @@ import './drawer.css'
 const MIN_W = 440
 const DEFAULT_W = 580
 
-function useDrawerWidth(): [number, (e: ReactMouseEvent) => void] {
+function useDrawerWidth(ref: RefObject<HTMLElement | null>): [number, (e: ReactMouseEvent) => void] {
   const [w, setW] = useState(() => {
     try {
       return Number(localStorage.getItem('takt.drawer.w')) || DEFAULT_W
@@ -25,17 +26,19 @@ function useDrawerWidth(): [number, (e: ReactMouseEvent) => void] {
     }
   })
   useEffect(() => {
-    document.documentElement.style.setProperty('--drawer-w', `${w}px`)
-  }, [w])
+    scopeRoot(ref.current).vars.style.setProperty('--drawer-w', `${w}px`)
+  }, [ref, w])
   const start = (e: ReactMouseEvent) => {
     e.preventDefault()
     const startX = e.clientX
     const startW = w
-    const move = (ev: MouseEvent) => setW(Math.max(MIN_W, Math.min(window.innerWidth * 0.85, startW + startX - ev.clientX)))
+    const root = scopeRoot(ref.current)
+    const maxW = root.vars.clientWidth * 0.85
+    const move = (ev: MouseEvent) => setW(Math.max(MIN_W, Math.min(maxW, startW + startX - ev.clientX)))
     const up = () => {
       document.removeEventListener('mousemove', move)
       document.removeEventListener('mouseup', up)
-      document.body.classList.remove('resizing')
+      root.classes.classList.remove('resizing')
       setW((cur) => {
         try {
           localStorage.setItem('takt.drawer.w', String(Math.round(cur)))
@@ -45,7 +48,7 @@ function useDrawerWidth(): [number, (e: ReactMouseEvent) => void] {
         return cur
       })
     }
-    document.body.classList.add('resizing')
+    root.classes.classList.add('resizing')
     document.addEventListener('mousemove', move)
     document.addEventListener('mouseup', up)
   }
@@ -55,7 +58,8 @@ function useDrawerWidth(): [number, (e: ReactMouseEvent) => void] {
 export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions, liveTick, closing = false }: { runId: string; requirementId: string; nodeId: string; graphNode?: GraphNode; expansions: Expansion[]; liveTick: number; closing?: boolean }) {
   const { query } = useLocation()
   const q = useAsync((ds) => ds.node(runId, nodeId), [runId, nodeId, liveTick])
-  const [width, startResize] = useDrawerWidth()
+  const asideRef = useRef<HTMLElement>(null)
+  const [width, startResize] = useDrawerWidth(asideRef)
   const lastData = useRef(q.data)
   if (q.data) lastData.current = q.data
   // liveTick 刷新时保留上一份数据，避免抽屉闪成骨架
@@ -87,7 +91,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
   const title = graphNode ? nodeLabel(graphNode, expansions).title : d?.title
 
   return (
-    <aside className={`drawer${closing ? ' closing' : ''}`} style={{ width } as CSSProperties} aria-label="节点详情" inert={closing || undefined}>
+    <aside ref={asideRef} className={`drawer${closing ? ' closing' : ''}`} style={{ width } as CSSProperties} aria-label="节点详情" inert={closing || undefined}>
       <div className="drawer-resize" onMouseDown={startResize} title="拖动调整宽度" />
       <div className="drawer-head">
         <div className="drawer-title-row">

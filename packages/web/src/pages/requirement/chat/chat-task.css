@@ -224,7 +224,7 @@
     display: none;
   }
   .chat-main {
-    height: calc(100vh - 220px);
+    height: calc(var(--viewport-h) - 220px);
     min-height: 420px;
   }
 }

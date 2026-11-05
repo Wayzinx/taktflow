@@ -105,7 +105,7 @@
 .chat-main {
   display: flex;
   flex-direction: column;
-  height: clamp(440px, calc(100vh - 330px), 900px);
+  height: clamp(440px, calc(var(--viewport-h) - 330px), 900px);
   min-width: 0;
 }
 .chat-head svg {

@@ -3,7 +3,7 @@
   display: grid;
   grid-template-columns: 216px minmax(0, 1fr) 340px;
   gap: var(--sp-3);
-  height: max(560px, calc(100dvh - var(--topbar-h) - 172px));
+  height: max(560px, calc(var(--viewport-h) - var(--topbar-h) - 172px));
 }
 .wf-body > * {
   min-height: 0;
