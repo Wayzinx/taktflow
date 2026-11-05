@@ -2,29 +2,8 @@ import { DataProvider } from './api'
 import { pickSource } from './api/pick'
 import { AppShell } from './components/layout'
 import { Skeleton, Toaster } from './components/ui'
-import { matchPath, useLocation } from './lib/router'
 import { useTheme } from './lib/theme'
-import { AttentionPage } from './pages/attention'
-import { OverviewPage } from './pages/overview'
-import { NotFoundPage, PlaceholderPage } from './pages/placeholder'
-import { RequirementPage } from './pages/requirement'
-import { RequirementsPage } from './pages/requirements'
-import { RunPage } from './pages/run'
-import { SettingsPage } from './pages/settings'
-
-export function Routes() {
-  const { path } = useLocation()
-  if (path === '/' || path === '') return <OverviewPage />
-  if (path === '/requirements') return <RequirementsPage />
-  if (path === '/attention') return <AttentionPage />
-  if (path === '/knowledge') return <PlaceholderPage kind="knowledge" />
-  if (path === '/settings') return <SettingsPage />
-  const req = matchPath('/req/:id', path)
-  if (req) return <RequirementPage key={req.id} id={req.id!} />
-  const run = matchPath('/run/:runId', path)
-  if (run) return <RunPage key={run.runId} runId={run.runId!} />
-  return <NotFoundPage />
-}
+import { Routes } from './routes'
 
 function Boot() {
   return (

@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState } from 'react'
 import { DataProvider, type DataSource } from './api'
-import { Routes } from './app'
+import { Routes } from './routes'
 import { AppShell } from './components/layout'
 import { Skeleton, Toaster } from './components/ui'
 import { createMemoryRouter, setRouter } from './lib/router'
