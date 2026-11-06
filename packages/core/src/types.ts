@@ -76,6 +76,7 @@ export type ArtifactKind =
   | 'report' // 质量报告 / 准出报告
   | 'decision' // 决策记录（人工裁决、ADR）
   | 'knowledge' // 回流到知识库的条目
+  | 'defect' // 交付后发现的缺陷与归因（docs/design/20）
   | 'other'
 
 /** 指向公共存放区里某个产物的某个版本；不写 version 表示最新版。 */
@@ -592,7 +593,9 @@ export interface SnapshotNode {
   maxItems?: number
   allowedRoles?: string[]
   /** gate：检查项标题；rubric 检查带阈值。 */
-  checks?: Array<{ id: string; kind: GateCheck['kind']; title?: string; threshold?: number }>
+  checks?: Array<{ id: string; kind: GateCheck['kind']; title?: string; threshold?: number; role?: string }>
+  /** agent：写权限（学习经验、评测回放时还原节点收窄后的权限）。 */
+  writeScope?: string[]
   /** human：问题、表单类型、选项。 */
   ask?: string
   form?: HumanNodeDef['form']
@@ -755,6 +758,8 @@ export interface EventPayloads {
   'budget.warning': { budget: RunBudget; used: { tokens: number; costUsd?: number; minutes: number }; ratio: number }
   'budget.exhausted': { budget: RunBudget; used: { tokens: number; costUsd?: number; minutes: number }; ratio: number }
   'route.decided': RouteDecision
+  /** 节点本次执行的配方（docs/design/20）：成绩单按 recipeKey 分组。 */
+  'node.recipe': NodeRecipe
   'lesson.recalled': { ids: string[]; holdout: boolean; tokens: number }
   'lesson.learned': { id: string; title: string; source: Lesson['source'] }
   'lesson.updated': { id: string; status: Lesson['status']; reason: string; stats: Lesson['stats'] }
@@ -1311,7 +1316,7 @@ export interface TaktConfig {
   /** 绑定的代码仓库。 */
   repos?: RepoBinding[]
   /** 目录约定；不写时新空间用顶层 agents/ workflows/ skills/ knowledge/ requirements/，旧项目沿用 .takt/ 下的目录。 */
-  paths?: { agents?: string; workflows?: string; skills?: string; knowledge?: string; requirements?: string }
+  paths?: { agents?: string; workflows?: string; skills?: string; knowledge?: string; requirements?: string; evals?: string }
   sandbox?: { provider: 'local' | 'bwrap' | 'docker' | (string & {}); image?: string; network?: SandboxSpec['network'] }
   /** 需求群的 Lead Agent。 */
   lead?: { harness?: HarnessSelector; progressUpdates?: boolean }
@@ -1339,3 +1344,148 @@ export interface TaktConfig {
   /** 模型别名：别名 → 配置。 */
   models?: Record<string, ModelConfig>
 }
+
+// ============================================================ 评测与归因（docs/design/20）
+
+/** 节点一次执行的配方：用了哪个版本的角色、prompt、技能、模型。 */
+export interface NodeRecipe {
+  workflowId: string
+  workflowVersion: string
+  /** workflow 源码修订（workflow-source 的 rev）；拿不到时缺省。 */
+  workflowRev?: string
+  nodeId: NodeId
+  kind: NodeKind
+  role?: string
+  /** 角色档案（agents/<role>.md）内容哈希。 */
+  profileHash?: string
+  /** prompt 模板哈希；动态 prompt 取函数源码的哈希。 */
+  promptHash?: string
+  /** 实际加载的技能及内容哈希（目录内全部文件按路径排序后的哈希）。 */
+  skills: Array<{ name: string; hash: string }>
+  harness?: string
+  model?: string
+  effort?: HarnessSelector['effort']
+  /** 本次召回的经验 id（不计入 recipeKey）。 */
+  lessons?: string[]
+  /** 除 lessons 外各字段规范化后的 sha256 前 16 位。 */
+  recipeKey: string
+}
+
+export type DefectOrigin = 'requirement' | 'design' | 'implementation' | 'test_design' | 'automation' | 'environment' | 'external' | 'unknown'
+
+/** 本该拦住却漏掉的原因。 */
+export type MissReason = 'not_covered' | 'wrong_assertion' | 'reviewed_but_missed' | 'gate_absent' | 'judge_misclassified' | 'evidence_stale' | 'other'
+
+/** 交付后发现的缺陷（存放区 defects/<id>.md，kind defect）。 */
+export interface Defect {
+  id: string
+  requirementId: RequirementId
+  title: string
+  description: string
+  severity: 'critical' | 'major' | 'minor'
+  foundAt: Timestamp
+  reportedBy: Actor
+  /** 关联的验收标准 id。 */
+  acs?: string[]
+  links?: ExternalLink[]
+  evidence?: string[]
+  status: 'open' | 'attributed' | 'confirmed' | 'closed'
+}
+
+/** 归因：在哪引入、哪里漏检、怎么改。归因 Agent 给候选，人确认后才计入成绩单。 */
+export interface DefectAttribution {
+  defectId: string
+  introducedAt: { origin: DefectOrigin; runId?: RunId; nodeId?: NodeId; artifact?: ArtifactRef; evidence: string[] }
+  missedBy: Array<{ runId?: RunId; nodeId: NodeId; reason: MissReason; evidence: string[] }>
+  confidence: number
+  suggestions: Array<{ target: { kind: 'skill' | 'prompt' | 'completion' | 'review_focus' | 'gate_check' | 'lesson' | 'knowledge'; ref: string }; change: string }>
+  /** 确定性预检结果（不花 token）。 */
+  precheck: { acCovered?: boolean; cases?: string[]; codeNodes?: NodeId[]; reviewedBy?: NodeId[]; gates?: NodeId[] }
+  by: Actor
+  at: Timestamp
+  confirmed?: { by: Actor; at: Timestamp; note?: string; edited: boolean }
+}
+
+export type EvalTarget = { kind: 'node'; workflowId: string; nodeId: string } | { kind: 'skill'; name: string }
+
+/** 回放评测用例：冻结输入 + 被测节点定义 + 判分规则（evals/<目标>/<id>.json）。 */
+export interface EvalCase {
+  id: string
+  target: EvalTarget
+  title: string
+  source: { kind: 'history' | 'defect' | 'skill' | 'manual'; runId?: RunId; nodeId?: NodeId; defectId?: string }
+  node: SnapshotNode
+  /** 当时实际渲染的 prompt（动态 prompt 回放用它）。 */
+  prompt?: string
+  inputs: Array<{ path: string; content: string; kind?: ArtifactKind }>
+  grading: {
+    /** 由独立 verifier 逐条核对的完成标准。 */
+    checks?: string[]
+    /** 在输出目录里执行的确定性命令（退出码 0 为过）。 */
+    commands?: string[]
+    rubric?: { text: string; threshold: number; judge?: HarnessSelector }
+    /** 参考答案（评审与人工修改后的最终版本）。 */
+    reference?: { path: string; content: string }
+    /** 回归：必须指出 / 不得引入的问题描述。 */
+    mustFind?: string[]
+    mustNotIntroduce?: string[]
+  }
+  createdAt: Timestamp
+}
+
+/** 被比较的版本：在基线配方上覆盖哪些项。 */
+export interface EvalVariant {
+  id: string
+  label: string
+  /** 用这个目录替换空间技能目录。 */
+  skillsDir?: string
+  /** 用这个文件的内容替换节点 prompt。 */
+  promptFile?: string
+  /** 用这个文件替换角色档案。 */
+  profileFile?: string
+  harness?: HarnessSelector
+}
+
+export interface EvalCaseResult {
+  caseId: string
+  variant: string
+  pass: boolean
+  /** 0–100。 */
+  score?: number
+  checks?: CompletionCheck[]
+  rubric?: { score: number; reason: string }
+  /** 与参考答案的一致程度（0–100，由 judge 给出）。 */
+  reference?: { score: number; reason: string }
+  usage: Usage
+  durationMs: number
+  error?: string
+  /** 输出快照的存放路径（.takt/evals/runs/<run>/<case>/<variant>/）。 */
+  outputDir?: string
+}
+
+export interface EvalComparison {
+  baseline: string
+  candidate: string
+  wins: number
+  losses: number
+  ties: number
+  passRate: Record<string, number>
+  meanScore: Record<string, number>
+  /** 回归用例（来源为 defect）在候选版本上没过的。 */
+  regressionsFailed: string[]
+  verdict: 'better' | 'worse' | 'same' | 'inconclusive'
+}
+
+export interface EvalRun {
+  id: string
+  target: EvalTarget
+  variants: EvalVariant[]
+  caseIds: string[]
+  status: 'running' | 'done' | 'failed'
+  startedAt: Timestamp
+  endedAt?: Timestamp
+  by: Actor
+  results: EvalCaseResult[]
+  comparison?: EvalComparison
+}
+

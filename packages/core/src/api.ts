@@ -56,6 +56,19 @@
  * | POST | /api/commands/:id                              | 请求体 CommandRunRequest → CommandRunResponse |
  * | GET  | /api/lessons?status=                           | Lesson[] |
  * | PATCH| /api/lessons/:id                               | 请求体 LessonUpdateRequest → Lesson |
+ * | GET  | /api/me                                        | Viewer（当前用户：请求头 x-takt-user，缺省为空间第一个 owner） |
+ * | PATCH| /api/space/repos/:repoId                       | 请求体 RepoUpdateRequest → SpaceDetail |
+ * | --- 评测与归因（docs/design/20） | | |
+ * | GET  | /api/eval/scorecards?by=node|recipe|skill&workflow= | NodeScorecard[] |
+ * | GET  | /api/eval/cases?target=                        | EvalCase[]（target 形如 node:<workflow>/<node> 或 skill:<name>） |
+ * | POST | /api/eval/cases/collect                        | 请求体 EvalCollectRequest → { added: string[] }（从历史与已确认缺陷生成用例） |
+ * | GET  | /api/eval/runs                                 | EvalRun[]（不含 results 明细时 results 为空数组） |
+ * | GET  | /api/eval/runs/:id                             | EvalRun |
+ * | POST | /api/eval/runs                                 | 请求体 EvalRunRequest → EvalRun（后台执行，轮询 GET 看进度） |
+ * | GET  | /api/requirements/:id/defects                  | DefectDetail[] |
+ * | POST | /api/requirements/:id/defects                  | 请求体 DefectReportRequest → DefectDetail |
+ * | POST | /api/requirements/:id/defects/:defectId/attribute | 无请求体 → DefectDetail（预检 + 归因 Agent，后台执行） |
+ * | POST | /api/requirements/:id/defects/:defectId/confirm   | 请求体 DefectConfirmRequest → DefectDetail |
  *
  * 任务卡片（RoomMessage kind=task）是只追加的：同一 taskRunId 每次状态变化追加一条，前端按 taskRunId 只显示最新一条。
  * 群聊 SSE 除 RoomMessage 外还会发 `event: lead`，data 为 LeadPresence。
@@ -67,7 +80,16 @@ import type {
   Actor,
   AgentProfile,
   CompletionCheck,
+  Defect,
+  DefectAttribution,
+  EvalCase,
+  EvalRun,
+  EvalTarget,
+  EvalVariant,
   FailureRecord,
+  HarnessSelector,
+  NodeRecipe,
+  VerdictCategory,
   Lesson,
   LeadPresence,
   QualityMetrics,
@@ -145,6 +167,7 @@ export interface ProjectOverview {
     /** 全部需求的"已校验 / 已拦截"合计。 */
     verified?: number
     intercepted?: number
+    interceptedBy?: QualityMetrics['interceptedBy']
   }
 }
 
@@ -256,7 +279,9 @@ export interface NodeDetail {
   /** gate 节点的检查定义（来自快照，含 rubric 阈值）。 */
   checks?: SnapshotNode['checks']
   /** review 节点：配置与每轮记录（含历史修订）、正交状态与人工处置。 */
-  review?: { config: NonNullable<SnapshotNode['review']>; rounds: ReviewRound[]; status: ReviewStatus; facets?: ReviewFacets; dispositions?: ReviewDisposition[] }
+  review?: { config: NonNullable<SnapshotNode['review']>; rounds: ReviewRound[]; status: ReviewStatus; revision?: number; facets?: ReviewFacets; dispositions?: ReviewDisposition[] }
+  /** 本次执行的配方（docs/design/20）。 */
+  recipe?: NodeRecipe
   goal?: string
   summary?: string
   /** 完成标准与最近一次自检。 */
@@ -529,3 +554,80 @@ export interface ModelInfo {
 }
 
 export type { AttentionItem, Lesson, QualityMetrics, RequirementMetrics, RouteDecision }
+
+export interface Viewer {
+  id: string
+  name: string
+  /** 对应的空间成员（含权限角色与职责）；未登记时缺省。 */
+  member?: SpaceMember
+}
+
+export type RepoUpdateRequest = Partial<Omit<RepoBinding, 'id'>> & { reason?: string }
+
+// ------------------------------------------------------------ 评测与归因（docs/design/20）
+
+/** 节点 / 配方 / 技能的成绩单（全部从事件与产物计算）。 */
+export interface NodeScorecard {
+  key: { by: 'node' | 'recipe' | 'skill'; workflowId?: string; nodeId?: string; recipeKey?: string; skill?: { name: string; hash?: string } }
+  label: string
+  role?: string
+  executions: number
+  /** 第一次执行就成功且完成标准全部满足的比例。 */
+  firstPassRate?: number
+  review: { roundsAvg?: number; reworks: number; issues: { blocker: number; major: number; minor: number; nit: number } }
+  humanEdits: { cosmetic: number; semantic: number; rate?: number }
+  completionUnmet: number
+  suppressed: number
+  /** 沿溯源归到该节点的下游判决。 */
+  downstream: Partial<Record<VerdictCategory, number>>
+  /** 已确认归因到该节点（引入）的逃逸缺陷数。 */
+  escapes: number
+  /** 评审 / 门禁节点的检出率：拦下 ÷（拦下 + 确认漏检）。 */
+  detection?: { caught: number; missed: number; rate?: number }
+  usage: Usage
+  durationMsAvg?: number
+  /** 按配方的时间序列（最早出现时间升序）。 */
+  trend?: Array<{ recipeKey: string; firstAt: string; executions: number; firstPassRate?: number }>
+  regression?: { suspected: boolean; reason?: string }
+}
+
+export interface EvalCollectRequest {
+  target?: EvalTarget
+  /** 只从这些运行里收集；缺省为全部历史。 */
+  runIds?: string[]
+  /** 同时把已确认缺陷生成回归用例。 */
+  includeDefects?: boolean
+}
+
+export interface EvalRunRequest {
+  target: EvalTarget
+  /** 第一个为基线；不给 baseline 时自动加一个"当前配方"的基线。 */
+  variants: EvalVariant[]
+  caseIds?: string[]
+  /** 判分用的模型（rubric / 参考对比）；缺省用 evaluator 角色的默认 harness。 */
+  judge?: HarnessSelector
+}
+
+export interface DefectDetail extends Defect {
+  attribution?: DefectAttribution
+  /** 归因任务进行中。 */
+  attributing?: boolean
+}
+
+export interface DefectReportRequest {
+  title: string
+  description: string
+  severity: Defect['severity']
+  acs?: string[]
+  links?: Defect['links']
+  evidence?: string[]
+}
+
+export interface DefectConfirmRequest {
+  /** 人对归因的修改（缺省表示原样确认）。 */
+  attribution?: Partial<Pick<DefectAttribution, 'introducedAt' | 'missedBy' | 'suggestions'>>
+  note?: string
+}
+
+export type { Defect, DefectAttribution, EvalCase, EvalRun, NodeRecipe }
+

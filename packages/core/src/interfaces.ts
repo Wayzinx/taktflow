@@ -177,7 +177,7 @@ export interface ProjectStores {
   taktDir: string
   config: TaktConfig
   /** 解析后的目录约定（新空间为顶层目录，旧项目为 .takt/ 下的目录）。 */
-  paths: { agents: string; workflows: string; skills: string; knowledge: string; requirements: string }
+  paths: { agents: string; workflows: string; skills: string; knowledge: string; requirements: string; evals?: string }
   workspaces: WorkspaceStore
   events: EventStore
   runs: RunStore

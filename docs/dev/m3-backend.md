@@ -247,3 +247,23 @@
 - `npm run demo`、`npm run demo:standard`、`npm run demo:chat`、`npm run demo:quick`；
 - `npm run takt -- serve --spaces examples --port 4872` 后用 curl 验证新路由的返回结构；
 - `npm run takt -- workflow lint taktflow-standard --project examples/standard-delivery`（或等价命令）无 error。
+
+---
+
+## m3-integrate 补充（第一批完成后）
+
+- `store/fs-events.ts` 的事件白名单已由调度方改为按 `EventType` 穷举（包括 `node.recipe`），不用再改。
+- 现有失败：
+  - `packages/cli/src/lead.test.ts` 2 条；
+  - `packages/server/src/integration.test.ts` 1 条：fixture 里评审者与作者同角色，现在被 validateDag 拒绝，改 fixture；
+  - `packages/server/src/server.test.ts` 1 条。
+  - 原因来自第一批的行为变化（Lead 动作走命令注册表、作者不能评自己）。按新行为修测试或接线，不要回退功能。
+- `packages/core/src/index.ts` 补导出：`createLessonStore / createLessonRecall / learnFromRun`（`./lessons/index.js`）、`qualityMetrics`（`./insights/quality.js`，第二个参数为 `{ store, requirementId }`）、`currentNode`（`./insights/current-node.js`）、`budgetStatus`（`./insights/budget.js`）。
+- 采纳的协议变更（协议已加好）：
+  - `NodeDetail.review.revision`；
+  - `SnapshotNode.writeScope` 与 `checks[].role`：在 `store/snapshot.ts` 里填；
+  - `ProjectOverview.totals.interceptedBy`；
+  - `GET /api/me` → `Viewer`：请求头 `x-takt-user`，缺省为空间第一个 owner；answer、dispose 等写操作的 actor 用它；
+  - `PATCH /api/space/repos/:repoId` → `SpaceDetail`：reason 进空间审计。
+- **评测与归因**：m3-eval 并行开发，产出 `packages/server/src/eval-routes.ts` 的 `registerEvalRoutes`、`packages/cli/src/commands/{eval,defect}.ts` 的 `registerEvalCommands / registerDefectCommands`、`packages/core/src/commands/eval-commands.ts` 的 `evalCommandSpecs`、读模型用的 `recipeOf(events, nodeId)`。由你在 router、CLI 入口和命令注册表里注册，并把 `NodeDetail.recipe` 接上。调度方会在 m3-eval 完成后通知你做这一步；在那之前先完成其余接入。
+- 演示补充：`demo:standard` 结束后录入一个缺陷并跑预检 + 归因（mock 剧本）+ 确认，断言生成了回归用例、成绩单出现 escapes。
