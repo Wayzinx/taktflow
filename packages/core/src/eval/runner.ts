@@ -34,7 +34,7 @@ const gradeSchema = { type: 'object', required: ['checks', 'score', 'reason'], p
 interface Grade { checks: CompletionCheck[]; score: number; reason: string; rubric?: { score: number; reason: string }; reference?: { score: number; reason: string } }
 
 export function compareEval(cases: EvalCase[], results: EvalCaseResult[], baseline: string, candidate: string): EvalComparison {
-  const comparison: EvalComparison = { baseline, candidate, wins: 0, losses: 0, ties: 0, passRate: {}, meanScore: {}, regressionsFailed: [], verdict: 'inconclusive' }
+  const comparison: EvalComparison = { baseline, candidate, cases: [], wins: 0, losses: 0, ties: 0, passRate: {}, meanScore: {}, regressionsFailed: [], verdict: 'inconclusive' }
   for (const variant of [baseline, candidate]) {
     const rows = cases.map((value) => results.find((result) => result.caseId === value.id && result.variant === variant))
     comparison.passRate[variant] = rows.length ? rows.filter((row) => row?.pass).length / rows.length : 0
@@ -46,6 +46,7 @@ export function compareEval(cases: EvalCase[], results: EvalCaseResult[], baseli
     if (value.source.kind === 'defect' && !b?.pass) comparison.regressionsFailed.push(value.id)
     if (!a || !b) continue
     const difference = Number(b.pass) - Number(a.pass) || (Math.abs((b.score ?? 0) - (a.score ?? 0)) >= 5 ? (b.score ?? 0) - (a.score ?? 0) : 0)
+    comparison.cases!.push({ caseId: value.id, outcome: difference > 0 ? 'win' : difference < 0 ? 'loss' : 'tie' })
     if (difference > 0) comparison.wins++
     else if (difference < 0) comparison.losses++
     else comparison.ties++
@@ -88,7 +89,9 @@ function validateJudge(deps: EngineDeps, tested: HarnessSelector, judge: Harness
   const b = resolveHarnessSelector(judge, deps.stores.config, deps.harnesses)
   for (const selector of harnessSelectors(tested)) {
     const a = resolveHarnessSelector(selector, deps.stores.config, deps.harnesses)
-    if (!a.model || !b.model || a.model === b.model) throw new Error('判分模型必须明确指定且不同于被测模型（包括 fallback）')
+    if (a.model ? !b.model || a.model === b.model : a.harness.id === b.harness.id && a.model === b.model) {
+      throw new Error('判分模型必须明确指定且不同于被测模型（包括 fallback）；被测无模型时 harness / 模型组合必须不同')
+    }
   }
 }
 function completionCriteria(value: EvalCase): string[] { return [...new Set([...(value.node.completion ?? []), ...(value.grading.checks ?? [])])] }

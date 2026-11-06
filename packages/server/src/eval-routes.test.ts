@@ -10,13 +10,13 @@ import { fail, json } from './http.js'
 import type { Handler } from './routes.js'
 const cleanups: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-it('注册全部10条路由，缺陷录入后重新读取；非法路径和参数返回400', async () => {
+it('注册全部11条路由，缺陷录入后重新读取；非法路径和参数返回400', async () => {
   const root = await mkdtemp(join(tmpdir(), 'takt-eval-http-')); cleanups.push(() => rm(root, { recursive: true, force: true }))
   const stores = await initProject(root)
   await stores.workspaces.createRequirement({ id: 'REQ-001', title: 'HTTP' })
   const router = createRouter<Handler>(), registered: string[] = []
   registerEvalRoutes((method, path, handler) => { registered.push(`${method} ${path}`); router.add(method, path, handler) }, async () => ({ stores, profiles: {}, harnesses: {}, knowledge: [] }))
-  expect(registered).toHaveLength(10)
+  expect(registered).toHaveLength(11)
   const server = createServer((request, response) => {
     const url = new URL(request.url!, 'http://localhost'), route = router.match(request.method!, url.pathname)
     if (!route) { response.writeHead(404).end(); return }

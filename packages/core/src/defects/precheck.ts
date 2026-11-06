@@ -5,6 +5,7 @@ import type { ArtifactRef, Defect, DefectAttribution, EventPayloads } from '../t
 import { createInsights } from '../insights/fs-insights.js'
 import { readArtifactData } from '../insights/artifacts.js'
 import { snapshotNodes } from '../engine/recipe.js'
+import { readRecipeInputs } from '../engine/recipe-record.js'
 
 export type DefectPrecheck = DefectAttribution['precheck'] & {
   evidence: Array<{ caseId: string; status?: string; artifacts: ArtifactRef[] }>
@@ -35,11 +36,15 @@ export async function precheckDefect(stores: ProjectStores, defect: Defect): Pro
   }
   for (const run of await stores.runs.list({ requirementId: defect.requirementId })) {
     const snapshot = await stores.runs.getWorkflow(run.runId)
-    const created = await stores.events.read(run.runId, { types: ['worktree.created'] })
+    const events = await stores.events.read(run.runId)
+    const created = events.filter((event) => event.type === 'worktree.created')
     for (const node of snapshotNodes([...(snapshot?.nodes ?? []), ...run.expansions.flatMap((item) => item.nodes ?? [])])) {
       const state = run.nodes[node.id]
       if (!state || !state.attempts) continue
-      const relevant = state.inputs?.some((ref) => related.has(ref.path)) || state.outputs.some((ref) => related.has(ref.path))
+      const nodeEvents = events.filter((event) => event.nodeId === node.id)
+      const recorded = nodeEvents.map((event) => readRecipeInputs([event])).filter((input) => input !== undefined)
+      const inputs = recorded.length ? recorded.flatMap((input) => input.refs) : state.inputs
+      const relevant = inputs?.some((ref) => related.has(ref.path)) || state.outputs.some((ref) => related.has(ref.path))
       if (relevant && node.kind === 'review') result.reviewedBy!.push(node.id)
       const dependencyRelevant = node.needs.some((need) => run.nodes[need]?.outputs.some((ref) => related.has(ref.path)))
       if (node.kind === 'gate' && (relevant || dependencyRelevant || node.checks?.some((check) => check.kind === 'acceptance'))) result.gates!.push(node.id)

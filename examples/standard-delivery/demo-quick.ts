@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { cp, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,8 +9,11 @@ import { createRunEngine, loadRuntime } from '../../packages/cli/src/project.js'
 import workflow from './workflows/quick-fix.workflow.js'
 
 const example = dirname(fileURLToPath(import.meta.url))
-const root = await mkdtemp(join(tmpdir(), 'takt-quick-'))
+const root = process.env.TAKT_DEMO_DIR ? await mkdir(process.env.TAKT_DEMO_DIR, { recursive: true }).then(() => process.env.TAKT_DEMO_DIR as string) : await mkdtemp(join(tmpdir(), 'takt-quick-'))
 for (const name of ['src', 'tests', 'package.json', 'agents', 'workflows', 'takt.config.json']) await cp(join(example, name), join(root, name), { recursive: true })
+const config = JSON.parse(await readFile(join(root, 'takt.config.json'), 'utf8'))
+config.space = { ...config.space, id: 'quick-delivery' }
+await writeFile(join(root, 'takt.config.json'), JSON.stringify(config, null, 2) + '\n')
 await symlink(resolve('node_modules'), join(root, 'node_modules'), 'dir')
 for (const args of [['init', '-b', 'main'], ['add', 'src', 'tests', 'package.json'], ['-c', 'user.name=Demo', '-c', 'user.email=demo@localhost', 'commit', '-m', '演示基线']]) execFileSync('git', args, { cwd: root, stdio: 'pipe' })
 const stores = await initProject(root)

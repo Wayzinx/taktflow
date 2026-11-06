@@ -193,7 +193,7 @@ it('m3-fix 24：拒绝跨站与非 JSON 写入，同源和无 Origin 可以写�
   }
 })
 
-it('m3-fix 1/25/26：HTTP 拒绝项目外变体，写接口强制 reason 并记录命令审计', async () => {
+it('HTTP 拒绝项目外变体，评测写接口补默认 reason 并记录命令审计', async () => {
   const { root, stores, req } = await setup()
   const server = await start({ projectDir: root, resolveRuntime: (fresh) => ({ stores: fresh, profiles: {}, harnesses: {}, knowledge: [] }) })
   const outside = join(tmpdir(), 'unreadable-private-marker')
@@ -202,11 +202,13 @@ it('m3-fix 1/25/26：HTTP 拒绝项目外变体，写接口强制 reason 并记�
   expect(result.data.error).toContain('变体路径无效')
   expect(result.data.error).not.toContain(outside)
   const input = { title: 'bug', description: 'bug', severity: 'minor' }
-  expect((await request(server, `/api/requirements/${req.id}/defects`, 'POST', input)).status).toBe(400)
-  expect((await request(server, `/api/requirements/${req.id}/defects`, 'POST', { ...input, reason: '独立入口回归' })).data.id).toBe('D-1')
+  expect((await request(server, `/api/requirements/${req.id}/defects`, 'POST', input)).data.id).toBe('D-1')
+  expect((await request(server, `/api/requirements/${req.id}/defects`, 'POST', { ...input, reason: '独立入口回归' })).data.id).toBe('D-2')
+  for (const reason of ['', ' ', null, 123]) expect((await request(server, `/api/requirements/${req.id}/defects`, 'POST', { ...input, reason })).status).toBe(400)
   const audit = await readFile(join(stores.taktDir, 'space-events.jsonl'), 'utf8')
   expect(audit).toContain('defect.report')
   expect(audit).toContain('独立入口回归')
+  expect(audit).toContain('defect.report via web')
 })
 
 it('m3-fix 28/36：初始修订列表可打开和回滚，修改作者与 me 一致', async () => {

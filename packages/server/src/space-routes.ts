@@ -37,7 +37,8 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
     await changeConfig(stores, actor(request, stores), reason, `更新仓库 ${params.repoId}`, (config) => {
       const index = config.repos?.findIndex((repo) => repo.id === params.repoId) ?? -1
       if (index < 0) throw new HttpError(404, '仓库不存在')
-      config.repos![index] = repoBinding({ ...config.repos![index], ...input, id: params.repoId })
+      const merged = { ...config.repos![index], ...input, id: params.repoId }
+      config.repos![index] = repoBinding(Object.fromEntries(Object.entries(merged).filter(([, value]) => value !== null)))
     })
     return spaceDetail(stores)
   })

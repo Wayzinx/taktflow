@@ -1,6 +1,6 @@
 import { skillContentHash } from '../util/skill-hash.js'
 export { skillContentHash } from '../util/skill-hash.js'
-import { recipeInputsLog } from './recipe-record.js'
+import { saveRecipeContext } from './recipe-record.js'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { EventEnvelope, NodeRecipe, SnapshotNode } from '../types.js'
@@ -14,7 +14,7 @@ export function recipeOf(events: EventEnvelope[], nodeId: string): NodeRecipe | 
 }
 
 export function recipeKey(recipe: Omit<NodeRecipe, 'recipeKey'>): string {
-  const { lessons: _lessons, ...identity } = recipe
+  const { lessons: _lessons, inputs: _inputs, ...identity } = recipe
   return sha256(canonicalJson(identity)).slice(0, 16)
 }
 
@@ -58,7 +58,9 @@ export async function recordRecipe(host: HarnessHost, node: AgentNodeDef, cwd: s
     profileHash: sha256(profile ?? canonicalJson(profiles[node.role])),
     promptHash: sha256(typeof template === 'function' ? template.toString() : template),
     skills: await loadedSkills(cwd, selector.harness), harness: selector.harness, model: selector.model, effort: selector.effort, lessons,
+    inputs: host.state.nodes[node.id]?.inputs ?? [],
   }
-  await host.emit('node.recipe', { ...value, recipeKey: recipeKey(value) }, node.id)
-  await host.emit('log', recipeInputsLog(host.state.nodes[node.id]?.inputs ?? [], prompt, node.resultSchema), node.id)
+  const key = recipeKey(value)
+  await saveRecipeContext(stores, host.state.runId, node.id, events[start]?.seq ?? 0, key, { prompt, resultSchema: node.resultSchema })
+  await host.emit('node.recipe', { ...value, recipeKey: key }, node.id)
 }

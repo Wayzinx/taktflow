@@ -5,10 +5,44 @@ import { afterEach, expect, it } from 'vitest'
 import { initProject } from '../store/project.js'
 import { createEngine } from '../engine/index.js'
 import type { AgentProfile, HarnessAdapter, NodeRecipe, RunState, WorkflowSnapshot } from '../types.js'
-import { collectCases, listEvalCases } from './cases.js'
+import { collectCases, freezeNode, listEvalCases } from './cases.js'
 import { scorecards } from './scorecards.js'
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
+
+it('只有 node.started 才计 execution；skipped、仅有 attempts 和从未运行的节点不计数', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-score-started-')); roots.push(root)
+  const stores = await initProject(root), req = await stores.workspaces.createRequirement({ title: '开始口径' })
+  const statuses = ['skipped', 'pending', 'blocked', 'running', 'succeeded'] as const
+  const at = new Date().toISOString()
+  const state: RunState = { runId: 'starts', workflowId: 'wf', workflowVersion: '1', requirementId: req.id, status: 'running', startedAt: at, args: {}, expansions: [],
+    nodes: Object.fromEntries(statuses.map((status) => [status, { id: status, status, attempts: status === 'pending' ? 0 : 1, outputs: [] }])) }
+  await stores.runs.create(state, { id: 'wf', title: '', version: '1', stages: [], nodes: statuses.map((id) => ({ id, kind: 'script', title: id, needs: [] })) })
+  const actor = { type: 'system', id: 'test' } as const
+  for (const nodeId of ['running', 'succeeded']) await stores.events.append(state.runId, { type: 'node.started', nodeId, actor, data: { attempt: 1 } })
+  await stores.events.append(state.runId, { type: 'node.finished', nodeId: 'skipped', actor, data: { status: 'skipped', outputs: [] } })
+  await stores.events.append(state.runId, { type: 'node.finished', nodeId: 'succeeded', actor, data: { status: 'succeeded', outputs: [] } })
+  const cards = await scorecards(stores, { by: 'node' })
+  expect(cards.map((card) => card.key.nodeId).sort()).toEqual(['running', 'succeeded'])
+  expect(cards.every((card) => card.executions === 1)).toBe(true)
+  expect(cards.find((card) => card.key.nodeId === 'succeeded')?.firstPassRate).toBe(1)
+})
+
+it.each(['recipe', 'legacy'])('冻结配方输入版本，不使用后续修改的 state.inputs：%s', async (format) => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-frozen-inputs-')); roots.push(root)
+  const stores = await initProject(root), req = await stores.workspaces.createRequirement({ title: '冻结输入' })
+  const actor = { type: 'human', id: 'test' } as const
+  const ref = await stores.workspaces.writeArtifact({ ref: { workspace: req.id, path: 'input.md' }, kind: 'input', content: '原始版本', author: actor, reason: '原始输入' })
+  const newer = await stores.workspaces.writeArtifact({ ref: { workspace: req.id, path: 'input.md' }, kind: 'input', content: '后续修改', author: actor, reason: '更新输入' })
+  const state: RunState = { runId: 'frozen', workflowId: 'wf', workflowVersion: '1', requirementId: req.id, status: 'succeeded', startedAt: new Date().toISOString(), args: {}, expansions: [],
+    nodes: { dev: { id: 'dev', status: 'succeeded', attempts: 1, outputs: [], inputs: [newer] } } }
+  await stores.runs.create(state, { id: 'wf', title: '', version: '1', stages: [], nodes: [{ id: 'dev', kind: 'agent', title: '', role: 'dev', needs: [], prompt: '冻结任务' }] })
+  if (format === 'recipe') await stores.events.append(state.runId, { type: 'node.recipe', nodeId: 'dev', actor, data: { workflowId: 'wf', workflowVersion: '1', nodeId: 'dev', kind: 'agent', skills: [], recipeKey: 'key', inputs: [ref] } })
+  await stores.events.append(state.runId, { type: 'log', nodeId: 'dev', actor, data: { level: 'info', message: JSON.stringify({ kind: 'node.recipe.inputs', refs: format === 'legacy' ? [ref] : [newer], prompt: '旧模板' }) } })
+  const frozen = await freezeNode(stores, state, 'dev')
+  expect(frozen.inputs).toEqual([{ path: 'input.md', content: '原始版本', kind: 'input' }])
+  expect(frozen.prompt).toBe(format === 'recipe' ? '冻结任务' : '旧模板')
+})
 
 it('被评审打回的执行冻结首次输入与最终通过版本；角色各记一条配方；人工语义修改进入用例集', async () => {
   const root = await mkdtemp(join(tmpdir(), 'takt-eval-history-')); roots.push(root)

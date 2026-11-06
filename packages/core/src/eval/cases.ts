@@ -5,7 +5,7 @@ import type { ProjectStores } from '../interfaces.js'
 import type { EvalCollectRequest } from '../api.js'
 import type { Defect, DefectAttribution, EvalCase, EvalTarget, EventPayloads, RunState, SnapshotNode } from '../types.js'
 import { readReviewRounds } from '../insights/review-rounds.js'
-import { readRecipeInputs, type FrozenNode } from '../engine/recipe-record.js'
+import { readRecipeContext, readRecipeInputs, type FrozenNode } from '../engine/recipe-record.js'
 import { snapshotNodes } from '../engine/recipe.js'
 import { assertArtifactPath } from '../store/paths.js'
 import { assertNoSymlinks, fileExists, isEnoent } from '../store/fs-utils.js'
@@ -77,8 +77,9 @@ export async function freezeNode(stores: ProjectStores, run: RunState, nodeId: s
     if (!content) throw new Error(`冻结输入不存在：${ref.path}@${ref.version}`)
     inputs.push({ path: ref.path, content: content.toString(), kind: artifacts.find((a) => a.path === ref.path)?.kind })
   }
-  const template = recorded?.prompt ?? node.prompt
-  const frozen: FrozenNode = { ...structuredClone(node), resultSchema: recorded?.resultSchema, replayPromptKind: template === undefined ? 'assembled-legacy' : 'template' }
+  const context = await readRecipeContext(stores, run.runId, nodeId, events) ?? recorded
+  const template = context?.prompt ?? node.prompt
+  const frozen: FrozenNode = { ...structuredClone(node), resultSchema: context?.resultSchema, replayPromptKind: template === undefined ? 'assembled-legacy' : 'template' }
   return { node: frozen, inputs, prompt: template ?? prompt?.text }
 }
 

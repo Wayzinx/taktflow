@@ -22,10 +22,13 @@ it('实际技能内容改变改变 recipeKey，经验变化不改变，动态 pr
   expect(first.status).toBe('succeeded')
   const events = await stores.events.read(first.runId)
   expect(events.filter((e) => e.type === 'node.recipe')).toHaveLength(1)
+  expect(events.some((e) => e.type === 'log' && JSON.stringify(e.data).includes('node.recipe.inputs'))).toBe(false)
   const a = recipeOf(events, 'node')!
+  expect(a.inputs).toEqual([])
   expect(a.skills).toHaveLength(1)
   const { recipeKey: _key, ...identity } = a
   expect(recipeKey({ ...identity, lessons: ['L-1'] })).toBe(recipeKey({ ...identity, lessons: ['L-2'] }))
+  expect(recipeKey({ ...identity, inputs: [{ workspace: req.id, path: 'input.md', version: 1 }] })).toBe(recipeKey({ ...identity, inputs: [{ workspace: req.id, path: 'input.md', version: 2 }] }))
   await writeFile(join(stores.paths.skills, 'skill', 'SKILL.md'), 'v2')
   const second = await createEngine(deps).start({ workflow, requirementId: req.id })
   expect(second.status).toBe('succeeded')

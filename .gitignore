@@ -6,14 +6,13 @@ coverage/
 # 运行产物：示例项目里的 .takt/runs 会很大，默认不入库
 examples/*/.takt/runs/
 examples/*/.takt/objects/
-.taktdev/
-# 调度过程产物（简报、日志、截图）
+# 调度过程产物（简报、日志、截图、调研笔记）
 .taktdev/
 # impeccable：引擎二进制按平台本地下载；Claude Code 的本地设置不入库
 .claude/skills/*/scripts/bin/
 .agents/skills/*/scripts/bin/
 .claude/settings.local.json
-
+# 演示运行时写入的经验、空间审计与 workflow 修订
 examples/*/knowledge/lessons/
 examples/*/.takt/space-events.jsonl
 examples/*/.takt/workflow-revisions/

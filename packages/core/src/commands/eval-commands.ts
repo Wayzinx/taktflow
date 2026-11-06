@@ -17,7 +17,7 @@ export function evalCommandSpecs(deps: EngineDeps): CommandSpec[] {
     define('eval.scorecards', '查询评测成绩单', objectSchema({ by: { type: 'string', enum: ['node', 'recipe', 'skill'] }, workflowId: text }),
       async (input) => scorecards(deps.stores, { by: (input.by as ScorecardOptions['by']) ?? 'node', workflowId: input.workflowId as string | undefined }), true),
     define('defect.report', '录入逃逸缺陷', objectSchema({ requirementId: text, title: text, description: text, severity: { type: 'string', enum: ['critical', 'major', 'minor'] }, acs: strings, evidence: strings, links: { type: 'array' } }, ['requirementId', 'title', 'description', 'severity']),
-      async (input, context) => reportDefect(deps.stores, input.requirementId as string, input as unknown as DefectReportRequest, context.actor)),
+      async (input, context) => reportDefect(deps.stores, input.requirementId as string, { ...input as unknown as DefectReportRequest, reason: context.reason }, context.actor)),
     define('defect.attribute', '生成候选归因', objectSchema({ requirementId: text, defectId: text }, ['requirementId', 'defectId']),
       async (input) => startDefectAttribution(deps, input.requirementId as string, input.defectId as string)),
     define('defect.confirm', '人工确认归因', objectSchema({ requirementId: text, defectId: text, attribution: { type: 'object' }, note: text }, ['requirementId', 'defectId']),

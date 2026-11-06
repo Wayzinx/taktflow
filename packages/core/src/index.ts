@@ -58,3 +58,4 @@ export * from './commands/eval-commands.js'
 export { answerOrRead } from './engine/answers.js'
 
 export { startRouted } from './route/start.js'
+export { getEvalOutput } from './eval/output.js'

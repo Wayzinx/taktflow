@@ -24,6 +24,24 @@ async function setup() {
   return { root, stores, deps, value }
 }
 
+it.each([
+  { tested: undefined, judge: { harness: 'mock' }, allowed: false },
+  { tested: undefined, judge: { harness: 'mock', model: 'mock-judge' }, allowed: true },
+  { tested: undefined, judge: { harness: 'other' }, allowed: true },
+  { tested: 'tested', judge: { harness: 'other' }, allowed: false },
+  { tested: 'tested', judge: { harness: 'other', model: 'tested' }, allowed: false },
+])('判分独立性：被测=$tested judge=$judge allowed=$allowed', async ({ tested, judge, allowed }) => {
+  const { stores, deps, value } = await setup()
+  deps.profiles.dev.harness = { harness: 'mock', model: tested }
+  await saveEvalCase(stores, { ...value, grading: { rubric: { text: '核验输出', threshold: 80 } } })
+  deps.harnesses.mock.run = async () => ({ ok: true, finalText: '', structured: { checks: [], score: 90, reason: '独立核验', rubric: { score: 90, reason: '评分证据' } } })
+  const runtime = { ...deps, harnesses: { ...deps.harnesses, other: { ...deps.harnesses.mock, id: 'other' } } }
+  const pending = runEval(runtime, { target: value.target, variants: [{ id: 'baseline', label: '基线' }], judge })
+  if (!allowed) { await expect(pending).rejects.toThrow('不同'); return }
+  const started = await pending
+  expect((await waitEvalRun(stores, started.id)).results[0]).toMatchObject({ pass: true, rubric: { score: 90 } })
+})
+
 it('m3-fix 1/26：命令拒绝绝对、穿越及符号链接路径，错误不泄漏路径', async () => {
   const { root, stores, deps, value } = await setup()
   const outside = await mkdtemp(join(tmpdir(), 'takt-private-')); roots.push(outside)

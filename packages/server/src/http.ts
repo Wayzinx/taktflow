@@ -44,7 +44,7 @@ export function text(value: unknown, name: string, empty = false): string {
   return value
 }
 
-export async function jsonBody(request: IncomingMessage): Promise<unknown> {
+export async function jsonBody(request: IncomingMessage, allowEmpty = false): Promise<unknown> {
   const chunks: Buffer[] = []
   let length = 0
   for await (const chunk of request) {
@@ -53,13 +53,14 @@ export async function jsonBody(request: IncomingMessage): Promise<unknown> {
     if (length > 8 * 1024 * 1024) throw new HttpError(400, '请求体过大')
     chunks.push(buffer)
   }
+  if (allowEmpty && length === 0) return {}
   let value: unknown
   try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch { throw new HttpError(400, '请求体必须是合法 JSON') }
   return value
 }
 
-export async function body(request: IncomingMessage): Promise<Record<string, unknown>> {
-  const value = await jsonBody(request)
+export async function body(request: IncomingMessage, allowEmpty = false): Promise<Record<string, unknown>> {
+  const value = await jsonBody(request, allowEmpty)
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, '请求体必须是对象')
   return value as Record<string, unknown>
 }

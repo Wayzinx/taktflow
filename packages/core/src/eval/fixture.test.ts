@@ -86,7 +86,8 @@ it('完整交付 → AC-2 预检 → 独立归因 → 人确认 → 两条回归
   expect(cases).toHaveLength(2)
   expect(cases.every((value) => value.source.kind === 'defect')).toBe(true)
   const testCard = (await scorecards(stores, { by: 'node' })).find((card) => card.key.nodeId === 'test-plan')!
-  expect(testCard).toMatchObject({ executions: 1, escapes: 1, detection: { missed: 1, rate: 0 } })
+  expect(testCard).toMatchObject({ executions: 1, escapes: 0, detection: { caught: 0, missed: 1, rate: 0 } })
+  expect((await scorecards(stores, { by: 'node' })).find((card) => card.key.nodeId === 'impl')?.escapes).toBe(1)
   expect((await getDefect(stores, 'REQ-001', defect.id)).attribution?.confirmed?.by).toEqual(person)
   expect((await stores.events.verify('defect-REQ-001')).ok).toBe(true)
   expect((await stores.workspaces.listArtifacts('REQ-001')).find((a) => a.path === 'defects/D-1.attribution.json')!.versions.at(-1)?.reason).toContain('AC-2')
@@ -136,9 +137,16 @@ it('注册表暴露六个命令并拒绝 Agent 确认；并发录入不覆盖序
 it('A/B 以 pass 优先，分差 5 分为胜负，回归失败禁止 better', () => {
   const cases = [1, 2, 3].map((n) => ({ id: `c${n}`, source: { kind: 'defect' } })) as EvalCase[]
   const results = cases.flatMap((value) => [{ caseId: value.id, variant: 'a', pass: false, score: 99, usage: { inputTokens: 0, outputTokens: 0 }, durationMs: 1 }, { caseId: value.id, variant: 'b', pass: true, score: 1, usage: { inputTokens: 0, outputTokens: 0 }, durationMs: 1 }])
-  expect(compareEval(cases, results, 'a', 'b')).toMatchObject({ wins: 3, verdict: 'better' })
+  expect(compareEval(cases, results, 'a', 'b')).toMatchObject({ wins: 3, verdict: 'better', cases: cases.map(({ id }) => ({ caseId: id, outcome: 'win' })) })
   results[1]!.pass = false; results[1]!.score = 0
   expect(compareEval(cases, results, 'a', 'b')).toMatchObject({ wins: 2, losses: 1, regressionsFailed: ['c1'], verdict: 'inconclusive' })
+  results[3]!.pass = false; results[3]!.score = 95
+  results[5]!.pass = false; results[5]!.score = 94
+  expect(compareEval(cases, results, 'a', 'b')).toMatchObject({ wins: 0, losses: 2, ties: 1, verdict: 'worse', cases: [
+    { caseId: 'c1', outcome: 'loss' }, { caseId: 'c2', outcome: 'tie' }, { caseId: 'c3', outcome: 'loss' },
+  ] })
+  expect(compareEval(cases.slice(0, 2), results, 'a', 'b').verdict).toBe('inconclusive')
+  expect(compareEval(cases, results.slice(0, 4), 'a', 'b').cases).toHaveLength(2)
 })
 
 it('m3-fix 11：带点需求 ID 能确认并生成回归用例，冻结失败时不写 confirmed', async () => {

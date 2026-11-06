@@ -29,6 +29,25 @@ async function chunk(reader: ReadableStreamDefaultReader<Uint8Array>) {
   finally { clearTimeout(timer) }
 }
 
+it('仓库 PATCH 的 null 删除可选字段，省略字段保留，必填字段仍校验', async () => {
+  const { root } = await fixture()
+  const server = await start({ projectDir: root })
+  const binding = { id: 'app', path: 'app', defaultBranch: 'main', url: 'https://example.com/app.git', purpose: 'app', description: '应用', bootstrap: 'npm test', share: ['node_modules'], reason: '绑定' }
+  expect((await request(server, '/api/space/repos', 'POST', binding)).status).toBe(200)
+  const patch = '/api/space/repos/app'
+  expect((await request(server, patch, 'PATCH', { bootstrap: null, reason: '清空引导' })).status).toBe(200)
+  let saved = JSON.parse(await readFile(join(root, 'takt.config.json'), 'utf8')).repos[0]
+  expect(saved).not.toHaveProperty('bootstrap')
+  expect(saved).toMatchObject({ url: binding.url, purpose: 'app', description: '应用', share: ['node_modules'] })
+  expect((await request(server, patch, 'PATCH', { url: null, purpose: null, description: null, share: null, reason: '清空可选字段' })).status).toBe(200)
+  saved = JSON.parse(await readFile(join(root, 'takt.config.json'), 'utf8')).repos[0]
+  expect(saved).toEqual({ id: 'app', path: 'app', defaultBranch: 'main' })
+  expect((await request(server, '/api/space')).data.repos[0]).toMatchObject(saved)
+  expect((await request(server, patch, 'PATCH', { path: null, reason: '必填字段' })).status).toBe(400)
+  expect((await request(server, patch, 'PATCH', { bootstrap: '', reason: '空字符串' })).status).toBe(400)
+  expect(JSON.parse(await readFile(join(root, 'takt.config.json'), 'utf8')).repos[0]).toEqual(saved)
+})
+
 it('空间资产读写、成员、仓库同步必须带原因，并复用 EventStore 验证空间哈希链', async () => {
   const { root, stores } = await fixture()
   const server = await start({ projectDir: root })

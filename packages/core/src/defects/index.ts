@@ -63,7 +63,7 @@ export async function reportDefect(stores: ProjectStores, requirementId: string,
     const id = `D-${Math.max(0, ...existing.map((item) => Number(item.id.slice(2)))) + 1}`
     const defect: Defect = { title: request.title, description: request.description, severity: request.severity, acs: request.acs, links: request.links, evidence: request.evidence,
       id, requirementId, foundAt: new Date().toISOString(), reportedBy: by, status: 'open' }
-    await write(stores, defect, by, '录入逃逸缺陷')
+    await write(stores, defect, by, request.reason ?? '录入逃逸缺陷')
     return defect
   })
 }

@@ -28,14 +28,13 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
     const definitions = snapshotNodes([...(snapshot?.nodes ?? []), ...run.expansions.flatMap((entry) => entry.nodes ?? [])])
     for (const [nodeId, state] of Object.entries(run.nodes)) {
       const nodeEvents = events.filter((e) => e.nodeId === nodeId)
-      if (!nodeEvents.some((e) => e.type === 'node.started') && state.attempts === 0) continue
+      if (!nodeEvents.some((e) => e.type === 'node.started')) continue
       const recipes = nodeEvents.filter((e) => e.type === 'node.recipe')
       // 一个 run/node 只作为一次成绩；review 多角色配方在配方/技能视角分别展开。
       const identities = recipes.length ? [...new Map(recipes.map((event) => [(event.data as NodeRecipe).role ?? nodeId, event])).values()] : [undefined]
       const firstFinish = nodeEvents.find((e) => e.type === 'node.finished')?.data as EventPayloads['node.finished'] | undefined
       const firstFailure = nodeEvents.find((e) => e.type === 'node.failed')
       const firstChecks = nodeEvents.find((e) => e.type === 'node.checks')?.data as EventPayloads['node.checks'] | undefined
-      if (!firstFinish && !firstFailure && !['failed', 'blocked', 'cancelled'].includes(state.status)) continue
       const definition = definitions.find((node) => node.id === nodeId)
       for (const event of identities) samples.push({ kind: definition?.kind, run, nodeId, recipe: event?.data as NodeRecipe | undefined, firstAt: event?.ts ?? state.startedAt ?? run.startedAt,
         events: nodeEvents, pass: firstFinish?.status === 'succeeded' && !firstFailure && state.attempts === 1 && !(state.reworks ?? 0)
@@ -72,8 +71,8 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
         if (!source.nodeId) continue
         const matches = samples.filter((sample) => sample.run.requirementId === req && sample.nodeId === source.nodeId && (!source.runId || sample.run.runId === source.runId))
         for (const sample of matches) {
-          sample.escapes.add(identity)
-          if (source !== attr.introducedAt) { sample.missed.add(identity); sample.detector = true }
+          if (source === attr.introducedAt) sample.escapes.add(identity)
+          else { sample.missed.add(identity); sample.detector = true }
         }
       }
     }

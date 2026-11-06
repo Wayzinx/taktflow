@@ -1,17 +1,17 @@
 import {
-  getEvalRun, listDefects, listEvalCases, listEvalRuns, parseEvalTarget, scorecards,
+  getEvalRun, getEvalOutput, listDefects, listEvalCases, listEvalRuns, parseEvalTarget, scorecards,
   type EngineDeps, type ProjectStores, type ScorecardOptions,
 } from '@taktflow/core'
 import { commandExecutor, type M3Callbacks } from './m3-routes.js'
-import { body, HttpError, safeId } from './http.js'
+import { body, HttpError, safeId, text } from './http.js'
 import type { Handler } from './routes.js'
 
 export type EvalRuntimeResolver = (stores: ProjectStores) => EngineDeps | Promise<EngineDeps>
 export function registerEvalRoutes(register: (method: string, path: string, handler: Handler) => void, resolveRuntime: EvalRuntimeResolver, options: M3Callbacks = {}): void {
   const { execute } = commandExecutor({ ...options, resolveRuntime })
   const write = (id: string, fixed: (params: Record<string, string>) => Record<string, unknown> = () => ({})): Handler => async ({ stores, request, params }) => {
-    const { reason, ...input } = await body(request)
-    return execute(stores, request, id, { ...input, ...fixed(params) }, typeof reason === 'string' ? reason : undefined)
+    const { reason, ...input } = await body(request, id === 'defect.attribute')
+    return execute(stores, request, id, { ...input, ...fixed(params) }, reason === undefined ? `${id} via web` : text(reason, 'reason'))
   }
   const add: typeof register = (method, path, handler) => register(method, path, async (context) => {
     try { return await handler(context) } catch (error) {
@@ -27,6 +27,7 @@ export function registerEvalRoutes(register: (method: string, path: string, hand
   add('POST', '/api/eval/cases/collect', write('eval.collect'))
   add('GET', '/api/eval/runs', ({ stores }) => listEvalRuns(stores))
   add('GET', '/api/eval/runs/:id', ({ stores, params }) => getEvalRun(stores, params.id!))
+  add('GET', '/api/eval/runs/:id/output', ({ stores, params, url }) => getEvalOutput(stores, params.id!, text(url.searchParams.get('case'), 'case'), text(url.searchParams.get('variant'), 'variant')))
   add('POST', '/api/eval/runs', write('eval.run'))
   add('GET', '/api/requirements/:id/defects', ({ stores, params }) => listDefects(stores, safeId(params.id!)))
   add('POST', '/api/requirements/:id/defects', write('defect.report', (params) => ({ requirementId: safeId(params.id!) })))

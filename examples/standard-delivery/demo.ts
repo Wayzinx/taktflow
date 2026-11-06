@@ -119,7 +119,9 @@ const regressions = (await listEvalCases(persisted)).filter((test) => test.sourc
 assert.equal(regressions.length, 2)
 for (const nodeId of ['dev-test-loop/fix-code', 'test-design']) {
   assert(regressions.some((test) => test.source.runId === state.runId && test.source.nodeId === nodeId))
-  assert.equal((await scorecards(persisted, { by: 'node' })).find((card) => card.key.workflowId === workflow.id && card.key.nodeId === nodeId)?.escapes, 1)
+  const card = (await scorecards(persisted, { by: 'node' })).find((card) => card.key.workflowId === workflow.id && card.key.nodeId === nodeId)!
+  assert.equal(card.escapes, nodeId === 'dev-test-loop/fix-code' ? 1 : 0)
+  if (nodeId === 'test-design') assert.equal(card.detection?.missed, 1)
 }
 assert.deepEqual(await persisted.events.verify(`defect-${req.id}`), { ok: true })
-console.log(`PASS 逃逸归因：真实复现两侧空格丢失 → 确定性预检 → mock 独立归因 → 人工确认 → 2 条冻结回归用例；引入及漏检节点 escapes=1。缺陷：${defect.id}`)
+console.log(`PASS 逃逸归因：真实复现两侧空格丢失 → 确定性预检 → mock 独立归因 → 人工确认 → 2 条冻结回归用例；引入节点 escapes=1，漏检节点 detection.missed=1。缺陷：${defect.id}`)
