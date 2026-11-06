@@ -13,6 +13,7 @@ import { runAnswer } from './commands/answer.js'
 import { runCancel } from './commands/cancel.js'
 import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
+import { runQuality } from './commands/quality.js'
 import { runKbQuery } from './commands/kb.js'
 import { runSpaceCommand } from './commands/space.js'
 import { runServe } from './commands/serve.js'
@@ -133,6 +134,7 @@ async function dispatch(cli: ParsedCli): Promise<number> {
       expectPositionals('audit verify', args.slice(1), 1, 1)
       return await runAuditVerify(options.project, args[1]!, options.json, options.takeover) ? 0 : 1
     }
+    case 'quality': return runQuality(cli)
     case 'kb': {
       if (args[0] !== 'query') throw new UsageError('kb 子命令：query')
       expectPositionals('kb query', args.slice(1), 1, 1)

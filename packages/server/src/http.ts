@@ -40,5 +40,5 @@ export async function body(request: IncomingMessage): Promise<Record<string, unk
 
 export function actor(request: IncomingMessage): Actor {
   const value = request.headers['x-takt-user']
-  return { type: 'human', id: (Array.isArray(value) ? value[0] : value)?.trim() || 'web' }
+  return { type: 'human', id: (Array.isArray(value) ? value[0] : value)?.trim() || 'web', via: 'web' }
 }

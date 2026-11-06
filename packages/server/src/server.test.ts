@@ -674,7 +674,7 @@ it('回答按表单校验；重复和并发回答返回 409，回调仅执行一
   expect(responses.map((response) => response.status).sort()).toEqual([200, 409])
   expect(callbacks).toBe(1)
   const answered = (await stores.attention.list()).find((item) => item.requestId === 'choice')!
-  expect(answered.answeredBy).toEqual({ type: 'human', id: 'reviewer' })
+  expect(answered.answeredBy).toEqual({ type: 'human', id: 'reviewer', via: 'web' })
   expect(answered).not.toHaveProperty('by')
   expect((await post('choice', { decision: 'choice', answer: 'a' })).status).toBe(409)
   expect(callbacks).toBe(1)

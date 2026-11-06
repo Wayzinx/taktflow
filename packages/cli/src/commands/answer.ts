@@ -1,4 +1,4 @@
-import { assertAnswerFreshness, validateAnswer as validateCoreAnswer, type AttentionItem } from '@taktflow/core'
+import { assertAnswerFreshness, recordAnswerOnce, syncObservations, validateAnswer as validateCoreAnswer, type AttentionItem } from '@taktflow/core'
 import type { ParsedCli } from '../args.js'
 import { parseAnswerOptions } from '../args.js'
 import { UsageError } from '../args.js'
@@ -32,29 +32,37 @@ export async function runAnswer(cli: ParsedCli): Promise<number> {
       await assertAnswerFreshness(stores, current)
       validateAnswer(current, input)
       if (interrupts.interrupted) return 130
-      const answered = await stores.attention.answer(requestId, { ...input, by: { type: 'human', id: currentUser(stores.projectDir) } })
-      if (!options.json) {
-        printer.text(`${printer.colors.green('✔')} 已回答 ${printer.colors.cyan(requestId)}：${answered.decision ?? answered.answer ?? ''}`)
-      }
-      const run = await stores.runs.get(answered.runId)
-      if (run?.workflowId === 'lead') {
-        if (await answerLead(await loadRuntime(options.project, { mock: options.mock }), answered)) {
-          if (options.json) printer.data(answered)
-          const resumed = await stores.runs.get(answered.runId)
-          return resumed && ['failed', 'cancelled'].includes(resumed.status) ? 1 : 0
+      const answered = await stores.attention.answer(requestId, { ...input, by: { type: 'human', id: currentUser(stores.projectDir), via: 'cli' } })
+      if ((await stores.runs.get(answered.runId))?.workflowId !== 'lead') await recordAnswerOnce(stores, answered.runId, answered)
+      let syncAttempted = false
+      const sync = async () => { syncAttempted = true; await syncObservations(stores, answered.runId) }
+      try {
+        if (!options.json) {
+          printer.text(`${printer.colors.green('✔')} 已回答 ${printer.colors.cyan(requestId)}：${answered.decision ?? answered.answer ?? ''}`)
         }
-      }
-      if (options.noResume) {
-        if (options.json) printer.data(answered)
-        return interrupts.interrupted ? 130 : 0
-      }
-      if (interrupts.interrupted) return 130
-      const context = await loadRuntime(options.project)
-      const state = await runWithDrain(
-        () => resumeRun(context, answered.runId, options, printer, active),
-        async () => { await interrupts.drain(); await active.drain() },
-      )
-      return interrupts.interrupted ? 130 : await finishOutput(context, printer, state)
+        const run = await stores.runs.get(answered.runId)
+        if (run?.workflowId === 'lead') {
+          if (await answerLead(await loadRuntime(options.project, { mock: options.mock }), answered)) {
+            await sync()
+            if (options.json) printer.data(answered)
+            const resumed = await stores.runs.get(answered.runId)
+            return resumed && ['failed', 'cancelled'].includes(resumed.status) ? 1 : 0
+          }
+        }
+        if (options.noResume) {
+          await sync()
+          if (options.json) printer.data(answered)
+          return interrupts.interrupted ? 130 : 0
+        }
+        if (interrupts.interrupted) return 130
+        const context = await loadRuntime(options.project)
+        const state = await runWithDrain(
+          () => resumeRun(context, answered.runId, options, printer, active),
+          async () => { await interrupts.drain(); await active.drain() },
+        )
+        await sync()
+        return interrupts.interrupted ? 130 : await finishOutput(context, printer, state)
+      } finally { if (!syncAttempted) await sync() }
     }, {
       takeover: options.takeover,
       onRenewError: async () => { await active.cancel(); await active.drain() },

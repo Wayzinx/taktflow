@@ -98,3 +98,4 @@ export { discoverSpaces, spaceId, spaceSummary, spaceDetail, workflowStore, repo
 export type { LeadMention } from './space-routes.js'
 
 export { createApiCore, ApiError, type ApiCore, type ApiCoreOptions, type EventStream, type ReadOp, type WriteOp, type WriteLease } from './api-core.js'
+export { watchQualityEvents } from './quality-feed.js'

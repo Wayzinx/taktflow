@@ -23,6 +23,7 @@ export interface CliOptions {
   noResume: boolean
   takeover: boolean
   req?: string
+  run?: string
   intent?: string
   port?: string
   host?: string
@@ -59,6 +60,8 @@ export const HELP = `用法：takt <命令> [选项]
   status [--req <REQ>]
   trace <REQ>
   audit verify <runId>
+  quality sync [--run <runId>] | quality repair [--reason <说明>] | quality verify
+  quality defects [--req <REQ>] [--json]
   kb query "<text>" [--intent <i>]
   harness ls                                    列出 harness、能力和可用性
   models ls                                     列出模型与密钥配置状态
@@ -106,6 +109,7 @@ const OPTIONS = {
   'no-resume': { type: 'boolean' },
   takeover: { type: 'boolean' },
   req: { type: 'string' },
+  run: { type: 'string' },
   intent: { type: 'string' },
   port: { type: 'string' },
   host: { type: 'string' },
@@ -129,7 +133,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     noResume: values['no-resume'] === true,
     takeover: values.takeover === true,
   }
-  for (const key of ['project', 'name', 'link', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {
+  for (const key of ['project', 'name', 'link', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'run', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {
     const value = values[key]
     if (value !== undefined) options[key] = value
   }

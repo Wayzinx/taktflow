@@ -1,6 +1,7 @@
 import { createProjectLead, leadEvents } from '../lead.js'
 import { isAbsolute, resolve } from 'node:path'
 import type { Engine, EventStore, ProjectStores, RunState } from '@taktflow/core'
+import { syncObservations } from '@taktflow/core'
 import { createPrinter, type Printer } from '../output.js'
 import type { ParsedCli } from '../args.js'
 import { parseRunArgs, UsageError } from '../args.js'
@@ -130,9 +131,11 @@ export async function runWorkflow(cli: ParsedCli): Promise<number> {
     const state = await withCliLease(context.stores.taktDir, async () => {
       const monitored = leadEvents(context, await createProjectLead(context))
       let engine: Engine | undefined
+      let startedRunId: string | undefined
       const created = createRunEngine({
         ...monitored,
         stores: instrument(monitored.stores, feed, cliOptions, async (id) => {
+          startedRunId = id
           if (engine !== undefined) await active.settle(engine, id)
         }),
       }, {
@@ -146,6 +149,7 @@ export async function runWorkflow(cli: ParsedCli): Promise<number> {
         async () => {
           await interrupts.drain()
           await active.drain()
+          if (startedRunId) await syncObservations(context.stores, startedRunId)
         },
       )
     }, {
@@ -175,6 +179,7 @@ export async function resumeWorkflow(cli: ParsedCli): Promise<number> {
         async () => {
           await interrupts.drain()
           await active.drain()
+          if (await context.stores.runs.get(runId)) await syncObservations(context.stores, runId)
         },
       )
     }, {

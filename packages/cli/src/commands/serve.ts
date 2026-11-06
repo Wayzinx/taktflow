@@ -1,6 +1,6 @@
 import { createWriteLeaseHook, type WriteLeaseHook } from '../lease.js'
 import { access } from 'node:fs/promises'
-import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
+import { discoverSpaces, createServer, watchQualityEvents, type LeadMention, type ServerOptions } from '@taktflow/server'
 import type { AttentionItem, ProjectStores } from '@taktflow/core'
 import { createPrinter } from '../output.js'
 import { loadRuntime, webDir, type ProjectContext } from '../project.js'
@@ -166,6 +166,10 @@ export async function runServe(options: ServeOptions): Promise<void> {
   const loadedLeads = new Map(await Promise.all(contexts.map(async (context) => [context.stores.projectDir, await createProjectLead(context, withWriteLease)] as const)))
   for (const [dir, lead] of loadedLeads) leads.set(dir, lead)
   const stops = await Promise.all(contexts.map((context) => watchLeadEvents(context, leads.get(context.stores.projectDir)!)))
+  for (const context of contexts) stops.push(await watchQualityEvents(context.stores, {
+    withWriteLease,
+    onError: (error, runId) => { process.stderr.write(`质量观察待补算${runId ? ` ${runId}` : ''}：${messageOf(error)}\n`) },
+  }))
   const context = contexts[0]!
   const printer = createPrinter(options.json)
   const dir = await webDirectory()

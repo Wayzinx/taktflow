@@ -8,10 +8,11 @@ import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { createEngine, FsEventStore, initProject, type RunState, type WorkflowDocument } from '@taktflow/core'
 import { createServer, type RunningServer } from './index.js'
+import { removeTestProject } from './test-cleanup.js'
 
 const roots: string[] = []
 const servers: RunningServer[] = []
-afterEach(async () => { await Promise.all(servers.splice(0).map((server) => server.close())); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => { await Promise.all(servers.splice(0).map((server) => server.close())); await Promise.all(roots.splice(0).map(removeTestProject)) })
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'takt-server-m2b-')); roots.push(root)
   const stores = await initProject(root)
@@ -68,7 +69,7 @@ it('空间资产读写、成员、仓库同步必须带原因，并复用 EventS
   expect(await events.verify('space')).toEqual({ ok: true })
   const log = await events.read('space')
   expect(log).toHaveLength(5)
-  expect(log[0]!.actor).toEqual({ type: 'human', id: 'alice' })
+  expect(log[0]!.actor).toEqual({ type: 'human', id: 'alice', via: 'web' })
   expect(JSON.parse((log[0]!.data as { message: string }).message).reason).toBe('team update')
 })
 
@@ -82,7 +83,7 @@ it('workflow 的全部读写、冲突、布局、修订、回滚与 SSE 路由�
   const pending = chunk(reader)
   const second = await request(server, '/api/workflows/test', 'PATCH', { baseRev: first.rev, edits: [{ op: 'setMeta', key: 'title', value: '改名' }], reason: '调整标题' }, { 'x-takt-user': 'editor' })
   expect(second.status).toBe(200)
-  expect(JSON.parse((await pending).split('data: ')[1]!.trim()).revision.author).toEqual({ type: 'human', id: 'editor' })
+  expect(JSON.parse((await pending).split('data: ')[1]!.trim()).revision.author).toEqual({ type: 'human', id: 'editor', via: 'web' })
   abort.abort()
   const conflict = await request(server, '/api/workflows/test', 'PATCH', { baseRev: first.rev, edits: [{ op: 'setMeta', key: 'title', value: '并发标题' }] })
   expect(conflict.status).toBe(409); expect(conflict.data.error).toBe('conflict')

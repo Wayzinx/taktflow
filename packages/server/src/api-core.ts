@@ -1,11 +1,12 @@
 import type { WorkflowStore } from '@taktflow/workflow-source'
 import { workflowAccess } from './workflow-access.js'
+import { readQuality, writeQuality, type QualityReadOp, type QualityWriteOp } from './api-quality.js'
 import { readSpace, writeSpace, type SpaceReadOp, type SpaceWriteOp, type LeadMention } from './api-space.js'
 import { readWorkflow, writeWorkflow, type WorkflowReadOp, type WorkflowWriteOp } from './api-workflow.js'
 import { isUtf8 } from 'node:buffer'
 import {
   AttentionAlreadyAnsweredError, AttentionStaleError, assertAnswerFreshness, buildRunGraph, createInsights, loadRunGraph, markArtifactEdited,
-  stageProgress, validateAnswer,
+  stageProgress, validateAnswer, withSpaceLease, QualityRevisionConflict, recordAnswerOnce, syncObservations,
   type Actor, type ArtifactContent, type AttentionItem, type EventEnvelope, type ProjectStores, type RoomMessage,
 } from '@taktflow/core'
 import type { CatalogCallbacks } from './catalog.js'
@@ -20,9 +21,9 @@ export { ApiError }
 export type ReadOp =
   | 'project' | 'requirements' | 'requirement' | 'artifacts' | 'artifact' | 'comments'
   | 'trace' | 'metrics' | 'runs' | 'run' | 'events' | 'node' | 'audit' | 'attention'
-  | 'harnesses' | 'models' | SpaceReadOp | WorkflowReadOp
+  | 'harnesses' | 'models' | SpaceReadOp | WorkflowReadOp | QualityReadOp
 
-export type WriteOp = 'artifact.edit' | 'comment.add' | 'attention.answer' | SpaceWriteOp | WorkflowWriteOp
+export type WriteOp = 'artifact.edit' | 'comment.add' | 'attention.answer' | SpaceWriteOp | WorkflowWriteOp | QualityWriteOp
 
 export interface ApiCore {
   chat(stores: ProjectStores, id: string, cursor: number | undefined, signal: AbortSignal): EventStream<RoomMessage>
@@ -60,6 +61,7 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
     try { return await (options.withWriteLease ? options.withWriteLease(stores, fn) : fn()) }
     catch (error) {
       if (isLeaseHeld(error) || error instanceof AttentionStaleError) throw new ApiError(409, errorMessage(error))
+      if (error instanceof QualityRevisionConflict) throw new ApiError(409, error.message, { code: error.code, key: error.key, expected: error.expected, actual: error.actual })
       throw error
     }
   }
@@ -82,6 +84,7 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
       return getWorkflow(stores).watch((event) => { if (event.workflowId === id) receive(event) }, onError)
     },
     async read(stores, op, params) {
+      if (op.startsWith('quality.')) return readQuality(stores, op as QualityReadOp, params)
       switch (op) {
         case 'space': return readSpace(stores, op, params, () => getWorkflow(stores).list())
         case 'space.file': case 'reviews': case 'chat':
@@ -184,6 +187,10 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
   }
 
   async function dispatchWrite(stores: ProjectStores, op: WriteOp, params: Record<string, string | undefined>, body: unknown, actor: Actor): Promise<unknown> {
+    if (['defect.create', 'defect.update', 'attribution.record', 'evalcase.add', 'evalcase.update', 'candidate.create', 'eval.start'].includes(op)) {
+      const write = async () => writeQuality(stores, op as QualityWriteOp, params, await inputOf(body), actor)
+      return options.withWriteLease ? write() : withSpaceLease(stores.taktDir, `api:${process.pid}`, write)
+    }
     switch (op) {
       case 'space.members': case 'space.repo.add': case 'space.repo.sync': case 'space.file.edit': case 'room.members': case 'chat.send':
         return writeSpace({ stores, params, input: await inputOf(body), author: actor }, op, onMessage)
@@ -221,7 +228,8 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
         const decision = input.decision === undefined ? undefined : text(input.decision, 'decision')
         const answer = input.answer === undefined ? undefined : text(input.answer, 'answer')
         if (decision === undefined && answer === undefined) throw new ApiError(400, 'decision 或 answer 至少填写一项')
-        const item = await serialize(stores.projectDir, async () => {
+        const inLease = <T>(fn: () => Promise<T>) => options.withWriteLease ? fn() : withSpaceLease(stores.taktDir, `api:${process.pid}`, fn)
+        const item = await inLease(() => serialize(stores.projectDir, async () => {
           const current = (await stores.attention.list()).find((item) => item.requestId === params.requestId)
           if (!current) throw new ApiError(404, '待办不存在')
           if (current.answeredAt !== undefined) throw new ApiError(409, '待办已处理')
@@ -231,13 +239,16 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
             throw new ApiError(400, error instanceof Error ? error.message : String(error))
           }
           try {
-            return await stores.attention.answer(current.requestId, { decision, answer, by: actor })
+            const answered = await stores.attention.answer(current.requestId, { decision, answer, by: actor })
+            if ((await stores.runs.get(answered.runId))?.workflowId !== 'lead') await recordAnswerOnce(stores, answered.runId, answered)
+            return answered
           } catch (error) {
             if (error instanceof AttentionAlreadyAnsweredError) throw new ApiError(409, error.message)
             throw error
           }
-        })
-        await options.onAnswer?.(item)
+        }))
+        try { await options.onAnswer?.(item) }
+        finally { if (stores.quality && await stores.runs.get(item.runId)) await inLease(() => syncObservations(stores, item.runId)) }
         return item
       }
       default:
