@@ -23,7 +23,7 @@ export function checkCompletion(criteria: string[], data: unknown): { checks: Co
     const matches = raw.filter((check) => check && typeof check === 'object' && check.id === id)
     const check = matches.length === 1 ? matches[0] as Record<string, unknown> : undefined
     const evidence = typeof check?.evidence === 'string' ? check.evidence : undefined
-    return { id, criterion, pass: check?.pass === true && check.criterion === criterion && !!evidence?.trim(), evidence }
+    return { id, criterion, pass: check?.pass === true && !!evidence?.trim(), evidence }
   })
   return { checks, unmet: checks.filter((check) => !check.pass).map((check) => check.id) }
 }

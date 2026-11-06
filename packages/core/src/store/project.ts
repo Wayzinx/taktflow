@@ -13,9 +13,9 @@ import { withLock } from './locks.js'
 
 const CONFIG_FILE = 'takt.config.json'
 export async function resolvePaths(projectDir: string, config: TaktConfig): Promise<ProjectStores['paths']> {
-  const legacy = (await Promise.all(['workspaces', 'agents', 'workflows'].map((dir) => fileExists(path.join(projectDir, '.takt', dir))))).some(Boolean)
+  const legacy = config.paths?.requirements === '.takt/workspaces' || (await Promise.all(['workspaces', 'agents', 'workflows'].map((dir) => fileExists(path.join(projectDir, '.takt', dir))))).some(Boolean)
   const root = legacy ? '.takt' : ''
-  return Object.fromEntries(['agents', 'workflows', 'skills', 'knowledge', 'requirements'].map((key) => {
+  return Object.fromEntries(['agents', 'workflows', 'skills', 'knowledge', 'requirements', 'evals'].map((key) => {
     const name = key as keyof ProjectStores['paths']
     return [name, path.resolve(projectDir, config.paths?.[name] ?? path.join(root, legacy && name === 'requirements' ? 'workspaces' : name))]
   })) as ProjectStores['paths']

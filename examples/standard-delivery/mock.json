@@ -30,6 +30,23 @@
       },
       "writes": {
         "{{workspace}}/spec/prd.md": "# PRD 初稿\n\nAC-1：非空名字原样返回。\n\n空名字验收条件待补充。\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "每条验收标准有 AC 编号和可观测结果",
+            "evidence": "Mock 自检：{{workspace}}/spec/prd.md",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "PRD 纳入全部澄清结论并说明范围和约束",
+            "evidence": "Mock 自检：{{workspace}}/spec/prd.md",
+            "pass": true
+          }
+        ],
+        "summary": "已写 spec/spec.md，包含 AC-1、AC-2。"
       }
     },
     {
@@ -114,7 +131,24 @@
         "{{workspace}}/design/design.md": "# 系分初稿\n\n按接口契约实现问候语；回滚方案待完善。\n",
         "{{workspace}}/design/contracts.json": "{\n  \"greet\": {\n    \"module\": \"src/greet.js\",\n    \"export\": \"greet\",\n    \"signature\": \"greet(name: string): string\",\n    \"cases\": [\n      { \"input\": \"Alice\", \"output\": \"Hello, Alice!\" },\n      { \"input\": \"\", \"output\": \"Hello, stranger!\" }\n    ],\n    \"errors\": []\n  }\n}\n"
       },
-      "times": 1
+      "times": 1,
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "接口字段、错误码与数据影响在契约中明确列出",
+            "evidence": "Mock 自检：{{workspace}}/design/design.md, {{workspace}}/design/contracts.json",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "技术方案说明复用点、风险与回滚步骤",
+            "evidence": "Mock 自检：{{workspace}}/design/design.md, {{workspace}}/design/contracts.json",
+            "pass": true
+          }
+        ],
+        "summary": "系分完成：只改 greet 一处，接口与数据结构不变。"
+      }
     },
     {
       "match": {
@@ -131,6 +165,23 @@
       "writes": {
         "{{workspace}}/design/design.md": "# 系分设计：问候语支持空名字\n\n## 改动范围\n\n仅 `src/greet.js` 的 `greet(name)`：空字符串时把名字替换为 `stranger`。\n\n## 复用\n\n沿用现有函数签名与 ESM 导出方式，不引入依赖。\n\n## 风险与回滚\n\n- 风险：调用方传入 `null` / `undefined` 不在本次范围，行为不变。\n- 回滚：恢复 `fixtures/greet.buggy.js` 即可。\n\n## 打回后重新设计\n明确空字符串分支并用固定 fixture 回滚，覆盖 AC-1 和 AC-2。\n",
         "{{workspace}}/design/contracts.json": "{\n  \"greet\": {\n    \"module\": \"src/greet.js\",\n    \"export\": \"greet\",\n    \"signature\": \"greet(name: string): string\",\n    \"cases\": [\n      { \"input\": \"Alice\", \"output\": \"Hello, Alice!\" },\n      { \"input\": \"\", \"output\": \"Hello, stranger!\" }\n    ],\n    \"errors\": []\n  }\n}\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "接口字段、错误码与数据影响在契约中明确列出",
+            "evidence": "Mock 自检：{{workspace}}/design/design.md, {{workspace}}/design/contracts.json",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "技术方案说明复用点、风险与回滚步骤",
+            "evidence": "Mock 自检：{{workspace}}/design/design.md, {{workspace}}/design/contracts.json",
+            "pass": true
+          }
+        ],
+        "summary": "系分完成：只改 greet 一处，接口与数据结构不变。"
       }
     },
     {
@@ -248,6 +299,23 @@
         "{{workspace}}/test-plan/plan.md": "# 测分方案\n\n## 范围\n\n`src/greet.js` 的 `greet(name)`，黑盒视角只读 spec 与契约。\n\n## 分层\n\n1. 正常输入：非空名字保持原输出。\n2. 边界输入：空字符串回退 `stranger`。\n\n## 不可自动化项\n\n无。两条用例均可由 `tests/run-cases.mjs` 执行。\n",
         "{{workspace}}/cases/TC-GREET-001.json": "{\n  \"id\": \"TC-GREET-001\",\n  \"title\": \"非空名字返回原问候语\",\n  \"covers\": [\"AC-1\"],\n  \"input\": \"Alice\",\n  \"expected\": \"Hello, Alice!\"\n}\n",
         "{{workspace}}/cases/TC-GREET-002.json": "{\n  \"id\": \"TC-GREET-002\",\n  \"title\": \"空字符串回退 stranger\",\n  \"covers\": [\"AC-2\"],\n  \"input\": \"\",\n  \"expected\": \"Hello, stranger!\"\n}\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "每条用例关联 AC 并包含输入、步骤和业务断言",
+            "evidence": "Mock 自检：{{workspace}}/test-plan/plan.md, {{workspace}}/cases/TC-GREET-001.json, {{workspace}}/cases/TC-GREET-002.json",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "测分说明边界场景和未覆盖范围",
+            "evidence": "Mock 自检：{{workspace}}/test-plan/plan.md, {{workspace}}/cases/TC-GREET-001.json, {{workspace}}/cases/TC-GREET-002.json",
+            "pass": true
+          }
+        ],
+        "summary": "测分与两条用例已写好，分别覆盖 AC-1 与 AC-2。"
       }
     },
     {
@@ -330,6 +398,17 @@
       "writes": {
         "{{workspace}}/tasks/greet-core.md": "# 任务 greet-core：实现 greet 基础拼接\n\n## 改动摘要\n\n`src/greet.js` 保持 `Hello, <name>!` 的拼接方式，非空名字行为不变。\n\n## 自测\n\n- `greet(\"Alice\")` → `Hello, Alice!` 通过。\n",
         "{{workspace}}/tasks/greet-core.diff": "diff --git a/src/greet.js b/src/greet.js\n--- a/src/greet.js\n+++ b/src/greet.js\n@@ -0,0 +1,3 @@\n+export function greet(name) {\n+  return `Hello, ${name}!`\n+}\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "任务改动与自测结果均有可核查证据",
+            "pass": true,
+            "evidence": "Mock 自检：{{workspace}}/tasks/greet-core.md, {{workspace}}/tasks/greet-core.diff"
+          }
+        ],
+        "summary": "已确认 greet 基础拼接实现，自测正常名字通过。"
       }
     },
     {
@@ -358,6 +437,23 @@
       },
       "writes": {
         "{{workspace}}/scripts/run-cases.mjs": "#!/usr/bin/env node\n/**\n * 用例执行器：读 $TAKT_WORKSPACE/cases/*.json，逐条真实调用 src/greet.js，\n * 把输入、期望、实际写进 evidence/<id>/result.json，汇总写 evidence/summary.json。\n *\n * 关键约束：\n * - 开跑前先把 summary.json 覆盖成空汇总，损坏的用例或中途崩溃不会留下上一轮的 PASS；\n * - 每条用例单独 try/catch，解析失败记一条 error 并落证据，不中断其余用例；\n * - id 必须是安全文件名，重复 id 记为 error，避免覆盖证据或重复计数。\n *\n * 退出码：全部通过为 0；有任何 failed / error 为 1；环境或用例目录本身有问题为 2。\n */\nimport { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'\nimport { dirname, join, resolve } from 'node:path'\nimport { fileURLToPath, pathToFileURL } from 'node:url'\n\nconst SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/\nconst projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')\nconst workspace = process.env.TAKT_WORKSPACE\nif (!workspace) {\n  console.error('缺少 TAKT_WORKSPACE：用例执行器必须由 takt 运行')\n  process.exit(2)\n}\n\nconst casesDir = join(workspace, 'cases')\nconst evidenceDir = join(workspace, 'evidence')\nconst summaryPath = join(evidenceDir, 'summary.json')\nconst summary = { cases: [] }\n\n/** 每次写盘都是当前完整汇总；崩溃时磁盘上只有已处理的行，不会有旧 PASS。 */\nasync function persist() {\n  await mkdir(evidenceDir, { recursive: true })\n  await writeFile(summaryPath, JSON.stringify(summary, null, 2) + '\\n')\n  return summary\n}\n\n/** 先落空汇总：后续任何 throw 之前，旧的通过结论已经被清掉。 */\nawait persist()\n\nlet files\ntry {\n  files = (await readdir(casesDir)).filter((name) => name.endsWith('.json')).sort()\n} catch (error) {\n  if (error?.code !== 'ENOENT') throw error\n  files = []\n}\n\nasync function record(id, row, evidence) {\n  if (evidence !== undefined) await mkdir(dirname(evidence), { recursive: true }).then(() => writeFile(evidence, JSON.stringify(row, null, 2) + '\\n'))\n  summary.cases.push({ id, status: row.status, evidence: evidence === undefined ? undefined : `evidence/${id}/result.json` })\n  await persist()\n  const label = row.status === 'passed' ? 'PASS' : row.status.toUpperCase()\n  console.log(`${label} ${id} input=${JSON.stringify(row.input)} expected=${JSON.stringify(row.expected)} actual=${JSON.stringify(row.actual)}${row.error ? ` error=${row.error}` : ''}`)\n}\n\n// 查询参数带运行随机数，避免同一进程内多次执行拿到旧模块。\nconst moduleUrl = `${pathToFileURL(join(projectDir, 'src', 'greet.js')).href}?run=${Date.now()}-${Math.random()}`\nlet greet\ntry {\n  ;({ greet } = await import(moduleUrl))\n  if (typeof greet !== 'function') throw new Error('src/greet.js 没有导出 greet 函数')\n} catch (error) {\n  const message = error instanceof Error ? error.message : String(error)\n  for (const file of files) {\n    const id = file.replace(/\\.json$/, '')\n    const row = { id, status: 'error', error: `无法加载 src/greet.js：${message}`, file: `cases/${file}` }\n    await record(SAFE_ID.test(id) ? id : file, row, SAFE_ID.test(id) ? join(evidenceDir, id, 'result.json') : undefined)\n  }\n  console.error(`无法加载 src/greet.js：${message}`)\n  process.exit(2)\n}\n\nconst seen = new Set()\nfor (const file of files) {\n  const fileId = file.replace(/\\.json$/, '')\n  let caseFile\n  try {\n    caseFile = JSON.parse(await readFile(join(casesDir, file), 'utf8'))\n  } catch (error) {\n    const message = error instanceof Error ? error.message : String(error)\n    const row = { id: fileId, status: 'error', error: `用例文件无法解析：${message}`, file: `cases/${file}` }\n    await record(SAFE_ID.test(fileId) ? fileId : file, row, SAFE_ID.test(fileId) ? join(evidenceDir, fileId, 'result.json') : undefined)\n    continue\n  }\n\n  const id = typeof caseFile?.id === 'string' ? caseFile.id : ''\n  if (!SAFE_ID.test(id)) {\n    // id 不安全时不能拼证据路径；用文件名标记，evidence 置空。\n    await record(file, { id: id || fileId, status: 'error', error: `用例 id 不是安全文件名：${JSON.stringify(caseFile?.id)}`, file: `cases/${file}` }, undefined)\n    continue\n  }\n  if (seen.has(id)) {\n    // 重复 id 不执行、不写证据，避免覆盖前一条的结果文件。\n    await record(id, { id, status: 'error', error: `重复的用例 id，已忽略 ${file}`, file: `cases/${file}` }, undefined)\n    continue\n  }\n  seen.add(id)\n\n  const input = caseFile.input\n  const expected = caseFile.expected\n  const row = { id, title: caseFile.title, covers: caseFile.covers ?? [], input, expected }\n  try {\n    const actual = greet(input)\n    row.actual = actual\n    row.status = Object.is(actual, expected) ? 'passed' : 'failed'\n  } catch (error) {\n    row.actual = null\n    row.error = error instanceof Error ? error.message : String(error)\n    row.status = 'error'\n  }\n  await record(id, row, join(evidenceDir, id, 'result.json'))\n}\n\nawait persist()\nconst passed = summary.cases.filter((item) => item.status === 'passed').length\nconsole.log(`\\n用例 ${summary.cases.length} 条，通过 ${passed} 条，失败 ${summary.cases.length - passed} 条。汇总：${summaryPath}`)\nif (summary.cases.length === 0) {\n  console.error('cases/ 下没有任何用例')\n  process.exit(2)\n}\nprocess.exit(summary.cases.every((item) => item.status === 'passed') ? 0 : 1)\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "执行脚本与公共存放区评审副本字节一致",
+            "evidence": "Mock 自检：{{workspace}}/scripts/run-cases.mjs",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "脚本逐条验证业务结果并生成用例证据及执行汇总",
+            "evidence": "Mock 自检：{{workspace}}/scripts/run-cases.mjs",
+            "pass": true
+          }
+        ],
+        "summary": "自动化脚本已就绪：仓库内的 tests/run-cases.mjs 读取 cases/ 并真实调用 greet，把证据写入 evidence/<CaseID>/"
       }
     },
     {
@@ -406,7 +502,7 @@
         "nodeId": "dev-test-loop/fix-code",
         "role": "dev"
       },
-      "finalText": "已修复 src/greet.js：空字符串回退 stranger，非空名字行为不变。",
+      "finalText": "Mock 演示：已修复空字符串回退，同时错误地增加 trim；交付后用保留空格的输入复现逃逸。",
       "times": 1,
       "usage": {
         "inputTokens": 1740,
@@ -417,7 +513,7 @@
       "toolCalls": [
         {
           "tool": "edit",
-          "input": "src/greet.js: name → name === '' ? 'stranger' : name",
+          "input": "src/greet.js: name → name === '' ? 'stranger' : name.trim()",
           "output": "updated src/greet.js",
           "ok": true
         },
@@ -429,8 +525,25 @@
         }
       ],
       "writes": {
-        "src/greet.js": "export function greet(name) {\n  return `Hello, ${name === '' ? 'stranger' : name}!`\n}\n",
-        "{{workspace}}/tasks/repair.diff": "diff --git a/src/greet.js b/src/greet.js\n--- a/src/greet.js\n+++ b/src/greet.js\n@@ -1,3 +1,3 @@\n export function greet(name) {\n-  return `Hello, ${name}!`\n+  return `Hello, ${name === \"\" ? \"stranger\" : name}!`\n }\n"
+        "src/greet.js": "export function greet(name) {\n  return `Hello, ${name === '' ? 'stranger' : name.trim()}!`\n}\n",
+        "{{workspace}}/tasks/repair.diff": "diff --git a/src/greet.js b/src/greet.js\n--- a/src/greet.js\n+++ b/src/greet.js\n@@ -1,3 +1,3 @@\n export function greet(name) {\n-  return `Hello, ${name}!`\n+  return `Hello, ${name === \"\" ? \"stranger\" : name.trim()}!`\n }\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "修复差异仅涉及产品代码且未改用例或弱化断言",
+            "evidence": "Mock 自检：src/greet.js, {{workspace}}/tasks/repair.diff",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "修复差异关联判决中的失败用例和根因",
+            "evidence": "Mock 自检：src/greet.js, {{workspace}}/tasks/repair.diff",
+            "pass": true
+          }
+        ],
+        "summary": "空字符串已修复；演示代码含一个未覆盖的 trim 错误"
       }
     },
     {
@@ -459,6 +572,23 @@
       },
       "writes": {
         "{{workspace}}/reports/impact.md": "# 影响面评估\n\n## 受影响功能\n\n`greet(name)` 的所有调用方；非空输入行为不变，空字符串由 `Hello, !` 变为 `Hello, stranger!`。\n\n## 回归范围\n\n- 正常名字问候。\n- 空名字问候。\n\n## 建议补测\n\n- 调用方是否依赖 `Hello, !` 的历史输出（预期没有）。\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "回归范围逐项关联代码改动或执行证据",
+            "evidence": "Mock 自检：{{workspace}}/reports/impact.md",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "未覆盖风险列出原因与受影响的业务场景",
+            "evidence": "Mock 自检：{{workspace}}/reports/impact.md",
+            "pass": true
+          }
+        ],
+        "summary": "影响面很小，仅 greet 的调用方。"
       }
     },
     {
@@ -475,6 +605,67 @@
       },
       "writes": {
         "{{workspace}}/reports/knowledge-diff.md": "# 知识回流建议\n\n```diff\n--- docs/wiki/greeting.md\n+++ docs/wiki/greeting.md\n@@\n ## 边界\n \n - 不做 trim：只有空字符串本身触发回退，空格字符串按普通名字处理。\n - 不做类型转换：调用方负责保证传入字符串。\n+- 本次需求验证：空字符串缺陷由 TC-GREET-002 覆盖，修复仅改 greet 内部拼接。\n```\n"
+      },
+      "structured": {
+        "checks": [
+          {
+            "id": "c1",
+            "criterion": "每条知识建议附来源产物或决策记录",
+            "evidence": "Mock 自检：{{workspace}}/reports/knowledge-diff.md",
+            "pass": true
+          },
+          {
+            "id": "c2",
+            "criterion": "每条建议明确适用范围和需要人工采纳的改动",
+            "evidence": "Mock 自检：{{workspace}}/reports/knowledge-diff.md",
+            "pass": true
+          }
+        ],
+        "summary": "已整理知识回流建议。"
+      }
+    },
+    {
+      "match": {
+        "nodeId": "delivery-check",
+        "role": "verifier"
+      },
+      "structured": {
+        "score": 100,
+        "pass": true,
+        "message": "Mock 独立复核；真实用例与逐条证据已由 acceptance 检查读取"
+      }
+    },
+    {
+      "match": {
+        "role": "auditor"
+      },
+      "structured": {
+        "introducedAt": {
+          "origin": "implementation",
+          "nodeId": "dev-test-loop/fix-code",
+          "evidence": [
+            "tasks/repair.diff 第 1 版增加 name.trim()，违背 spec/prd.md 不做 trim 的约束；evidence/TC-GREET-ESCAPE/result.json 记录两侧空格丢失"
+          ]
+        },
+        "missedBy": [
+          {
+            "nodeId": "test-design",
+            "reason": "not_covered",
+            "evidence": [
+              "cases/TC-GREET-001.json 与 cases/TC-GREET-002.json 仅覆盖普通名字与空字符串，缺少非空名字保留空格的输入"
+            ]
+          }
+        ],
+        "confidence": 0.98,
+        "suggestions": [
+          {
+            "target": {
+              "kind": "completion",
+              "ref": "test-design"
+            },
+            "change": "增加非空名字包含两侧空格的用例，断言输出逐字保留输入名字"
+          }
+        ]
       }
     }
   ]

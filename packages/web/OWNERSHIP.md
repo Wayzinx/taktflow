@@ -10,6 +10,7 @@
 | **D 总览与需求页** | `pages/overview.*`、`pages/overview-quality.tsx`、`components/stat-card.*`、`pages/requirements*.tsx`、`pages/requirement/{index.tsx,requirement.css,artifacts-tab.tsx,metrics-tab.tsx,runs-tab.tsx,activity-tab.tsx,trace-tab.tsx,decisions.tsx}`、`components/budget-bar.*` |
 | **E 空间与编辑器** | `pages/settings/**`、`pages/workflow/properties/**`、`pages/workflow/palette/**`、`pages/workflow/canvas/canvas-nodes.tsx` |
 | **F 动效与命令** | `styles/**`、`lib/motion.tsx`、`components/{ui,command-palette,takt,layout,topbar,stage-bar}.*`、`components/ui/**`（dialog / popover / reason-dialog / overlay.css，经 `components/ui.tsx` 再导出）、`components/command-palette/**`（items / schema / fields / command-form）、新建 `scripts/motion-audit.mjs`、`package.json` 的 scripts、`.github/workflows/ci.yml`（只加一步）、`DESIGN.md` 的动效章节 |
+| **m3-web-eval 评测与归因**（docs/dev/m3-eval.md） | 新建 `pages/eval/**`（index / scorecard-table / scorecard-detail / sparkline / runs-list / new-run-dialog / run-detail / case-compare / labels.ts / eval.css / eval-runs.css）、`pages/requirement/defects-tab.*`（tsx / form / attribution / confirm / css）、`pages/run/recipe-section.*`、`api/mock-eval.ts`、`api/mock-eval-scorecards.ts`、`api/mock-eval-runs.ts`、`api/mock-defects.ts`；挂载点：`app.tsx` 的 `/eval` 路由、`components/layout.tsx` 导航"评测"、`pages/requirement/index.tsx` 的"缺陷"Tab、`pages/run/node-drawer.tsx` 的"配方"Tab（`dtab=recipe`）；`api/{source,client,mock,index}.*` 里评测与缺陷相关的方法 |
 | **共享（只有汇总能改）** | `api/**`、`app.tsx`、`main.tsx`、`lib/router.tsx`、`lib/{format,status,space,theme,markdown,json-view,capabilities}.*` |
 
 `components/tier-glyph.tsx` 已由骨架完整实现（A 组可微调样式，但 props 不改），D / E 组直接用。`lib/motion.tsx` 与 `styles/motion.css` 由骨架提供，F 组完善；其他组只用、不改。
@@ -72,3 +73,16 @@
 | `mock-events.ts` | 事件插入与重排哈希链的共用函数 |
 | `mock-space.ts` | 成员 `duties`（wayne pm / lin arch,rd / chen rd / qiao qa）、仓库 `bootstrap / share` |
 | `mock-workflow-seed.ts` | sdlc 的 `useWhen / tiers / leadInstructions / dynamicRules / budget`；新增 quick-fix workflow |
+
+## 评测与归因（m3-web-eval）
+
+`DataSource` 新增（路由见 `packages/core/src/api.ts`"评测与归因"）：`scorecards(by, workflowId?)`、`evalCases(target?)`、`collectEvalCases`、`evalRuns`、`evalRun`、`startEvalRun`、`evalOutput(runId, caseId, variant)`（后端路由待补，HTTP 404 时返回空 files）、`defects`、`reportDefect`、`attributeDefect`、`confirmDefect`。
+
+| 文件 | 内容 |
+|---|---|
+| `mock-eval-scorecards.ts` | sdlc 8 个节点成绩单：automate 在 playwright-e2e 更新后疑似退化（87% → 50%），review-design 检出率 60%；按配方 / 技能聚合；`mockRecipe` 给 `NodeDetail.recipe` |
+| `mock-eval-runs.ts` | 评测用例（test-design 5 条、playwright-e2e 5 条），ER-0001 better、ER-0002 worse 且挂回归用例 EC-pw-005；新建评测 2.4 秒后出结果；输出快照 |
+| `mock-defects.ts` | REQ-001 D-1 已确认（引入 implement/greet-empty，漏检 test-design 与代码评审）、REQ-002 D-1 待确认（引入 design，漏检 review-design / test-design）；新缺陷归因 1.8 秒出候选；确认后生成回归用例 |
+| `mock-eval.ts` | 组合以上，接入 `mock.ts`；确认缺陷后成绩单 escapes / detection.missed 实时增加 |
+
+页面：`/eval`（`?by=node|recipe|skill`、`?card=<节点 id | recipeKey | 技能@哈希>` 打开详情；`?tab=runs`、`&run=<id>` 运行详情、`&new=<target>` 新建评测）；需求页 `?tab=defects&defect=D-1`；节点抽屉 `dtab=recipe`。

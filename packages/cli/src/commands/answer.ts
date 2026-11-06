@@ -1,9 +1,10 @@
+import { projectCommands } from '@taktflow/server'
+import { executeCommand } from '../execute-command.js'
 import { validateAnswer as validateCoreAnswer, type AttentionItem } from '@taktflow/core'
 import type { ParsedCli } from '../args.js'
 import { parseAnswerOptions } from '../args.js'
 import { UsageError } from '../args.js'
 import { createPrinter } from '../output.js'
-import { currentUser } from './ws.js'
 import { answerLead } from '../lead.js'
 import { loadRuntime, openStores } from '../project.js'
 import { resumeWorkflow } from './run.js'
@@ -24,7 +25,7 @@ export async function runAnswer(cli: ParsedCli): Promise<number> {
   if (!current) throw new Error(`待办不存在：${requestId}`)
   if (current.answeredAt !== undefined) throw new Error(`待办已处理：${requestId}`)
   validateAnswer(current, input)
-  const answered = await stores.attention.answer(requestId, { ...input, by: { type: 'human', id: currentUser(stores.projectDir) } })
+  const answered = await executeCommand<AttentionItem>(stores, projectCommands(stores), 'attention.answer', { requestId, ...input }, options.reason)
   if (!options.json) {
     printer.text(`${printer.colors.green('✔')} 已回答 ${printer.colors.cyan(requestId)}：${answered.decision ?? answered.answer ?? ''}`)
   }

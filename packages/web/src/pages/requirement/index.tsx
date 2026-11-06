@@ -1,4 +1,4 @@
-import { Activity, ArrowUpRight, ChartNoAxesColumn, ClipboardCheck, FolderOpen, GitBranch, MessagesSquare, Network, Play } from 'lucide-react'
+import { Activity, ArrowUpRight, Bug, ChartNoAxesColumn, ClipboardCheck, FolderOpen, GitBranch, MessagesSquare, Network, Play } from 'lucide-react'
 import { useAsync } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { BudgetBar } from '../../components/budget-bar'
@@ -13,6 +13,7 @@ import { ActivityTab } from './activity-tab'
 import { ArtifactsTab } from './artifacts-tab'
 import { ChatTab } from './chat-tab'
 import { Decisions } from './decisions'
+import { DefectsTab } from './defects-tab'
 import { MetricsTab } from './metrics-tab'
 import { ReviewsTab } from './reviews-tab'
 import { RunsTab } from './runs-tab'
@@ -138,14 +139,14 @@ export function RequirementPage({ id }: { id: string }) {
             <Skeleton w={420} h={12} />
           )}
         </div>
-        <div className="card req-stage-card">{r ? <StageBar stages={r.stages} variant="full" /> : <Skeleton h={28} />}</div>
+        <div className="card req-stage-card">{r ? <StageBar stages={r.stages} variant="full" empty={r.latestRunId ? '最近的运行没有划分阶段' : '尚未运行'} /> : <Skeleton h={28} />}</div>
         <Decisions requirementId={id} detail={r} run={latest.data} budget={latest.data?.budget} />
         <BudgetBar budget={latest.data?.budget} runId={r?.latestRunId} />
       </header>
 
       <Tabs
         value={tab}
-        onChange={(t) => setQuery({ tab: t === 'artifacts' ? undefined : t, path: undefined, v: undefined })}
+        onChange={(t) => setQuery({ tab: t === 'artifacts' ? undefined : t, path: undefined, v: undefined, defect: undefined })}
         tabs={[
           { id: 'artifacts', label: '公共产物', icon: FolderOpen, count: r?.artifacts.length },
           { id: 'chat', label: '群聊', icon: MessagesSquare },
@@ -153,6 +154,7 @@ export function RequirementPage({ id }: { id: string }) {
           { id: 'runs', label: '运行', icon: GitBranch, count: r?.runs.length },
           { id: 'trace', label: '追溯', icon: Network },
           { id: 'metrics', label: '度量', icon: ChartNoAxesColumn },
+          { id: 'defects', label: '缺陷', icon: Bug },
           { id: 'activity', label: '动态', icon: Activity },
         ]}
       />
@@ -163,6 +165,7 @@ export function RequirementPage({ id }: { id: string }) {
         {tab === 'runs' && <RunsTab runs={r?.runs} />}
         {tab === 'trace' && <TraceTab id={id} />}
         {tab === 'metrics' && <MetricsTab id={id} quality={r?.quality} />}
+        {tab === 'defects' && <DefectsTab id={id} detail={r} />}
         {tab === 'activity' && <ActivityTab id={id} runs={r?.runs} />}
       </div>
     </div>

@@ -4,11 +4,13 @@ import { openProject, type AttentionItem } from '@taktflow/core'
 import { discoverSpaces, spaceId, spaceSummary } from './space.js'
 import type { LeadMention } from './space-routes.js'
 import type { CatalogCallbacks } from './catalog.js'
-import { fail, HttpError, json } from './http.js'
+import { authorize, validateWriteRequest, fail, HttpError, json } from './http.js'
 import { routes, STREAMING } from './routes.js'
+import { attachLessons } from './commands.js'
+import type { M3Callbacks } from './m3-routes.js'
 import { staticFile } from './static.js'
 
-export interface ServerOptions extends CatalogCallbacks {
+export interface ServerOptions extends CatalogCallbacks, M3Callbacks {
   projectDir?: string
   spacesDir?: string
   onLeadMention?: LeadMention
@@ -60,8 +62,11 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       }
       const matched = routers.get(spaceId(selected))!.match(request.method ?? 'GET', url.pathname)
       if (matched) {
+        validateWriteRequest(request)
         // openProject 的 config 是快照，按请求重新打开，CLI 修改配置和文件后即可读到。
         const fresh = await openProject(selected.projectDir)
+        attachLessons(fresh)
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname)) authorize(request, fresh)
         const result = await matched.handler({ stores: fresh, request, response, url, params: matched.params })
         if (result !== STREAMING) json(response, result)
         return
@@ -94,3 +99,6 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
 
 export { discoverSpaces, spaceId, spaceSummary, spaceDetail, workflowStore, repoManager, auditSpace, changeConfig, members, repoBinding, spaceFile, atomicWrite } from './space.js'
 export type { LeadMention } from './space-routes.js'
+
+export { projectCommands, attachLessons, answerAttention, routingWorkflows } from './commands.js'
+export type { M3Callbacks } from './m3-routes.js'

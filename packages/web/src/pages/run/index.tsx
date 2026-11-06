@@ -177,7 +177,7 @@ export function RunPage({ runId }: { runId: string }) {
             </div>
           )}
         </div>
-        <div className="run-stage-row">{d ? <StageBar stages={stages} variant="full" /> : <Skeleton h={26} />}</div>
+        <div className="run-stage-row">{d ? <StageBar stages={stages} variant="full" empty="这个流程没有划分阶段" /> : <Skeleton h={26} />}</div>
       </header>
       <div className="run-body">
         {d ? <RunCanvas detail={d} selected={selected} /> : <div className="run-canvas-skeleton"><Skeleton w="100%" h={9999} r={0} /></div>}

@@ -33,6 +33,40 @@ export function BudgetBar({ budget, runId }: { budget?: BudgetStatus; runId?: st
   const tone: Tone = ratio >= 1 || budget.state === 'exhausted' ? 'danger' : ratio >= 0.8 || budget.state === 'warning' ? 'warning' : 'running'
   const pct = Math.round(ratio * 100)
   const items = dims(budget)
+  // 运行没有配预算（真实数据常见：budget 为 {}，ratio 为 0）：不画 0% 的进度条，只报已用量
+  if (items.length === 0)
+    return (
+      <div className="budget-bar is-unset" aria-label="运行预算">
+        <span className="budget-label">
+          <Gauge aria-hidden />
+          预算
+        </span>
+        <span className="budget-state faint">未设预算</span>
+        <span className="budget-dims">
+          <span className="budget-dim">
+            <span className="faint">已用 Token</span>
+            <span className="mono num">{fmtTokens(budget.used.tokens)}</span>
+          </span>
+          {budget.used.costUsd !== undefined && (
+            <span className="budget-dim">
+              <span className="faint">成本</span>
+              <span className="mono num">{fmtCost(budget.used.costUsd)}</span>
+            </span>
+          )}
+          {budget.budget.concurrency !== undefined && (
+            <span className="budget-dim" title="同时运行的节点数上限">
+              <span className="faint">并发</span>
+              <span className="mono num">≤ {budget.budget.concurrency}</span>
+            </span>
+          )}
+        </span>
+        {runId && (
+          <Link to={`/run/${runId}`} className="budget-run mono">
+            {runId}
+          </Link>
+        )}
+      </div>
+    )
   return (
     <div className="budget-bar" data-tone={tone} aria-label="运行预算">
       <span className="budget-label">

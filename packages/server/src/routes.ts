@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isUtf8 } from 'node:buffer'
-import { AttentionAlreadyAnsweredError, validateAnswer, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
+import { budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
 import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
+import { registerEvalRoutes } from './eval-routes.js'
+import { commandExecutor, m3Routes, type M3Callbacks } from './m3-routes.js'
 import type { CatalogCallbacks } from './catalog.js'
 import { nodeDetail, overview, requirement, run, summaries, summary, runSummaries, workflow } from './read-model.js'
 import { createRouter } from './router.js'
@@ -23,11 +25,14 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks = {}, onLeadMention?: LeadMention) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks = {}, onLeadMention?: LeadMention) {
   const router = createRouter<Handler>()
   const add = router.add
+  const { execute } = commandExecutor(catalog)
   const workflows = new Map<string, WorkflowStore>()
-  spaceRoutes(add, connections, onLeadMention)
+  spaceRoutes(add, connections, onLeadMention, catalog)
+  m3Routes(add, catalog)
+  registerEvalRoutes(add, catalog.resolveRuntime ?? (() => { throw new HttpError(501, '未接入评测运行时') }), catalog)
   workflowRoutes(add, connections, (stores) => {
     let store = workflows.get(stores.paths.workflows)
     if (!store) { store = workflowStore(stores); workflows.set(stores.paths.workflows, store) }
@@ -62,11 +67,12 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     const input = await body(request)
     const content = text(input.content, 'content', true)
     const reason = text(input.reason, 'reason')
+    if (input.impact !== undefined && !['cosmetic', 'semantic'].includes(String(input.impact))) throw new HttpError(400, 'impact 不合法')
     return serialize(stores.projectDir, async () => {
       const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
-      const author = actor(request)
+      const author = actor(request, stores)
       const ref = await stores.workspaces.writeArtifact({ ref: { workspace: params.id!, path }, content, reason, author, kind: record?.kind ?? 'other', title: record?.title, tags: record?.tags })
-      const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markArtifactEdited(stores, ref, author, reason)
+      const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markArtifactEdited(stores, ref, author, reason, input.impact as 'cosmetic' | 'semantic' | undefined)
       return { version: ref.version, staleNodes }
     })
   })
@@ -84,7 +90,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     const content = text(input.body, 'body')
     const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
     if (!record?.versions.some((item) => item.version === version)) throw new HttpError(404, '产物或版本不存在')
-    return stores.workspaces.addComment(params.id!, { path, version, body: content, author: actor(request) })
+    return stores.workspaces.addComment(params.id!, { path, version, body: content, author: actor(request, stores) })
   })
   add('GET', '/api/requirements/:id/trace', async ({ stores, params }) => {
     await requirement(stores, params.id!)
@@ -102,7 +108,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     const state = await run(stores, params.runId!)
     const snapshot = await workflow(stores, state.runId)
     const [records, events] = await Promise.all([loadRunGraph(stores, state.runId), stores.events.read(state.runId)])
-    return { run: state, stages: stageProgress(snapshot, state, records), workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph: buildRunGraph(snapshot, state, records, events) }
+    return { run: state, budget: budgetStatus(state, events), quality: await qualityMetrics(events, { store: stores.workspaces, requirementId: state.requirementId }), usage: summarizeUsage(events), stages: stageProgress(snapshot, state, records), workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph: buildRunGraph(snapshot, state, records, events) }
   })
   add('GET', '/api/runs/:runId/events', async ({ stores, params, url }) => {
     await run(stores, params.runId!)
@@ -120,31 +126,17 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     await run(stores, params.runId!)
     return stores.events.verify(params.runId!)
   })
-  add('GET', '/api/attention', ({ stores, url }) => {
+  add('GET', '/api/attention', async ({ stores, url }) => {
     const pending = url.searchParams.get('pending')
     if (pending !== null && pending !== '0' && pending !== '1') throw new HttpError(400, 'pending 必须是 0 或 1')
-    return stores.attention.list({ pending: pending === '1' })
+    return withAttentionStaleness(stores, await stores.attention.list({ pending: pending === '1' }))
   })
   add('POST', '/api/attention/:requestId', async ({ stores, params, request }) => {
     const input = await body(request)
     const decision = input.decision === undefined ? undefined : text(input.decision, 'decision')
     const answer = input.answer === undefined ? undefined : text(input.answer, 'answer')
     if (decision === undefined && answer === undefined) throw new HttpError(400, 'decision 或 answer 至少填写一项')
-    const item = await serialize(stores.projectDir, async () => {
-      const current = (await stores.attention.list()).find((item) => item.requestId === params.requestId)
-      if (!current) throw new HttpError(404, '待办不存在')
-      if (current.answeredAt !== undefined) throw new HttpError(409, '待办已处理')
-      try { validateAnswer(current, { decision, answer }) } catch (error) {
-        if (error instanceof AttentionAlreadyAnsweredError) throw new HttpError(409, error.message)
-        throw new HttpError(400, error instanceof Error ? error.message : String(error))
-      }
-      try {
-        return await stores.attention.answer(current.requestId, { decision, answer, by: actor(request) })
-      } catch (error) {
-        if (error instanceof AttentionAlreadyAnsweredError) throw new HttpError(409, error.message)
-        throw error
-      }
-    })
+    const item = await execute(stores, request, 'attention.answer', { requestId: params.requestId, decision, answer }, typeof input.reason === 'string' ? input.reason : '人工回答待办') as AttentionItem
     await onAnswer?.(item)
     return item
   })

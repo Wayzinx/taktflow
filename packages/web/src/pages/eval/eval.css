@@ -1,0 +1,235 @@
+/* 评测页：成绩单、评测运行、A/B 对比（docs/design/20 §6） */
+
+.ev-body {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-4);
+}
+.ev-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.ev-toolbar-hint {
+  font-size: var(--text-meta);
+}
+
+/* ---------------------------------------------------------------- 成绩单表 */
+.sc-wrap {
+  overflow-x: auto;
+}
+.sc-table td {
+  height: 52px;
+}
+.sc-table th:first-child,
+.sc-table td:first-child {
+  padding-left: 16px;
+}
+.sc-name {
+  min-width: 180px;
+  max-width: 240px;
+}
+.sc-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+.sc-name-btn:hover .truncate {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sc-sub {
+  display: block;
+  font-size: var(--text-label);
+  color: var(--text-3);
+  line-height: 1.4;
+}
+.sc-meta {
+  white-space: nowrap;
+  font-size: var(--text-meta);
+}
+.sc-bad {
+  color: var(--st-failed);
+}
+.sc-warn {
+  color: var(--st-waiting);
+}
+.sc-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.sc-sort:hover {
+  color: var(--text);
+}
+.sc-sort svg {
+  width: 12px;
+  height: 12px;
+}
+.sc-down {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.sc-down-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.sc-down-item i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+.sc-regress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.sc-regress svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* 趋势小图 */
+.spark {
+  display: block;
+  overflow: visible;
+}
+.spark-ref {
+  stroke: var(--divider);
+  stroke-dasharray: 2 2;
+}
+.spark-line {
+  fill: none;
+  stroke: var(--text-3);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.spark-drop {
+  stroke: var(--st-failed);
+  stroke-width: 1.5;
+}
+.spark-dot {
+  fill: var(--text-3);
+}
+.spark-dot-last {
+  fill: var(--text);
+}
+.spark-dot-bad {
+  fill: var(--surface);
+  stroke: var(--st-failed);
+  stroke-width: 1.5;
+}
+
+/* 成绩单详情 */
+.sc-dlg-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.sc-detail {
+  display: grid;
+  gap: var(--sp-5);
+}
+.sc-callout {
+  padding: 8px 12px;
+  border: 1px solid color-mix(in oklch, var(--st-failed) 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+  font-size: var(--text-ui);
+}
+.sc-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  background: var(--divider);
+  overflow: hidden;
+}
+.sc-metric {
+  padding: 10px 12px;
+  background: var(--surface);
+}
+.sc-metric-label {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.sc-metric-value {
+  margin-top: 2px;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.sc-metric-sub {
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+.sc-h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.sc-trend td,
+.sc-trend th {
+  height: 34px;
+}
+.sc-recent {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-ui);
+}
+.sc-recent li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sc-recent-at {
+  margin-left: auto;
+  font-size: var(--text-meta);
+}
+.sc-empty {
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .sc-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

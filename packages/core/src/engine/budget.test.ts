@@ -355,3 +355,114 @@ describe('交付校验', () => {
     expect(f.calls).toHaveLength(role === 'dev' ? 1 : 2)
   })
 })
+
+it('m3-fix 2/3/23：取消召回经验的 agent 不扣经验分，也不伪造完成标准失败', async () => {
+  const f = await fixture(async (request) => {
+    await engine.cancel(request.env!.TAKT_RUN_ID!)
+    request.signal!.throwIfAborted()
+    return { ok: true, finalText: '' }
+  })
+  const record = vi.fn(async () => [])
+  f.deps.lessons = { recall: async () => ({ lessons: [{ id: 'trial' } as Lesson], holdout: false, text: '验证', tokens: 1 }), record }
+  const engine = createEngine(f.deps)
+  const state = await engine.start({ requirementId: f.requirementId, workflow: workflow([
+    agent({ id: 'a', title: '', role: 'dev', prompt: '', completion: ['测试通过且有证据'] }),
+  ]) })
+  expect(state.status).toBe('cancelled')
+  expect(record).not.toHaveBeenCalled()
+  expect(f.events.filter((event) => event.type === 'node.checks')).toEqual([])
+})
+
+it.each(['crash', 'timeout', 'guard'])('m3-fix 3：过程失败 %s 不计入完成标准拦截', async (failure) => {
+  const f = await fixture(async (request) => {
+    if (failure === 'guard') await writeText(request.cwd, 'outside.txt', '违规')
+    throw new Error(failure)
+  })
+  f.deps.profiles.dev!.writeScope = ['requirements/**']
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: workflow([
+    agent({ id: 'a', title: '', role: 'dev', prompt: '', completion: ['验收标准全部通过'] }),
+  ]) })
+  expect(state.nodes.a?.status).not.toBe('succeeded')
+  expect(f.events.filter((event) => event.type === 'node.checks')).toEqual([])
+})
+
+it('m3-fix 4/23：未声明节点写范围时继承角色范围并串行，恢复仍串行', async () => {
+  const f = await fixture(async (req) => ({ ok: true, finalText: '', structured: req.env?.TAKT_NODE === 'plan' ? { items: [{ key: 'a', title: 'a' }, { key: 'b', title: 'b' }] } : undefined }))
+  const def = workflow([planner({ id: 'plan', title: '', role: 'dev', prompt: '', maxItems: 2, expand: () => [
+    agent({ id: 'code', title: '', role: 'dev', prompt: '' }),
+    human({ id: 'check', title: '', needs: ['code'], ask: '确认', form: 'approve' }),
+  ] })])
+  const engine = createEngine(f.deps)
+  let state = await engine.start({ requirementId: f.requirementId, workflow: def })
+  expect(state.expansions[0]?.nodes?.find((node) => node.id === 'plan/b/code')?.needs).toEqual(['plan/a/check'])
+  expect(state.nodes['plan/b/code']?.status).toBe('pending')
+  const item = (await f.stores.attention.list({ pending: true }))[0]!
+  await f.stores.attention.answer(item.requestId, { decision: 'approve', by })
+  state = await createEngine(f.deps).resume(state.runId, def)
+  expect(state.nodes['plan/b/code']?.status).toBe('succeeded')
+})
+
+it('m3-fix 5/15/23：预算耗尽很晚才回答，追加后继续且并发不增加', async () => {
+  let now = 0
+  const f = await fixture(async () => { now = 10 * 60000; return { ok: true, finalText: '' } })
+  const def = workflow([agent({ id: 'a', title: '', role: 'dev', prompt: '' }), script({ id: 'b', title: '', needs: ['a'], run: async () => {} })])
+  let state = await createEngine(f.deps, { now: () => new Date(now) }).start({ requirementId: f.requirementId, workflow: def, budget: { minutes: 10, concurrency: 2 } })
+  expect(state.status).toBe('waiting_human')
+  now = 40 * 60000
+  const item = (await f.stores.attention.list({ pending: true }))[0]!
+  await f.stores.attention.answer(item.requestId, { decision: 'choice', answer: '追加 50% 预算', by })
+  state = await createEngine(f.deps, { now: () => new Date(now) }).resume(state.runId, def)
+  expect(state.status).toBe('succeeded')
+  expect(state.budget).toEqual({ minutes: 45, concurrency: 2 })
+  expect(await f.stores.attention.list({ pending: true })).toEqual([])
+})
+
+it('m3-fix 9/23：子节点崩溃使 Loop 失败，不迭代或请求放行', async () => {
+  const f = await fixture()
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: workflow([
+    loop({ id: 'cycle', title: '循环', maxIterations: 3, until: () => false, body: [script({ id: 'child', title: '', run: async () => { throw new Error('子节点崩溃') } })] }),
+  ]) })
+  expect(state.nodes.cycle).toMatchObject({ status: 'failed', iteration: 1 })
+  expect(await f.stores.attention.list({ pending: true })).toEqual([])
+})
+
+it('m3-fix 6/12/23：多个判决同时重复只建一个待办，读取修复输入不创建工作树', async () => {
+  const f = await fixture(async () => ({ ok: true, finalText: '', structured: { verdicts: ['TC-1', 'TC-2'].map((subject) => ({ subject, category: 'product_bug', confidence: 1, rationale: '重复失败', evidence: ['log'] })) } }))
+  const createWorktree = vi.fn(async () => { throw new Error('不应引导工作树') })
+  f.deps.repos = { createWorktree } as unknown as EngineDeps['repos']
+  const def = workflow([
+    script({ id: 'test', title: '', run: async () => ({ data: { failures: [{ subject: 'TC-1' }, { subject: 'TC-2' }] } }) }),
+    judge({ id: 'j', title: '', role: 'qa', target: 'test', needs: ['test'], routes: { product_bug: 'fix' } }),
+    agent({ id: 'fix', title: '', role: 'dev', repo: 'app', prompt: '', needs: ['j'] }),
+  ])
+  // 第一轮不实际调度修复节点；把两个失败的已有计数交给真实 Runtime 的指纹/待办实现。
+  const { Runtime } = await import('./runtime.js')
+  const { run: runJudge } = await import('./nodes/judge.js')
+  await f.stores.runs.create({ runId: 'run-multi', requirementId: f.requirementId, workflowId: def.id, workflowVersion: def.version, args: {}, status: 'running', startedAt: new Date().toISOString(), nodes: {}, expansions: [] }, snapshotWorkflow(def))
+  const runtime = new Runtime(f.deps, (await f.stores.runs.get('run-multi'))!, def, {})
+  await runtime.prepare()
+  runtime.state.nodes.test!.result = { failures: [{ subject: 'TC-1' }, { subject: 'TC-2' }] }
+  const entry = runtime.graph.get('j')!
+  await runJudge(runtime, entry, runtime.context(entry))
+  expect(runtime.state.nodes.j!.failures?.map((failure) => failure.count)).toEqual([1, 1])
+  await runJudge(runtime, entry, runtime.context(entry))
+  expect(await f.stores.attention.list({ pending: true })).toHaveLength(1)
+  expect(runtime.state.nodes.j!.failures?.map((failure) => failure.count)).toEqual([2, 1])
+  expect(createWorktree).not.toHaveBeenCalled()
+  expect(runtime.state.nodes.fix!.worktree).toBeUndefined()
+})
+
+it('m3-fix 15：预算日志只恢复一次，后续检查使用累计用量', async () => {
+  const { BudgetGuard } = await import('./budget.js')
+  const f = await fixture()
+  const read = vi.spyOn(f.stores.events, 'read')
+  const host = { deps: f.deps, state: { runId: 'run-budget', requirementId: f.requirementId, startedAt: new Date().toISOString(), budget: { tokens: 100 } },
+    signal: new AbortController().signal, timestamp: () => new Date().toISOString(), emit: vi.fn(), save: vi.fn() } as unknown as import('./harness.js').HarnessHost
+  const guard = new BudgetGuard(host, async () => {})
+  await guard.initialize()
+  guard.addUsage({ inputTokens: 50, outputTokens: 30 })
+  for (let index = 0; index < 100; index++) expect(await guard.check()).toBe(true)
+  expect(read).toHaveBeenCalledTimes(1)
+  expect(host.emit).toHaveBeenCalledOnce()
+  expect(host.emit).toHaveBeenCalledWith('budget.warning', expect.objectContaining({ ratio: 0.8 }))
+})

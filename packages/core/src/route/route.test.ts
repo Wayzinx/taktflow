@@ -32,11 +32,11 @@ it('路径冲突降 T2 并重新选择支持该档的流程，递归收集门禁
   const input = await setup()
   input.workflows[1]!.snapshot.nodes = [{ id: 'loop', kind: 'loop', title: '循环', needs: [], body: [
     { id: 'review', kind: 'review', title: '代码评审', needs: [], review: { author: 'dev', reviewers: [{ role: 'qa' }, { role: 'qa' }], arbiter: { role: 'arbiter' }, pass: 'all', maxRounds: 2, onExhausted: 'human', target: [] } },
-    { id: 'gate', kind: 'gate', title: '校验', needs: [] }, { id: 'human', kind: 'human', title: '人工确认', needs: [] },
+    { id: 'gate', kind: 'gate', title: '校验', needs: [], checks: [{ id: 'acceptance', kind: 'acceptance', role: 'verifier' }] }, { id: 'human', kind: 'human', title: '人工确认', needs: [] },
   ] }]
   const model = vi.fn(async () => ({ tier: 'T3', workflowId: 'quick-fix', reason: '并行', surfaces: [{ id: 'a', paths: ['src/**'] }, { id: 'b', paths: ['src/api/*.ts'] }] }))
   const result = await routeRequirement({ ...input, model })
-  expect(result).toMatchObject({ tier: 'T2', workflowId: 'taktflow-standard', gates: ['代码评审', '校验', '人工确认'], roles: ['dev', 'qa', 'arbiter'] })
+  expect(result).toMatchObject({ tier: 'T2', workflowId: 'taktflow-standard', gates: ['代码评审', '校验', '人工确认'], roles: ['dev', 'qa', 'arbiter', 'verifier'] })
   expect(result.adjustments).toHaveLength(2)
   expect(model.mock.calls).toHaveLength(1)
 })

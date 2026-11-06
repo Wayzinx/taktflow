@@ -31,7 +31,7 @@ it.each(['space', 'legacy'])('init %s 按 stores.paths 复制完整模板且运�
   for (const name of ['sdlc.workflow.ts', 'taktflow-standard.workflow.ts', 'taktflow-standard.hooks.ts', 'taktflow-standard.integration.ts']) expect(await readFile(join(stores.paths.workflows, name), 'utf8')).toBeTruthy()
   await writeFile(join(root, 'package.json'), '{"type":"module"}')
   await symlink(resolve('node_modules'), join(root, 'node_modules'), 'dir')
-  expect((await loadRuntime(root)).workflows.map((workflow) => workflow.id).sort()).toEqual(['sdlc', 'taktflow-standard'])
+  expect((await loadRuntime(root)).workflows.map((workflow) => workflow.id).sort()).toEqual(['quick-fix', 'sdlc', 'taktflow-standard'])
   // 自定义路径是加载来源，不退回写死的 .takt/agents。
   const custom = join(root, 'custom-roles'); await mkdir(custom)
   await writeFile(join(custom, 'custom.md'), '---\nharness: mock\n---\n定制角色')

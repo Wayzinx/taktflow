@@ -1367,6 +1367,8 @@ export interface NodeRecipe {
   effort?: HarnessSelector['effort']
   /** 本次召回的经验 id（不计入 recipeKey）。 */
   lessons?: string[]
+  /** 本次执行实际读到的输入产物版本（回放评测冻结输入用，不计入 recipeKey）。 */
+  inputs?: ArtifactRef[]
   /** 除 lessons 外各字段规范化后的 sha256 前 16 位。 */
   recipeKey: string
 }
@@ -1466,6 +1468,8 @@ export interface EvalCaseResult {
 export interface EvalComparison {
   baseline: string
   candidate: string
+  /** 逐用例结果（规则见 docs/dev/m3-eval.md 第 5 条），前端直接展示，不再自行推算。 */
+  cases?: Array<{ caseId: string; outcome: 'win' | 'loss' | 'tie' }>
   wins: number
   losses: number
   ties: number

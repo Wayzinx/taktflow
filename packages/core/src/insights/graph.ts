@@ -110,6 +110,11 @@ export function buildRunGraph(snapshot: WorkflowSnapshot, state: RunState, recor
       if (to) addEdge({ from: id, to, kind: 'route', label })
     }
   }
+  for (const node of nodes.values()) {
+    const runtime = state.nodes[node.id]
+    Object.assign(node, { revision: runtime?.revision, round: runtime?.round, reworks: runtime?.reworks,
+      goal: definitions.get(node.id)?.goal, summary: runtime?.summary })
+  }
   return { nodes: [...nodes.values()], edges: [...edges.values()] }
 }
 

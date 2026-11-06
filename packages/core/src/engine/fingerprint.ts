@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { FailureRecord, NodeState } from '../types.js'
+import { globsOverlap } from '../util/glob.js'
 import { sha256 } from '../util/hash.js'
 
 export class FailureError extends Error {
@@ -40,6 +41,5 @@ export function failureCode(error: unknown): string {
 
 // 无法静态证明不相交时保守串行（包含部分文件名前缀，如 src/foo*.ts）。
 export function scopesOverlap(left: string[], right: string[]): boolean {
-  const prefix = (glob: string) => glob.replace(/^\.\//, '').split(/[?*[{]/, 1)[0]!
-  return left.some((a) => right.some((b) => prefix(a).startsWith(prefix(b)) || prefix(b).startsWith(prefix(a))))
+  return left.some((a) => right.some((b) => globsOverlap(a, b)))
 }

@@ -44,9 +44,24 @@ import type {
   WorkflowRevision,
   WorkflowSourceRequest,
   WorkflowSummary,
+  DefectConfirmRequest,
+  DefectDetail,
+  DefectReportRequest,
+  EvalCase,
+  EvalCollectRequest,
+  EvalRun,
+  EvalRunRequest,
+  NodeScorecard,
+  Viewer,
 } from '@taktflow/core'
 
 export type SpaceFileKind = SpaceFile['kind']
+
+/**
+ * PATCH /space/repos/:id 的修改项。JSON 会丢掉 undefined，服务端又是 `{ ...existing, ...input }` 合并，
+ * 所以"清除"必须显式传 null（协议约定：null = 删除该键；见交付说明的协议变更请求）。
+ */
+export type RepoPatch = { [K in keyof Omit<RepoBinding, 'id'>]?: RepoBinding[K] | null }
 
 /** GET /api/workflows/:id/revisions/:rev 的响应；diff 是相对父修订的统一 diff（首个修订为空串）。 */
 export interface WorkflowRevisionDetail {
@@ -62,15 +77,26 @@ export class WorkflowConflictError extends Error {
   }
 }
 
+
+export type ScorecardBy = NodeScorecard['key']['by']
+
 /**
- * 门禁 Tab 要画 rubric 阈值线，阈值在 SnapshotNode.checks 里，但 NodeDetail 还没带检查定义（见交付说明里的协议变更请求）。
- * 在 server 补上之前按可选字段读：有就画阈值线，没有就只画分数。
+ * 评测输出快照（.takt/evals/runs/<run>/<case>/<variant>/ 下的文件）。
+ * api.ts 还没有对应路由：建议 GET /api/eval/runs/:id/output?case=&variant=（见交付说明的协议变更请求）。
  */
-export type NodeView = NodeDetail
+export interface EvalOutputSnapshot {
+  runId: string
+  caseId: string
+  variant: string
+  outputDir?: string
+  files: Array<{ path: string; content: string }>
+}
 
 /** Web 用到的全部数据接口：真实 HTTP 客户端和演示数据实现同一份。 */
 export interface DataSource {
   readonly mock: boolean
+  /** 当前用户（GET /me）：请求头 x-takt-user 指定，缺省为空间第一个 owner。 */
+  me(): Promise<Viewer>
   project(): Promise<ProjectOverview>
   requirements(): Promise<RequirementSummary[]>
   requirement(id: string): Promise<RequirementDetail>
@@ -84,7 +110,7 @@ export interface DataSource {
   runs(requirementId?: string): Promise<RunSummary[]>
   run(runId: string): Promise<RunDetail>
   events(runId: string, opts?: { after?: number; node?: string }): Promise<EventEnvelope[]>
-  node(runId: string, nodeId: string): Promise<NodeView>
+  node(runId: string, nodeId: string): Promise<NodeDetail>
   audit(runId: string): Promise<{ ok: boolean; brokenAt?: number }>
   attention(pending?: boolean): Promise<AttentionItem[]>
   answer(requestId: string, body: { decision?: string; answer?: string }): Promise<AttentionItem>
@@ -96,11 +122,12 @@ export interface DataSource {
   // ---- 项目空间（docs/design/14）。除 spaces() 外都作用于当前 URL 的空间（/s/:spaceId）。
   spaces(): Promise<SpaceSummary[]>
   space(): Promise<SpaceDetail>
-  setMembers(members: SpaceMember[]): Promise<SpaceDetail>
-  addRepo(repo: RepoBinding): Promise<SpaceDetail>
-  /** 修改已绑定仓库的可变字段（bootstrap / share / defaultBranch 等）；后端待补 PATCH /api/space/repos/:id。 */
-  updateRepo(repoId: string, patch: Partial<Omit<RepoBinding, 'id'>>): Promise<SpaceDetail>
-  syncRepo(repoId: string): Promise<{ head: string }>
+  /** 空间写操作都要原因（服务端校验非空，写进审计）：成员走 body `{ members, reason }`，仓库放在 body.reason。 */
+  setMembers(members: SpaceMember[], reason: string): Promise<SpaceDetail>
+  addRepo(repo: RepoBinding, reason: string): Promise<SpaceDetail>
+  /** 修改已绑定仓库的可变字段（bootstrap / share / defaultBranch 等）；值为 null 表示清除该字段。 */
+  updateRepo(repoId: string, patch: RepoPatch, reason: string): Promise<SpaceDetail>
+  syncRepo(repoId: string, reason: string): Promise<{ head: string }>
   spaceFile(kind: SpaceFileKind, name: string): Promise<SpaceFile>
   saveSpaceFile(kind: SpaceFileKind, name: string, body: { content: string; reason: string }): Promise<SpaceFile>
 
@@ -131,6 +158,25 @@ export interface DataSource {
   lessons(status?: Lesson['status']): Promise<Lesson[]>
   /** 修改经验（启用 / 退役 / 改正文），reason 必填。 */
   updateLesson(id: string, body: LessonUpdateRequest): Promise<Lesson>
+
+  // ---- 评测与归因（docs/design/20），作用于当前空间
+  /** 成绩单：按节点 / 配方 / 技能聚合。 */
+  scorecards(by: ScorecardBy, workflowId?: string): Promise<NodeScorecard[]>
+  /** 评测用例；target 形如 node:<workflow>/<node> 或 skill:<name>，不给时返回全部。 */
+  evalCases(target?: string): Promise<EvalCase[]>
+  collectEvalCases(body: EvalCollectRequest): Promise<{ added: string[] }>
+  /** 运行列表不含 results 明细（results 为空数组）。 */
+  evalRuns(): Promise<EvalRun[]>
+  evalRun(id: string): Promise<EvalRun>
+  /** 后台执行，轮询 evalRun 看进度。 */
+  startEvalRun(body: EvalRunRequest): Promise<EvalRun>
+  /** 输出快照；后端路由待补（协议变更请求），HTTP 客户端在 404 时返回空 files。 */
+  evalOutput(runId: string, caseId: string, variant: string): Promise<EvalOutputSnapshot>
+  defects(requirementId: string): Promise<DefectDetail[]>
+  reportDefect(requirementId: string, body: DefectReportRequest): Promise<DefectDetail>
+  /** 预检 + 归因 Agent（后台执行，返回 attributing: true，轮询 defects 看结果）。 */
+  attributeDefect(requirementId: string, defectId: string): Promise<DefectDetail>
+  confirmDefect(requirementId: string, defectId: string, body: DefectConfirmRequest): Promise<DefectDetail>
 
   // ---- workflow 协同编辑（docs/design/16），作用于当前空间
   workflows(): Promise<WorkflowSummary[]>

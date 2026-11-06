@@ -1,0 +1,437 @@
+/* 评测运行：列表、新建表单、A/B 对比 */
+
+.ev-runs td:first-child,
+.ev-runs th:first-child {
+  padding-left: 16px;
+}
+.ev-run-id {
+  color: var(--text);
+  font-weight: 500;
+}
+.ev-variant-cell {
+  max-width: 280px;
+}
+.ev-verdict {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+.ev-verdict::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.ev-verdict-better {
+  background: var(--st-success-soft);
+  color: var(--st-success);
+}
+.ev-verdict-worse {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.ev-verdict-text-better,
+.ev-w {
+  color: var(--st-success);
+}
+.ev-verdict-text-worse,
+.ev-l {
+  color: var(--st-failed);
+}
+
+/* ---------------------------------------------------------------- 新建表单 */
+.ev-form {
+  display: grid;
+  gap: var(--sp-4);
+}
+.ev-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.ev-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.ev-sub {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.ev-cases {
+  display: grid;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.ev-case-opt {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-ui);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.ev-case-opt:hover {
+  background: var(--surface-hover);
+}
+.ev-src {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  font-size: var(--text-label);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.ev-src-defect {
+  border-color: color-mix(in oklch, var(--st-stale) 40%, transparent);
+  color: var(--st-stale);
+}
+.ev-variant {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ev-variant legend {
+  padding: 0 4px;
+}
+.ev-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.ev-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+/* ---------------------------------------------------------------- 运行详情 */
+.ev-run {
+  display: grid;
+  gap: var(--sp-4);
+}
+.ev-run-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.ev-run-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.ev-running {
+  padding: var(--sp-8) 0;
+}
+.ev-overview {
+  display: grid;
+  grid-template-columns: 1.3fr repeat(4, minmax(0, 1fr));
+}
+.ev-overview > div {
+  padding: 14px 16px;
+  border-left: 1px solid var(--divider);
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+.ev-overview > div:first-child {
+  border-left: 0;
+}
+.ev-ov-big {
+  font-size: var(--text-display);
+  font-weight: 600;
+  line-height: 1.1;
+}
+.ev-ov-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.ev-ov-num svg {
+  width: 16px;
+  height: 16px;
+}
+.ev-wlt {
+  display: flex;
+  height: 6px;
+  gap: 2px;
+}
+.ev-wlt i {
+  flex-basis: 0;
+  border-radius: 2px;
+}
+.ev-wlt-w {
+  background: var(--st-success);
+}
+.ev-wlt-l {
+  background: var(--st-failed);
+}
+.ev-wlt-t {
+  background: var(--border-strong);
+}
+.ev-ov-rate {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-meta);
+}
+.ev-ov-rate .num {
+  text-align: right;
+}
+.ev-delta {
+  font-size: var(--text-meta);
+  font-weight: 600;
+}
+.ev-reg-id {
+  font-size: var(--text-meta);
+  color: var(--st-failed);
+}
+
+.ev-cases-table td:first-child,
+.ev-cases-table th:first-child {
+  padding-left: 16px;
+}
+.ev-case-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 560px;
+}
+.ev-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+.ev-score svg,
+.ev-checks svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.ev-pass {
+  color: var(--st-success);
+}
+.ev-fail {
+  color: var(--st-failed);
+}
+.ev-outcome {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+.ev-outcome-win {
+  background: var(--st-success-soft);
+  color: var(--st-success);
+}
+.ev-outcome-loss {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.ev-chev {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  transition: transform var(--dur-pop) var(--ease);
+}
+.ev-chev.open {
+  transform: rotate(180deg);
+}
+.ev-row-open td {
+  border-bottom-color: transparent;
+}
+.ev-expand td {
+  height: auto;
+  padding: 0 16px 16px;
+  background: var(--surface);
+}
+.ev-sides {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-3);
+  animation: ev-expand-in var(--dur-pop) var(--ease);
+}
+@keyframes ev-expand-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.ev-side {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.ev-side > .btn {
+  justify-self: start;
+}
+.ev-side-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-ui);
+  min-width: 0;
+}
+.ev-side-head b {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ev-reason {
+  margin: 0;
+  font-size: var(--text-ui);
+  line-height: 1.55;
+}
+.ev-reason-k {
+  display: inline-block;
+  margin-right: 6px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+.ev-checks {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-meta);
+}
+.ev-checks li {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+.ev-checks li > span:first-of-type {
+  color: var(--text);
+}
+.ev-must {
+  margin-top: 10px;
+  font-size: var(--text-meta);
+}
+.ev-files {
+  display: grid;
+  gap: var(--sp-4);
+}
+.ev-file-path {
+  margin-bottom: 4px;
+  color: var(--text-2);
+}
+.ev-file {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 960px) {
+  .ev-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ev-overview > div {
+    border-left: 0;
+    border-top: 1px solid var(--divider);
+  }
+  .ev-sides,
+  .ev-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ev-sides {
+    animation: none;
+  }
+}
+
+/* 评测失败 / 没有对比结果 */
+.ev-failed {
+  padding: var(--sp-4);
+  display: grid;
+  gap: var(--sp-3);
+  border-color: var(--st-failed);
+  background: var(--st-failed-soft);
+}
+.ev-failed-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.ev-failed-head svg {
+  width: 16px;
+  height: 16px;
+  color: var(--st-failed);
+}
+.ev-failed-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--sp-2);
+}
+.ev-failed-list li {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr;
+  gap: var(--sp-3);
+  align-items: baseline;
+}
+.ev-failed-msg {
+  color: var(--st-failed);
+  overflow-wrap: anywhere;
+}
+.ev-failed-list li.ev-failed-log {
+  grid-template-columns: 1fr;
+}

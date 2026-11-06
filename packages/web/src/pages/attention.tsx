@@ -6,13 +6,13 @@ import { AttentionCard } from '../components/attention-card'
 import { PageHeader, useCrumbs } from '../components/layout'
 import { EmptyState, ErrorState, Segmented, SkeletonRows, StatusBadge } from '../components/ui'
 import { Link } from '../lib/router'
+import { actingUser, setActingUser } from '../lib/acting-user'
 import { REQ_STATUS } from '../lib/status'
 import './overview.css'
 
 type View = 'pending' | 'done'
 type Scope = 'all' | 'mine'
 
-const ME_KEY = 'taktflow.attention.me'
 const SCOPE_KEY = 'taktflow.attention.scope'
 
 function readPref(key: string): string | undefined {
@@ -40,19 +40,25 @@ function assignedTo(a: AttentionItem, me: SpaceMember | undefined): boolean {
 export function AttentionPage() {
   const [view, setView] = useState<View>('pending')
   const [scope, setScopeState] = useState<Scope>(() => (readPref(SCOPE_KEY) === 'mine' ? 'mine' : 'all'))
-  const [meId, setMeState] = useState<string | undefined>(() => readPref(ME_KEY))
+  const [meId, setMeState] = useState<string | undefined>(() => actingUser())
   const q = useAsync(async (ds) => {
-    const [items, reqs, members] = await Promise.all([ds.attention(), ds.requirements(), ds.space().then((s) => s.members).catch(() => [] as SpaceMember[])])
-    return { items, reqs, members }
+    const [items, reqs, members, viewer] = await Promise.all([
+      ds.attention(),
+      ds.requirements(),
+      ds.space().then((s) => s.members).catch(() => [] as SpaceMember[]),
+      ds.me().catch(() => undefined),
+    ])
+    return { items, reqs, members, viewer }
   }, [])
   useCrumbs([{ label: '待办' }], [])
   if (q.error && !q.data) return <ErrorState error={q.error} onRetry={q.reload} />
 
   const setScope = (s: Scope) => (setScopeState(s), writePref(SCOPE_KEY, s))
-  const setMe = (id: string) => (setMeState(id), writePref(ME_KEY, id))
+  // 选择的身份同时作为请求头 x-takt-user 发给服务端：筛选"派给我"与审批 / 处置的审计记录是同一个人
+  const setMe = (id: string) => (setMeState(id), setActingUser(id))
   const members = q.data?.members ?? []
-  // 还没有登录身份（协议没有"当前用户"）：让人自己选"我是谁"，默认空间 owner
-  const me = members.find((m) => m.id === meId) ?? members.find((m) => m.role === 'owner') ?? members[0]
+  // 默认身份取 GET /me（服务端在没有 x-takt-user 时用空间第一个 owner）；人可以改选"我是谁"
+  const me = members.find((m) => m.id === meId) ?? members.find((m) => m.id === q.data?.viewer?.id) ?? q.data?.viewer?.member ?? members[0]
   const all = q.data?.items ?? []
   const inScope = (a: AttentionItem) => scope === 'all' || assignedTo(a, me)
   const items = all.filter((a) => (view === 'pending' ? !a.answeredAt : a.answeredAt) && inScope(a))

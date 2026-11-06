@@ -2,7 +2,7 @@ import { access } from 'node:fs/promises'
 import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
 import type { AttentionItem } from '@taktflow/core'
 import { createPrinter } from '../output.js'
-import { loadRuntime, webDir, type ProjectContext } from '../project.js'
+import { engineDependencies, loadRuntime, webDir, type ProjectContext } from '../project.js'
 import { serializeRun } from '../resume-lock.js'
 import { resumeOnce } from './run.js'
 import { createRuntimeCatalog } from '../catalog.js'
@@ -34,7 +34,8 @@ export async function runServe(options: ServeOptions): Promise<void> {
     ? await Promise.all((await discoverSpaces(options.spaces)).map((stores) => loadRuntime(stores.projectDir)))
     : [await loadRuntime(options.project)]
   for (const context of contexts) validateRuntime(context)
-  const leads = new Map(await Promise.all(contexts.map(async (context) => [context.stores.projectDir, await createProjectLead(context)] as const)))
+  const listeners = new Map<string, Set<(presence: import('@taktflow/core').LeadPresence) => void>>()
+  const leads = new Map(await Promise.all(contexts.map(async (context) => [context.stores.projectDir, await createProjectLead(context, (id, presence) => { for (const send of listeners.get(`${context.stores.projectDir}:${id}`) ?? []) send(presence) })] as const)))
   const stops = await Promise.all(contexts.map((context) => watchLeadEvents(context, leads.get(context.stores.projectDir)!)))
   const context = contexts[0]!
   const printer = createPrinter(options.json)
@@ -53,6 +54,19 @@ export async function runServe(options: ServeOptions): Promise<void> {
     ...(dir === undefined ? {} : { webDir: dir }),
     onSpaceAnswer: async (dir, item) => {
       if (!await leads.get(dir)!.onAttention(item)) await resumeAfterAnswer(contexts.find((entry) => entry.stores.projectDir === dir)!, item)
+    },
+    resolveRuntime: (stores) => engineDependencies({ ...contexts.find((context) => context.stores.projectDir === stores.projectDir)!, stores }),
+    getCommands: (stores) => {
+      const context = contexts.find((item) => item.stores.projectDir === stores.projectDir)!
+      context.stores.config = stores.config
+      return leads.get(stores.projectDir)!.commands
+    },
+    getLeadPresence: (dir, id) => leads.get(dir)!.getPresence(id),
+    subscribeLead: (dir, id, send) => {
+      const key = `${dir}:${id}`
+      const bucket = listeners.get(key) ?? new Set()
+      bucket.add(send); listeners.set(key, bucket)
+      return () => { bucket.delete(send); if (!bucket.size) listeners.delete(key) }
     },
     ...createRuntimeCatalog(),
   }

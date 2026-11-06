@@ -1,4 +1,4 @@
-import { posix } from 'node:path'
+import { globsOverlap } from '../util/glob.js'
 import type { ProjectStores } from '../interfaces.js'
 import type { Actor, RouteDecision, SnapshotNode, Tier, WorkflowSnapshot } from '../types.js'
 import { validateSchema } from '../engine/schema.js'
@@ -21,15 +21,7 @@ const schema = { type: 'object', required: ['tier', 'surfaces', 'reason'], prope
 } }
 
 // 保守判断：通配符之前的静态前缀相交，就不能保证并行写入安全。
-export function pathsOverlap(left: string, right: string): boolean {
-  const prefix = (path: string) => {
-    const normalized = posix.normalize(path.replace(/\\/g, '/'))
-    if (normalized === '.' || normalized.split('/').includes('..')) return ''
-    return normalized.replace(/^\.\//, '').split(/[*?{[!(]/, 1)[0]!
-  }
-  const a = prefix(left); const b = prefix(right)
-  return a.startsWith(b) || b.startsWith(a)
-}
+export const pathsOverlap = globsOverlap
 function overlap(surfaces: RouteDecision['surfaces']): boolean {
   return surfaces.some((a, index) => surfaces.slice(index + 1).some((b) =>
     !(a.repo && b.repo && a.repo !== b.repo) && a.paths.some((x) => b.paths.some((y) => pathsOverlap(x, y)))))
@@ -75,7 +67,7 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
     ?? workflows.find(supported)
   if (!selected) throw new Error(`没有支持 ${tier} 的 workflow`)
   const nodes = flatten(selected.snapshot.nodes)
-  const roles = nodes.flatMap((node) => [node.role, ...(node.allowedRoles ?? []), node.review?.author,
+  const roles = nodes.flatMap((node) => [node.role, ...(node.allowedRoles ?? []), ...(node.checks?.map((check) => check.role) ?? []), node.review?.author,
     ...(node.review?.reviewers.map((reviewer) => reviewer.role) ?? []), node.review?.arbiter?.role]).filter((role): role is string => Boolean(role))
   return { tier, workflowId: selected.id, reason: input.override?.reason ?? proposal.reason, surfaces: proposal.surfaces,
     gates: nodes.filter((node) => ['gate', 'review', 'human'].includes(node.kind)).map((node) => node.title), roles: [...new Set(roles)],

@@ -6,6 +6,7 @@ import { useEffect } from 'react'
 import { matchPath, navigate, useLocation } from './lib/router'
 import './lib/theme'
 import { AttentionPage } from './pages/attention'
+import { EvalPage } from './pages/eval'
 import { OverviewPage } from './pages/overview'
 import { NotFoundPage } from './pages/placeholder'
 import { RequirementPage } from './pages/requirement'
@@ -27,6 +28,7 @@ function SpaceRoutes({ path }: { path: string }) {
   if (path === '/knowledge') return <Redirect to="/settings?tab=knowledge" />
   if (path === '/settings') return <SettingsPage />
   if (path === '/workflows') return <WorkflowsListPage />
+  if (path === '/eval') return <EvalPage />
   // /settings/:tab 是 /settings?tab= 的别名（members / repos / skills / agents / workflows / knowledge / runtime）
   const st = matchPath('/settings/:tab', path)
   if (st) return <Redirect to={`/settings?tab=${encodeURIComponent(st.tab!)}`} />

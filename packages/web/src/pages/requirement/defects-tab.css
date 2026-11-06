@@ -1,0 +1,502 @@
+/* 需求页"缺陷"Tab：列表 + 归因视图 */
+
+.df-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.df-items {
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  display: grid;
+  gap: 2px;
+}
+.df-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.df-item:hover {
+  background: var(--surface-hover);
+}
+.df-item.on {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+.df-item-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.df-item-title {
+  line-height: 1.45;
+}
+.df-item-at {
+  font-size: var(--text-meta);
+}
+
+.df-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+.df-tone-failed {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.df-tone-waiting {
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+}
+.df-tone-success {
+  background: var(--st-success-soft);
+  color: var(--st-success);
+}
+.df-tone-running {
+  background: var(--st-running-soft);
+  color: var(--st-running);
+}
+
+/* ---------------------------------------------------------------- 详情 */
+.df-detail {
+  min-width: 0;
+}
+.df-head {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--divider);
+}
+.df-head-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.df-id {
+  font-weight: 600;
+}
+.df-title {
+  margin: 8px 0 4px;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.df-desc {
+  margin: 0;
+  max-width: 72ch;
+  font-size: var(--text-body);
+  line-height: 1.6;
+}
+.df-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  font-size: var(--text-meta);
+}
+.df-attributing {
+  padding: var(--sp-8) 0;
+}
+.df-start {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 20px;
+}
+.df-start p {
+  margin: 0;
+  max-width: 72ch;
+  color: var(--text-2);
+}
+.df-start .df-failed {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.df-body {
+  display: grid;
+  gap: var(--sp-5);
+  padding: 16px 20px 20px;
+}
+.df-sec {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  align-content: start;
+}
+.df-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: var(--sp-5);
+}
+.df-h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.df-h3-sub {
+  font-size: var(--text-meta);
+  font-weight: 400;
+}
+.df-h4 {
+  margin: 4px 0 0;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+/* 标记：引入 = 实心，漏检 = 空心 */
+.df-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.df-mark i,
+.df-dot-in,
+.df-dot-miss {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.df-mark-in {
+  color: var(--st-failed);
+}
+.df-mark-in i,
+.df-dot-in {
+  background: var(--st-failed);
+}
+.df-mark-miss {
+  color: var(--st-waiting);
+}
+.df-mark-miss i,
+.df-dot-miss {
+  border: 1.75px solid var(--st-waiting);
+  background: var(--surface);
+}
+.df-mark-pass {
+  font-size: var(--text-meta);
+}
+
+/* 阶段条 */
+.df-stages {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.df-stage {
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  padding: 8px 10px 10px;
+  border-left: 1px solid var(--divider);
+  min-width: 0;
+}
+.df-stage:first-child {
+  border-left: 0;
+}
+.df-stage.hit {
+  background: var(--surface-2);
+}
+.df-stage-rail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 10px;
+}
+.df-stage-rail:empty::before {
+  content: '';
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--divider);
+}
+.df-stage-title {
+  font-size: var(--text-meta);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.df-stage:not(.hit) .df-stage-title {
+  color: var(--text-3);
+}
+.df-stage-marks {
+  display: grid;
+  gap: 2px;
+}
+.df-stage-marks .df-mark {
+  white-space: normal;
+}
+.df-stage-marks .df-mark i {
+  display: none;
+}
+
+/* 简化追溯链 */
+.df-chain {
+  position: relative;
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.df-link {
+  position: relative;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  padding-bottom: 12px;
+}
+.df-link::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 14px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--divider);
+}
+.df-link:last-child::before {
+  display: none;
+}
+.df-link-node {
+  width: 10px;
+  height: 10px;
+  margin: 5px 0 0 5px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  position: relative;
+}
+.df-link.miss .df-link-node {
+  background: var(--surface);
+  border: 2px solid var(--st-waiting);
+  width: 12px;
+  height: 12px;
+  margin: 4px 0 0 4px;
+}
+.df-link.in .df-link-node {
+  background: var(--st-failed);
+  width: 12px;
+  height: 12px;
+  margin: 4px 0 0 4px;
+}
+.df-link-body {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.df-link-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.df-link-title {
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.df-link-marks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.df-link-marks .df-mark i {
+  display: none;
+}
+.df-evidence {
+  margin: 2px 0 0;
+  padding-left: 16px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+
+.df-precheck dd {
+  min-width: 0;
+}
+.df-ids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.df-yn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+.df-yn svg {
+  width: 13px;
+  height: 13px;
+}
+.df-sugs {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.df-sugs li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.df-sug-kind {
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.df-sug-ref {
+  color: var(--text-3);
+}
+.df-sug-change {
+  grid-column: 1 / -1;
+  font-size: var(--text-ui);
+  line-height: 1.5;
+}
+.df-none {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+}
+.df-none svg {
+  width: 14px;
+  height: 14px;
+}
+.df-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 14px;
+  border-top: 1px solid var(--divider);
+  font-size: var(--text-meta);
+}
+.df-confirmed {
+  padding-top: 14px;
+  border-top: 1px solid var(--divider);
+}
+.df-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--text-ui);
+}
+.df-cases {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.df-cases li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-ui);
+}
+.df-cases li > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--st-stale);
+}
+
+/* 表单 */
+.df-sev {
+  display: flex;
+  gap: 6px;
+}
+.df-sev-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+  transition: background var(--dur-press) var(--ease), border-color var(--dur-press) var(--ease), color var(--dur-press) var(--ease);
+}
+.df-sev-opt.on {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--surface-2);
+}
+.df-sev-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.df-sev-critical {
+  background: var(--st-failed);
+}
+.df-sev-major {
+  background: var(--st-waiting);
+}
+.df-sev-minor {
+  background: var(--text-3);
+}
+.df-miss-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  gap: 6px;
+}
+.df-add {
+  justify-self: start;
+}
+
+@media (max-width: 1100px) {
+  .df-layout,
+  .df-cols {
+    grid-template-columns: 1fr;
+  }
+  .df-stages {
+    grid-auto-flow: row;
+  }
+  .df-stage {
+    border-left: 0;
+    border-top: 1px solid var(--divider);
+  }
+}

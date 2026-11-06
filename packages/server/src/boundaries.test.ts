@@ -50,7 +50,7 @@ it('编辑传播到所有运行、loop 父容器及后继、动态依赖但不�
   await stores.runs.create({ ...state, runId: 'run-2', startedAt: '2026-02-01T00:00:00Z' }, snapshot)
   await writeFile(join(stores.taktDir, 'runs/run-2/engine.json'), JSON.stringify(graph))
   const edit = async (content: string) => {
-    const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', body: JSON.stringify({ content, reason: '修改规格' }) })
+    const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content, reason: '修改规格' }) })
     expect(response.status).toBe(200)
     return response.json() as Promise<{ version: number; staleNodes: Array<{ runId: string; nodeId: string }> }>
   }
@@ -101,7 +101,7 @@ it('非法参数返回 400、缺失实体返回 404、存储损坏返回 500，�
     expect((await response.json()).error).toEqual(expect.any(String))
   }
   expect((await fetch(`${server.url}/api/runs/absent/audit`)).status).toBe(404)
-  const malformed = await fetch(`${server.url}/api/attention/id`, { method: 'POST', body: '{' })
+  const malformed = await fetch(`${server.url}/api/attention/id`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' })
   expect(malformed.status).toBe(400)
   const preflight = await fetch(`${server.url}/api/requirements/REQ-1/artifact`, { method: 'OPTIONS', headers: { origin: 'http://localhost:5173', 'access-control-request-method': 'PUT', 'access-control-request-headers': 'content-type,x-takt-user' } })
   expect(preflight.status).toBe(204)
@@ -181,7 +181,7 @@ it('已有新版本输入不会 stale', async () => {
   state.nodes['loop/child']!.inputs![0]!.version = 2
   state.nodes['planner/a/task']!.inputs![0]!.version = 2
   await stores.runs.save(state)
-  const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', body: JSON.stringify({ content: 'v2', reason: '同步新版本' }) })
+  const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'v2', reason: '同步新版本' }) })
   expect(await response.json()).toEqual({ version: 2, staleNodes: [] })
 })
 
@@ -210,7 +210,7 @@ it.each(['deleted', 'conflicting'] as const)('Expansion.nodes 驱动图与 stale
   const nodeResponse = await fetch(`${server.url}/api/runs/run-1/nodes/planner%2Fa%2Ftask`)
   expect(nodeResponse.status).toBe(200)
   expect(await nodeResponse.json()).toMatchObject({ kind: 'agent', prompt: '展开快照 prompt' })
-  const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', body: JSON.stringify({ content: 'v2', reason: '新定义传播' }) })
+  const response = await fetch(`${server.url}/api/requirements/REQ-1/artifact?path=spec.md`, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'v2', reason: '新定义传播' }) })
   expect(response.status).toBe(200)
   const changed = await response.json()
   expect(changed.staleNodes.map((item: { nodeId: string }) => item.nodeId).sort()).toEqual(['after', 'loop', 'loop/child', 'planner', 'planner/a/task', 'planner/b/task'])

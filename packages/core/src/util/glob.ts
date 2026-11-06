@@ -1,5 +1,5 @@
 import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 
 const defaultIgnore = ['**/.git', '**/node_modules', '**/.takt/objects', '**/.takt/runs', '**/dist']
 
@@ -46,4 +46,17 @@ export async function listFiles(
   }
   await walk('')
   return files.sort()
+}
+
+// 静态前缀无法证明互斥时保守相交；目录段有边界，通配符前的文件名前缀没有。
+export function globsOverlap(left: string, right: string): boolean {
+  const prefix = (value: string) => {
+    const path = posix.normalize(value.replace(/\\/g, '/'))
+    if (path === '.' || path.split('/').includes('..')) return { value: '', glob: true }
+    const index = path.search(/[*?{[!(]/)
+    return { value: index < 0 ? path : path.slice(0, index), glob: index >= 0 }
+  }
+  const a = prefix(left), b = prefix(right)
+  const contains = (x: typeof a, y: typeof a) => y.value === x.value || y.value.startsWith(x.value.endsWith('/') || x.glob ? x.value : `${x.value}/`)
+  return contains(a, b) || contains(b, a)
 }

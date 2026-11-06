@@ -1,10 +1,11 @@
 import type { NodeContext } from '../../types.js'
 import type { Entry } from '../graph.js'
 import type { NodeHost } from './host.js'
-import type { AgentNodeDef, NodeDef, PlannedItem } from '../../types.js'
+import type { AgentNodeDef, AgentProfile, NodeDef, PlannedItem } from '../../types.js'
 import { expandPlanner } from '../graph.js'
 import { snapshotWorkflow } from '../../store/snapshot.js'
 import { validateWorkflowHarnesses } from '../selection.js'
+import { intersectWriteScopes } from '../scope.js'
 import { scopesOverlap } from '../fingerprint.js'
 import { validateDependencies } from '../graph.js'
 import { PLANNER_SCHEMA } from './schemas.js'
@@ -18,7 +19,7 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   if (!expansion) {
     const value = await host.model(entry, ctx, node.role, node.prompt, PLANNER_SCHEMA) as { items: PlannedItem[] }
     const groups = expandPlanner(node, value.items)
-    for (const message of serializePlannerGroups(groups)) await host.emit('log', { level: 'info', message }, node.id)
+    for (const message of serializePlannerGroups(groups, host.deps.profiles)) await host.emit('log', { level: 'info', message }, node.id)
     const definitions = groups.flatMap((group) => group.nodes)
     const workflow = { id: node.id, title: node.title, version: '1', stages: [], nodes: definitions }
     validateWorkflowHarnesses(workflow, { config: host.deps.stores.config, profiles: host.deps.profiles, harnesses: host.deps.harnesses }, host.override)
@@ -36,8 +37,13 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
 
 }
 
-export function serializePlannerGroups(groups: ReturnType<typeof expandPlanner>): string[] {
+export function serializePlannerGroups(groups: ReturnType<typeof expandPlanner>, profiles: Record<string, AgentProfile> = {}): string[] {
   const messages: string[] = []
+  const scope = (node: AgentNodeDef) => profiles[node.role] ? intersectWriteScopes(profiles[node.role]!.writeScope, node.writeScope) : node.writeScope
+  const overlaps = (a: AgentNodeDef, b: AgentNodeDef) => {
+    const left = scope(a), right = scope(b)
+    return left === undefined || right === undefined || scopesOverlap(left, right)
+  }
   const agents = (nodes: NodeDef[]): AgentNodeDef[] => nodes.flatMap((node): AgentNodeDef[] =>
     node.kind === 'agent' ? [node] : node.kind === 'loop' ? agents(node.body) : [])
   const reaches = (id: string, target: string, seen = new Set<string>()): boolean => {
@@ -49,7 +55,7 @@ export function serializePlannerGroups(groups: ReturnType<typeof expandPlanner>)
   for (let later = 1; later < groups.length; later++) for (let earlier = 0; earlier < later; earlier++) {
     const left = groups[earlier]!, right = groups[later]!
     const overlap = agents(left.nodes).some((a) => agents(right.nodes).some((b) =>
-      a.repo === b.repo && scopesOverlap(a.writeScope ?? [], b.writeScope ?? [])))
+      a.repo === b.repo && overlaps(a, b)))
     if (!overlap) continue
     // 已有逆向依赖已经确保串行；不要添加成环的反向边。
     if (left.nodes.some((a) => right.nodes.some((b) => reaches(a.id, b.id)))) continue

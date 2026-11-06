@@ -1,4 +1,4 @@
-import type { Actor, WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from '@taktflow/core'
+import type { WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from '@taktflow/core'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 import { actor, body, HttpError, json, safeId, text } from './http.js'
 import { workflowStore } from './space.js'
@@ -19,7 +19,6 @@ export function workflowRoutes(register: (method: string, path: string, handler:
     const runs = await stores.runs.list()
     return (await getStore(stores).list()).map((item) => ({ ...item, runs: runs.filter((run) => run.workflowId === item.id).length }))
   })
-  const author = (request: Parameters<typeof actor>[0]): Actor => actor(request)
   const result = (value: Awaited<ReturnType<WorkflowStore['edit']>>, response: Parameters<typeof json>[0]) => {
     if ('error' in value) { json(response, value, value.error === 'conflict' ? 409 : 400); return STREAMING }
     return value
@@ -30,13 +29,13 @@ export function workflowRoutes(register: (method: string, path: string, handler:
     text(input.baseRev, 'baseRev')
     if (input.reason !== undefined) text(input.reason, 'reason')
     if (!Array.isArray(input.edits)) throw new HttpError(400, 'edits 必须是数组')
-    return result(await getStore(stores).edit(safeId(params.id!), { ...input as unknown as WorkflowEditRequest, author: author(request) }), response)
+    return result(await getStore(stores).edit(safeId(params.id!), { ...input as unknown as WorkflowEditRequest, author: actor(request, stores) }), response)
   })
   add('PUT', '/api/workflows/:id/source', async ({ stores, params, request, response }) => {
     const input = await body(request)
     text(input.baseRev, 'baseRev'); text(input.source, 'source')
     if (input.reason !== undefined) text(input.reason, 'reason')
-    return result(await getStore(stores).replaceSource(safeId(params.id!), { ...input as unknown as WorkflowSourceRequest, author: author(request) }), response)
+    return result(await getStore(stores).replaceSource(safeId(params.id!), { ...input as unknown as WorkflowSourceRequest, author: actor(request, stores) }), response)
   })
   add('PUT', '/api/workflows/:id/layout', async ({ stores, params, request }) => {
     const input = await body(request)
@@ -51,13 +50,17 @@ export function workflowRoutes(register: (method: string, path: string, handler:
     return getStore(stores).setLayout(safeId(params.id!), input as unknown as WorkflowLayout)
   })
   add('GET', '/api/workflows/:id/revisions', async ({ stores, params }) => {
-    const store = getStore(stores); await store.get(safeId(params.id!))
-    return store.revisions(params.id!)
+    const store = getStore(stores)
+    const id = safeId(params.id!)
+    const file = (await store.list({ record: false })).find((item) => item.id === id)
+    if (!file) throw new HttpError(404, 'workflow 不存在')
+    const revisions = await store.revisions(id)
+    return revisions.length ? revisions : [{ rev: file.rev, at: file.updatedAt, author: { type: 'system', id: 'workflow-source' }, reason: '记录初始源码', summary: '初始修订' }]
   })
   add('GET', '/api/workflows/:id/revisions/:rev', ({ stores, params }) => getStore(stores).revision(safeId(params.id!), params.rev!))
   add('POST', '/api/workflows/:id/rollback', async ({ stores, params, request, response }) => {
     const input = await body(request)
-    return result(await getStore(stores).rollback(safeId(params.id!), text(input.rev, 'rev'), author(request), text(input.reason, 'reason')), response)
+    return result(await getStore(stores).rollback(safeId(params.id!), text(input.rev, 'rev'), actor(request, stores), text(input.reason, 'reason')), response)
   })
   add('GET', '/api/workflows/:id/stream', async ({ stores, params, response }) => {
     const store = getStore(stores)

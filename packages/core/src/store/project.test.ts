@@ -120,13 +120,16 @@ describe('project / profiles', () => {
     const profiles = await loadProfiles(templatesDir)
     expect(Object.keys(profiles).sort()).toEqual([
       'architect',
+      'auditor',
       'automation',
       'dev',
+      'evaluator',
       'judge',
       'lead',
       'pm',
       'reviewer',
       'test-designer',
+      'verifier',
     ])
     expect(profiles.dev?.harness).toEqual({ harness: 'codex', effort: 'high', fallback: [{ harness: 'claude-code' }] })
     expect(profiles.dev?.writeScope).toContain('src/**')

@@ -3,6 +3,9 @@ import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parseCliArgs, expectPositionals, parsePositiveInt, HELP, UsageError, type ParsedCli } from './args.js'
 import { createPrinter } from './output.js'
+import { registerEvalCommands, type EvalCliRegister } from './commands/eval.js'
+import { registerDefectCommands } from './commands/defect.js'
+import { runM3Command } from './commands/m3.js'
 import { runInit } from './commands/init.js'
 import { runReqList, runReqNew } from './commands/req.js'
 import { runWsGet, runWsList, runWsLog, runWsPut } from './commands/ws.js'
@@ -16,6 +19,11 @@ import { runServe } from './commands/serve.js'
 import { runCatalog, runDoctor } from './commands/catalog.js'
 
 export { knowledgeFromConfig } from './knowledge.js'
+
+const registered = new Map<string, Parameters<EvalCliRegister>[1]>()
+const register: EvalCliRegister = (command, handler) => { registered.set(command, handler) }
+registerEvalCommands(register)
+registerDefectCommands(register)
 
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   let cli: ParsedCli
@@ -37,7 +45,14 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
 
 async function dispatch(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
+  const handler = command && registered.get(command)
+  if (handler) return handler(cli)
   switch (command) {
+    case 'route':
+    case 'cmd':
+    case 'lessons':
+    case 'review':
+      return runM3Command(cli)
     case 'space':
     case 'repo':
     case 'skill':

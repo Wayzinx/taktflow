@@ -91,7 +91,7 @@ export function OverviewPage() {
   const titleOf = (id: string) => p?.requirements.find((r) => r.id === id)?.title
   return (
     <div className="page overview fade-in">
-      <PageHeader title={p?.name ?? <Skeleton w={160} h={20} />} sub={p?.description ?? <Skeleton w={360} h={12} style={{ marginTop: 6 }} />} />
+      <PageHeader title={p?.name ?? <Skeleton w={160} h={20} />} sub={p ? p.description : <Skeleton w={360} h={12} style={{ marginTop: 6 }} />} />
       {!p ? (
         <OverviewSkeleton />
       ) : (

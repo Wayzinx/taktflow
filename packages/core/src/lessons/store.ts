@@ -1,3 +1,4 @@
+import { safeLessonText } from './safety.js'
 import { readdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { stringify } from 'yaml'
@@ -39,6 +40,7 @@ export function createLessonStore(options: { dir: string; audit?: (entry: Lesson
     } catch (cause) { throw new Error(`无法读取经验：${path}`, { cause }) }
   }
   async function save(input: Omit<Lesson, 'createdAt' | 'updatedAt'> & { createdAt?: string }, by: Actor, reason: string): Promise<Lesson> {
+    if (!safeLessonText(input.title, input.body)) throw new Error('经验不能绕过验证或修改工作流、门禁')
     if (!reason.trim()) throw new Error('修改经验必须填写 reason')
     const previous = await get(input.id)
     const now = new Date().toISOString()

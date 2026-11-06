@@ -109,11 +109,14 @@ export class WriteGuard {
 async function watchOutputs(workspace: string, outputs: string[], quarantine?: string, exclude: (path: string) => Promise<boolean> = async () => false): Promise<() => Promise<Array<{ path: string; sha256: string }>>> {
   const scan = async () => {
     const files = await listFiles(workspace, ['**'], { ignore: [] })
-    const contents = new Map<string, Buffer>()
+    const contents = new Map<string, { hash: string; bytes?: Buffer }>()
     for (const path of files) {
       if (/^(manifest\.json|requirement\.json|comments\.jsonl)(?:$|\.)/.test(path) || /\.[a-f0-9]{16}\.tmp$/.test(path)) continue
       await assertNoSymlinks(workspace, join(workspace, path))
-      try { contents.set(path, await readFile(join(workspace, path))) } catch (error) { if (!isEnoent(error)) throw error }
+      try {
+        const bytes = await readFile(join(workspace, path))
+        contents.set(path, { hash: sha256(bytes), ...(quarantine ? { bytes } : {}) })
+      } catch (error) { if (!isEnoent(error)) throw error }
     }
     return contents
   }
@@ -122,15 +125,15 @@ async function watchOutputs(workspace: string, outputs: string[], quarantine?: s
     const after = await scan()
     const changed: Array<{ path: string; sha256: string }> = []
     for (const [path, content] of after) {
-      if (before.get(path)?.equals(content) || outputs.some((pattern) => matchGlob(pattern, path)) || await exclude(path)) continue
-      changed.push({ path, sha256: sha256(content) })
+      if (before.get(path)?.hash === content.hash || outputs.some((pattern) => matchGlob(pattern, path)) || await exclude(path)) continue
+      changed.push({ path, sha256: content.hash })
       if (quarantine) {
         const target = join(quarantine, path)
         await assertNoSymlinks(quarantine, target)
         await mkdir(dirname(target), { recursive: true })
         await rename(join(workspace, path), target)
         const previous = before.get(path)
-        if (previous) await writeFile(join(workspace, path), previous)
+        if (previous?.bytes) await writeFile(join(workspace, path), previous.bytes)
       }
     }
     return changed

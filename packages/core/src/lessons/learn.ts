@@ -1,3 +1,4 @@
+import { safeLessonText } from './safety.js'
 import type { ProjectStores } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, Lesson, RunState, SnapshotNode, VerdictCategory } from '../types.js'
 import { loadProfiles } from '../store/project.js'
@@ -39,7 +40,7 @@ function repaired(events: EventEnvelope[], after: number, fixer: string, target:
 }
 function safe(candidate: Candidate, ids: string[]): boolean {
   const text = `${candidate.title}\n${candidate.body}`
-  if (/跳过\s*(?:验证|测试|校验)|绕过|无需\s*(?:测试|验证)|bypass|skip[\s_-]+(?:verification|tests?|validation)|(?:修改|更改|禁用|删除)\s*(?:workflow|工作流|门禁)/i.test(text)) return false
+  if (!safeLessonText(candidate.title, candidate.body)) return false
   return !ids.some(id => new RegExp(`(^|[^a-zA-Z0-9_/-])${escape(id)}($|[^a-zA-Z0-9_/-])`, 'i').test(text))
 }
 function dedupKey(lesson: Pick<Lesson, 'trigger'>): string {
@@ -79,7 +80,7 @@ export async function learnFromRun(options: {
       const failure = isObject(result) && Array.isArray(result.failures) ? result.failures.find(value => isObject(value) && value.subject === verdict.subject) : undefined
       const message = isObject(failure) ? [failure.error, failure.message].find(value => typeof value === 'string') as string | undefined : undefined
       candidates.push({ title: `${verdict.category}：${verdict.subject}`, body: [verdict.rationale, verdict.fixHint].filter(Boolean).join('\n'),
-        trigger: { roles: [role], paths: profiles[role]?.writeScope, signatures: [signature(message || verdict.rationale)], categories: [verdict.category] },
+        trigger: { roles: [role], paths: nodes.get(fixer)?.writeScope ?? profiles[role]?.writeScope, signatures: [signature(message || verdict.rationale)], categories: [verdict.category] },
         source: { kind: 'judge', runId, nodeId: judge.id } })
     }
   }

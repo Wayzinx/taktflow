@@ -19,7 +19,7 @@ export const commandSchemas = {
   'run.start': objectSchema({ requirementId: text, workflowId: text, args: { type: 'object' }, budget: budgetSchema, route: { type: 'object' } }, ['requirementId', 'workflowId']),
   'run.resume': objectSchema({ runId: text }, ['runId']),
   'run.cancel': objectSchema({ runId: text }, ['runId']),
-  'attention.answer': objectSchema({ requestId: text, decision: { type: 'string', enum: ['approve', 'reject', 'answer', 'choice'] }, answer: text }, ['requestId', 'decision']),
+  'attention.answer': objectSchema({ requestId: text, decision: { type: 'string', enum: ['approve', 'reject', 'answer', 'choice'] }, answer: text }, ['requestId']),
   'task.dispatch': objectSchema({ requirementId: text, task: taskSchema }, ['requirementId', 'task']),
   'review.dispose': objectSchema({ runId: text, nodeId: text, groupKey: text, state: { type: 'string', enum: ['open', 'resolved', 'dismissed'] } }, ['runId', 'nodeId', 'groupKey', 'state']),
   'lesson.status': objectSchema({ id: text, status: { type: 'string', enum: ['tentative', 'active', 'retired'] } }, ['id', 'status']),

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePresence } from '../lib/motion'
-import { BookOpen, ChevronRight, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, Workflow, X } from 'lucide-react'
+import { BookOpen, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, Workflow, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
 import { REQ_STATUS } from '../lib/status'
@@ -80,6 +80,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
     { to: '/settings?tab=knowledge', label: '知识源', icon: BookOpen, active: onKnowledge },
     { to: '/workflows', label: 'Workflow', icon: Workflow, active: path.startsWith('/workflows') },
+    { to: '/eval', label: '评测', icon: FlaskConical, active: path === '/eval' },
     { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') && !onKnowledge },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []

@@ -1,5 +1,6 @@
+import { requireRole, type SpaceMember } from '@taktflow/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { assertArtifactPath, assertNodeId, assertRequirementId, assertRunId, type Actor } from '@taktflow/core'
+import { assertArtifactPath, assertNodeId, assertRequirementId, assertRunId, type Actor, type ProjectStores, type Viewer } from '@taktflow/core'
 
 export class HttpError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
@@ -63,7 +64,27 @@ export async function body(request: IncomingMessage): Promise<Record<string, unk
   return value as Record<string, unknown>
 }
 
-export function actor(request: IncomingMessage): Actor {
+export function actor(request: IncomingMessage, stores?: ProjectStores): Actor {
   const value = request.headers['x-takt-user']
-  return { type: 'human', id: (Array.isArray(value) ? value[0] : value)?.trim() || 'web' }
+  return { type: 'human', id: (Array.isArray(value) ? value[0] : value)?.trim() || stores?.config.members?.find((member) => member.role === 'owner')?.id || 'web' }
+}
+
+export function viewer(request: IncomingMessage, stores: ProjectStores): Viewer {
+  const id = (actor(request, stores) as Extract<Actor, { type: 'human' }>).id
+  const member = stores.config.members?.length ? stores.config.members.find((member) => member.id === id)
+    : { id, name: id, role: 'owner' as const }
+  return { id, name: member?.name ?? id, member }
+}
+
+export function authorize(request: IncomingMessage, stores: ProjectStores, minRole: SpaceMember['role'] = 'member'): void {
+  try { requireRole(stores, actor(request, stores), minRole, request.url ?? 'HTTP 写操作') }
+  catch (error) { throw new HttpError(403, error instanceof Error ? error.message : String(error)) }
+}
+
+export function validateWriteRequest(request: IncomingMessage): void {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '')) return
+  const origin = request.headers.origin
+  const sameOrigin = `http://${request.headers.host}`
+  if (origin && origin !== sameOrigin && origin !== 'http://localhost:5173') throw new HttpError(403, '请求来源不允许')
+  if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') throw new HttpError(415, '写请求必须使用 application/json')
 }

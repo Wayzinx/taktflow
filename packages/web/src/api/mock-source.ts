@@ -1,5 +1,6 @@
 import type { SpaceDetail, SpaceSummary } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
+import { actingUser } from '../lib/acting-user'
 import { createProjectMock, type ProjectSource } from './mock'
 import { createMockDb, type MockDb } from './mock-data'
 import { createMockSpaces, fakeHead, type MockSpace } from './mock-space'
@@ -9,6 +10,8 @@ import type { DataSource } from './source'
 const clone = <T,>(v: T): T => structuredClone(v)
 const delay = <T,>(v: T, ms = 90): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
 const fail = (msg: string) => Promise.reject(new Error(msg))
+/** 与服务端 text(reason, 'reason') 一致：空间写操作没有原因时 400。 */
+const needReason = (reason: string | undefined) => (reason?.trim() ? undefined : fail('reason 必须是非空字符串'))
 
 /** 空空间：沿用演示数据的结构，但没有需求、运行和待办。 */
 function emptyDb(space: SpaceDetail): MockDb {
@@ -75,30 +78,47 @@ export function createMockSource(): DataSource {
   }
   const summary = (d: SpaceDetail): SpaceSummary => ({ id: d.id, name: d.name, description: d.description, requirements: d.requirements, active: d.active })
 
-  const spaceApi: Pick<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
+  const spaceApi: Pick<DataSource, 'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
+    // 与服务端 viewer() 一致：x-takt-user（这里是界面上选的身份），缺省为第一个 owner
+    me: () =>
+      withSpace((sp) => {
+        const members = sp.detail.members
+        const id = actingUser() || members.find((m) => m.role === 'owner')?.id || 'web'
+        const member = members.find((m) => m.id === id)
+        return delay({ id, name: member?.name ?? id, member }, 40)
+      }),
     spaces: () => delay(spaces.map((s) => summary(s.detail)), 60),
     // 空间详情里的 workflow 列表以 workflow 存储为准（编辑后 rev / 更新时间会变）
     space: () => withSpace(async (sp) => ({ ...(await delay(sp.detail)), workflows: await workflowsOf(sp).workflows() })),
-    setMembers: (members) =>
+    setMembers: (members, reason) =>
+      needReason(reason) ??
       withSpace((sp) => {
         if (!members.some((m) => m.role === 'owner')) return fail('至少保留一位 owner')
         sp.detail.members = clone(members)
         return delay(sp.detail, 160)
       }),
-    addRepo: (repo) =>
+    addRepo: (repo, reason) =>
+      needReason(reason) ??
       withSpace((sp) => {
         if (sp.detail.repos.some((r) => r.id === repo.id)) return fail(`代码仓库 ${repo.id} 已存在`)
         sp.detail.repos.push({ ...repo, status: 'missing', message: '已登记，点同步拉取镜像。' })
         return delay(sp.detail, 160)
       }),
-    updateRepo: (repoId, patch) =>
+    updateRepo: (repoId, patch, reason) =>
+      needReason(reason) ??
       withSpace((sp) => {
         const repo = sp.detail.repos.find((r) => r.id === repoId)
         if (!repo) return fail(`代码仓库 ${repoId} 不存在`)
-        Object.assign(repo, clone(patch))
+        // 与 HTTP 一致：undefined 等于没传（JSON 会丢掉），null 表示清除该字段
+        const fields = repo as unknown as Record<string, unknown>
+        for (const [k, v] of Object.entries(patch)) {
+          if (v === null) delete fields[k]
+          else if (v !== undefined) fields[k] = clone(v)
+        }
         return delay(sp.detail, 160)
       }),
-    syncRepo: (repoId) =>
+    syncRepo: (repoId, reason) =>
+      needReason(reason) ??
       withSpace((sp) => {
         const repo = sp.detail.repos.find((r) => r.id === repoId)
         if (!repo) return fail(`代码仓库 ${repoId} 不存在`)

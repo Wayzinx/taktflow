@@ -34,7 +34,7 @@ export async function freezeBaseline(ctx: NodeContext) {
 export function expandTask(item: PlannedItem) {
   const repo = String(item.params?.repo ?? 'app')
   return [
-    agent({ id: 'code', title: `实现：${item.title}`, role: item.role ?? 'dev', repo,
+    agent({ id: 'code', title: `实现：${item.title}`, role: item.role ?? 'dev', repo, owner: 'rd', goal: '实现任务并提供改动与自测证据', completion: ['任务改动与自测结果均有可核查证据'],
       inputs: [{ path: 'spec/prd.md' }, { path: 'design/**' }],
       outputs: [{ path: `tasks/${item.key}.md`, kind: 'task' }, { path: `tasks/${item.key}.diff`, kind: 'code-change' }],
       prompt: `实现任务 ${item.key}「${item.title}」，仓库 ${repo}。在 tasks/${item.key}.md 写改动说明与自测证据，并把本任务统一 diff 写到 tasks/${item.key}.diff。` }),

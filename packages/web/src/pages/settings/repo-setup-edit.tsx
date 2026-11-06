@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import type { SpaceDetail } from '@taktflow/core'
 import { useSource } from '../../api'
-import { toast } from '../../components/ui'
+import { ReasonDialog, toast } from '../../components/ui'
 
 type Repo = SpaceDetail['repos'][number]
 
@@ -13,25 +13,27 @@ export function RepoSetupEdit({ repo, onDone }: { repo: Repo; onDone: (changed: 
   const [bootstrap, setBootstrap] = useState(repo.bootstrap ?? '')
   const [share, setShare] = useState((repo.share ?? []).join(', '))
   const [busy, setBusy] = useState(false)
-  async function save() {
+  const [asking, setAsking] = useState(false)
+  // 清空不能传 undefined（JSON 会丢掉，服务端合并后旧值留下）：共享目录传空数组（服务端已支持），
+  // 引导命令传 null（约定 null = 删除该键，服务端待支持，见协议变更请求；不支持时 400 的消息会留在原因对话框里）
+  async function save(reason: string) {
     setBusy(true)
     try {
       const list = splitList(share)
-      await ds.updateRepo(repo.id, { bootstrap: bootstrap.trim() || undefined, share: list.length ? list : undefined })
+      await ds.updateRepo(repo.id, { bootstrap: bootstrap.trim() || (repo.bootstrap ? null : undefined), share: list }, reason)
       toast(`${repo.id} 的引导已更新`, { body: '之后新开的 worktree 生效，已有 worktree 不受影响。' })
       onDone(true)
-    } catch (e) {
-      toast('保存失败', { body: (e as Error).message, tone: 'failed' })
     } finally {
       setBusy(false)
     }
   }
   return (
+    <>
     <form
       className="repo-add repo-setup-edit"
       onSubmit={(e) => {
         e.preventDefault()
-        void save()
+        setAsking(true)
       }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') onDone(false)
@@ -52,5 +54,7 @@ export function RepoSetupEdit({ repo, onDone }: { repo: Repo; onDone: (changed: 
         取消
       </button>
     </form>
+    <ReasonDialog open={asking} onClose={() => setAsking(false)} title={`修改 ${repo.id} 的 worktree 引导`} description="写回 takt.config.json，并记入空间审计。" confirmLabel="保存" onSubmit={save} />
+    </>
   )
 }

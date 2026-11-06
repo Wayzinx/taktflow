@@ -59,6 +59,9 @@ export function useChat(reqId: string): ChatState {
     setError(undefined)
     setMessages([])
     setLive(new Set())
+    // 真实服务端的群聊 SSE 不带游标时会先回放全部历史；历史消息不能当成"实时到达"逐字流出。
+    // 只有首屏列表加载之后、且 seq 大于列表最后一条的 Agent 消息才算 live。
+    let loadedSeq: number | undefined
     const bump = (m: RoomMessage) => {
       const keys = [m.refs?.taskRunId, m.refs?.requestId].filter((k): k is string => Boolean(k))
       if (keys.length) setPulse((p) => Object.fromEntries([...Object.entries(p), ...keys.map((k) => [k, (p[k] ?? 0) + 1])]))
@@ -75,7 +78,9 @@ export function useChat(reqId: string): ChatState {
         roomRef.current = r
         setRoom(r)
         setLead((cur) => cur ?? r.lead)
-        setMessages(list)
+        loadedSeq = list.reduce((max, m) => Math.max(max, m.seq), 0)
+        // 合并而不是覆盖：列表请求期间 SSE 已送达的新消息不能丢
+        setMessages((cur) => cur.reduce(upsert, list))
         setLoading(false)
       },
       (e: Error) => {
@@ -88,10 +93,14 @@ export function useChat(reqId: string): ChatState {
       if (!alive) return
       setMessages((list) => {
         const isNew = !list.some((x) => x.id === m.id)
-        if (isNew && m.author.type === 'agent' && (m.kind === 'text' || m.kind === 'progress')) setLive((s) => new Set(s).add(m.id))
+        if (isNew && loadedSeq !== undefined && m.seq > loadedSeq && m.author.type === 'agent' && (m.kind === 'text' || m.kind === 'progress')) setLive((s) => new Set(s).add(m.id))
         return upsert(list, m)
       })
+      // 首屏列表之前到达的是历史回放（列表与 Room 会一起拉）；之后 seq 不大于列表末尾的是回放或旧消息的更新（任务卡片仍要刷新）
+      if (loadedSeq === undefined) return
+      const fresh = m.seq > loadedSeq
       bump(m)
+      if (!fresh && m.kind !== 'task') return
       if (m.author.type === 'agent' && m.author.role === 'lead') {
         clearTimeout(thinkTimer.current)
         setLeadThinking(false)

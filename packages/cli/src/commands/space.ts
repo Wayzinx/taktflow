@@ -1,3 +1,4 @@
+import { cliActor } from '../actor.js'
 import { cp, lstat, mkdir, readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { listSkills, type Actor, type WorkflowEdit, type WorkflowEditRequest, type RoomMessage } from '@taktflow/core'
@@ -6,7 +7,6 @@ import { expectPositionals, UsageError, type ParsedCli } from '../args.js'
 import { postToLead } from '../lead.js'
 import { loadRuntime, openStores } from '../project.js'
 import { createPrinter } from '../output.js'
-import { currentUser } from './ws.js'
 
 export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
@@ -20,7 +20,7 @@ export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
     result = await Promise.all(spaces.map(spaceSummary))
   } else {
     const stores = await openStores(options.project)
-    const author: Actor = { type: 'human', id: currentUser(stores.projectDir) }
+    const author = cliActor(stores)
     const reason = options.reason ?? `${command} ${sub}`
     if (command === 'repo') {
       if (sub === 'ls') { expectPositionals('repo ls', rest, 0); result = stores.config.repos ?? [] }

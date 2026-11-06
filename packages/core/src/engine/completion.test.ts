@@ -9,7 +9,6 @@ describe('完成标准契约', () => {
     { checks: [] },
     { checks: [{ id: 'c1', criterion: criteria[0], pass: false, evidence: 'failed' }] },
     { checks: [{ id: 'c1', criterion: criteria[0], pass: true, evidence: '  ' }] },
-    { checks: [{ id: 'c1', criterion: '偷换标准', pass: true, evidence: 'log' }] },
     { checks: [1, null, { id: 'c1', pass: 'true' }] },
   ])('缺项、失败、空证据或畸形结果均不得通过：%j', (data) => {
     expect(checkCompletion(criteria, data).unmet).toEqual(['c1', 'c2'])
@@ -17,6 +16,7 @@ describe('完成标准契约', () => {
   it('每条标准按 id 校验，不接受重复 id；schema 保留原字段要求', () => {
     const checks = criteria.map((criterion, index) => ({ id: `c${index + 1}`, criterion, pass: true, evidence: 'tests.log: PASS' }))
     expect(checkCompletion(criteria, { checks: checks.slice().reverse() }).unmet).toEqual([])
+    expect(checkCompletion(criteria, { checks: checks.map((check) => ({ ...check, criterion: '不同措辞' })) }).unmet).toEqual([])
     expect(checkCompletion(criteria, { checks: [...checks, checks[0]] }).unmet).toEqual(['c1'])
     const schema = completionSchema({ type: 'object', required: ['done'], properties: { done: { type: 'boolean' } } }, criteria)!
     expect(() => validateSchema({ done: true, checks }, schema)).not.toThrow()

@@ -1,14 +1,16 @@
-import { access } from 'node:fs/promises'
+import { sha256 } from '@taktflow/core'
+import { access, readFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
-  createEngine,
+  createEngine, createLessonRecall, learnFromRun,
   openProject,
   validateWorkflow,
   listWorkflowFiles,
   loadPlugins,
   type LoadedPlugins,
   type Engine,
+  type EngineDeps,
   type HarnessAdapter,
   type KnowledgeSource,
   type ModelProvider,
@@ -17,6 +19,7 @@ import {
 } from '@taktflow/core'
 import { createHarnesses, createMockHarness, loadMockScript, type MockScript } from '@taktflow/harness'
 import { createRepoManager } from '@taktflow/sandbox'
+import { attachLessons } from '@taktflow/server'
 import { knowledgeFromConfig } from './knowledge.js'
 import { tsImport } from 'tsx/esm/api'
 import { UsageError } from './args.js'
@@ -54,6 +57,7 @@ export async function loadRuntime(project: string | undefined, options: { mock?:
   const stores = await openProject(project ?? process.cwd())
   try {
     stores.config = normalizeConfig(stores.config)
+    attachLessons(stores)
     const plugins = await loadProjectPlugins(stores)
     const providers = runtimeProviders(stores.config, plugins.providers)
     const [profiles, workflows] = await Promise.all([loadRuntimeProfiles(stores.paths.agents, plugins.roles), loadWorkflows(stores)])
@@ -129,15 +133,17 @@ async function loadWorkflows(stores: ProjectStores): Promise<WorkflowDefinition[
   return table
 }
 
+const workflowRevisions = new WeakMap<WorkflowDefinition, string>()
 async function importWorkflow(file: string): Promise<WorkflowDefinition> {
   let namespace: { default?: unknown }
   try {
-    namespace = await tsImport(file, { parentURL: import.meta.url })
+    namespace = await tsImport(`${pathToFileURL(file).href}?rev=${sha256(await readFile(file))}`, { parentURL: import.meta.url })
   } catch (error) {
     throw new Error(`加载 workflow 失败：${file}（${error instanceof Error ? error.message : String(error)}）`)
   }
   try { validateWorkflow(namespace.default) }
   catch (error) { throw new Error(`workflow 文件 ${file}：${error instanceof Error ? error.message : String(error)}`) }
+  workflowRevisions.set(namespace.default, sha256(await readFile(file)))
   return namespace.default
 }
 
@@ -184,12 +190,23 @@ export function createRunEngine(
   if (options.harness !== undefined) engineOptions.harnessOverride = options.harness
   if (options.autoApprove !== undefined) engineOptions.autoApprove = options.autoApprove
   if (options.now !== undefined) engineOptions.now = options.now
-  return createEngine({
+  const engine = createEngine(engineDependencies(context), engineOptions)
+  const finished = async (state: Awaited<ReturnType<Engine['start']>>) => {
+    if (['succeeded', 'failed', 'cancelled'].includes(state.status)) await learnFromRun({ stores: context.stores, runId: state.runId })
+    return state
+  }
+  return { ...engine, start: async (input) => finished(await engine.start({ ...input, args: { ...input.args, ...(workflowRevisions.has(input.workflow) ? { workflowRev: workflowRevisions.get(input.workflow) } : {}) } })), resume: async (id, workflow) => finished(await engine.resume(id, workflow)),
+    cancel: async (id) => { await engine.cancel(id); const state = await context.stores.runs.get(id); if (state) await finished(state) } }
+}
+
+export function engineDependencies(context: ProjectContext): EngineDeps {
+  return {
     stores: context.stores,
     harnesses: context.harnesses,
     profiles: context.profiles,
     knowledge: context.knowledge,
+    lessons: context.stores.lessons && createLessonRecall({ store: context.stores.lessons, config: context.stores.config.lessons }),
     repos: createRepoManager({ projectDir: context.stores.projectDir, taktDir: context.stores.taktDir, repos: context.stores.config.repos ?? [] }),
     skillsDir: context.stores.paths.skills,
-  }, engineOptions)
+  }
 }

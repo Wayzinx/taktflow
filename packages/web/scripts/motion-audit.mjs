@@ -10,7 +10,7 @@
  *   dup-keyframes      同名 @keyframes 定义在不止一处
  *   scale-too-small    （警告，不影响退出码）缩放小于 0.985
  *
- * 豁免：在违规行或上一行写注释 `motion-audit: ok <原因>`。
+ * 豁免：在违规行或上一行写注释 `motion-audit: ok <原因>`；写在 `@media (prefers-reduced-motion: no-preference)` 里的无限动画视为已兜底。
  * 用法：node scripts/motion-audit.mjs [--json] [目录…]；有违规时退出码 1。
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -67,6 +67,7 @@ function report(ctx, idx, rule, message, level = 'error') {
 
 /** 逗号分隔但不拆括号里的逗号（cubic-bezier(…)、linear(…)）。 */
 function splitTop(value, sep = ',') {
+  if (sep === ' ') value = value.replace(/\s+/g, ' ')
   const out = []
   let depth = 0
   let cur = ''
@@ -82,15 +83,29 @@ function splitTop(value, sep = ',') {
   return out.map((s) => s.trim()).filter(Boolean)
 }
 
+const TIME = /^-?[\d.]+m?s$/i
+const EASING = /^(ease|ease-in|ease-out|ease-in-out|linear|step-start|step-end)$|^(cubic-bezier|steps|linear)\(/i
+const KEYWORD = /^(allow-discrete|normal|initial|inherit|unset|revert|revert-layer|none)$/i
+
+/**
+ * transition 简写的一段里哪个记号是属性：时长、缓动、关键字之外的那个（CSS 允许任意顺序，如 `200ms width ease`）。
+ * var(--x) 可能是时长也可能是缓动，不当作属性；transition-property 的每段就是属性本身。
+ */
+function transitionProperty(part, longhand = false) {
+  const tokens = splitTop(part, ' ')
+  if (longhand) return tokens[0]?.toLowerCase()
+  return tokens.find((t) => !TIME.test(t) && !EASING.test(t) && !KEYWORD.test(t) && !/^var\(/i.test(t))?.toLowerCase()
+}
+
 /** 检查一条声明（CSS 与 TSX 内联样式共用）。 */
 function checkDecl(ctx, prop, value, idx) {
   prop = prop.trim().toLowerCase()
   const v = value.trim()
   if (prop === 'transition' || prop === 'transition-property') {
     for (const part of splitTop(v)) {
-      const first = part.split(/\s+/)[0].toLowerCase()
-      if (first === 'all') report(ctx, idx, 'transition-all', `禁止 transition: all（"${part}"），请列出具体属性`)
-      else if (SIZE_PROPS.has(first)) report(ctx, idx, 'size-transition', `不要对 ${first} 做过渡（"${part}"），进度 / 用量用 transform: scaleX()`)
+      const p = transitionProperty(part, prop === 'transition-property')
+      if (p === 'all') report(ctx, idx, 'transition-all', `禁止 transition: all（"${part}"），请列出具体属性`)
+      else if (p && SIZE_PROPS.has(p)) report(ctx, idx, 'size-transition', `不要对 ${p} 做过渡（"${part}"），进度 / 用量用 transform: scaleX()`)
     }
   }
   if (/\bscale(?:3d)?\(\s*0(?:\.0*)?\s*[,)]/i.test(v)) report(ctx, idx, 'scale-zero', `禁止 scale(0)（"${v}"），最小缩放 ${MIN_SCALE}`)
@@ -141,6 +156,7 @@ function auditCss(ctx) {
   let buf = ''
   let bufStart = 0
   const inReduce = () => stack.some((s) => s.reduce)
+  const inNoPref = () => stack.some((s) => s.noPref)
   const inKeyframes = () => stack.some((s) => /^@(-webkit-)?keyframes\b/.test(s.header))
   const currentRule = () => {
     for (let k = stack.length - 1; k >= 0; k--) if (!stack[k].header.startsWith('@')) return stack[k]
@@ -151,13 +167,15 @@ function auditCss(ctx) {
     if (ch === '{') {
       const header = buf.trim()
       const reduce = /^@media\b[^{]*prefers-reduced-motion\s*:\s*reduce/i.test(header)
+      // 只在"不减少动效"时才生效的动画本身就是正确的兜底写法
+      const noPref = /^@media\b[^{]*prefers-reduced-motion\s*:\s*no-preference/i.test(header)
       const km = header.match(/^@(?:-webkit-)?keyframes\s+([\w-]+)/)
       if (km) {
         const at = { file: ctx.rel, line: lineAt(src, bufStart + buf.indexOf('@')) }
         if (!keyframes.has(km[1])) keyframes.set(km[1], [])
         keyframes.get(km[1]).push(at)
       }
-      const entry = { header, reduce, selectors: header.startsWith('@') ? [] : splitTop(header).map(normSel) }
+      const entry = { header, reduce, noPref, selectors: header.startsWith('@') ? [] : splitTop(header).map(normSel) }
       entry.inReduce = !header.startsWith('@') && inReduce()
       stack.push(entry)
       buf = ''
@@ -173,7 +191,7 @@ function auditCss(ctx) {
         const rule = currentRule()
         // reduced-motion 块里声明了 animation* 的规则才算兜底
         if (rule && rule.inReduce && /^\s*animation(-[a-z-]+)?\s*$/i.test(prop)) rule.selectors.forEach((x) => reduced.add(x))
-        if (rule && isInfinite(prop, value) && !inReduce()) infinite.push({ selectors: rule.selectors, idx, value: value.trim() })
+        if (rule && isInfinite(prop, value) && !inReduce() && !inNoPref()) infinite.push({ selectors: rule.selectors, idx, value: value.trim() })
       }
       if (ch === '}') stack.pop()
       buf = ''

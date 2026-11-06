@@ -23,8 +23,8 @@ it('快照保留 human 表单与选项、rubric 阈值，嵌套定义深拷贝�
   expect(snapshot.nodes[1]).toMatchObject({ ask: '原因？', form: 'answer' })
   expect(snapshot.nodes[2]!.body![0]).toMatchObject({ ask: '方向？', form: 'choice', choices: ['甲', '乙'] })
   expect(snapshot.nodes[2]!.body![1]!.checks).toEqual([
-    { id: 'score', kind: 'rubric', title: '评分', threshold: 80 },
-    { id: 'zero', kind: 'rubric', threshold: 0 },
+    { id: 'score', kind: 'rubric', title: '评分', threshold: 80, role: 'reviewer' },
+    { id: 'zero', kind: 'rubric', threshold: 0, role: 'reviewer' },
     { id: 'command', kind: 'command' }, { id: 'function', kind: 'function' },
   ])
   snapshot.nodes[2]!.body![0]!.choices!.push('丙')

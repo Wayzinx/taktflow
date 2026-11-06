@@ -7,6 +7,7 @@ import { matchPath, navigate, useLocation } from '../../lib/router'
 import { REQ_STATUS, RUN_STATUS, toneVar } from '../../lib/status'
 import { setTheme } from '../../lib/theme'
 import { RISK } from '../ui/reason-dialog'
+import { commandScope, SCOPE_KEY } from './schema'
 
 export type Group = '页面' | '查询' | '命令' | '需求' | '运行' | '操作'
 const GROUP_ORDER: Group[] = ['页面', '查询', '命令', '需求', '运行', '操作']
@@ -47,10 +48,11 @@ export function usePaletteContext(runs: RunSummary[] | undefined): PaletteContex
   return {}
 }
 
-/** 命令的 scope 在当前上下文里全部能带入。 */
+/** 命令的适用上下文在当前页面里全部能带入。 */
 export function contextFits(cmd: CommandInfo, ctx: PaletteContext): boolean {
-  if (!cmd.scope?.length) return false
-  return cmd.scope.every((s) => (s === 'requirement' ? !!ctx.requirementId : s === 'run' ? !!ctx.runId : !!ctx.nodeId))
+  const scope = commandScope(cmd)
+  if (!scope.length) return false
+  return scope.every((s) => !!ctx[SCOPE_KEY[s]])
 }
 
 const PAGES: Array<[string, string, LucideIcon, string]> = [
@@ -75,6 +77,9 @@ export function usePaletteData(active: boolean): PaletteData {
   const reqs = useAsync((ds) => (active ? ds.requirements() : Promise.resolve([])), [active])
   const runs = useAsync((ds) => (active ? ds.runs() : Promise.resolve([])), [active])
   const cmds = useAsync((ds) => (active ? ds.commands() : Promise.resolve([])), [active])
+  // 当前用户的角色：已经够格的命令不再提示"需 maintainer"（拿不到时照常提示）
+  const me = useAsync((ds) => (active ? ds.me().catch(() => undefined) : Promise.resolve(undefined)), [active])
+  const myRole = me.data?.member?.role
   const ctx = usePaletteContext(runs.data)
   const ctxKey = `${ctx.requirementId}|${ctx.runId}|${ctx.nodeId}`
   const sortedRuns = useMemo(() => [...(runs.data ?? [])].sort((a, b) => b.startedAt.localeCompare(a.startedAt)), [runs.data])
@@ -90,7 +95,7 @@ export function usePaletteData(active: boolean): PaletteData {
         group: c.kind === 'query' ? '查询' : '命令',
         label: c.title,
         code: c.id,
-        hint: carried ? `带入 ${carried}` : c.minRole === 'maintainer' ? '需 maintainer' : undefined,
+        hint: carried ? `带入 ${carried}` : c.minRole === 'maintainer' && myRole !== 'maintainer' && myRole !== 'owner' ? '需 maintainer' : undefined,
         icon: risk.icon,
         tone: c.risk === 'dangerous' ? 'var(--st-failed)' : undefined,
         keywords: `${c.id} ${c.title} ${(c.keywords ?? []).join(' ')} ${risk.label} ${c.kind === 'query' ? '查询 query' : '命令 command'}`,
@@ -124,7 +129,7 @@ export function usePaletteData(active: boolean): PaletteData {
     return out
     // ctx 用 ctxKey 比较，避免每次渲染新对象
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reqs.data, sortedRuns, cmds.data, ctxKey])
+  }, [reqs.data, sortedRuns, cmds.data, ctxKey, myRole])
 
   return { items, loading: reqs.loading || runs.loading || cmds.loading, reqs: reqs.data ?? [], runs: sortedRuns, ctx }
 }

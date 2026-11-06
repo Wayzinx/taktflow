@@ -72,7 +72,7 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
   async function record(file: FileState, author: Actor, reason?: string, summary?: string, notify = true): Promise<WorkflowRevision | undefined> {
     const previous = (await revisions(file.id)).at(-1)
     if (previous?.rev === file.rev) return undefined
-    const revision: WorkflowRevision = { rev: file.rev, parent: previous?.rev, author, reason, summary, at: new Date().toISOString() }
+    const revision: WorkflowRevision = { rev: file.rev, parent: previous?.rev, author, reason, summary, at: new Date(previous ? Date.now() : file.mtime).toISOString() }
     const directory = join(historyDir, file.id)
     await mkdir(directory, { recursive: true })
     await writeAtomic(join(directory, `${file.rev}.ts`), file.source)
@@ -96,24 +96,24 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
       diagnostics: [...parsed.diagnostics, ...validation.diagnostics],
     }
   }
-  async function get(id: string): Promise<WorkflowDocument> {
+  async function get(id: string, options: { record?: boolean } = {}): Promise<WorkflowDocument> {
     return withLock(dir, async () => {
       for (let attempt = 0; attempt < 3; attempt++) {
         const file = await locate(id)
-        await observe(file)
+        if (options.record !== false) await observe(file)
         const result = await document(file)
         if (sha256(await readFile(file.file, 'utf8')) === file.rev) return result
       }
       throw new Error('workflow 在读取期间持续变化，请重试')
     })
   }
-  async function list(): Promise<WorkflowSummary[]> {
+  async function list(options: { record?: boolean } = {}): Promise<WorkflowSummary[]> {
     return withLock(dir, async () => {
       const entries = await files()
       const summaries: WorkflowSummary[] = []
       for (const file of entries) {
-        // 对外发出的每个 rev 都要保留源码，供后续过期请求做三方合并。
-        await observe(file)
+        // 编辑列表保留源码用于三方合并；修订查询只读。
+        if (options.record !== false) await observe(file)
         const { model, spans } = parseWorkflowSource(file.source, file.file)
         summaries.push({ id: file.id, title: model.meta.title.kind === 'literal' && typeof model.meta.title.value === 'string' ? model.meta.title.value : file.id,
           file: relative(dirname(dir), file.file), rev: file.rev, editable: model.editable, updatedAt: new Date(file.mtime).toISOString(), nodes: spans.byId.size, runs: 0 })
@@ -125,7 +125,11 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
     assertId(id)
     if (!/^[a-f0-9]{64}$/.test(rev)) throw new Error('非法修订 sha256')
     const record = (await revisions(id)).reverse().find((item) => item.rev === rev)
-    if (!record) throw new Error(`修订不存在：${id}@${rev}`)
+    if (!record) {
+      const current = await locate(id)
+      if (current.rev !== rev) throw new Error(`修订不存在：${id}@${rev}`)
+      return { revision: { rev, at: new Date(current.mtime).toISOString(), author: { type: 'system', id: 'workflow-source' }, reason: '记录初始源码', summary: '初始修订' }, source: current.source, diff: '' }
+    }
     const source = await readFile(join(historyDir, id, `${rev}.ts`), 'utf8')
     const base = record.parent ? await readFile(join(historyDir, id, `${record.parent}.ts`), 'utf8') : ''
     return { revision: record, source, diff: await sourceDiff(base, source) }
@@ -242,7 +246,8 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
     replaceSource: (id: string, request: WorkflowSourceRequest & { author: Actor }) => save(id, request),
     rollback: async (id: string, rev: string, author: Actor, reason?: string) => {
       const target = await revision(id, rev)
-      const current = await get(id)
+      const current = await get(id, { record: false })
+      if (current.rev === rev) return current
       return save(id, { baseRev: current.rev, source: target.source, reason, author })
     },
     getLayout: async (id: string) => { await locate(id); return readWorkflowLayout(dir, id) },

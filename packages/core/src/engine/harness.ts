@@ -1,7 +1,8 @@
+import { recordRecipe } from './recipe.js'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
-import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeState, RunState } from '../types.js'
+import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeDef, NodeState, RunState } from '../types.js'
 import { estimateTokens } from '../util/tokens.js'
 import { addUsage } from '../insights/usage.js'
 import { assertNoSymlinks } from '../store/fs-utils.js'
@@ -22,6 +23,7 @@ export class BlockedError extends Error {}
 export type Emit = <T extends EventType>(type: T, data: EventPayloads[T], nodeId?: string, actor?: Actor) => Promise<void>
 export interface HarnessHost {
   deps: EngineDeps
+  graph?: { get(id: string): { def: NodeDef } | undefined }
   state: RunState
   emit: Emit
   save(): Promise<void>
@@ -170,6 +172,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           tools: { writeScope, allowBash: profile.allowBash === true },
           signal: node.timeoutMs ? AbortSignal.any([host.signal, AbortSignal.timeout(node.timeoutMs)]) : host.signal,
         }
+        await recordRecipe(host, node, cwd, { ...selector, harness: harness.id, model }, recalled && !recalled.holdout ? recalled.lessons.map((lesson) => lesson.id) : [], task)
         result = await harness.run(request, onEvent)
       } catch (error) { failure = error }
       finally { try { await sandbox.dispose() } catch (error) { failure ??= error } }

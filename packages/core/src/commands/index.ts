@@ -5,7 +5,8 @@ import type { CommandContext, CommandDeps, CommandInputs, CommandRegistry, Comma
 import { commandSchemas } from './schema.js'
 export type * from './contracts.js'
 
-const ranks: Record<SpaceMember['role'], number> = { viewer: 0, member: 1, maintainer: 2, owner: 3 }
+import { requireRole } from './permissions.js'
+export { requireRole } from './permissions.js'
 export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
   const { stores } = deps
   const invoke = <K extends keyof CommandInputs>(name: K): CommandSpec['handler'] => async (input, context) => {
@@ -21,7 +22,7 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
     define('attention.list', '待办列表', 'read', async (input) => stores.attention.list(input)),
     define('lessons.list', '经验列表', 'read', async (input) => stores.lessons?.list(input) ?? []),
     define('requirement.create', '创建需求', 'write', async (input) => stores.workspaces.createRequirement(input as { title: string })),
-    define('route.preview', '路由预览', 'write', invoke('route')),
+    define('route.preview', '路由预览', 'read', invoke('route')),
     define('run.start', '启动运行', 'write', invoke('startRun')),
     define('run.resume', '继续运行', 'write', invoke('resumeRun')),
     define('run.cancel', '取消运行', 'dangerous', invoke('cancelRun'), 'maintainer'),
@@ -41,10 +42,7 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
         const spec = commands.get(id)
         if (!spec) throw new Error(`命令不存在：${id}`)
         validateSchema(input, spec.input)
-        const actor = context.actor
-        const role = actor.type === 'agent' || actor.type === 'system' && actor.id === 'lead' ? 'member'
-          : actor.type === 'human' ? stores.config.members?.find((member) => member.id === actor.id)?.role : undefined
-        if (!role || ranks[role] < ranks[spec.minRole ?? 'member']) throw new Error(`权限不足：${id} 需要 ${spec.minRole ?? 'member'}`)
+        requireRole(stores, context.actor, spec.minRole ?? 'member', id)
         if (spec.risk !== 'read' && !context.reason?.trim()) throw new Error('写操作必须说明原因')
         if (['attention.answer', 'review.dispose'].includes(id) && context.actor.type !== 'human') throw new Error('必须由人显式处理')
         await deps.audit({ id, input, ...context, phase: 'requested' })

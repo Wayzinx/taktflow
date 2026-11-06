@@ -23,7 +23,8 @@
     "takt": "tsx packages/cli/src/index.ts",
     "demo": "bash examples/hello-delivery/demo.sh",
     "demo:standard": "tsx examples/standard-delivery/demo.ts",
-    "demo:chat": "tsx examples/standard-delivery/demo-chat.ts"
+    "demo:chat": "tsx examples/standard-delivery/demo-chat.ts",
+    "demo:quick": "tsx examples/standard-delivery/demo-quick.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

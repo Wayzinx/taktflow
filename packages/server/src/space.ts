@@ -92,6 +92,7 @@ export function members(value: unknown): SpaceMember[] {
   const result = value.map((member: Record<string, unknown>) => {
     if (!member || typeof member !== 'object' || !['owner', 'maintainer', 'member', 'viewer'].includes(String(member.role))) throw new HttpError(400, '成员角色不合法')
     return { id: safeId(text(member.id, 'id')), name: text(member.name, 'name'), role: member.role as SpaceMember['role'],
+      ...(member.duties === undefined ? {} : { duties: stringList(member.duties, 'duties') }),
       ...(member.email === undefined ? {} : { email: text(member.email, 'email') }) }
   })
   if (new Set(result.map((member) => member.id)).size !== result.length) throw new HttpError(400, '成员 ID 重复')
@@ -102,7 +103,11 @@ export function repoBinding(value: Record<string, unknown>): RepoBinding {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) throw new HttpError(400, 'repo id 不合法')
   const repo: RepoBinding = { id, path: text(value.path, 'path'), defaultBranch: text(value.defaultBranch, 'defaultBranch') }
   if (repo.defaultBranch.startsWith('-') || /[\s~^:?*\[\\]/.test(repo.defaultBranch) || repo.defaultBranch.includes('..')) throw new HttpError(400, 'defaultBranch 不合法')
-  for (const key of ['url', 'purpose', 'description'] as const) if (value[key] !== undefined) repo[key] = text(value[key], key)
+  for (const key of ['url', 'purpose', 'description', 'bootstrap'] as const) if (value[key] !== undefined) repo[key] = text(value[key], key)
+  if (value.share !== undefined) {
+    repo.share = stringList(value.share, 'share')
+    if (repo.share.some((path) => path.startsWith('/') || path.includes('\\') || path.split('/').includes('..'))) throw new HttpError(400, 'share 必须是仓库内相对路径')
+  }
   return repo
 }
 export async function spaceFile(stores: ProjectStores, kind: string | null, name: string | null): Promise<SpaceFile> {
@@ -123,4 +128,9 @@ export async function spaceFile(stores: ProjectStores, kind: string | null, name
   let content = ''
   try { content = await readFile(file, 'utf8') } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   return { kind, name: key, path: relative(stores.projectDir, file), content }
+}
+
+function stringList(value: unknown, name: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string' || !item.trim())) throw new HttpError(400, `${name} 必须是非空字符串数组`)
+  return value
 }

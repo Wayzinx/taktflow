@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, Check, Pencil, CircleDashed, FolderSymlink, GitBranch, GitFork, LoaderCircle, Plus, RefreshCw, SquareTerminal, X } from 'lucide-react'
 import type { SpaceDetail } from '@taktflow/core'
 import { useSource } from '../../api'
-import { EmptyState, SkeletonRows, StatusBadge, toast } from '../../components/ui'
+import { EmptyState, ReasonDialog, SkeletonRows, StatusBadge, toast } from '../../components/ui'
 import type { StatusMeta } from '../../lib/status'
 import { RepoSetupEdit } from './repo-setup-edit'
 
@@ -21,12 +21,14 @@ function RepoRow({ repo, onChanged }: { repo: Repo; onChanged: () => void }) {
   const ds = useSource()
   const [syncing, setSyncing] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [asking, setAsking] = useState(false)
   const status = syncing ? 'syncing' : repo.status
 
-  async function sync() {
+  // 原因由 ReasonDialog 收集（服务端必填，写进审计）；同步本身较慢，对话框先关，进度在行内显示
+  async function sync(reason: string) {
     setSyncing(true)
     try {
-      const { head } = await ds.syncRepo(repo.id)
+      const { head } = await ds.syncRepo(repo.id, reason)
       toast(`${repo.id} 已同步`, { body: <>HEAD <span className="mono">{head}</span> · 新任务会从这个提交开 worktree。</> })
     } catch (e) {
       toast(`${repo.id} 同步失败`, { body: (e as Error).message, tone: 'failed' })
@@ -80,10 +82,18 @@ function RepoRow({ repo, onChanged }: { repo: Repo; onChanged: () => void }) {
         )}
       </div>
       <StatusBadge meta={REPO_STATUS[status]} subtle />
-      <button className="btn btn-sm" onClick={sync} disabled={status === 'syncing'}>
+      <button className="btn btn-sm" onClick={() => setAsking(true)} disabled={status === 'syncing'}>
         <RefreshCw className={status === 'syncing' ? 'spin' : undefined} />
         {repo.status === 'missing' ? '拉取镜像' : '同步'}
       </button>
+      <ReasonDialog
+        open={asking}
+        onClose={() => setAsking(false)}
+        title={`${repo.status === 'missing' ? '拉取' : '同步'} ${repo.id}`}
+        description="从远程拉取默认分支到本地镜像；之后新开的 worktree 从新的 HEAD 开始。"
+        confirmLabel={repo.status === 'missing' ? '拉取镜像' : '同步'}
+        onSubmit={(reason) => void sync(reason)}
+      />
     </li>
   )
 }
@@ -130,8 +140,10 @@ function AddRepo({ onDone }: { onDone: () => void }) {
   const ds = useSource()
   const [f, setF] = useState({ id: '', url: '', defaultBranch: 'main', bootstrap: '', share: '' })
   const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState(false)
   const valid = /^[a-z0-9][a-z0-9-]*$/.test(f.id) && f.url.trim() !== ''
-  async function submit() {
+  // 由 ReasonDialog 调用：失败时抛错，消息留在对话框里
+  async function submit(reason: string) {
     setBusy(true)
     try {
       const share = splitList(f.share)
@@ -142,21 +154,20 @@ function AddRepo({ onDone }: { onDone: () => void }) {
         defaultBranch: f.defaultBranch || 'main',
         ...(f.bootstrap.trim() ? { bootstrap: f.bootstrap.trim() } : {}),
         ...(share.length ? { share } : {}),
-      })
+      }, reason)
       toast(`已绑定 ${f.id}`, { body: '点同步把仓库镜像到本地。' })
       onDone()
-    } catch (e) {
-      toast('绑定失败', { body: (e as Error).message, tone: 'failed' })
     } finally {
       setBusy(false)
     }
   }
   return (
+    <>
     <form
       className="repo-add"
       onSubmit={(e) => {
         e.preventDefault()
-        if (valid) void submit()
+        if (valid) setAsking(true)
       }}
     >
       <label>
@@ -186,6 +197,8 @@ function AddRepo({ onDone }: { onDone: () => void }) {
         id 用小写字母、数字和短横线。镜像放在 <span className="mono">.takt/repos/{f.id || '<id>'}</span>，每个写代码的任务从镜像开自己的 worktree；引导命令在 worktree 建好后执行，失败则节点 blocked；共享目录从主检出软链进来，免得每个 worktree 重装依赖。
       </p>
     </form>
+    <ReasonDialog open={asking} onClose={() => setAsking(false)} title={`绑定仓库 ${f.id}`} description="写回 takt.config.json 的 repos，并记入空间审计。" confirmLabel="绑定" onSubmit={submit} />
+    </>
   )
 }
 

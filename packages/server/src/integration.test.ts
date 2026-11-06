@@ -35,7 +35,7 @@ it('空间资产读写、成员、仓库同步必须带原因，并复用 EventS
   expect((await request(server, '/api/spaces')).data).toHaveLength(1)
   expect((await request(server, '/api/space')).data.workflows[0].id).toBe('test')
   expect((await request(server, '/api/space/members', 'PUT', { members: [] })).status).toBe(400)
-  expect((await request(server, '/api/space/members', 'PUT', [{ id: 'bob', name: 'Bob', role: 'maintainer' }], { 'x-takt-reason': 'team update', 'x-takt-user': 'alice' })).data.members[0].id).toBe('bob')
+  expect((await request(server, '/api/space/members', 'PUT', [{ id: 'bob', name: 'Bob', role: 'maintainer' }, { id: 'alice', name: 'Alice', role: 'owner' }], { 'x-takt-reason': 'team update', 'x-takt-user': 'alice' })).data.members[0].id).toBe('bob')
   expect((await request(server, '/api/space/members', 'PUT', { members: [{ id: 'a', name: 'A', role: 'root' }], reason: '错误成员' })).status).toBe(400)
   for (const kind of ['skill', 'agent']) {
     const path = `/api/space/files?kind=${kind}&name=demo`
@@ -127,11 +127,11 @@ it('群聊成员、消息回放和实时 SSE，@lead 只调用注入点且失败
 
 it('评审列表和 NodeDetail.review 返回实际轮次；临时任务摘要从群消息找来源', async () => {
   const { root, stores, req } = await fixture()
-  const state = await createEngine({ stores, profiles: { reviewer: { role: 'reviewer', title: '评审', description: '', instructions: '', skills: [], writeScope: [], harness: { harness: 'mock' } } },
+  const state = await createEngine({ stores, profiles: { author: { role: 'author', title: '作者', description: '', instructions: '', skills: [], writeScope: [], harness: { harness: 'mock' } }, reviewer: { role: 'reviewer', title: '评审', description: '', instructions: '', skills: [], writeScope: [], harness: { harness: 'mock' } } },
     knowledge: [], harnesses: { mock: { id: 'mock', displayName: 'mock', available: async () => ({ ok: true }), capabilities: { structuredOutput: true }, run: async () => ({ ok: true, finalText: '', structured: { verdict: 'approve', summary: '通过', issues: [] } }) } } }, { autoApprove: true }).start({ requirementId: req.id,
     workflow: { id: 'task:reviewer', title: '临时评审', version: '1', stages: [], nodes: [
       { id: 'write', kind: 'script', title: '产出', outputs: [{ path: 'spec.md', kind: 'spec' }], run: async (ctx) => { await writeFile(join(ctx.workspaceDir, 'spec.md'), 'AC-1') } },
-      { id: 'review', kind: 'review', title: '评审', needs: ['write'], target: ['spec.md'], author: { role: 'reviewer' }, reviewers: [{ role: 'reviewer' }], maxRounds: 1, onExhausted: 'fail' },
+      { id: 'review', kind: 'review', title: '评审', needs: ['write'], target: ['spec.md'], author: { role: 'author' }, reviewers: [{ role: 'reviewer' }], maxRounds: 1, onExhausted: 'fail' },
     ] } })
   const trigger = await stores.chat.post(req.id, { author: { type: 'human', id: 'alice' }, kind: 'text', text: '请评审' })
   await stores.chat.post(req.id, { author: { type: 'agent', role: 'lead', harness: 'mock' }, kind: 'task', text: '临时评审', replyTo: trigger.id, refs: { taskRunId: state.runId } })

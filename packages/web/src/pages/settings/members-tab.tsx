@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2, Users } from 'lucide-react'
 import type { SpaceDetail, SpaceMember } from '@taktflow/core'
 import { useSource } from '../../api'
-import { Avatar, EmptyState, SkeletonRows, toast } from '../../components/ui'
+import { Avatar, EmptyState, ReasonDialog, SkeletonRows, toast } from '../../components/ui'
 import { COMMON_DUTIES, DutiesEditor } from './duties-editor'
 
 const ROLES: Array<{ id: SpaceMember['role']; label: string; can: string }> = [
@@ -18,6 +18,7 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
   const [newId, setNewId] = useState('')
   const [newRole, setNewRole] = useState<SpaceMember['role']>('member')
   const [busy, setBusy] = useState(false)
+  const [asking, setAsking] = useState(false)
   const base = JSON.stringify(space?.members ?? [])
   useEffect(() => setDraft(space?.members ?? []), [base])
   const dirty = JSON.stringify(draft) !== base
@@ -36,14 +37,13 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
     setNewId('')
   }
 
-  async function save() {
+  // 由 ReasonDialog 调用：服务端要求原因（写进空间审计）；失败时抛错，消息留在对话框里
+  async function save(reason: string) {
     setBusy(true)
     try {
-      await ds.setMembers(draft)
+      await ds.setMembers(draft, reason)
       toast('成员已更新', { body: '已写回 takt.config.json 的 members。' })
       onSaved()
-    } catch (e) {
-      toast('保存失败', { body: (e as Error).message, tone: 'failed' })
     } finally {
       setBusy(false)
     }
@@ -121,11 +121,12 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
             <button className="btn btn-sm btn-ghost" onClick={() => setDraft(space.members)} disabled={busy}>
               放弃
             </button>
-            <button className="btn btn-sm btn-primary" onClick={save} disabled={busy || owners === 0}>
+            <button className="btn btn-sm btn-primary" onClick={() => setAsking(true)} disabled={busy || owners === 0}>
               保存成员
             </button>
           </div>
         )}
+        <ReasonDialog open={asking} onClose={() => setAsking(false)} title="保存成员变更" description="写回 takt.config.json 的 members，并记入空间审计。" confirmLabel="保存成员" onSubmit={save} />
       </div>
       <aside className="space-aside">
         <div className="section-label">角色与权限</div>

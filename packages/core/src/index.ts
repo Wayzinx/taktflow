@@ -41,3 +41,20 @@ export * from './route/index.js'
 export * from './commands/index.js'
 
 export { setReviewDisposition, listReviewDispositions } from './review/index.js'
+
+export { createLessonStore, createLessonRecall, learnFromRun } from './lessons/index.js'
+export { qualityMetrics } from './insights/quality.js'
+export { currentNode } from './insights/current-node.js'
+export { budgetStatus } from './insights/budget.js'
+export { withAttentionStaleness } from './insights/attention.js'
+export * from './engine/recipe.js'
+export * from './eval/cases.js'
+export * from './eval/runner.js'
+export * from './eval/scorecards.js'
+export { parseEvalTarget } from './eval/storage.js'
+export * from './defects/index.js'
+export * from './commands/eval-commands.js'
+
+export { answerOrRead } from './engine/answers.js'
+
+export { startRouted } from './route/start.js'

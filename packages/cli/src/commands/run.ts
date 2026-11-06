@@ -1,9 +1,12 @@
+import { cliActor } from '../actor.js'
+import { routingWorkflows } from '@taktflow/server'
 import { createProjectLead, leadEvents } from '../lead.js'
 import { isAbsolute, resolve } from 'node:path'
+import { startRouted } from '@taktflow/core'
 import type { EventStore, ProjectStores, RunState } from '@taktflow/core'
 import { createPrinter, type Printer } from '../output.js'
 import type { ParsedCli } from '../args.js'
-import { parseRunArgs, UsageError } from '../args.js'
+import { parseRunArgs, parsePositiveInt, UsageError } from '../args.js'
 import { createRunEngine, loadRuntime, resolveWorkflow, withMock, type ProjectContext } from '../project.js'
 import { ProgressFeed, pendingFor, printRunSummary } from '../progress.js'
 import { serializeRun } from '../resume-lock.js'
@@ -44,9 +47,14 @@ export async function runWorkflow(cli: ParsedCli): Promise<number> {
   const options = cli.options
   const workflowId = cli.positionals[0]!
   if (options.req === undefined) throw new UsageError('run 需要 --req <REQ>')
-  const args = parseRunArgs(options.arg)
+  let args = parseRunArgs(options.arg)
   const context = await loadRuntime(options.project, options.mock === undefined ? {} : { mock: options.mock })
-  const workflow = await resolveWorkflow(context, workflowId)
+  const routed = await startRouted(context.stores, workflowId === 'auto' ? await routingWorkflows(context.stores) : [], { requirementId: options.req, workflowId, args }, cliActor(context.stores))
+  const route = routed.route
+  args = routed.args!
+  const workflow = await resolveWorkflow(context, route?.workflowId ?? workflowId)
+  const budget = { ...(options.budgetTokens ? { tokens: parsePositiveInt(options.budgetTokens, '--budget-tokens') } : {}),
+    ...(options.budgetMinutes ? { minutes: parsePositiveInt(options.budgetMinutes, '--budget-minutes') } : {}) }
   const direct = /[\\/]/.test(workflowId) || workflowId.endsWith('.ts')
   const cliOptions: RunCliOptions = {
     // 和 resolveWorkflow 同一基准：项目根目录，不是 CLI 调用方 cwd。
@@ -61,7 +69,7 @@ export async function runWorkflow(cli: ParsedCli): Promise<number> {
     harness: options.harness,
     autoApprove: options.autoApprove,
   })
-  const state = await engine.start({ workflow, requirementId: options.req, args })
+  const state = await engine.start({ workflow, requirementId: options.req, args, route, budget })
   return finishOutput(context, printer, state)
 }
 

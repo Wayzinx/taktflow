@@ -4,8 +4,9 @@ import { STAGE_STATUS, toneSoftVar, toneVar } from '../lib/status'
 import './stage-bar.css'
 
 /** 阶段条。compact：传送带分段 + 当前阶段（图标 + 名称）（表格里用）；full：等分的分段轨道（详情页头部用）。 */
-export function StageBar({ stages, variant = 'compact', showLabel = true }: { stages: StageProgress[]; variant?: 'compact' | 'full'; showLabel?: boolean }) {
-  if (stages.length === 0) return <span className="stage-empty">尚未运行</span>
+/** empty：没有阶段时的说明。真实数据里轻量流程（quick-fix、群聊临时任务）可能不划分阶段，不能一律说"尚未运行"。 */
+export function StageBar({ stages, variant = 'compact', showLabel = true, empty = '尚未运行' }: { stages: StageProgress[]; variant?: 'compact' | 'full'; showLabel?: boolean; empty?: string }) {
+  if (stages.length === 0) return <span className="stage-empty">{empty}</span>
   if (variant === 'full') {
     return (
       <div className="stage-track">

@@ -660,7 +660,7 @@ it('回答按表单校验；重复和并发回答返回 409，回调仅执行一
   const server = await startServer({ projectDir: root, onAnswer: () => { callbacks++ } })
   await stores.attention.create({ requestId: 'choice', runId, requirementId, nodeId: 'verify', ask: '选一个', form: 'choice', choices: ['a', 'b'] })
   await stores.attention.create({ requestId: 'answer', runId, requirementId, nodeId: 'verify', ask: '说明', form: 'answer' })
-  const post = (id: string, input: unknown) => fetch(`${server.url}/api/attention/${id}`, { method: 'POST', headers: { 'x-takt-user': 'reviewer' }, body: JSON.stringify(input) })
+  const post = (id: string, input: unknown) => fetch(`${server.url}/api/attention/${id}`, { method: 'POST', headers: { 'x-takt-user': 'reviewer', 'content-type': 'application/json' }, body: JSON.stringify(input) })
   for (const [id, input] of [
     ['choice', { decision: 'approve' }], ['choice', { decision: 'choice', answer: 'wrong' }],
     ['att-1', { answer: 'yes' }], ['answer', { answer: ' ' }], ['answer', { decision: 'approve' }],
@@ -730,7 +730,8 @@ it('动态 prompt 经引擎和 HTTP 读回实际文本', async () => {
   expect(seen.requests[0]!.env).toMatchObject({
     TAKT_REQ: requirementId, TAKT_NODE: 'fix', TAKT_WORKSPACE: workspaceDir, TAKT_RUN_ID: state.runId,
   })
-  expect(prompt.startsWith(actual)).toBe(true)
+  expect(prompt).toContain(actual)
+  expect(prompt.indexOf('测试角色')).toBeLessThan(prompt.indexOf(actual))
   expect(prompt).toContain(`公共存放区：${workspaceDir}`)
   expect(prompt).not.toBe(actual)
 

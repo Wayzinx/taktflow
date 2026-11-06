@@ -1,22 +1,26 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createLeadRuntime, type AttentionItem, type RoomMessage } from '@taktflow/core'
-import { workflowStore } from '@taktflow/server'
+import { createLeadRuntime, type LeadPresence, type AttentionItem, type RoomMessage } from '@taktflow/core'
+import { runtimeCommands } from './command-runtime.js'
+import { workflowStore, routingWorkflows } from '@taktflow/server'
 import { createRunEngine, loadRuntime, resolveWorkflow, templatesDir, type ProjectContext } from './project.js'
 
-export async function createProjectLead(context: ProjectContext) {
+export async function createProjectLead(context: ProjectContext, onPresence?: (id: string, presence: LeadPresence) => void | Promise<void>) {
   const source = workflowStore(context.stores)
   const instructions = context.profiles.lead?.instructions ?? await readFile(join(templatesDir, 'agents', 'lead.md'), 'utf8')
+  const commands = runtimeCommands(context, () => runtime)
   const runtime = createLeadRuntime({
+    commands, onPresence,
     stores: context.stores, harnesses: context.harnesses, profiles: context.profiles, instructions,
     engineFactory: (deps) => createRunEngine({ ...context, ...deps }),
     workflows: {
+      list: () => routingWorkflows(context.stores),
       load: async (id) => resolveWorkflow(await loadRuntime(context.stores.projectDir), id),
       get: source.get,
       replaceSource: (id, request) => source.replaceSource(id, { ...request, reason: `${request.reason ?? 'Lead 提案'}；onBehalfOf ${JSON.stringify(request.onBehalfOf)}` }),
     },
   })
-  return runtime
+  return { ...runtime, commands }
 }
 export type ProjectLead = Awaited<ReturnType<typeof createProjectLead>>
 

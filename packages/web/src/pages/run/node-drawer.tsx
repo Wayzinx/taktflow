@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { Bot, ClipboardCheck, FileInput, Layers, ListChecks, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
+import { Bot, ClipboardCheck, FileInput, Fingerprint, Layers, ListChecks, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, Tabs, type TabDef } from '../../components/ui'
@@ -9,6 +9,7 @@ import { nodeLabel } from './node-label'
 import { ContextTab, GateTab, IoTab, JudgeTab, OverviewTab, PromptTab, TraceTab } from './drawer-tabs'
 import { CompletionTab } from './completion-tab'
 import { NodeBrief } from './node-brief'
+import { RecipeSection } from './recipe-section'
 import { ReviewTab } from './review/review-tab'
 import './drawer.css'
 
@@ -76,6 +77,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
     { id: 'gate', label: '门禁', icon: ShieldCheck, hidden: d?.kind !== 'gate' },
     { id: 'review', label: '评审', icon: ClipboardCheck, hidden: d?.kind !== 'review', count: d?.review?.rounds.length },
     { id: 'prompt', label: 'Prompt', icon: Bot, hidden: !d?.prompt },
+    { id: 'recipe', label: '配方', icon: Fingerprint, hidden: !d?.recipe },
   ]
   const visible = tabs.filter((t) => !t.hidden).map((t) => t.id)
   const requested = query.get('dtab') ?? 'overview'
@@ -127,6 +129,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             {tab === 'gate' && <GateTab d={d} />}
             {tab === 'review' && <ReviewTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'prompt' && <PromptTab d={d} />}
+            {tab === 'recipe' && <RecipeSection recipe={d.recipe} />}
           </div>
         )}
       </div>

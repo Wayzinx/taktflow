@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { CheckCheck, MessageSquareText, ScrollText, TriangleAlert } from 'lucide-react'
-import type { GraphNode } from '@taktflow/core'
-import { invalidate, useAsync, useSource, type NodeView } from '../../api'
+import type { GraphNode, NodeDetail } from '@taktflow/core'
+import { invalidate, useAsync, useSource } from '../../api'
 import { toast } from '../../components/ui'
 import { navigate, setQuery } from '../../lib/router'
 
@@ -9,7 +9,7 @@ import { navigate, setQuery } from '../../lib/router'
  * 节点抽屉头部的"目标 / 小结"两行与操作：执行详情（跳 Trace）、告诉 Lead 怎么改（跳需求群并预填）、
  * 确认通过（只在这个节点有待审批时出现；审批对象已有新版本时提示过期）。
  */
-export function NodeBrief({ d, graphNode, runId, requirementId, title, liveTick }: { d?: NodeView; graphNode?: GraphNode; runId: string; requirementId: string; title: string; liveTick: number }) {
+export function NodeBrief({ d, graphNode, runId, requirementId, title, liveTick }: { d?: NodeDetail; graphNode?: GraphNode; runId: string; requirementId: string; title: string; liveTick: number }) {
   const ds = useSource()
   const nodeId = d?.state.id ?? graphNode?.id
   const goal = d?.goal ?? graphNode?.goal

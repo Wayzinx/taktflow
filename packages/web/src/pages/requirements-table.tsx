@@ -85,7 +85,7 @@ export function RequirementsTable({ rows, full }: { rows: RequirementSummary[]; 
               </td>
             )}
             <td>
-              <StageBar stages={r.stages} />
+              <StageBar stages={r.stages} empty={r.latestRunId ? '未分阶段' : '尚未运行'} />
             </td>
             {full && (
               <td>

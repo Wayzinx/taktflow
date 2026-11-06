@@ -49,7 +49,7 @@ describe('snapshotWorkflow', () => {
     expect(snapshot.nodes[2]?.body?.[0]?.maxIterations).toBe(2)
     expect(snapshot.nodes[3]?.checks).toEqual([
       { id: 'cmd', kind: 'command', title: 'Command' }, { id: 'fn', kind: 'function' },
-      { id: 'rubric', kind: 'rubric', threshold: 80 },
+      { id: 'rubric', kind: 'rubric', threshold: 80, role: 'reviewer' },
     ])
     expect(snapshot.nodes[4]).toMatchObject({ role: 'judge', target: 'script', harness: 'claude-code',
       routes: { product_bug: 'agent', unknown: 'human' } })

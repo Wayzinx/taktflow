@@ -16,8 +16,14 @@ EXAMPLE="$ROOT/$PROJECT"
 TAKT=(npx tsx packages/cli/src/index.ts --project "$PROJECT")
 REQ=REQ-001
 
+clean_generated() {
+  git ls-files --others --exclude-standard -z -- "$PROJECT/knowledge/lessons" "$PROJECT/.takt/space-events.jsonl" "$PROJECT/.takt/workflow-revisions" | while IFS= read -r -d '' file; do rm -f -- "$ROOT/$file"; done
+  git ls-files --others --ignored --exclude-standard -z -- "$PROJECT/knowledge/lessons" "$PROJECT/.takt/space-events.jsonl" "$PROJECT/.takt/workflow-revisions" | while IFS= read -r -d '' file; do rm -f -- "$ROOT/$file"; done
+}
+
 restore_bug() {
   cp "$EXAMPLE/fixtures/greet.buggy.js" "$EXAMPLE/src/greet.js"
+  clean_generated
 }
 trap restore_bug EXIT
 

@@ -29,7 +29,7 @@ export async function runInit(project: string | undefined, options: { name?: str
   for (const entry of await readdir(workflowSource)) {
     if (entry.endsWith('.ts') && await copyIfAbsent(join(workflowSource, entry), join(workflowTarget, entry))) workflows.push(entry)
   }
-  const registered = ['sdlc.workflow.ts', 'taktflow-standard.workflow.ts'].map((name) => relative(stores.projectDir, join(workflowTarget, name)))
+  const registered = ['sdlc.workflow.ts', 'taktflow-standard.workflow.ts', 'quick-fix.workflow.ts'].map((name) => relative(stores.projectDir, join(workflowTarget, name)))
   if (registered.some((entry) => !stores.config.workflows.includes(entry))) {
     stores.config.workflows = [...new Set([...stores.config.workflows, ...registered])]
     await atomicWrite(join(stores.projectDir, 'takt.config.json'), JSON.stringify(stores.config, null, 2) + '\n')

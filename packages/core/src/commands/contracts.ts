@@ -7,7 +7,7 @@ export interface CommandInputs {
   startRun: { requirementId: string; workflowId: string; args?: Record<string, unknown>; budget?: RunBudget; route?: RouteDecision }
   resumeRun: { runId: string }
   cancelRun: { runId: string }
-  answerAttention: { requestId: string; decision: 'approve' | 'reject' | 'answer' | 'choice'; answer?: string }
+  answerAttention: { requestId: string; decision?: 'approve' | 'reject' | 'answer' | 'choice'; answer?: string }
   dispatchTask: { requirementId: string; task: TaskSpec }
   disposeReview: { runId: string; nodeId: string; groupKey: string; state: 'open' | 'resolved' | 'dismissed' }
   setLessonStatus: { id: string; status: 'tentative' | 'active' | 'retired' }

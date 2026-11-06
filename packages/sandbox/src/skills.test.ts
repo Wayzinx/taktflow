@@ -59,3 +59,18 @@ it('never overwrites user-created skill without a marker', async () => {
   expect(await syncSkills(opts)).toEqual([])
   expect(await readFile(join(target, 'SKILL.md'), 'utf8')).toBe('user-custom')
 })
+
+it('m3-fix 13/18：认领内容一致的旧副本后源更新可同步，标记与配方共用哈希', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-skills-migrate-')); dirs.push(root)
+  const source = join(root, 'skills/example'), target = join(root, 'target/.agents/skills/example')
+  await mkdir(source, { recursive: true }); await mkdir(target, { recursive: true })
+  await writeFile(join(source, 'SKILL.md'), 'v1'); await writeFile(join(target, 'SKILL.md'), 'v1')
+  const options = { skillsDir: join(root, 'skills'), targetRoot: join(root, 'target'), harness: 'codex' }
+  const { skillContentHash } = await import('@taktflow/core')
+  await syncSkills(options)
+  expect(await readFile(join(target, '.takt-skill'), 'utf8')).toBe(await skillContentHash(target))
+  await writeFile(join(source, 'SKILL.md'), 'v2')
+  expect(await syncSkills(options)).toHaveLength(1)
+  expect(await readFile(join(target, 'SKILL.md'), 'utf8')).toBe('v2')
+  expect(await readFile(join(target, '.takt-skill'), 'utf8')).toBe(await skillContentHash(target))
+})

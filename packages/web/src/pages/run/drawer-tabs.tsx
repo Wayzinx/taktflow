@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowRight, Check, ChevronDown, Copy, ExternalLink, Eye, FileText, Shrink, TriangleAlert, X } from 'lucide-react'
 import type { ContextSource, EventEnvelope, EventPayloads, JudgeVerdict, NodeDetail } from '@taktflow/core'
-import { useAsync, type NodeView } from '../../api'
+import { useAsync } from '../../api'
 import { EventTimeline } from '../../components/event-timeline'
 import { EmptyState, Meter, Segmented, Skeleton, StatusBadge, toast } from '../../components/ui'
 import { JsonView } from '../../lib/json-view'
@@ -555,7 +555,7 @@ export function JudgeTab({ d, runId, requirementId }: { d: NodeDetail; runId: st
 
 const CHECK_KIND: Record<string, string> = { rubric: 'rubric', command: '命令', function: '函数' }
 
-export function GateTab({ d }: { d: NodeView }) {
+export function GateTab({ d }: { d: NodeDetail }) {
   if (!d.gate) return <div className="dpad"><EmptyState compact icon={Check} title="门禁尚未执行" /></div>
   const g = d.gate
   return (

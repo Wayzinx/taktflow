@@ -1,0 +1,47 @@
+/* 节点抽屉"配方"区 */
+.recipe {
+  display: grid;
+  gap: var(--sp-4);
+}
+.recipe-key {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  min-width: 0;
+}
+.recipe-key > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--text-3);
+  flex: none;
+}
+.recipe-key > div {
+  min-width: 0;
+}
+.recipe-k {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.recipe-key-v {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recipe-skills {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.recipe-skill {
+  color: var(--text);
+}
+.recipe-note {
+  margin-top: 4px;
+  font-size: var(--text-meta);
+}

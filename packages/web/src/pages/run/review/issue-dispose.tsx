@@ -16,14 +16,7 @@ const ACTION: Record<State, { label: string; verb: string; placeholder: string }
   open: { label: '重新打开', verb: '重新打开', placeholder: '为什么重新打开' },
 }
 
-/** 处置是否仍然有效：处置时的指纹与当前问题指纹一致才算（指纹变了处置自动失效）。 */
-export function effectiveDisposition(list: ReviewDisposition[] | undefined, groupKey: string | undefined, fingerprint: string | undefined) {
-  if (!groupKey || !list?.length) return { current: undefined, expired: undefined }
-  const d = [...list].reverse().find((x) => x.groupKey === groupKey)
-  if (!d) return { current: undefined, expired: undefined }
-  if (d.fingerprint && fingerprint && d.fingerprint !== fingerprint) return { current: undefined, expired: d }
-  return { current: d, expired: undefined }
-}
+export { effectiveDisposition } from './disposition'
 
 /** 已有的处置：状态标签 + 原因 + 谁 / 何时。 */
 export function DispositionNote({ d, expired }: { d: ReviewDisposition; expired?: boolean }) {
@@ -40,7 +33,7 @@ export function DispositionNote({ d, expired }: { d: ReviewDisposition; expired?
 }
 
 /**
- * 人工处置：已解决 / 驳回 / 重新打开，必须填原因；走命令 `review.dispose`（进审计）。
+ * 人工处置：已解决 / 驳回 / 重新打开，必须填原因；`ds.disposeReview`（服务端转成命令 `review.dispose`，进审计）。
  * 原因输入框是一个带进出场的小面板（usePresence），快速重开会打断退出。
  */
 export function DisposeActions({ runId, nodeId, groupKey, current }: { runId: string; nodeId: string; groupKey: string; current?: State }) {
@@ -62,8 +55,7 @@ export function DisposeActions({ runId, nodeId, groupKey, current }: { runId: st
     if (!pending || !reason.trim()) return
     setBusy(true)
     try {
-      const res = await ds.runCommand('review.dispose', { input: { runId, nodeId, groupKey, state: pending }, reason: reason.trim() })
-      if (!res.ok) throw new Error(res.message)
+      await ds.disposeReview(runId, nodeId, { groupKey, state: pending, reason: reason.trim() })
       toast(`${ACTION[pending].label}：${groupKey}`, { body: ds.mock ? '演示数据：处置已记入本页内存中的审计日志。' : '处置已记录，评审状态会重新计算。' })
       setPending(undefined)
       setReason('')

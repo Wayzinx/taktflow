@@ -9,7 +9,7 @@ import { TIER_LABEL, TierGlyph } from './tier-glyph'
 const TIERS: Tier[] = ['T0', 'T1', 'T2', 'T3']
 
 /**
- * 改档面板：选档位 + 写原因（必填，留痕）→ 命令 route.preview。
+ * 改档面板：选档位 + 写原因（必填，留痕）→ `ds.routePreview`（服务端把 tier / reason 转成命令 route.preview 的 override）。
  * 只预览路由器校验后的结果（可能被降档并写明原因），不启动、不改运行。
  */
 export function RouteChange({ state, current, requirementId, onClose }: { state: PresenceState; current: RouteDecision; requirementId: string; onClose(): void }) {
@@ -26,9 +26,7 @@ export function RouteChange({ state, current, requirementId, onClose }: { state:
     setBusy(true)
     setError(undefined)
     try {
-      const res = await ds.runCommand('route.preview', { input: { requirementId, tier, reason: reason.trim() }, reason: reason.trim() })
-      if (!res.ok) setError(res.message)
-      else setPreview(res.result as RouteDecision)
+      setPreview(await ds.routePreview(requirementId, { tier, reason: reason.trim() }))
     } catch (e) {
       setError((e as Error).message)
     } finally {

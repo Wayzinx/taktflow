@@ -3,13 +3,13 @@ import { readJsonFile } from '../store/fs-utils.js'
 import { runDir } from '../store/paths.js'
 import type { RuntimeRecord } from '../engine/runtime.js'
 import type { NodeDetail, ReviewFacets, ReviewStatus, ReviewSummary } from '../api.js'
-import type { ProjectStores, RepoManager } from '../interfaces.js'
+import type { ProjectStores } from '../interfaces.js'
 import type { ArtifactRef, ReviewDisposition, ReviewIssue, ReviewRound, RunState, SnapshotNode } from '../types.js'
 import { buildRunGraph } from './graph.js'
 import { readReviewRounds } from '../review/records.js'
 import { listReviewDispositions } from '../review/dispositions.js'
 import { targetFingerprint } from '../engine/nodes/review-target.js'
-import { diffPath } from '../engine/execution.js'
+import { diffPath, executionAdapters } from '../engine/execution.js'
 import { matchGlob } from '../util/glob.js'
 import { sha256 } from '../util/hash.js'
 
@@ -26,7 +26,7 @@ function isOpen(issue: ReviewIssue, dispositions: ReviewDisposition[]): boolean 
   return !disposition || disposition.fingerprint !== issue.fingerprint || disposition.state === 'open'
 }
 
-async function targetState(stores: ProjectStores, state: RunState, config: NonNullable<SnapshotNode['review']>, latest?: ReviewRound): Promise<{
+async function targetState(stores: ProjectStores, state: RunState, config: NonNullable<SnapshotNode['review']>, latest: ReviewRound | undefined, diffs: Map<string, Promise<string>>): Promise<{
   readable: boolean; freshness: ReviewFacets['freshness']
 }> {
   if (!latest) return { readable: false, freshness: 'unknown' }
@@ -52,15 +52,16 @@ async function targetState(stores: ProjectStores, state: RunState, config: NonNu
     if (sources.length) {
       // 读取实时 diff，不登记新产物；读模型不能改变被评审对象的版本。
       try {
-        const name = '@taktflow/sandbox'
-        const { createRepoManager } = await import(name) as { createRepoManager(options: { projectDir: string; taktDir: string; repos: NonNullable<ProjectStores['config']['repos']> }): RepoManager }
+        const { createRepoManager } = await executionAdapters()
         const repos = createRepoManager({ projectDir: stores.projectDir, taktDir: stores.taktDir, repos: stores.config.repos ?? [] })
         const patches: string[] = []
         for (const ref of [...current].sort((a, b) => a.path.localeCompare(b.path))) {
           const source = sources.find((node) => diffPath(node.id) === ref.path)
           if (!source?.worktree) return { readable, freshness: 'unknown' }
-          const diff = await repos.diff(source.worktree.path, target.code.base ?? source.worktree.base)
-          patches.push(diff.patch.split(/(?=^diff --git )/m).filter((chunk) => !/^diff --git "?a\/\.(agents|claude)\/skills\//.test(chunk)).join(''))
+          const key = JSON.stringify([source.worktree.path, target.code.base ?? source.worktree.base])
+          if (!diffs.has(key)) diffs.set(key, repos.diff(source.worktree.path, target.code.base ?? source.worktree.base).then((diff) => diff.patch))
+          const patch = await diffs.get(key)!
+          patches.push(patch.split(/(?=^diff --git )/m).filter((chunk) => !/^diff --git "?a\/\.(agents|claude)\/skills\//.test(chunk)).join(''))
         }
         now = sha256(patches.join('\n'))
       } catch { return { readable, freshness: 'unknown' } }
@@ -69,7 +70,7 @@ async function targetState(stores: ProjectStores, state: RunState, config: NonNu
   return { readable, freshness: before === now ? 'current' : 'stale' }
 }
 
-export async function reviewDetail(stores: ProjectStores, runId: string, nodeId: string): Promise<(NonNullable<NodeDetail['review']> & { revision: number }) | undefined> {
+export async function reviewDetail(stores: ProjectStores, runId: string, nodeId: string, diffs = new Map<string, Promise<string>>()): Promise<(NonNullable<NodeDetail['review']> & { revision: number }) | undefined> {
   const [state, snapshot] = await Promise.all([stores.runs.get(runId), stores.runs.getWorkflow(runId)])
   if (!state || !snapshot) return undefined
   const definition = [...definitions(snapshot.nodes), ...state.expansions.flatMap((expansion) => definitions(expansion.nodes ?? []))].find((node) => node.id === nodeId)
@@ -100,7 +101,7 @@ export async function reviewDetail(stores: ProjectStores, runId: string, nodeId:
     observed[item.observation] = (observed[item.observation] ?? 0) + 1
     if (item.regressed) observed.regressed = (observed.regressed ?? 0) + 1
   }
-  const target = await targetState(stores, state, definition.review, latest)
+  const target = await targetState(stores, state, definition.review, latest, diffs)
   const facets: ReviewFacets = {
     phase, outcome: !latest ? undefined : latest.passed ? latest.records.some((record) => record.issues.length) ? 'approved' : 'no_findings'
       : latest.records.some((record) => record.verdict === 'reject') ? 'rejected'
@@ -113,11 +114,12 @@ export async function reviewDetail(stores: ProjectStores, runId: string, nodeId:
 
 export async function listReviews(stores: ProjectStores, requirementId: string): Promise<ReviewSummary[]> {
   const summaries: ReviewSummary[] = []
+  const diffs = new Map<string, Promise<string>>()
   for (const state of await stores.runs.list({ requirementId })) {
     const snapshot = await stores.runs.getWorkflow(state.runId)
     if (!snapshot) continue
     for (const node of buildRunGraph(snapshot, state).nodes.filter((node) => node.kind === 'review')) {
-      const detail = await reviewDetail(stores, state.runId, node.id)
+      const detail = await reviewDetail(stores, state.runId, node.id, diffs)
       if (!detail) continue
       const latest = detail.rounds.at(-1)
       const events = await stores.events.read(state.runId, { nodeId: node.id, types: ['rework.started'] })

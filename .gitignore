@@ -13,3 +13,7 @@ examples/*/.takt/objects/
 .claude/skills/*/scripts/bin/
 .agents/skills/*/scripts/bin/
 .claude/settings.local.json
+
+examples/*/knowledge/lessons/
+examples/*/.takt/space-events.jsonl
+examples/*/.takt/workflow-revisions/

@@ -75,3 +75,35 @@ it('handler 缺失或异常返回失败；请求审计失败时不执行写入',
   await expect(createCommandRegistry({ ...deps, audit: async () => { throw new Error('审计不可用') } }).run('run.resume', { runId: 'r' }, owner)).rejects.toThrow('审计不可用')
   expect(handler).not.toHaveBeenCalled()
 })
+
+it('路由预览是只读查询，viewer 无需 reason；未登记用户仍不能访问有成员的空间', async () => {
+  const { registry, handler } = await setup()
+  expect(registry.list().find((command) => command.id === 'route.preview')).toMatchObject({ kind: 'query', risk: 'read', minRole: 'viewer' })
+  const input = { requirementId: 'REQ-001', hint: '小修复' }
+  const context = { actor: { type: 'human', id: 'bob' } as const }
+  expect(await registry.run('route.preview', input, context)).toMatchObject({ ok: true })
+  expect(handler).toHaveBeenCalledWith(input, context)
+  expect(await registry.run('route.preview', input, { actor: { type: 'human', id: 'unknown' } })).toMatchObject({ ok: false, message: expect.stringContaining('权限不足') })
+})
+
+it.each(['缺省', '空数组'])('成员%s时人类身份按 owner 校验，写原因和 agent 权限仍受约束', async (mode) => {
+  const { stores, registry, handler } = await setup()
+  stores.config.members = mode === '缺省' ? undefined : []
+  const writes = [
+    ['run.resume', { runId: 'r' }],
+    ['run.cancel', { runId: 'r' }],
+    ['attention.answer', { requestId: 'a', decision: 'approve' }],
+    ['review.dispose', { runId: 'r', nodeId: 'n', groupKey: 'g', state: 'resolved' }],
+    ['lesson.status', { id: 'lesson', status: 'active' }],
+  ] as const
+  for (const id of ['web', 'demo-owner']) {
+    const context = { actor: { type: 'human', id } as const, reason: '本地人工操作' }
+    for (const [command, input] of writes) expect(await registry.run(command, input, context)).toMatchObject({ ok: true })
+    expect(await registry.run('run.resume', { runId: 'r' }, { actor: context.actor })).toMatchObject({ ok: false, message: '写操作必须说明原因' })
+  }
+  const agent = { actor: { type: 'agent', role: 'lead', harness: 'mock' } as const, reason: '协调运行' }
+  expect(await registry.run('run.cancel', { runId: 'r' }, agent)).toMatchObject({ ok: false, message: expect.stringContaining('权限不足') })
+  expect(await registry.run('attention.answer', { requestId: 'a', decision: 'approve' }, agent)).toMatchObject({ ok: false, message: '必须由人显式处理' })
+  expect(handler).toHaveBeenCalledTimes(writes.length * 2)
+  expect(stores.config.members).toEqual(mode === '缺省' ? undefined : [])
+})

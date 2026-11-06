@@ -9,8 +9,30 @@ type Exhausted = EventPayloads['review.exhausted']
 /** 打回原因：轮次用完 / 连续无进展；反馈取第一行。 */
 export function reworkReason(rework?: Rework, exhausted?: Exhausted): string {
   const why = exhausted?.reason === 'no_progress' ? '连续无进展，提前结束' : `${exhausted?.rounds ?? ''}${exhausted ? ' 轮用完' : '轮次用完'}`
-  const first = rework?.feedback.split('\n').find((l) => l.trim())
+  const first = feedbackLine(rework?.feedback)
   return first ? `${why} · ${first}` : why
+}
+
+/**
+ * 打回反馈的一行摘要。真实引擎把评审轮次序列化成 JSON 放进 feedback（{ round, records: [{ reviewer, summary, issues }] }），
+ * 这时取第一个带问题的评审者"评审者：问题"；普通文本取第一行。
+ */
+export function feedbackLine(feedback?: string): string | undefined {
+  if (!feedback) return undefined
+  const t = feedback.trim()
+  if (t.startsWith('{')) {
+    try {
+      const v = JSON.parse(t) as { records?: Array<{ reviewer?: string; summary?: string; issues?: Array<{ description?: string }> }> }
+      if (Array.isArray(v.records)) {
+        const r = v.records.find((x) => x.issues?.length) ?? v.records[0]
+        const what = r?.issues?.[0]?.description ?? r?.summary
+        if (what) return r?.reviewer ? `${r.reviewer}：${what}` : what
+      }
+    } catch {
+      // 不是 JSON：按文本处理
+    }
+  }
+  return t.split('\n').find((l) => l.trim())
 }
 
 /**

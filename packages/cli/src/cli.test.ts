@@ -120,7 +120,7 @@ it('直接相对路径从另一 cwd 启动；answer 自动恢复原 workflow/har
   const run = await json<State>(dir, ['run', './custom.workflow.ts', '--req', 'REQ-001', '--harness', 'mock', '--mock', relative(repoRoot, mock), '--arg', 'x=1', '--arg', 'x=2'])
   expect(run.status).toBe('waiting_human')
   expect(run.nodes.inspect?.status).toBe('succeeded')
-  expect(run.args).toEqual({ x: '2' })
+  expect(run.args).toEqual({ x: '2', workflowRev: expect.stringMatching(/^[a-f0-9]{64}$/) })
   const optionsPath = join(dir, '.takt/runs', run.runId, 'cli.json')
   expect(JSON.parse(await readFile(optionsPath, 'utf8'))).toEqual({ workflowPath: join(dir, 'custom.workflow.ts'), harness: 'mock', mock })
   const request = run.attention[0]!.requestId

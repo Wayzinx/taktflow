@@ -267,3 +267,134 @@
   - `PATCH /api/space/repos/:repoId` → `SpaceDetail`：reason 进空间审计。
 - **评测与归因**：m3-eval 并行开发，产出 `packages/server/src/eval-routes.ts` 的 `registerEvalRoutes`、`packages/cli/src/commands/{eval,defect}.ts` 的 `registerEvalCommands / registerDefectCommands`、`packages/core/src/commands/eval-commands.ts` 的 `evalCommandSpecs`、读模型用的 `recipeOf(events, nodeId)`。由你在 router、CLI 入口和命令注册表里注册，并把 `NodeDetail.recipe` 接上。调度方会在 m3-eval 完成后通知你做这一步；在那之前先完成其余接入。
 - 演示补充：`demo:standard` 结束后录入一个缺陷并跑预检 + 归因（mock 剧本）+ 确认，断言生成了回归用例、成绩单出现 escapes。
+
+## 交付记录：m3-integrate（2026-11-06）
+
+本次仅完成 m3-integrate 的非评测接入部分；第一批模块沿用已有实现，不把它们的全部实现归入本次交付。
+
+### 已完成
+
+- Server：路由预览、命令列表与执行、经验列表与编辑、评审问题处置、`/api/me`、仓库 PATCH；读模型补齐档位、当前节点、预算、质量及来源计数、目标与小结、完成标准与自检、失败指纹、评审修订 / facets / dispositions、审批过期。产物编辑接受 cosmetic / semantic。成员数组及带 reason 对象均可提交，并保留 duties。
+- CLI：`route`、`run auto` 与预算参数、`cmd`、`lessons`、`review dispose`。Server serve、CLI 和 Lead 使用同一套命令注册与校验；serve 中 HTTP 与 Lead 使用同一 registry 实例。缺省本地身份与空间 owner 对齐，显式 HTTP 用户由 `x-takt-user` 决定。
+- Lead：运行 / 临时任务继续复用既有执行器、来源记录与任务卡片；Room 返回 presence，群聊 SSE 推送具名 `lead` 事件。经验库启用时注入 LessonStore / LessonRecall，运行终结后执行 learnFromRun。
+- 模板：quick-fix（T0/T1、T0 跳过短 spec、独立代码评审、测试命令与 acceptance）；标准流程增加 T2/T3 元数据、目标、职责、自检、独立 verifier 交付门禁；添加 verifier 角色。quick-fix 在实现工作树执行测试，要求本轮汇总和逐条证据，避免检查原始检出或复用旧证据。项目需提供对应测试入口；T0 需已有明确 spec 与用例。
+- 示例：标准演示验证修订 2 / 第 1 轮、facets、node.checks、acceptance 与 quality；群聊演示验证 auto、路由卡、route.decided、presence；quick 演示验证重复失败抑制、待办、人工再试、真实用例与最终交付校验。LLM 输出和独立评审使用 mock，问候语用例由本地真实脚本执行，不是线上产品验收。
+- 根 vitest 配置纳入 Web 单测。修订列表 GET 不写文件，首个修订时间取源文件 mtime。需求阶段继续只取最近流水线，无流水线时返回空 stages 且不提供 current。
+
+### 第一批模块的最小接入修复
+
+1. `core/store/snapshot.ts`：补存协议已有的 writeScope、rubric / acceptance 的 role；更新快照断言。
+2. `core/insights/graph.ts`：所有静态 / 展开节点补 revision、round、reworks、goal、summary。
+3. `core/lead/index.ts`：提供执行入口供共享命令 handler 复用运行与任务逻辑；无 Lead 回合上下文时仅允许运行 / 任务动作。
+4. `core/engine/nodes/judge.ts`：先写出本轮判决，再解析修复节点输入身份；修复首次判决因必需 reports/verdicts 输入尚不存在而失败的问题。标准演示覆盖该链路。
+5. `core/route/index.ts`：将门禁检查角色纳入路由卡，防止遗漏 verifier；补路由回归断言。
+6. `workflow-source/store.ts`：提供不记录修订的列表读取方式供修订 GET 使用，初始修订使用文件 mtime。
+7. 旧 server fixture 改为独立作者 / 评审者；动态 prompt 测试改验稳定角色前缀优先；CLI 模板清单加入 quick-fix。
+
+### 验证结果
+
+- `npm run typecheck`：通过。
+- `npx vitest run`：**1506 通过、16 跳过、1 失败**（121 个测试文件）。唯一失败是明确排除的 `packages/core/src/store/project.test.ts` 中固定角色模板清单断言：预期旧的 8 个角色，实际新增 verifier（本任务）及 auditor / evaluator（并行 m3-eval）。未修改该文件，需调度方或该文件负责人更新清单。因此不宣称全量测试通过。
+- `npm run demo`、`demo:standard`、`demo:chat`、`demo:quick`：均通过。标准演示 quality 为 verified=8、intercepted=5；quick 演示明确断言 retry.suppressed 与 retry 待办，并在人工再试后验证真实结果。
+- 标准与 quick-fix 的 workflow lint：均 editable=true、diagnostics=[]。
+- 按要求启动 `serve --spaces examples --port 4872`，curl 验证 `/api/spaces`、标准空间 project / commands / lessons / me、需求 reviews 与 POST route。路由为 T1 → quick-fix，门禁为独立代码评审与交付校验，角色包含 pm/dev/reviewer/verifier。临时需求 `REQ-M3-SMOKE` 已清理；服务器已停止，4872 无监听。
+- 新增 HTTP/CLI 接入测试覆盖权限与原因、审计持久化、路由改档、预算与自动启动、经验状态、审批版本与过期、cosmetic 不传播 stale、评审处置、SSE presence、修订 GET 不写盘。`git diff --check` 通过。
+- 本机日志与 curl 回读归档：`/tmp/m3-integrate-evidence/`；标准 / 群聊 / quick 演示的独立临时空间路径记录在对应日志中。
+
+### 未做、遗留问题与协议变更请求
+
+- 按指令暂不注册 m3-eval 的 server / CLI / 命令入口，不接 `NodeDetail.recipe`，不增加标准演示的缺陷归因段落；等待调度方通知。
+- 没有修改 m3-eval 的排除文件、协议文件、Web 页面；core index 仅追加导出，保留并行方追加内容。
+- Web 拖动 / 缩放是否误发 PUT layout 属于前端行为，本次只核对后端读取不触发布局写入；未做浏览器交互验证。
+- 唯一全量测试失败如上，未绕过或屏蔽；没有其他已发现的本任务检查失败。
+- **协议变更请求：无。** 没有 npm install、依赖变更、git commit / push、子 agent 或新建工作 worktree。
+
+## 交付记录：m3-integrate 修复第 1 轮（2026-11-06）
+
+本轮修复验收指出的两项问题，关闭上一轮角色清单测试失败及无成员空间的命令权限回归。
+
+### 修改与回归覆盖
+
+- 按新增授权，仅修改 `packages/core/src/store/project.test.ts` 中的角色模板清单断言，加入 auditor、evaluator、verifier；不改该文件其他测试。
+- `packages/core/src/commands/index.ts` 的两处最小修复：`route.preview` 改为 `kind: query / risk: read / minRole: viewer`，普通预览不要求命令 reason；成员未配置或为空数组时，人类身份按本地 owner 校验。有成员时仍按登记角色授权，未登记用户不获得权限，Agent / Lead 仍只有 member 权限，人工审批和处置仍要求 human actor。
+- Server `/api/me` 对无成员空间返回当前身份的 owner member，不向配置文件写入虚拟成员。HTTP 与 CLI 路由预览去掉自动补写的操作原因；显式人工改档仍遵守原协议，要求 override 的 reason。
+- 补充 6 条回归测试（core 3 条、HTTP 3 条）：缺省与空成员配置、默认与显式人类身份、无原因预览、带原因的人工命令写入及持久化、写原因缺失拦截、Agent 审批限制，以及有成员空间的 viewer / 未登记用户权限。路由预览前后运行列表保持不变。
+
+### 按顺序复跑完成定义
+
+| 检查 | 结果 |
+|---|---|
+| `npm run typecheck` | 通过 |
+| `npx vitest run` | 122 个文件通过；1514 条通过、16 条跳过、0 失败 |
+| `npm run demo` | 通过 |
+| `npm run demo:standard` | 通过；quality verified=8、intercepted=5 |
+| `npm run demo:chat` | 通过 |
+| `npm run demo:quick` | 通过；重复失败抑制、人工再试及最终交付校验均通过 |
+
+启动 `npm run takt -- serve --spaces examples --port 4872` 后，对 hello-delivery 使用 curl 实测：
+
+- 无请求头时，`GET /api/s/hello-delivery/me` 返回 `id=web`、`member.role=owner`。
+- 带 `x-takt-user: demo-owner` 时，`/me` 返回同名身份、`member.role=owner`。
+- 两种身份均使用 `{"hint":"小修复"}`（不带 reason）POST `/api/s/hello-delivery/requirements/REQ-001/route`，均成功返回 RouteDecision：T1 → sdlc，包含 gates、roles 和对应 decidedBy。
+- 命令目录回读确认 route.preview 是 query / read / viewer；预览前后运行列表一致，没有启动运行。
+- 检查完成后关闭本轮启动的服务进程，4872 无监听。
+
+本轮日志与 HTTP 回读保存在 `/tmp/m3-r1-*.log`、`/tmp/m3-r1-*.json`。演示中的 LLM 与评审仍使用 mock，业务用例按既有演示执行本地真实脚本。
+
+### 未做、已知问题、协议变更请求
+
+- 本轮未扩展到评测 / 归因入口接线、NodeDetail.recipe 或缺陷归因演示；未修改协议、依赖或 Web 交互。
+- 本轮要求的检查已全部通过，无新增已知问题；16 条既有跳过测试不计为通过。
+- **协议变更请求：无。** 未执行 npm install、git commit / push，未派发子 agent。
+
+## 交付记录：m3-integrate 评测与归因接线轮（2026-11-06）
+
+本轮完成此前暂缓的评测与归因接线，以上记录中的该项暂缓状态至此关闭。
+
+### 已完成
+
+- Server 正式路由注册 `registerEvalRoutes`，api.ts 的 10 条评测 / 缺陷路由均可达。`ServerOptions.resolveRuntime` 接收运行时解析器；CLI serve 按当前空间提供完整 EngineDeps，包含角色、harness、知识源、技能目录、经验召回与仓库管理器。
+- CLI 入口注册 `registerEvalCommands` / `registerDefectCommands`；参数解析接入 `--by`、`--workflow`、`--target`、`--defects`、可重复的 `--variant`、`--judge`、`--title`、`--desc`、`--severity`、`--note`，帮助文本同步更新。`eval scorecards|collect|run|show` 与 `defect report|attribute|confirm` 均经过正式 main 入口验证。
+- Server / CLI / Lead 共用的 `projectCommands` 追加 `evalCommandSpecs(deps)`，命令目录包含 `eval.scorecards`、`eval.collect`、`eval.run`、`defect.report`、`defect.attribute`、`defect.confirm`。CLI `cmd eval.run` 和 `cmd defect.attribute` 等待本进程启动的后台任务完成再退出；重新归因失败时不把旧归因当成成功。Lead 的只读 command 动作可查询评测成绩单。
+- `NodeDetail.recipe` 使用 `recipeOf(events, nodeId)` 读取该节点真实配方事件；HTTP 回读验证了 nodeId、role、harness、recipeKey。
+- 标准演示增加交付后缺陷链路：mock 修复代码刻意引入 `trim()` 错误，原有两条用例通过后，再执行未覆盖的带两侧空格名字输入，取得真实失败证据。随后录入缺陷、确定性预检、mock auditor 独立归因、人工确认；确认前 escapes=0，确认后生成两条冻结回归用例，修复节点和测分节点各 escapes=1。新增示例 auditor / evaluator 档案，并在 README 明确该逃逸场景是有意设置的演示。
+
+### m3-eval 文件的最小接入修复
+
+1. `packages/cli/src/commands/eval.ts`、`defect.ts`：改用 CLI 共用的 `engineDependencies(context)`，避免评测 / 归因遗漏技能、经验与仓库运行时依赖。
+2. `packages/core/src/defects/index.ts`：导出 `waitDefectAttribution`，供短命令等待正在进行的归因任务并重新读取落盘结果。
+3. `packages/core/src/defects/precheck.ts`：Loop 后续轮次跳过修复节点时，当前 NodeState 可能不再保留 worktree；改从 `worktree.created` 历史事件回取来源，再核对真实 git 提交。新增临时仓库单测，标准演示也断言预检找到了修复节点。
+
+其他接线集中在 server / CLI 入口、共享命令工厂、读模型及示例，未修改协议文件。
+
+### 复跑与回读结果
+
+按顺序执行，全部退出码为 0：
+
+| 检查 | 结果 |
+|---|---|
+| `npm run typecheck` | 通过 |
+| `npx vitest run` | 125 个测试文件通过；1517 条通过、16 条跳过、0 失败 |
+| `npm run demo` | 通过 |
+| `npm run demo:standard` | 通过，包含新增缺陷归因、2 条冻结回归用例及 escapes 断言 |
+| `npm run demo:chat` | 通过 |
+| `npm run demo:quick` | 通过 |
+
+新增正式入口测试覆盖全部 10 条 HTTP 路由、共享命令真实执行、CLI 参数与子命令、CLI 后台任务等待、重复归因失败、Lead 只读查询、节点配方、人工确认后的回归用例与成绩单回读。没有只用注册函数的孤立测试代替入口验收。
+
+按要求启动 `npm run takt -- serve --spaces examples --port 4872`，使用 curl 验证：
+
+- `/api/spaces`。
+- `/api/s/standard-delivery/project`、`/commands`、`/lessons`、`/me`、`/eval/scorecards`；共享命令目录包含全部 6 个 eval / defect 命令。
+- hello-delivery 的 `REQ-001/reviews` 与 POST `REQ-001/route`（无 reason），返回 T1 → sdlc 的 RouteDecision。
+- 原始 standard-delivery 示例空间当前没有运行记录，curl 的 scorecards 返回合法空数组；非空成绩单和 escapes 已由带实际运行数据的入口测试与标准演示验证。
+- 服务检查后已关闭，4872 无监听；`git diff --check` 通过。
+
+最终日志与回读：`/tmp/m3-eval-final-*.log`、`/tmp/m3-eval-curl-*.json`，汇总归档在 `/tmp/m3-eval-wiring-evidence/`。标准演示本轮运行 `run-20261106-095401-687d`，独立证据空间 `/var/folders/v1/n6z6msv922g3jqc1ylnmb2qm0000gn/T/takt-standard-delivery-1CGnwo`。
+
+### 未做、已知问题与协议变更请求
+
+- 未做 Web 交互修改或真实外部模型调用验收；模型执行与归因、判分仍采用 mock。逃逸复现调用真实集成工作树中的代码，不能把 mock 归因验证扩大为线上模型质量结论。
+- 本轮无未通过检查。沿用 m3-eval 的已知限制：服务端后台任务由当前进程执行，不支持重启续跑；多候选全部执行，响应中的 comparison 仅展示首个候选，其余保存在 comparisons.json。嵌入式直接使用 createServer 时，模型执行类路由需要注入 resolveRuntime；CLI serve 已接入。
+- **协议变更请求：本轮无新增。** 沿用 m3-eval 已记录的建议：NodeScorecard.escapes 注释仅写“引入”，实际按既定验收同时统计已确认的引入与漏检节点，需调度方统一注释口径或决定拆分字段；本轮未改协议。
+- 未执行 npm install、未修改依赖，未 git commit / push，未派发子 agent。

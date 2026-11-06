@@ -1,6 +1,6 @@
 import { join, relative } from 'node:path'
 import type { AttentionItem, EngineDeps } from '../interfaces.js'
-import type { Actor, AgentNodeDef, ArtifactRef, FailureRecord, HumanNodeDef, NodeContext, NodeDef, NodeState, PlannedItem, RunState, WorkflowDefinition } from '../types.js'
+import type { Actor, AgentNodeDef, ArtifactRef, FailureRecord, EventPayloads, HumanNodeDef, NodeContext, NodeDef, NodeState, PlannedItem, RunState, WorkflowDefinition } from '../types.js'
 import { readJsonFile, writeFileAtomic } from '../store/fs-utils.js'
 import type { RunGraphNode } from '../store/run-graph.js'
 import { answerOrRead, recordAnswerOnce } from './answers.js'
@@ -10,11 +10,10 @@ import { runDir } from '../store/paths.js'
 import { collectOutputs, readCurrent, resolveInputs } from './artifacts.js'
 import { expandPlanner, qualify, validateDag, type Entry, type Graph } from './graph.js'
 import { WriteGuard } from './guard.js'
-import { saveWorktreeDiff, workingDirectory } from './execution.js'
+import { saveWorktreeDiff } from './execution.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
 import { BudgetGuard } from './budget.js'
-import { checkCompletion } from './completion.js'
 import { failureCode, FailureError, recordFailure } from './fingerprint.js'
 import { serializePlannerGroups } from './nodes/planner.js'
 import { validateWorkflowHarnesses } from './selection.js'
@@ -86,7 +85,10 @@ export class Runtime implements HarnessHost {
     if (type === 'run.finished') data = { status: this.state.status } as typeof data
     const event = await this.deps.stores.events.append(this.state.runId, { type, data, nodeId, actor })
     await postEventMessage(this.deps.stores, this.state, event, snapshotWorkflow(this.workflow))
-    if (type === 'harness.usage') await this.budget.check()
+    if (type === 'harness.usage') {
+      this.budget.addUsage(data as EventPayloads['harness.usage'])
+      await this.budget.check()
+    }
   }
   async persistGraph(): Promise<void> {
     for (const node of Object.values(this.state.nodes)) this.attempts[node.id] = Math.max(this.attempts[node.id] ?? 0, node.attempts)
@@ -119,6 +121,7 @@ export class Runtime implements HarnessHost {
     return nodes.map((node) => node.id)
   }
   async prepare(): Promise<void> {
+    await this.budget.initialize()
     validateDag(this.workflow.nodes, new Set(this.workflow.stages.map((stage) => stage.id)))
     const stored = await readJsonFile<RuntimeRecord>(runtimeFile(this.deps, this.state.runId))
     Object.assign(this.requests, stored?.requests)
@@ -139,7 +142,7 @@ export class Runtime implements HarnessHost {
         const expansion = this.state.expansions.find((item) => item.plannerId === node.id)
         if (expansion) {
           const groups = expandPlanner(node, expansion.items)
-          serializePlannerGroups(groups)
+          serializePlannerGroups(groups, this.deps.profiles)
           const ids = groups.flatMap((group) => group.nodes.map((child) => child.id))
           if (JSON.stringify(ids) !== JSON.stringify(expansion.nodeIds)) throw new Error(`planner 展开定义已改变：${node.id}`)
           const definitions = snapshotWorkflow({ ...this.workflow, nodes: groups.flatMap((group) => group.nodes) }).nodes
@@ -409,11 +412,6 @@ export class Runtime implements HarnessHost {
         return
       } catch (error) {
         await this.flushLogs()
-        if (node.kind === 'agent' && node.completion?.length && !ns.checks) {
-          const checked = checkCompletion(node.completion, undefined)
-          ns.checks = checked.checks
-          await this.emit('node.checks', checked, node.id)
-        }
         await this.fail(ns, error)
         await this.recordLessonOutcome(entry, ns)
         if (!this.signal.aborted && (ns.status as NodeState['status']) !== 'stale' && !(error instanceof FailureError && error.recorded)) {
@@ -427,7 +425,7 @@ export class Runtime implements HarnessHost {
     if (recalled) this.lessonRecalls.set(nodeId, recalled)
   }
   private async recordLessonOutcome(entry: Entry, ns: NodeState): Promise<void> {
-    if (entry.def.kind !== 'agent' || ns.attempts !== 1 || !this.deps.lessons) return
+    if (entry.def.kind !== 'agent' || ns.attempts !== 1 || !this.deps.lessons || !['succeeded', 'failed'].includes(ns.status)) return
     const recalled = this.lessonRecalls.get(ns.id)
     if (!recalled?.lessons.length) return
     this.lessonRecalls.delete(ns.id)
@@ -439,8 +437,8 @@ export class Runtime implements HarnessHost {
     const ns = this.state.nodes[entry.def.id]!
     const inputs = await this.guard.system(this.workspacePaths(entry.def.inputs?.map((input) => input.path)), () =>
       resolveInputs(this.deps.stores, this.state, entry.def, this.emit))
-    if (entry.def.kind === 'agent' && entry.def.repo) await workingDirectory(this, entry.def, this.context(entry), ns)
-    return { ...ns, inputs }
+    const worktree = ns.worktree ?? (await this.deps.stores.events.read(this.state.runId, { nodeId: ns.id, types: ['worktree.created'] })).map((event) => event.data as EventPayloads['worktree.created']).at(-1)
+    return { ...ns, inputs, worktree }
   }
   async noteFailure(entry: Entry, code: string, target?: string, message?: string, source?: NodeState): Promise<boolean> {
     const ns = this.state.nodes[entry.def.id]!

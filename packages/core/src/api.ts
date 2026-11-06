@@ -65,6 +65,7 @@
  * | GET  | /api/eval/runs                                 | EvalRun[]（不含 results 明细时 results 为空数组） |
  * | GET  | /api/eval/runs/:id                             | EvalRun |
  * | POST | /api/eval/runs                                 | 请求体 EvalRunRequest → EvalRun（后台执行，轮询 GET 看进度） |
+ * | GET  | /api/eval/runs/:id/output?case=&variant=       | { files: Array<{ path, content }> }（输出快照；不存在为 404） |
  * | GET  | /api/requirements/:id/defects                  | DefectDetail[] |
  * | POST | /api/requirements/:id/defects                  | 请求体 DefectReportRequest → DefectDetail |
  * | POST | /api/requirements/:id/defects/:defectId/attribute | 无请求体 → DefectDetail（预检 + 归因 Agent，后台执行） |
@@ -580,9 +581,9 @@ export interface NodeScorecard {
   suppressed: number
   /** 沿溯源归到该节点的下游判决。 */
   downstream: Partial<Record<VerdictCategory, number>>
-  /** 已确认归因到该节点（引入）的逃逸缺陷数。 */
+  /** 已确认归因为在该节点引入的逃逸缺陷数（漏检计入 detection.missed，不计入这里）。 */
   escapes: number
-  /** 评审 / 门禁节点的检出率：拦下 ÷（拦下 + 确认漏检）。 */
+  /** 检出率：拦下 ÷（拦下 + 确认漏检）。评审 / 门禁节点都有；其他节点被确认漏检时只有 missed。 */
   detection?: { caught: number; missed: number; rate?: number }
   usage: Usage
   durationMsAvg?: number
@@ -597,6 +598,7 @@ export interface EvalCollectRequest {
   runIds?: string[]
   /** 同时把已确认缺陷生成回归用例。 */
   includeDefects?: boolean
+  reason?: string
 }
 
 export interface EvalRunRequest {
@@ -606,6 +608,7 @@ export interface EvalRunRequest {
   caseIds?: string[]
   /** 判分用的模型（rubric / 参考对比）；缺省用 evaluator 角色的默认 harness。 */
   judge?: HarnessSelector
+  reason?: string
 }
 
 export interface DefectDetail extends Defect {
@@ -621,6 +624,7 @@ export interface DefectReportRequest {
   acs?: string[]
   links?: Defect['links']
   evidence?: string[]
+  reason?: string
 }
 
 export interface DefectConfirmRequest {

@@ -29,6 +29,7 @@ function snapshotNode(node: NodeDef): SnapshotNode {
   switch (node.kind) {
     case 'agent':
       snapshot.completion = node.completion
+      snapshot.writeScope = node.writeScope
       snapshot.prompt = typeof node.prompt === 'string' ? node.prompt : undefined
       snapshot.repo = node.repo
       snapshot.role = node.role
@@ -58,7 +59,7 @@ function snapshotNode(node: NodeDef): SnapshotNode {
       snapshot.allowedRoles = node.allowedRoles
       break
     case 'gate':
-      snapshot.checks = node.checks.map((check) => ({ id: check.id, kind: check.kind, title: check.title, ...(check.kind === 'rubric' ? { threshold: check.threshold } : {}) }))
+      snapshot.checks = node.checks.map((check) => ({ id: check.id, kind: check.kind, title: check.title, ...(check.kind === 'rubric' ? { threshold: check.threshold, role: check.role } : check.kind === 'acceptance' ? { role: check.role } : {}) }))
       break
     case 'human':
       snapshot.ask = node.ask

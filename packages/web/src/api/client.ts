@@ -1,6 +1,13 @@
 import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
-import { WorkflowConflictError, type DataSource } from './source'
+import { actingUserHeader } from '../lib/acting-user'
+import { WorkflowConflictError, type DataSource, type EvalOutputSnapshot } from './source'
+
+/** 调用方已带 reason（以后协议补上字段时）就用它，否则用按操作生成的说明。 */
+const auditReason = (body: object, fallback: string): string => {
+  const r = (body as { reason?: unknown }).reason
+  return typeof r === 'string' && r.trim() ? r : fallback
+}
 
 export class ApiRequestError extends Error {
   constructor(
@@ -31,7 +38,7 @@ export function createHttpSource(base = '/api'): DataSource {
   async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await fetch(scoped(path), {
       method,
-      headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+      headers: { ...actingUserHeader(), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
     const text = await res.text()
@@ -48,6 +55,7 @@ export function createHttpSource(base = '/api'): DataSource {
   return {
     mock: false,
     project: () => get('/project'),
+    me: () => get('/me'),
     requirements: () => get('/requirements'),
     requirement: (id) => get(`/requirements/${enc(id)}`),
     artifacts: (id) => get(`/requirements/${enc(id)}/artifacts`),
@@ -69,10 +77,11 @@ export function createHttpSource(base = '/api'): DataSource {
     subscribe: (runId, onEvent) => stream(scoped(`/runs/${enc(runId)}/stream`), onEvent),
     spaces: () => get('/spaces'),
     space: () => get('/space'),
-    setMembers: (members) => req('PUT', '/space/members', members),
-    addRepo: (repo) => req('POST', '/space/repos', repo),
-    updateRepo: (repoId, patch) => req('PATCH', `/space/repos/${enc(repoId)}`, patch),
-    syncRepo: (repoId) => req('POST', `/space/repos/${enc(repoId)}/sync`),
+    // 服务端成员接口接受数组 + x-takt-reason 头，或 { members, reason }；用 body 形式，避免非 ASCII 原因放进请求头
+    setMembers: (members, reason) => req('PUT', '/space/members', { members, reason }),
+    addRepo: (repo, reason) => req('POST', '/space/repos', { ...repo, reason }),
+    updateRepo: (repoId, patch, reason) => req('PATCH', `/space/repos/${enc(repoId)}`, { ...patch, reason }),
+    syncRepo: (repoId, reason) => req('POST', `/space/repos/${enc(repoId)}/sync`, { reason }),
     spaceFile: (kind, name) => get(`/space/files${qs({ kind, name })}`),
     saveSpaceFile: (kind, name, body) => req('PUT', `/space/files${qs({ kind, name })}`, body),
     room: (id) => get(`/requirements/${enc(id)}/room`),
@@ -87,6 +96,24 @@ export function createHttpSource(base = '/api'): DataSource {
     runCommand: (id, body) => req('POST', `/commands/${enc(id)}`, body),
     lessons: (status) => get(`/lessons${qs({ status })}`),
     updateLesson: (id, body) => req('PATCH', `/lessons/${enc(id)}`, body),
+    scorecards: (by, workflow) => get(`/eval/scorecards${qs({ by, workflow })}`),
+    evalCases: (target) => get(`/eval/cases${qs({ target })}`),
+    // 评测 / 缺陷的写操作在服务端走写命令（eval.* / defect.*），注册表要求非空 reason，但 api.ts 的请求体没有这个字段：
+    // 先由客户端按操作内容生成审计原因（见交付说明的协议变更请求），协议补上后改成界面收集。
+    collectEvalCases: (body) => req('POST', '/eval/cases/collect', { ...body, reason: auditReason(body, '从历史与缺陷收集评测用例') }),
+    evalRuns: () => get('/eval/runs'),
+    evalRun: (id) => get(`/eval/runs/${enc(id)}`),
+    startEvalRun: (body) => req('POST', '/eval/runs', { ...body, reason: auditReason(body, `回放评测：${body.variants.map((v) => v.label).join(' / ')}`) }),
+    evalOutput: (runId, caseId, variant) =>
+      get<EvalOutputSnapshot>(`/eval/runs/${enc(runId)}/output${qs({ case: caseId, variant })}`).catch((e: unknown) => {
+        if (e instanceof ApiRequestError && e.status === 404) return { runId, caseId, variant, files: [] }
+        throw e
+      }),
+    defects: (id) => get(`/requirements/${enc(id)}/defects`),
+    reportDefect: (id, body) => req('POST', `/requirements/${enc(id)}/defects`, { ...body, reason: auditReason(body, `录入逃逸缺陷：${body.title}`) }),
+    attributeDefect: (id, defectId) => req('POST', `/requirements/${enc(id)}/defects/${enc(defectId)}/attribute`, { reason: `发起缺陷 ${defectId} 的归因` }),
+    confirmDefect: (id, defectId, body) =>
+      req('POST', `/requirements/${enc(id)}/defects/${enc(defectId)}/confirm`, { ...body, reason: auditReason(body, body.note?.trim() || `确认缺陷 ${defectId} 的归因${body.attribution ? '（含人工修改）' : ''}`) }),
     workflows: () => get('/workflows'),
     workflow: (id) => get(`/workflows/${enc(id)}`),
     editWorkflow: (id, body) => req('PATCH', `/workflows/${enc(id)}`, body),

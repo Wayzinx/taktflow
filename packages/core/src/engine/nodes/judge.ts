@@ -22,12 +22,8 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   const routed: Record<string, string[]> = {}
   const routing: Array<{ subject: string; to: string }> = []
   let needsHuman = false
-  let suppressed = false
   for (const verdict of verdicts) {
     const to = node.routes[verdict.category] ?? 'human'
-    const repair = host.graph.get(entry.scope + to) ?? host.graph.get(to)
-    const source = repair ? await host.failureSource(repair) : ns
-    if (await host.noteFailure(entry, `judge:${verdict.category}`, verdict.subject, verdict.rationale, source)) suppressed = true
     routing.push({ subject: verdict.subject, to })
     if (to === 'human') needsHuman = true
     else if (to !== 'ignore') (routed[to] ??= []).push(verdict.subject)
@@ -53,7 +49,13 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   }))
   ns.outputs.push(ref)
   await host.emit('artifact.written', { ref, kind: 'verdict', sha256: sha256(content) }, node.id)
-  if (suppressed) return
+  // 修复节点会读取本轮判决，先登记产物再解析它的输入版本。
+  for (const verdict of verdicts) {
+    const to = node.routes[verdict.category] ?? 'human'
+    const repair = host.graph.get(entry.scope + to) ?? host.graph.get(to)
+    const source = repair ? await host.failureSource(repair) : ns
+    if (await host.noteFailure(entry, `judge:${verdict.category}`, verdict.subject, verdict.rationale, source)) return
+  }
   if (needsHuman) await host.request(entry, `失败判决需要人工裁决：${JSON.stringify(verdicts.filter((v) => (node.routes[v.category] ?? 'human') === 'human'))}`, 'approve')
 
 }

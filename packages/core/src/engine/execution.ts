@@ -7,6 +7,7 @@ import { sha256 } from '../util/hash.js'
 
 // 执行面由独立包提供；延迟加载避免 core 初始化时反向加载依赖 core 的适配器。
 interface ExecutionAdapters {
+  createRepoManager(options: { projectDir: string; taktDir: string; repos: NonNullable<TaktConfig['repos']> }): import('../interfaces.js').RepoManager
   selectSandboxProvider(config: TaktConfig['sandbox']): Promise<SandboxProvider>
   syncSkills(options: { skillsDir: string; targetRoot: string; harness: string }): Promise<unknown>
 }

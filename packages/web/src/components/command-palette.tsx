@@ -30,7 +30,7 @@ export function setPaletteOpen(v: boolean) {
   set(v ? { open: true } : { ...state, open: false })
 }
 /**
- * 打开 ⌘K 并直接进入某条命令的表单，input 预填参数（如路由卡"改档"：openCommand('route.preview', { requirementId, tier })）。
+ * 打开 ⌘K 并直接进入某条命令的表单，input 预填参数（如 openCommand('run.cancel', { runId })）。
  * Esc 直接关闭，不回到列表。
  */
 export function openCommand(id: string, input?: Record<string, unknown>) {

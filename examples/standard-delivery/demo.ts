@@ -5,7 +5,7 @@ import { cp, mkdir, mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createEngine, initProject, listReviews, listSkills, loadProfiles, openProject, reviewDetail, type EventEnvelope, type EventType } from '@taktflow/core'
+import { reportDefect, precheckDefect, attributeDefect, confirmDefect, listDefects, listEvalCases, scorecards, createEngine, initProject, qualityMetrics, listReviews, listSkills, loadProfiles, openProject, reviewDetail, type EventEnvelope, type EventType } from '@taktflow/core'
 import { createMockHarness, loadMockScript } from '@taktflow/harness'
 import workflow from './workflows/taktflow-standard.workflow.js'
 
@@ -61,9 +61,20 @@ for (const nodeId of new Set(ofType('review.round').map((event) => event.nodeId!
   assert(artifacts.some((artifact) => artifact.path === `reviews/${nodeId}/summary.md` && artifact.kind === 'review'))
   const summary = (await reopened.workspaces.readArtifact({ workspace: req.id, path: `reviews/${nodeId}/summary.md` }))!.toString()
   assert(summary.includes('第 1 轮'))
+  assert(detail?.facets)
+  assert(detail.rounds.every((round) => round.revision && round.seq && round.targetFingerprint))
 }
 assert(artifacts.find((artifact) => artifact.path === 'spec/prd.md')!.versions.length >= 2)
 assert.equal((await listReviews(reopened, req.id)).find((review) => review.nodeId === 'review-design')?.reworks, 1)
+const design = await reviewDetail(reopened, state.runId, 'review-design')
+assert.equal(design?.rounds.at(-1)?.revision, 2)
+assert.equal(design?.rounds.at(-1)?.round, 1)
+assert(ofType('node.checks').length >= 7)
+assert(ofType('node.checks').every((event) => event.data.unmet.length === 0))
+assert(ofType('gate.result', 'delivery-check').some((event) => event.data.pass && event.data.checks.some((check) => check.id === 'acceptance' && check.pass)))
+const quality = await qualityMetrics(events, { store: reopened.workspaces, requirementId: req.id })
+assert(quality.verified > 0 && quality.intercepted > 0)
+console.log('M3 校验：评审修订 2 / 第 1 轮、自检、独立交付校验、质量计数', quality)
 const messages = await reopened.chat.list(req.id)
 assert(messages.some((message) => message.kind === 'system' && message.text === '需求已创建'))
 assert(messages.some((message) => message.kind === 'system' && message.text === '运行开始'))
@@ -78,3 +89,37 @@ assert.equal(evidence.actual, 'Hello, stranger!')
 assert.equal(evidence.status, 'passed')
 console.log('PASS 新布局与群聊；PRD 修改后第 2 轮通过；系分 3 轮耗尽、打回一次后通过；代码与脚本评审；真实用例失败 → 判决 → 修复 → 第 2 轮通过；评审记录完整；审计链与产物登记通过。')
 console.log(`运行 ID：${state.runId}\n记录：${stores.workspaces.dir(req.id)}/reviews/\n事件：${root}/.takt/runs/${state.runId}/events.jsonl`)
+
+// 故意种入的 trim 错误逃过原来的两条用例；这里执行未覆盖输入，留下真实失败证据。
+const integration = state.nodes.integration!.result as { path: string }
+const reproduction = JSON.parse(execFileSync(process.execPath, ['--input-type=module', '-e',
+  'import { greet } from "./src/greet.js"; process.stdout.write(JSON.stringify({ input: " Alice ", actual: greet(" Alice ") }))'],
+  { cwd: integration.path, encoding: 'utf8' })) as { input: string; actual: string }
+const expected = `Hello, ${reproduction.input}!`
+assert.notEqual(reproduction.actual, expected)
+const actor = { type: 'human', id: 'demo-owner' } as const
+const escapeEvidence = await reopened.workspaces.writeArtifact({ ref: { workspace: req.id, path: 'evidence/TC-GREET-ESCAPE/result.json' },
+  content: JSON.stringify({ ...reproduction, expected, status: 'failed' }), kind: 'evidence', author: actor, reason: '交付后独立检查未覆盖输入' })
+const defect = await reportDefect(reopened, req.id, { title: '演示逃逸缺陷：非空名字两侧空格被删除',
+  description: 'src/greet.js 的 name.trim() 删除了非空名字两侧空格，违反 PRD 保持现有行为、不做 trim 的约束。',
+  severity: 'major', acs: ['AC-1'], evidence: [escapeEvidence.path] }, actor)
+const precheck = await precheckDefect(reopened, defect)
+assert.equal(precheck.acCovered, true)
+assert(precheck.cases?.includes('TC-GREET-001'))
+assert(precheck.codeNodes?.includes('dev-test-loop/fix-code'))
+assert(precheck.gates?.includes('delivery-check'))
+const candidate = await attributeDefect({ stores: reopened, profiles, harnesses: { mock }, knowledge: [], skillsDir: reopened.paths.skills }, req.id, defect.id)
+assert.equal(candidate.status, 'attributed')
+assert.equal(candidate.attribution?.confirmed, undefined)
+assert((await scorecards(reopened, { by: 'node' })).every((card) => card.escapes === 0))
+await confirmDefect(reopened, req.id, defect.id, { note: '已核对实际复现、修复 diff 与用例覆盖，确认引入和漏检节点' }, actor)
+const persisted = await openProject(root)
+assert.equal((await listDefects(persisted, req.id))[0]?.status, 'confirmed')
+const regressions = (await listEvalCases(persisted)).filter((test) => test.source.kind === 'defect' && test.source.defectId === defect.id)
+assert.equal(regressions.length, 2)
+for (const nodeId of ['dev-test-loop/fix-code', 'test-design']) {
+  assert(regressions.some((test) => test.source.runId === state.runId && test.source.nodeId === nodeId))
+  assert.equal((await scorecards(persisted, { by: 'node' })).find((card) => card.key.workflowId === workflow.id && card.key.nodeId === nodeId)?.escapes, 1)
+}
+assert.deepEqual(await persisted.events.verify(`defect-${req.id}`), { ok: true })
+console.log(`PASS 逃逸归因：真实复现两侧空格丢失 → 确定性预检 → mock 独立归因 → 人工确认 → 2 条冻结回归用例；引入及漏检节点 escapes=1。缺陷：${defect.id}`)

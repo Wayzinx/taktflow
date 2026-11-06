@@ -4,11 +4,30 @@ import { parseArgs } from 'node:util'
 export class UsageError extends Error {}
 
 export interface CliOptions {
+  by?: string
+  workflow?: string
+  target?: string
+  defects?: boolean
+  variant?: string[]
+  judge?: string
+  title?: string
+  desc?: string
+  severity?: string
+  note?: string
+  hint?: string
+  tier?: string
+  input?: string
+  state?: string
+  budgetTokens?: string
+  budgetMinutes?: string
   project?: string
   json: boolean
   help: boolean
   name?: string
   link?: string
+  links?: string[]
+  ac?: string[]
+  evidence?: string[]
   kind?: string
   reason?: string
   version?: string
@@ -51,7 +70,12 @@ export const HELP = `用法：takt <命令> [选项]
   ws get <REQ> <path> [--version n]             读产物
   ws ls <REQ>                                   列出产物
   ws log <REQ> <path>                           产物版本历史
-  run <workflowId> --req <REQ> [--arg k=v]... [--harness <id>] [--mock <file>] [--auto-approve]
+  route <REQ> [--hint <text>] [--tier T1 --reason <text>]
+  cmd ls | cmd <id> --input '<json>' [--reason <text>]
+  lessons ls|show|retire|activate [id] [--reason <text>]
+  review dispose <run> <node> <groupKey> --state resolved|dismissed|open --reason <text>
+  run <workflowId|auto> --req <REQ> [--arg k=v]... [--harness <id>] [--mock <file>] [--auto-approve]
+    [--budget-tokens N --budget-minutes N]
   resume <runId> [--auto-approve] [--harness <id>] [--mock <file>]
   answer <requestId> (--approve | --reject | --answer "<text>" | --choice <c>) [--no-resume]
   status [--req <REQ>]
@@ -68,6 +92,14 @@ export const HELP = `用法：takt <命令> [选项]
   workflow ls | workflow lint <id> | workflow show <id>
   workflow edit <id> --edits <json文件> | workflow revisions <id> | workflow rollback <id> <rev>
   chat ls <REQ> | chat post <REQ> "<text>"
+  eval scorecards [--by node|recipe|skill] [--workflow <id>]
+  eval collect [--target node:<workflow>/<node>|skill:<name>] [--defects]
+  eval run <target> --variant '<json>'... [--judge '<model|json>'] [--mock <file>]
+  eval show <evalId>
+  defect report <REQ> --title <text> --desc <text> --severity critical|major|minor
+    [--ac AC-1]... [--evidence <path>]... [--link <url>]... [--reason <text>]
+  defect attribute <REQ> <defectId> [--mock <file>]
+  defect confirm <REQ> <defectId> [--note <text>]
   serve [--spaces <dir>] [--port 4870] [--host 127.0.0.1]
 
 全局选项：
@@ -76,6 +108,11 @@ export const HELP = `用法：takt <命令> [选项]
   --help            显示帮助`
 
 const OPTIONS = {
+  by: { type: 'string' }, workflow: { type: 'string' }, target: { type: 'string' }, defects: { type: 'boolean' },
+  variant: { type: 'string', multiple: true }, judge: { type: 'string' },
+  title: { type: 'string' }, desc: { type: 'string' }, severity: { type: 'string' }, note: { type: 'string' },
+  hint: { type: 'string' }, tier: { type: 'string' }, input: { type: 'string' }, state: { type: 'string' },
+  'budget-tokens': { type: 'string' }, 'budget-minutes': { type: 'string' },
   project: { type: 'string' },
   spaces: { type: 'string' },
   layout: { type: 'string' },
@@ -88,7 +125,9 @@ const OPTIONS = {
   json: { type: 'boolean' },
   help: { type: 'boolean' },
   name: { type: 'string' },
-  link: { type: 'string' },
+  link: { type: 'string', multiple: true },
+  ac: { type: 'string', multiple: true },
+  evidence: { type: 'string', multiple: true },
   kind: { type: 'string' },
   reason: { type: 'string' },
   version: { type: 'string' },
@@ -122,9 +161,13 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     autoApprove: values['auto-approve'] === true,
     approve: values.approve === true,
     reject: values.reject === true,
+    budgetTokens: values['budget-tokens'], budgetMinutes: values['budget-minutes'],
+    ...(values.defects === undefined ? {} : { defects: values.defects }),
+    ...(values.variant === undefined ? {} : { variant: values.variant }),
     noResume: values['no-resume'] === true,
+    link: values.link?.[0], links: values.link, ac: values.ac, evidence: values.evidence,
   }
-  for (const key of ['project', 'name', 'link', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {
+  for (const key of ['by', 'workflow', 'target', 'judge', 'title', 'desc', 'severity', 'note', 'hint', 'tier', 'input', 'state', 'project', 'name', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {
     const value = values[key]
     if (value !== undefined) options[key] = value
   }

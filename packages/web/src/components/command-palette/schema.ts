@@ -83,3 +83,15 @@ export function toInput(fields: FieldSpec[], values: Record<string, FieldValue>)
   }
   return { input, missing, invalid }
 }
+
+export const SCOPE_KEY = { requirement: 'requirementId', run: 'runId', node: 'nodeId' } as const
+type Scope = keyof typeof SCOPE_KEY
+
+/**
+ * 命令适用的上下文：优先用 scope；真实注册表不带 scope，就从 input.required 里的 requirementId / runId / nodeId 推断。
+ */
+export function commandScope(cmd: CommandInfo): Scope[] {
+  if (cmd.scope?.length) return cmd.scope
+  const required = (cmd.input as { required?: string[] }).required ?? []
+  return (Object.keys(SCOPE_KEY) as Scope[]).filter((s) => required.includes(SCOPE_KEY[s]))
+}

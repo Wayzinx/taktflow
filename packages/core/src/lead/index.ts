@@ -1,3 +1,4 @@
+import { startRouted } from '../route/start.js'
 import type { StartRunInput } from '../interfaces.js'
 import type { LeadAction, LeadPresence, RouteDecision } from '../types.js'
 import { createCommandRegistry } from '../commands/index.js'
@@ -61,8 +62,10 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
 
   async function onRunEvent(runId: string, event: EventEnvelope): Promise<void> {
-    const observed = await stores.runs.get(runId)
-    if (observed && observed.workflowId !== 'lead') await refreshPresence(observed.requirementId)
+    if (['node.started', 'node.finished', 'node.failed', 'human.requested', 'human.answered', 'run.finished', 'budget.exhausted', 'retry.suppressed'].includes(event.type)) {
+      const observed = await stores.runs.get(runId)
+      if (observed && observed.workflowId !== 'lead') await refreshPresence(observed.requirementId)
+    }
     if (!['node.finished', 'run.finished', 'human.requested', 'review.exhausted', 'budget.warning', 'budget.exhausted', 'retry.suppressed', 'route.decided'].includes(event.type)) return
     const file = join(stores.taktDir, 'runs', runId, 'lead-projection.json')
     await withFileLock(file, async () => {
@@ -132,12 +135,13 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return ready
   }
 
-  async function executeAction(value: unknown, requirementId: string, message: RoomMessage, runId: string, index: number, route?: RouteDecision): Promise<LeadActionResult> {
+  async function executeAction(value: unknown, requirementId: string, message: RoomMessage, runId: string | undefined, index: number, route?: RouteDecision): Promise<LeadActionResult> {
     let actionName = (value && typeof value === 'object' && 'type' in value ? value.type : 'unknown') as LeadActionResult['action']
     try {
       validateAction(value)
       actionName = value.type
-      await audit(runId, { kind: 'lead.action', action: value, onBehalfOf: message.author })
+      if (!runId && !['start_run', 'resume_run', 'cancel_run', 'dispatch_task'].includes(value.type)) throw new Error('该动作需要 Lead 回合上下文')
+      if (runId) await audit(runId, { kind: 'lead.action', action: value, onBehalfOf: message.author })
       switch (value.type) {
         case 'reply':
           await post(requirementId, { author, kind: 'text', text: value.text, mentions: value.mentions, replyTo: message.id })
@@ -151,7 +155,8 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         case 'start_run': {
           if (!options.workflows) throw new Error('未接入 workflow 加载器')
           const workflow = await options.workflows.load(value.workflowId)
-          const id = await launch(workflow, requirementId, message, profiles, { ...value.args, ...(route ? { tier: route.tier } : {}) }, runId, { budget: value.budget, route })
+          const revision = options.workflows.get ? (await options.workflows.get(workflow.id)).rev : undefined
+          const id = await launch(workflow, requirementId, message, profiles, { ...value.args, ...(revision ? { workflowRev: revision } : {}), ...(route ? { tier: route.tier } : {}) }, runId, { budget: value.budget, route })
           return { action: actionName, ok: true, message: '运行已启动', refs: { runId: id } }
         }
         case 'resume_run': {
@@ -174,19 +179,19 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
           const room = await stores.chat.getRoom(requirementId)
           if (!value.ask.trim() || !room?.members.some((member) => member.id === value.to && member.kind === 'human') && !stores.config.members?.some((member) => member.id === value.to)) throw new Error('待办接收人必须存在且问题不能为空')
           if (value.form === 'choice' && (!value.choices?.length || new Set(value.choices).size !== value.choices.length)) throw new Error('choice 待办必须有不重复的 choices')
-          return await request(runId, index, requirementId, value.ask, value.form, value.to, value.choices)
+          return await request(runId!, index, requirementId, value.ask, value.form, value.to, value.choices)
         }
         case 'propose_workflow_change': {
           if (!options.workflows) throw new Error('未接入 workflow-source store')
           if (!value.description.trim()) throw new Error('修改提案必须有 description')
           const document = await options.workflows.get(value.workflowId)
-          await audit(runId, { kind: 'workflow.proposal', proposal: { ...value, baseRev: document.rev, requestId: `${runId}:lead-action-${index}` } })
-          return await request(runId, index, requirementId, `workflow 修改：${value.description}`, 'approve')
+          await audit(runId!, { kind: 'workflow.proposal', proposal: { ...value, baseRev: document.rev, requestId: `${runId}:lead-action-${index}` } })
+          return await request(runId!, index, requirementId, `workflow 修改：${value.description}`, 'approve')
         }
         case 'update_notes': {
           const ref = await stores.workspaces.writeArtifact({ ref: { workspace: requirementId, path: 'lead-notes.md' }, content: value.content,
-            kind: 'other', author, producedBy: { runId, nodeId: 'lead' }, reason: `Lead 备忘；onBehalfOf ${JSON.stringify(message.author)}` })
-          await stores.events.append(runId, { type: 'artifact.written', actor: author, nodeId: 'lead', data: { ref, kind: 'other', sha256: sha256(value.content) } })
+            kind: 'other', author, producedBy: { runId: runId!, nodeId: 'lead' }, reason: `Lead 备忘；onBehalfOf ${JSON.stringify(message.author)}` })
+          await stores.events.append(runId!, { type: 'artifact.written', actor: author, nodeId: 'lead', data: { ref, kind: 'other', sha256: sha256(value.content) } })
           return { action: actionName, ok: true, message: 'Lead 备忘已更新', refs: { artifacts: [ref] } }
         }
       }
@@ -234,12 +239,13 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         return { action: current.type, ok: result.ok, message: result.ok ? JSON.stringify(result.result ?? result.message) : result.message }
       }
       if (current.type === 'start_run' && current.workflowId === 'auto') {
-        const result = await commands.run('route.preview', { requirementId, hint: message.text }, context)
-        if (!result.ok) throw new Error(result.message)
-        route = result.result as RouteDecision
-        if (!route?.workflowId) throw new Error('路由器没有返回流程')
-        await post(requirementId, { author, kind: 'route', text: `${route.tier} · ${route.workflowId}：${route.reason}`, route, replyTo: message.id })
-        current = { ...current, workflowId: route.workflowId, args: { ...current.args, tier: route.tier } }
+        const routed = await startRouted(stores, [], { ...current, requirementId }, author, async () => {
+          const result = await commands.run('route.preview', { requirementId, hint: message.text }, context)
+          if (!result.ok) throw new Error(result.message)
+          return result.result as RouteDecision
+        }, message.id)
+        route = routed.route
+        current = { ...current, workflowId: routed.workflowId, args: routed.args }
       }
       const mapping: Partial<Record<LeadAction['type'], string>> = { start_run: 'run.start', resume_run: 'run.resume', cancel_run: 'run.cancel', dispatch_task: 'task.dispatch' }
       const id = mapping[current.type] ?? `lead.${current.type}`
@@ -339,6 +345,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
 
   return {
+    executeAction,
     onMessage(requirementId: string, message: RoomMessage, input: { private?: boolean } = {}): Promise<LeadTurnResult | undefined> {
       if (message.author.type !== 'human' || !(input.private || message.mentions?.includes('lead') || /(^|\s)@lead\b/i.test(message.text))) return Promise.resolve(undefined)
       if (message.roomId !== requirementId) return Promise.reject(new Error('消息不属于当前需求'))

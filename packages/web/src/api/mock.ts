@@ -15,6 +15,7 @@ import type {
 } from '@taktflow/core'
 import { createMockChat } from './mock-chat'
 import { MOCK_COMMANDS, runMockCommand } from './mock-commands'
+import { createMockEval, mockRecipe } from './mock-eval'
 import { createMockLessons } from './mock-lessons'
 import { attentionView, budgetStatus, decorateAttentions, enrichM3, qualityOf, sumQuality } from './mock-m3-runs'
 import { previewRoute } from './mock-route'
@@ -22,10 +23,10 @@ import { addUsage, ZERO, type MockDb, type MockRun } from './mock-data'
 import { createMockReviews } from './mock-reviews'
 import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
 import type { WorkflowApi } from './mock-workflows'
-import type { DataSource, NodeView } from './source'
+import type { DataSource } from './source'
 
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
-export type ProjectSource = Omit<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi>
+export type ProjectSource = Omit<DataSource, 'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi>
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const LOADED = Date.now()
@@ -37,6 +38,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
   const reviews = createMockReviews(db)
   decorateAttentions(db)
   const lessons = createMockLessons(db.requirements.length > 0)
+  const evals = createMockEval(db.requirements.length > 0, (reqId) => [...db.runs.values()].filter((r) => r.state.requirementId === reqId).sort((a, b) => b.state.startedAt.localeCompare(a.state.startedAt))[0]?.state.runId)
   const delay = <T,>(v: T, ms = 90): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
   const fail = (msg: string) => Promise.reject(new Error(msg))
 
@@ -238,7 +240,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
       const verdicts = events.filter((e) => e.type === 'judge.verdict').flatMap((e) => (e.data as { verdicts: JudgeVerdict[] }).verdicts)
       const gateEvent = [...events].reverse().find((e) => e.type === 'gate.result')
       const records = db.artifacts.get(run.state.requirementId) ?? []
-      const detail: NodeView = {
+      const detail: NodeDetail = {
         state: { ...state, usage: liveUsage(run, nodeId, state.usage) },
         kind: t.kind,
         title: t.title,
@@ -257,6 +259,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
         completion: t.completion,
         completionChecks: state.checks,
         failures: state.failures,
+        recipe: state.startedAt ? mockRecipe(nodeId, t.kind, t.role) : undefined,
         events,
       }
       return delay(detail)
@@ -325,14 +328,29 @@ export function createProjectMock(db: MockDb): ProjectSource {
       const viaRun = (fn: () => Promise<unknown>, message: string) => fn().then((result) => ({ ok: true, message, result }))
       return delay(null, 120).then(() =>
         runMockCommand(id, body, {
-          'route.preview': (i, reason) => viaRun(() => this.routePreview(String(i.requirementId), { tier: i.tier as never, reason: (i.reason as string | undefined) ?? reason }), '路由预览已生成'),
-          'review.dispose': (i, reason) => viaRun(() => this.disposeReview(String(i.runId), String(i.nodeId), { groupKey: String(i.groupKey), state: i.state as never, reason: reason! }), '处置已记录'),
-          'lesson.update': (i, reason) => viaRun(() => this.updateLesson(String(i.id), { status: i.status as never, reason: reason! }), '经验状态已更新'),
-          'attention.list': (i) => viaRun(() => this.attention(true).then((l) => (i.mine ? l.filter((a) => a.assignees?.includes('web')) : l)), '已列出待办'),
-          'requirement.status': (i) => viaRun(() => this.requirement(String(i.requirementId)).then((r) => ({ id: r.id, title: r.title, stage: r.stage, current: r.current })), '已读取需求状态'),
+          // 与真实命令同形：改档放在 override（见 core/commands/schema.ts）
+          'route.preview': (i) => {
+            const o = i.override as { tier?: string; reason?: string } | undefined
+            return viaRun(() => this.routePreview(String(i.requirementId), { hint: i.hint as string | undefined, tier: o?.tier as never, reason: o?.reason }), '路由预览已执行')
+          },
+          'review.dispose': (i, reason) => viaRun(() => this.disposeReview(String(i.runId), String(i.nodeId), { groupKey: String(i.groupKey), state: i.state as never, reason: reason! }), '处置评审问题已执行'),
+          'lesson.status': (i, reason) => viaRun(() => this.updateLesson(String(i.id), { status: i.status as never, reason: reason! }), '修改经验状态已执行'),
+          'lesson.update': (i, reason) => viaRun(() => this.updateLesson(String(i.id), { title: i.title as never, body: i.body as never, status: i.status as never, trigger: i.trigger as never, reason: reason! }), '编辑经验已执行'),
+          'lessons.list': (i) => viaRun(() => this.lessons(i.status as never), '经验列表已执行'),
+          'attention.list': (i) => viaRun(() => this.attention(Boolean(i.pending)).then((l) => (i.requirementId ? l.filter((a) => a.requirementId === i.requirementId) : l)), '待办列表已执行'),
+          'requirement.status': (i) => viaRun(() => this.requirement(String(i.requirementId)), '需求状态已执行'),
+          'run.status': (i) => viaRun(() => this.run(String(i.runId)), '运行状态已执行'),
+          'attention.answer': (i) => viaRun(() => this.answer(String(i.requestId), { decision: i.decision as string, answer: i.answer as string | undefined }), '回答待办已执行'),
+          'eval.scorecards': (i) => viaRun(() => this.scorecards((i.by as never) ?? 'node', i.workflowId as string | undefined), '查询评测成绩单已执行'),
+          'defect.report': (i) => viaRun(() => this.reportDefect(String(i.requirementId), i as never), '录入逃逸缺陷已执行'),
+          'defect.attribute': (i) => viaRun(() => this.attributeDefect(String(i.requirementId), String(i.defectId)), '生成候选归因已执行'),
+          'defect.confirm': (i, reason) => viaRun(() => this.confirmDefect(String(i.requirementId), String(i.defectId), { attribution: i.attribution as never, note: (i.note as string | undefined) ?? reason }), '人工确认归因已执行'),
+          'eval.collect': (i) => viaRun(() => this.collectEvalCases(i as never), '收集评测用例已执行'),
+          'eval.run': (i) => viaRun(() => this.startEvalRun(i as never), '启动回放评测已执行'),
         }),
       )
     },
+    ...evals,
     lessons: (status) => delay(lessons.list(status), 100),
     updateLesson(id, body) {
       const l = lessons.update(id, body)

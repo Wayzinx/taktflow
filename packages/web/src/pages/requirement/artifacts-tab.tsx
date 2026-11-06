@@ -22,14 +22,22 @@ function authorLabel(v: ArtifactVersion) {
   return v.author.type === 'agent' ? v.author.role : actorName(v.author)
 }
 
-/** 按 spec 类型分组（docs/design/19 §13）：需求 / 技术 / 测试 / 其他，组内按产物类型的流水线顺序。 */
-const SPEC_GROUPS: Array<{ id: string; label: string; kinds: ArtifactKind[] }> = [
+/**
+ * 按 spec 类型分组（docs/design/19 §13）：需求 / 技术 / 测试 / 其他，组内按产物类型的流水线顺序。
+ * "其他"兜底：没列在前三组里的类型（review、report、以后新增的 kind）都归到这里，保证每个产物都能看到、计数对得上。
+ */
+const SPEC_GROUPS: Array<{ id: string; label: string; kinds?: ArtifactKind[] }> = [
   { id: 'req', label: '需求', kinds: ['input', 'clarification', 'spec'] },
   { id: 'tech', label: '技术', kinds: ['design', 'contract', 'task', 'code-change', 'decision'] },
-  { id: 'test', label: '测试', kinds: ['test-plan', 'case', 'script', 'evidence', 'verdict'] },
-  { id: 'other', label: '其他', kinds: ['review', 'report', 'knowledge', 'other'] },
+  { id: 'test', label: '测试', kinds: ['test-plan', 'case', 'script', 'evidence', 'verdict', 'defect'] },
+  { id: 'other', label: '其他' },
 ]
-const kindRank = (k: ArtifactKind) => ARTIFACT_KIND_ORDER.indexOf(k)
+const LISTED = new Set(SPEC_GROUPS.flatMap((g) => g.kinds ?? []))
+const inGroup = (g: (typeof SPEC_GROUPS)[number], k: ArtifactKind) => (g.kinds ? g.kinds.includes(k) : !LISTED.has(k))
+const kindRank = (k: ArtifactKind) => {
+  const i = ARTIFACT_KIND_ORDER.indexOf(k)
+  return i < 0 ? ARTIFACT_KIND_ORDER.length : i
+}
 
 /** "当前阶段产物"：由最近一次流水线运行里当前阶段的节点产出（任一版本）。 */
 function currentStagePaths(detail: RequirementDetail, run?: RunDetail): Set<string> | undefined {
@@ -49,7 +57,7 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
   const selectedPath = query.get('path') ?? records?.find((r) => r.kind === 'spec')?.path ?? records?.[0]?.path
   const groups = useMemo(() => {
     if (!records) return []
-    return SPEC_GROUPS.map((g) => ({ ...g, items: records.filter((r) => g.kinds.includes(r.kind)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)) })).filter((g) => g.items.length)
+    return SPEC_GROUPS.map((g) => ({ ...g, items: records.filter((r) => inGroup(g, r.kind)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)) })).filter((g) => g.items.length)
   }, [records])
   const scopeSwitch = stagePaths && (
     <div className="art-scope">

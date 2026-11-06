@@ -1,6 +1,5 @@
 import { Check, CircleDashed, Fingerprint, ListChecks, Repeat2, TriangleAlert, X } from 'lucide-react'
-import type { CompletionCheck, EventPayloads, FailureRecord } from '@taktflow/core'
-import type { NodeView } from '../../api'
+import type { CompletionCheck, EventPayloads, FailureRecord, NodeDetail } from '@taktflow/core'
 import { EmptyState } from '../../components/ui'
 import { fmtDate } from '../../lib/format'
 import { Link } from '../../lib/router'
@@ -25,7 +24,7 @@ function verdictOf(c?: CompletionCheck): Verdict {
  * 节点抽屉"完成标准"Tab：逐条完成标准与最近一次自检（pass + 证据；pass 却没证据也算未满足，
  * 与引擎口径一致），失败指纹与被抑制的重试。
  */
-export function CompletionTab({ d, runId, requirementId }: { d: NodeView; runId: string; requirementId: string }) {
+export function CompletionTab({ d, runId, requirementId }: { d: NodeDetail; runId: string; requirementId: string }) {
   void runId
   const checks = d.completionChecks ?? []
   // 以完成标准为准逐条对齐；自检里多出来的（criterion 不在定义里）也列出，便于发现漂移
@@ -117,16 +116,20 @@ export function CompletionTab({ d, runId, requirementId }: { d: NodeView; runId:
 }
 
 function FailureCard({ f, stop }: { f: FailureRecord; stop?: EventPayloads['retry.suppressed'] }) {
+  // 待办里选"再试一次"后引擎把该指纹的 count 清零（runtime.ts consume），记录还在：显示停止时的次数并说明已放行
+  const released = Boolean(stop) && f.count === 0
   return (
     <div className={`fp-card${stop ? ' stopped' : ''}`}>
       <div className="fp-head">
         <span className="mono fp-code">{f.code}</span>
         {f.target && <span className="mono faint">→ {f.target}</span>}
-        <span className="fp-count mono num" title="同一指纹出现次数">×{f.count}</span>
+        <span className="fp-count mono num" title={released ? `人工选择再试一次后计数清零；停止时为第 ${stop?.count} 次` : '同一指纹出现次数'}>
+          ×{released ? stop?.count : f.count}
+        </span>
         {stop && (
           <span className="fp-stop" title={stop.reason}>
             <Repeat2 aria-hidden />
-            已停止重试
+            {released ? '停过 · 已人工放行' : '已停止重试'}
           </span>
         )}
       </div>

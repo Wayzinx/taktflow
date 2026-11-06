@@ -445,7 +445,7 @@ describe('边界 4：markStale 跨动态 planner 节点传播', () => {
             id: 'plan', title: '规划', role: 'architect', prompt: 'PLAN: 拆任务', maxItems: 4, allowedRoles: ['dev'],
             expand: (item) => [
               agent({
-                id: 'child', title: `子任务 ${item.key}`, role: 'dev',
+                id: 'child', title: `子任务 ${item.key}`, role: 'dev', writeScope: [`${path.relative(root, stores.workspaces.dir(requirement.id))}/out/child-${item.key}.md`],
                 inputs: [{ path: String(item.params?.input) }],
                 outputs: [{ path: String(item.params?.output), kind: 'other' }],
                 prompt: `NODE:child:${item.key}`,

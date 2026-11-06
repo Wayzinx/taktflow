@@ -18,6 +18,10 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
     const children = Object.values(host.state.nodes).filter((child) => child.id.startsWith(`${node.id}/`))
     let suppressed = children.some((child) => child.status === 'blocked' && child.failures?.some((failure) => failure.code !== 'judge:flaky' && failure.count >= (host.deps.stores.config.retry?.maxSameFailure ?? 2)))
     const failed = children.some((child) => child.status === 'failed' || child.status === 'blocked')
+    if (failed && !suppressed) {
+      host.containerState(ns, ids)
+      return
+    }
     if (!suppressed && !failed) {
       host.containerState(ns, ids)
       if (ns.status === 'waiting_human') { await host.save(); return }
