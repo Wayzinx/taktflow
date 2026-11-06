@@ -1,5 +1,6 @@
 export * from './types.js'
 export * from './interfaces.js'
+export * from './quality.js'
 export * from './api.js'
 export * from './dsl.js'
 export * from './util/hash.js'

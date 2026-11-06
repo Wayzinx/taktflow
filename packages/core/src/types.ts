@@ -375,12 +375,16 @@ export interface ReviewNodeDef extends BaseNodeDef {
   /** agent 全部通过后再交人确认。 */
   humanSignoff?: boolean
   rubric?: string
+  /** 参考依据（比较基准，如系分评审带 PRD）：和被评审对象一起物化为只读快照（docs/design/19 2.7）。 */
+  references?: string[]
 }
 
 export type ReviewVerdict = 'approve' | 'request_changes' | 'reject'
 
 export interface ReviewIssue {
   id: string
+  /** 系统管理的跨轮问题身份 ISS-<n>（docs/design/19 R3）；评审者引用已有 key 或声明新问题。 */
+  key?: string
   severity: 'blocker' | 'major' | 'minor' | 'nit'
   location?: string
   description: string
@@ -396,6 +400,11 @@ export interface ReviewRecord {
   issues: ReviewIssue[]
   /** 本轮评审看到的产物版本。 */
   artifacts: ArtifactRef[]
+  /** 对已有问题逐 key 的复查结论（docs/design/19 2.5）。 */
+  previous?: Array<{ key: string; status: 'resolved' | 'still_open' | 'not_checked'; note?: string }>
+  /** 检查点与调用身份（docs/design/19）。 */
+  checkpointId?: string
+  invocationId?: string
   at: Timestamp
 }
 
@@ -589,6 +598,14 @@ export interface EventPayloads {
   'rework.started': { from: NodeId; to: NodeId; count: number; feedback: string; reset: NodeId[] }
   'worktree.created': { repo: string; path: string; branch: string; base: string }
   'task.dispatched': { taskRunId: string; role: string; title: string; by: Actor }
+  /** docs/design/19：一次 HarnessAdapter.run 尝试的开始 / 结束；正文在对象存储。 */
+  'invocation.started': { invocation: import('./quality.js').Invocation; recipe: import('./quality.js').Recipe; inputSnapshot: import('./quality.js').InputSnapshot }
+  'invocation.finished': { invocationId: string; outcome: NonNullable<import('./quality.js').Invocation['outcome']>; reported?: import('./quality.js').Invocation['reported'] }
+  /** docs/design/19：评审检查点调度 / 每个评审者调用完成即落盘。 */
+  'checkpoint.scheduled': import('./quality.js').CheckpointRef
+  'review.result': { checkpointId: string; invocationId?: string; record: ReviewRecord; references: ArtifactRef[] }
+  /** docs/design/19：一次执行对产物的生产 / 复用 / 修改关系。 */
+  'artifact.touched': { invocationId?: string; nodeId: NodeId; attempt: number; ref: ArtifactRef; relation: 'produced' | 'reused' | 'modified'; previous?: ArtifactRef }
   log: { level: 'info' | 'warn' | 'error'; message: string }
 }
 
