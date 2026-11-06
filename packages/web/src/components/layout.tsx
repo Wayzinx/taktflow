@@ -137,6 +137,7 @@ function EmbeddedTabs() {
     { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
     { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run') },
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
+    { to: '/eval', label: '评测', icon: FlaskConical, active: path === '/eval' },
     { to: '/workflows', label: 'Workflow', icon: Workflow, active: path.startsWith('/workflows') },
     { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') && query.get('tab') !== 'knowledge' },
   ]
