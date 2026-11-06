@@ -1,203 +1,198 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { CornerDownLeft, FileText, Inbox, LayoutDashboard, ListTodo, Monitor, Moon, Play, Search, Settings, Sun, BookOpen, Workflow, type LucideIcon } from 'lucide-react'
-import { useAsync } from '../api'
-import { fmtRelative } from '../lib/format'
-import { navigate } from '../lib/router'
-import { REQ_STATUS, RUN_STATUS, toneVar } from '../lib/status'
-import { setTheme } from '../lib/theme'
+import { createPortal } from 'react-dom'
+import { CornerDownLeft, Search } from 'lucide-react'
+import type { CommandInfo } from '@taktflow/core'
+import { usePresence } from '../lib/motion'
 import { TaktLoader } from './takt'
+import { trapKeys, useRestoreFocus } from './ui/dialog'
+import { RISK } from './ui/reason-dialog'
+import { CommandForm } from './command-palette/command-form'
+import { filterItems, usePaletteData, type Item } from './command-palette/items'
+import './ui/overlay.css'
 import './command-palette.css'
 
-// ---------------------------------------------------------------- 开关：⌘K / Ctrl+K，或顶栏按钮
+// ---------------------------------------------------------------- 开关：⌘K / Ctrl+K、顶栏按钮，或别的界面直接打开某条命令
 
-// ?cmdk=1 首屏直接打开（截图与端到端测试用）
-let open = new URLSearchParams(location.search).get('cmdk') === '1'
+interface PaletteState {
+  open: boolean
+  /** 直接打开到某条命令的表单（openCommand） */
+  direct?: { id: string; input?: Record<string, unknown> }
+}
+// ?cmdk=1 首屏直接打开；?cmdk=<命令 id> 直接进该命令表单（截图与端到端测试用）
+const initial = new URLSearchParams(location.search).get('cmdk')
+let state: PaletteState = initial ? { open: true, direct: initial !== '1' ? { id: initial } : undefined } : { open: false }
 const subs = new Set<() => void>()
-export function setPaletteOpen(v: boolean) {
-  open = v
+function set(next: PaletteState) {
+  state = next
   subs.forEach((f) => f())
 }
-function usePaletteOpen() {
+export function setPaletteOpen(v: boolean) {
+  set(v ? { open: true } : { ...state, open: false })
+}
+/**
+ * 打开 ⌘K 并直接进入某条命令的表单，input 预填参数（如路由卡"改档"：openCommand('route.preview', { requirementId, tier })）。
+ * Esc 直接关闭，不回到列表。
+ */
+export function openCommand(id: string, input?: Record<string, unknown>) {
+  set({ open: true, direct: { id, input } })
+}
+function usePaletteState() {
   return useSyncExternalStore(
     (f) => {
       subs.add(f)
       return () => subs.delete(f)
     },
-    () => open,
+    () => state,
   )
 }
 
-interface Item {
-  id: string
-  group: '页面' | '需求' | '运行' | '操作'
-  label: string
-  /** 等宽显示的标识（REQ-001、run id） */
-  code?: string
-  hint?: string
-  icon: LucideIcon
-  tone?: string
-  keywords: string
-  run: () => void
-}
-
-const PAGES: Array<[string, string, LucideIcon, string]> = [
-  ['/', '总览', LayoutDashboard, 'overview home zonglan'],
-  ['/requirements', '需求列表', ListTodo, 'requirements xuqiu'],
-  ['/attention', '待办', Inbox, 'attention todo daiban'],
-  ['/settings?tab=knowledge', '知识源', BookOpen, 'knowledge zhishi'],
-  ['/workflows', 'Workflow', Workflow, 'workflows pipeline liushuixian bianji'],
-  ['/settings', '空间设置', Settings, 'settings space members repos models harness shezhi'],
-]
-
-function useItems(active: boolean): { items: Item[]; loading: boolean } {
-  const reqs = useAsync((ds) => (active ? ds.requirements() : Promise.resolve([])), [active])
-  const runs = useAsync((ds) => (active ? ds.runs() : Promise.resolve([])), [active])
-  const items = useMemo(() => {
-    const out: Item[] = PAGES.map(([to, label, icon, kw]) => ({ id: `page:${to}`, group: '页面', label, icon, keywords: kw, run: () => navigate(to) }))
-    for (const r of reqs.data ?? []) {
-      const st = REQ_STATUS[r.status]
-      out.push({ id: `req:${r.id}`, group: '需求', label: r.title, code: r.id, hint: st.label, icon: FileText, tone: toneVar(st.tone), keywords: `${r.id} ${r.title}`, run: () => navigate(`/req/${r.id}`) })
-    }
-    const sorted = [...(runs.data ?? [])].sort((a, b) => b.startedAt.localeCompare(a.startedAt))
-    for (const r of sorted.slice(0, 30)) {
-      const st = RUN_STATUS[r.status]
-      out.push({
-        id: `run:${r.runId}`,
-        group: '运行',
-        label: r.origin?.title ?? `${r.requirementId} · ${r.workflowId}`,
-        code: r.runId,
-        hint: `${st.label} · ${fmtRelative(r.startedAt)}`,
-        icon: Play,
-        tone: toneVar(st.tone),
-        keywords: `${r.runId} ${r.requirementId} ${r.workflowId} ${r.origin?.title ?? ''}`,
-        run: () => navigate(`/run/${r.runId}`),
-      })
-    }
-    out.push(
-      { id: 'theme:light', group: '操作', label: '切换到浅色主题', icon: Sun, keywords: 'theme light 浅色 主题', run: () => setTheme('light') },
-      { id: 'theme:dark', group: '操作', label: '切换到深色主题', icon: Moon, keywords: 'theme dark 深色 主题', run: () => setTheme('dark') },
-      { id: 'theme:system', group: '操作', label: '主题跟随系统', icon: Monitor, keywords: 'theme system 系统 主题', run: () => setTheme('system') },
-    )
-    return out
-  }, [reqs.data, runs.data])
-  return { items, loading: reqs.loading || runs.loading }
-}
-
-/** 所有空格分开的词都要命中；标识前缀命中排前面。 */
-function filter(items: Item[], q: string): Item[] {
-  const words = q.toLowerCase().split(/\s+/).filter(Boolean)
-  if (!words.length) {
-    let runs = 0
-    return items.filter((i) => i.group !== '运行' || runs++ < 6)
-  }
-  const scored: Array<[Item, number]> = []
-  for (const it of items) {
-    const hay = `${it.label} ${it.keywords}`.toLowerCase()
-    if (!words.every((w) => hay.includes(w))) continue
-    const first = words[0]!
-    const code = it.code?.toLowerCase() ?? ''
-    scored.push([it, code.startsWith(first) ? 0 : it.label.toLowerCase().startsWith(first) ? 1 : 2])
-  }
-  return scored.sort((a, b) => a[1] - b[1]).map(([it]) => it)
-}
-
 export function CommandPalette() {
-  const isOpen = usePaletteOpen()
+  const s = usePaletteState()
+  const p = usePresence(s.open, 150)
+  useRestoreFocus(s.open)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault()
-        setPaletteOpen(!open)
+        setPaletteOpen(!state.open)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-  return isOpen ? <PaletteDialog /> : null
+  if (!p.mounted) return null
+  return createPortal(
+    <div className="cmdk-scrim presence-scrim" data-state={p.state} onMouseDown={() => setPaletteOpen(false)}>
+      {/* 每次全新打开重置输入；退出途中重开保留 */}
+      <PaletteDialog presence={p.state} direct={s.direct} />
+    </div>,
+    document.body,
+  )
 }
 
-function PaletteDialog() {
+type Step = { kind: 'list' } | { kind: 'form'; cmd: CommandInfo; input?: Record<string, unknown>; direct: boolean }
+
+function PaletteDialog({ presence, direct }: { presence: string; direct?: PaletteState['direct'] }) {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
-  const { items, loading } = useItems(true)
-  const results = useMemo(() => filter(items, q), [items, q])
+  const [step, setStep] = useState<Step>({ kind: 'list' })
+  const data = usePaletteData(true)
+  const results = useMemo(() => filterItems(data.items, q), [data.items, q])
   const listRef = useRef<HTMLDivElement>(null)
-  const restore = useRef<Element | null>(document.activeElement)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const close = () => setPaletteOpen(false)
+
+  // openCommand：命令列表到了就进表单
+  const directKey = direct ? `${direct.id}:${JSON.stringify(direct.input ?? {})}` : ''
+  useEffect(() => {
+    if (!direct) return
+    const cmd = data.items.find((i) => i.command?.id === direct.id)?.command
+    if (cmd) setStep({ kind: 'form', cmd, input: direct.input, direct: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directKey, data.items])
 
   useEffect(() => setSel(0), [q])
   useEffect(() => {
     listRef.current?.querySelector(`[data-idx="${sel}"]`)?.scrollIntoView({ block: 'nearest' })
   }, [sel])
-  useEffect(() => () => (restore.current as HTMLElement | null)?.focus?.(), [])
 
-  const close = () => setPaletteOpen(false)
   const pick = (it: Item | undefined) => {
     if (!it) return
+    if (it.command) {
+      setStep({ kind: 'form', cmd: it.command, direct: false })
+      return
+    }
     close()
-    it.run()
+    it.run?.()
   }
-  const onKey = (e: ReactKeyboardEvent) => {
-    if (e.key === 'Escape') close()
-    else if (e.key === 'ArrowDown') setSel((s) => Math.min(s + 1, results.length - 1))
+  const back = () => {
+    if (step.kind === 'form' && step.direct) return close()
+    setStep({ kind: 'list' })
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+  const onListKey = (e: ReactKeyboardEvent) => {
+    if (e.key === 'ArrowDown') setSel((s) => Math.min(s + 1, results.length - 1))
     else if (e.key === 'ArrowUp') setSel((s) => Math.max(s - 1, 0))
     else if (e.key === 'Enter') pick(results[sel])
     else return
     e.preventDefault()
   }
 
+  const waitingDirect = !!direct && step.kind === 'list' && data.loading
   let lastGroup = ''
   return (
-    <div className="cmdk-scrim" onMouseDown={close}>
-      <div className="cmdk" role="dialog" aria-modal="true" aria-label="命令面板" onMouseDown={(e) => e.stopPropagation()} onKeyDown={onKey}>
-        <div className="cmdk-input-row">
-          <Search aria-hidden />
-          <input
-            autoFocus
-            className="cmdk-input"
-            placeholder="搜索需求、运行或页面…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            role="combobox"
-            aria-expanded="true"
-            aria-controls="cmdk-list"
-            aria-activedescendant={results[sel] ? `cmdk-${sel}` : undefined}
-          />
-          <span className="kbd">Esc</span>
-        </div>
-        <div className="cmdk-list" id="cmdk-list" role="listbox" ref={listRef}>
-          {results.map((it, i) => {
-            const head = it.group !== lastGroup ? it.group : null
-            lastGroup = it.group
-            const Icon = it.icon
-            return (
-              <div key={it.id}>
-                {head && <div className="cmdk-group">{head}</div>}
-                <div
-                  id={`cmdk-${i}`}
-                  data-idx={i}
-                  role="option"
-                  aria-selected={i === sel}
-                  className={`cmdk-item${i === sel ? ' on' : ''}`}
-                  onMouseMove={() => i !== sel && setSel(i)}
-                  onClick={() => pick(it)}
-                >
-                  <Icon className="cmdk-icon" style={it.tone ? { color: it.tone } : undefined} aria-hidden />
-                  {it.code && <span className="mono cmdk-code">{it.code}</span>}
-                  <span className="truncate cmdk-label">{it.label}</span>
-                  {it.hint && <span className="cmdk-hint">{it.hint}</span>}
-                  {i === sel && <CornerDownLeft className="cmdk-enter" aria-hidden />}
+    <div
+      className="cmdk presence-dialog"
+      data-state={presence}
+      role="dialog"
+      aria-modal="true"
+      aria-label="命令面板"
+      onMouseDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => trapKeys(e, step.kind === 'form' ? back : close)}
+    >
+      {step.kind === 'form' ? (
+        <CommandForm key={step.cmd.id} cmd={step.cmd} given={step.input} data={data} onBack={back} onDone={close} backLabel={step.direct ? '关闭' : '返回列表'} />
+      ) : waitingDirect ? (
+        <TaktLoader compact label="正在读取命令" />
+      ) : (
+        <div className="cmdk-step" onKeyDown={onListKey}>
+          <div className="cmdk-input-row">
+            <Search aria-hidden />
+            <input
+              ref={inputRef}
+              autoFocus
+              className="cmdk-input"
+              placeholder="搜索需求、运行、页面或命令…"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              role="combobox"
+              aria-expanded="true"
+              aria-controls="cmdk-list"
+              aria-activedescendant={results[sel] ? `cmdk-${sel}` : undefined}
+            />
+            <span className="kbd">Esc</span>
+          </div>
+          <div className="cmdk-list" id="cmdk-list" role="listbox" ref={listRef}>
+            {results.map((it, i) => {
+              const head = it.group !== lastGroup ? it.group : null
+              lastGroup = it.group
+              const Icon = it.icon
+              return (
+                <div key={it.id} role="presentation">
+                  {head && <div className="cmdk-group">{head}</div>}
+                  <div
+                    id={`cmdk-${i}`}
+                    data-idx={i}
+                    role="option"
+                    aria-selected={i === sel}
+                    className={`cmdk-item${i === sel ? ' on' : ''}${it.command?.risk === 'dangerous' ? ' danger' : ''}`}
+                    title={it.command ? `${RISK[it.command.risk].label}：${RISK[it.command.risk].hint}` : undefined}
+                    onMouseMove={() => i !== sel && setSel(i)}
+                    onClick={() => pick(it)}
+                  >
+                    <Icon className="cmdk-icon" style={it.tone ? { color: it.tone } : undefined} aria-hidden />
+                    {it.code && !it.command && <span className="mono cmdk-code">{it.code}</span>}
+                    <span className="truncate cmdk-label">{it.label}</span>
+                    {it.command && <span className="mono cmdk-code cmdk-code-dim">{it.code}</span>}
+                    {it.hint && <span className={`cmdk-hint${it.inContext ? ' ctx' : ''}`}>{it.hint}</span>}
+                    {i === sel && <CornerDownLeft className="cmdk-enter" aria-hidden />}
+                  </div>
                 </div>
-              </div>
-            )
-          })}
-          {!results.length && (loading ? <TaktLoader compact label="正在读取需求与运行" /> : <div className="cmdk-empty">没有匹配“{q}”的需求、运行或页面</div>)}
+              )
+            })}
+            {!results.length && (data.loading ? <TaktLoader compact label="正在读取需求、运行与命令" /> : <div className="cmdk-empty">没有匹配“{q}”的需求、运行、页面或命令</div>)}
+          </div>
+          <div className="cmdk-foot">
+            <span>
+              <span className="kbd">↑</span> <span className="kbd">↓</span> 选择
+            </span>
+            <span>
+              <span className="kbd">↵</span> {results[sel]?.command ? '填写参数' : '打开'}
+            </span>
+            <span className="cmdk-foot-count num">{results.length} 项</span>
+          </div>
         </div>
-        <div className="cmdk-foot">
-          <span><span className="kbd">↑</span> <span className="kbd">↓</span> 选择</span>
-          <span><span className="kbd">↵</span> 打开</span>
-          <span className="cmdk-foot-count num">{results.length} 项</span>
-        </div>
-      </div>
+      )}
     </div>
   )
 }

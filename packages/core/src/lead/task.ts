@@ -22,7 +22,7 @@ export function taskWorkflow(task: TaskSpec, stores: ProjectStores, profiles: Re
   const scopedProfiles = { ...profiles, [task.role]: { ...profile, writeScope: effective } }
   const workflow: WorkflowDefinition = { id: `task:${task.role}`, title: task.title, version: '1', stages: [], nodes: [{
     id: 'task', kind: 'agent', title: task.title, role: task.role, prompt: task.instructions,
-    inputs: task.inputs?.map((path) => ({ path })), outputs: task.outputs, writeScope: effective, repo: task.repo,
+    inputs: task.inputs?.map((path) => ({ path })), outputs: task.outputs, writeScope: effective, repo: task.repo, completion: task.completion,
   }] }
   if (task.review !== false) {
     const review = task.review ?? { reviewers: ['reviewer'], maxRounds: 3 }

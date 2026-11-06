@@ -2,6 +2,7 @@ import { access, mkdir, realpath, lstat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { assertNodeId, assertRunId, sha256, withLock, type RepoBinding, type RepoManager } from '@taktflow/core'
 import { collect, launch } from './runtime.js'
+import { bootstrapWorktree } from './bootstrap.js'
 
 async function git(cwd: string, args: string[], allowed = [0]): Promise<string> {
   const result = await collect(launch('git', ['-C', cwd, ...args]), undefined, 120_000)
@@ -81,7 +82,23 @@ export function createRepoManager(options: { projectDir: string; taktDir: string
         const base = input.base === undefined ? latest : (await git(source(repo), ['rev-parse', '--verify', '--end-of-options', `${input.base}^{commit}`])).trim()
         await mkdir(dirname(path), { recursive: true })
         await git(source(repo), ['worktree', 'add', '-b', branch, path, base])
-        return { path, branch, base }
+        try {
+          let sharedSource = source(repo)
+          if (repo.url && repo.share?.length) {
+            sharedSource = resolve(options.taktDir, 'repos', `${repo.id}-checkout`)
+            try { await access(sharedSource) } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+              await git(source(repo), ['worktree', 'add', '--detach', sharedSource, base])
+            }
+          }
+          const bootstrap = await bootstrapWorktree(repo, sharedSource, path)
+          return { path, branch, base, ...(bootstrap ? { bootstrap } : {}) }
+        } catch (cause) {
+          // 失败的引导不能留下占用同名分支的半成品，保证再次尝试可以重新创建。
+          await git(source(repo), ['worktree', 'remove', '--force', path])
+          await git(source(repo), ['branch', '-D', branch])
+          throw cause
+        }
       })
     },
     async diff(worktreePath, base) {

@@ -116,7 +116,7 @@ export function createMockWorkflows(seeded: boolean): WorkflowApi {
       if (!base) throw new Error(`修订 ${baseRev.slice(0, 8)} 不存在`)
       // 自动合并：本次改动涉及的节点在对方修订里都没变过；阶段和元信息的改动一律算冲突
       const same = (id: string) => JSON.stringify(findNode(base.model.nodes, id)?.node) === JSON.stringify(findNode(e.model.nodes, id)?.node)
-      const clean = edits.every((x) => x.op !== 'setStages' && x.op !== 'setMeta') && touchedNodes(edits).every(same)
+      const clean = edits.every((x) => x.op !== 'setStages' && x.op !== 'setMeta' && x.op !== 'setMetaValue') && touchedNodes(edits).every(same)
       if (!clean) {
         let ours = base.source
         try {

@@ -14,7 +14,9 @@ import { useIsDark } from '../../lib/theme'
 import { layoutRun, type FlowNode } from './dag-layout'
 import { nodeTypes } from './dag-nodes'
 import { edgeTypes } from './dag-edges'
+import { EventTicker } from '../../components/event-ticker'
 import { NodeDrawer } from './node-drawer'
+import { RunCounters } from './run-counters'
 import './run.css'
 import './run-motion.css'
 
@@ -42,7 +44,7 @@ function useMiniMapPref(): [boolean, (v: boolean) => void] {
 }
 
 /** 抽屉收起动画的时长，与 run-motion.css 的 drawer-out 保持一致。 */
-const DRAWER_EXIT_MS = 180
+const DRAWER_EXIT_MS = 160
 
 /** 关抽屉时让它多留一会儿播完收起动画；切换节点则立即换内容。 */
 function useLinger(id: string | undefined, ms: number): { id?: string; closing: boolean } {
@@ -139,13 +141,10 @@ export function RunPage({ runId }: { runId: string }) {
           <h1 className="run-title">{d ? d.workflow.title : <Skeleton w={160} h={18} />}</h1>
           {d && <span className="mono run-wf">{d.workflow.id}@{d.workflow.version}</span>}
           {d && <StatusBadge meta={RUN_STATUS[d.run.status]} />}
+          {d && <RunCounters detail={d} />}
           <span style={{ flex: 1 }} />
           {d && counts && (
             <div className="run-facts">
-              <span>
-                <label>运行</label>
-                <span className="mono">{runId}</span>
-              </span>
               <span>
                 <label>开始</label>
                 <span className="mono">{fmtDate(d.run.startedAt)}</span>
@@ -186,6 +185,7 @@ export function RunPage({ runId }: { runId: string }) {
           <NodeDrawer closing={drawer.closing} runId={runId} requirementId={d.run.requirementId} nodeId={drawer.id} graphNode={d.graph.nodes.find((n) => n.id === drawer.id)} expansions={d.run.expansions} liveTick={liveTick} />
         )}
       </div>
+      {d && <EventTicker runId={runId} live={live} liveTick={liveTick} onLocate={(node) => setQuery({ node, dtab: undefined })} />}
     </div>
   )
 }

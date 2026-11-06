@@ -114,3 +114,10 @@
   color: var(--st-waiting);
   font-weight: 600;
 }
+.rvs-rev {
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+.rvs-table .rv-facets {
+  max-width: 260px;
+}

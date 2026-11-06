@@ -3,6 +3,7 @@ import { Plus, Trash2, Users } from 'lucide-react'
 import type { SpaceDetail, SpaceMember } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Avatar, EmptyState, SkeletonRows, toast } from '../../components/ui'
+import { COMMON_DUTIES, DutiesEditor } from './duties-editor'
 
 const ROLES: Array<{ id: SpaceMember['role']; label: string; can: string }> = [
   { id: 'owner', label: 'owner', can: '全部权限，含成员与绑定仓库' },
@@ -25,6 +26,8 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
 
   const owners = draft.filter((m) => m.role === 'owner').length
   const idTaken = draft.some((m) => m.id === newId.trim())
+  const knownDuties = [...new Set(draft.flatMap((m) => m.duties ?? []))]
+  const setDuties = (i: number, duties: string[]) => setDraft((d) => d.map((x, j) => (j === i ? { ...x, duties: duties.length ? duties : undefined } : x)))
 
   function add() {
     const id = newId.trim()
@@ -64,6 +67,7 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
                   <span className="member-name">{m.name}</span>
                   <span className="faint mono">{m.email ?? m.id}</span>
                 </div>
+                <DutiesEditor name={m.name} value={m.duties ?? []} known={knownDuties} onChange={(next) => setDuties(i, next)} />
                 <select
                   className="select select-sm"
                   aria-label={`${m.name} 的角色`}
@@ -130,6 +134,21 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
             <div key={r.id}>
               <dt className="mono">{r.label}</dt>
               <dd>{r.can}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="section-label">职责</div>
+        <p>
+          节点属性里的"负责人"写职责标签（如 <span className="mono">rd</span>），这个节点产生的待办会自动派给 duties 含此标签的成员，待办页可以筛"派给我"。
+        </p>
+        <dl className="role-legend">
+          {COMMON_DUTIES.map((d) => (
+            <div key={d.id}>
+              <dt className="mono">{d.id}</dt>
+              <dd>
+                {d.label}
+                {draft.some((m) => m.duties?.includes(d.id)) ? ` · ${draft.filter((m) => m.duties?.includes(d.id)).map((m) => m.name).join('、')}` : ' · 暂无成员'}
+              </dd>
             </div>
           ))}
         </dl>

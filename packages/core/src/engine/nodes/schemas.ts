@@ -7,7 +7,7 @@ export const PLANNER_SCHEMA = objectSchema({ items: { type: 'array', items: obje
             dependsOn: { type: 'array', items: { type: 'string' } }, params: { type: 'object' },
           }, ['key', 'title']) } })
 export const JUDGE_SCHEMA = objectSchema({ verdicts: {
-        type: 'array', items: objectSchema({ subject: { type: 'string' }, category: { type: 'string', enum: ['product_bug', 'case_defect', 'script_defect', 'env_issue', 'flaky', 'requirement_gap', 'unknown'] },
+        type: 'array', items: objectSchema({ subject: { type: 'string' }, category: { type: 'string', enum: ['product_bug', 'case_defect', 'script_defect', 'env_issue', 'flaky', 'requirement_gap', 'test_data', 'deployment', 'permission', 'external_dependency', 'unknown'] },
           confidence: { type: 'number' }, rationale: { type: 'string' }, evidence: { type: 'array', items: { type: 'string' } },
           fixScope: { type: 'string', enum: ['mechanical', 'semantic'] }, fixHint: { type: 'string' },
         }, ['subject', 'category', 'confidence', 'rationale', 'evidence']),

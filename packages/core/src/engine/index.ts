@@ -1,3 +1,4 @@
+import { mergeBudget } from '../util/budget.js'
 import { relative } from 'node:path'
 import type { Engine, EngineDeps } from '../interfaces.js'
 import type { RunState } from '../types.js'
@@ -46,6 +47,8 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         runId: newRunId(now), workflowId: input.workflow.id, workflowVersion: input.workflow.version,
         requirementId: input.requirementId, status: 'running', startedAt: now.toISOString(),
         args: input.args ?? {}, nodes: {}, expansions: [],
+        budget: mergeBudget(deps.stores.config.budget, input.workflow.budget, input.budget),
+        route: input.route, kind: input.kind, origin: input.origin,
       }
       for (const node of input.workflow.nodes) state.nodes[node.id] = { id: node.id, status: 'pending', attempts: 0, outputs: [] }
       await withFileLock(requirementLock(deps.stores, state.requirementId), () => deps.stores.runs.create(state, snapshotWorkflow(input.workflow)))
@@ -54,6 +57,10 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         workflowId: state.workflowId, workflowVersion: state.workflowVersion, args: state.args,
       } })
       await postEventMessage(deps.stores, state, started)
+      if (state.route) {
+        const routed = await deps.stores.events.append(state.runId, { type: 'route.decided', actor: system, data: state.route })
+        await postEventMessage(deps.stores, state, routed)
+      }
       return execute(new Runtime(deps, state, input.workflow, opts, guard))
     },
     async resume(runId, workflow) {

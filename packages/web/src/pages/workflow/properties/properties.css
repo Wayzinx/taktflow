@@ -184,3 +184,130 @@
 .wf-stage-row > .input.mono {
   flex: 0 0 34%;
 }
+
+/* ---------------------------------------------------------------- 路由与总负责元数据（E 组 M3） */
+.wf-meta-routing {
+  display: flex;
+  flex-direction: column;
+  gap: inherit;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--divider);
+}
+.wf-meta-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+}
+.wf-tiers {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-1);
+}
+.wf-tier {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 0 4px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-3);
+  font-size: var(--text-label);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.wf-tier:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+.wf-tier.is-on {
+  color: var(--text);
+  border-color: var(--text-2);
+  background: var(--surface-hover);
+  box-shadow: inset 0 1px 0 var(--edge-light);
+}
+.wf-tier:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.wf-tier:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.wf-budget {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.wf-budget-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.wf-budget-label {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.wf-budget-cell .input {
+  width: 100%;
+}
+
+/* ---------------------------------------------------------------- 完成标准清单 */
+.wf-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.wf-checklist-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.wf-checklist-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.wf-checklist-row.is-fresh {
+  animation: wf-check-in 140ms var(--ease) both;
+}
+@keyframes wf-check-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.wf-checklist-no {
+  font-size: var(--text-label);
+  color: var(--text-3);
+  text-align: right;
+}
+.wf-checklist-empty {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.wf-arbiter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-checklist-row.is-fresh {
+    animation: none;
+  }
+  .wf-tier {
+    transition: none;
+  }
+}
+.wf-checklist .wf-add-row {
+  align-self: flex-start;
+}

@@ -15,7 +15,7 @@ export function StageBar({ stages, variant = 'compact', showLabel = true }: { st
           return (
             <div key={s.id} className={`stage-cell st-${s.status}`} style={{ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties} title={`${s.title} · ${meta.label}`}>
               <span className="stage-cell-bar">
-                <span style={{ width: s.total ? `${(s.done / s.total) * 100}%` : 0 }} />
+                <span style={{ '--p': s.total ? s.done / s.total : 0 } as CSSProperties} />
               </span>
               <span className="stage-cell-body">
                 <span className="stage-cell-icon">

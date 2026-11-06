@@ -50,7 +50,7 @@ export function printWorkflow(model: EditableWorkflow, preamble = ''): { source:
   if (!preamble.includes("from '@taktflow/core'")) out.unshift(`import { ${['defineWorkflow', ...kinds].join(', ')} } from '@taktflow/core'`)
   out.push('', 'export default defineWorkflow({')
   out.push(`  id: ${printLiteral(model.meta.id, '  ')},`)
-  for (const k of ['title', 'description', 'version'] as const) if (model.meta[k]) out.push(`  ${k}: ${printValue(model.meta[k]!, '  ')},`)
+  for (const k of ['title', 'description', 'version', 'useWhen', 'tiers', 'leadInstructions', 'dynamicRules', 'budget'] as const) if (model.meta[k]) out.push(...`  ${k}: ${printValue(model.meta[k]!, '  ')},`.split('\n'))
   out.push(...`  stages: ${printValue(model.stages, '  ')},`.split('\n'))
   out.push('  nodes: [')
   const lines: Record<string, number> = {}
@@ -145,7 +145,7 @@ export function validateWorkflow(model: EditableWorkflow, lines: Record<string, 
 
 function snapNode(n: EditableNode): SnapshotNode {
   const s = (k: string) => literalOf<string>(n.props[k])
-  const base: SnapshotNode = { id: n.id, kind: n.kind, title: s('title') ?? n.id, stage: s('stage'), needs: needsOf(n), role: s('role'), prompt: s('prompt'), ask: s('ask'), repo: s('repo') }
+  const base: SnapshotNode = { id: n.id, kind: n.kind, title: s('title') ?? n.id, stage: s('stage'), needs: needsOf(n), role: s('role'), prompt: s('prompt'), ask: s('ask'), repo: s('repo'), goal: s('goal'), owner: s('owner'), completion: literalOf<string[]>(n.props.completion) }
   if (n.body) base.body = n.body.map(snapNode)
   if (n.kind === 'review') {
     const author = literalOf<{ role: string }>(n.props.author)
@@ -157,6 +157,8 @@ function snapNode(n: EditableNode): SnapshotNode {
       maxRounds: literalOf(n.props.maxRounds) ?? 3,
       onExhausted: literalOf(n.props.onExhausted) ?? 'human',
       humanSignoff: literalOf(n.props.humanSignoff),
+      stopAfterNoProgress: literalOf(n.props.stopAfterNoProgress),
+      arbiter: literalOf(n.props.arbiter),
     }
   }
   return base
@@ -170,6 +172,11 @@ export function snapshotOf(model: EditableWorkflow, diags: WorkflowDiagnostic[])
     title: literalOf<string>(model.meta.title) ?? model.meta.id,
     description: literalOf<string>(model.meta.description),
     version: literalOf<string>(model.meta.version) ?? '0.0.0',
+    useWhen: literalOf<string>(model.meta.useWhen),
+    tiers: literalOf(model.meta.tiers),
+    leadInstructions: literalOf<string>(model.meta.leadInstructions),
+    dynamicRules: literalOf<string>(model.meta.dynamicRules),
+    budget: literalOf(model.meta.budget),
     stages: literalOf(model.stages) ?? [],
     nodes: model.nodes.map(snapNode),
   }

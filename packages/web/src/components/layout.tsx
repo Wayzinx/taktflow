@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { usePresence } from '../lib/motion'
 import { BookOpen, ChevronRight, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, Workflow, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
@@ -183,7 +184,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="shell">
       <a className="skip-link" href="#main">跳到正文</a>
       <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
-      {navOpen && <div className="sb-scrim" onClick={() => setNavOpen(false)} />}
+      <NavScrim open={navOpen} onClose={() => setNavOpen(false)} />
       <div className="shell-main">
         <Topbar onMenu={() => setNavOpen(true)} />
         <main className="shell-content" id="main">
@@ -206,4 +207,11 @@ export function PageHeader({ title, sub, actions, icon }: { title: ReactNode; su
       {actions && <div className="page-actions">{actions}</div>}
     </div>
   )
+}
+
+/** 窄屏导轨的遮罩：与导轨同进同出（usePresence 保留退出帧）。 */
+function NavScrim({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const p = usePresence(open, 150)
+  if (!p.mounted) return null
+  return <div className="sb-scrim presence-scrim" data-state={p.state} onClick={onClose} />
 }

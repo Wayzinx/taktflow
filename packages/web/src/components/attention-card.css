@@ -1,7 +1,7 @@
 .att-card {
   padding: var(--sp-4) var(--sp-4) var(--sp-4) var(--sp-4);
   border-bottom: 1px solid var(--divider);
-  transition: background var(--dur) var(--ease);
+  transition: background var(--dur-fast) var(--ease);
 }
 .att-card:last-child {
   border-bottom: none;
@@ -79,7 +79,7 @@
   align-items: center;
   gap: 2px;
   color: var(--text-2);
-  transition: color var(--dur) var(--ease);
+  transition: color var(--dur-fast) var(--ease);
 }
 .att-node-link svg {
   width: 12px;
@@ -134,7 +134,7 @@
   font-size: var(--text-ui);
   text-align: left;
   cursor: pointer;
-  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 .att-choice:hover {
   background: var(--surface-hover);
@@ -151,7 +151,7 @@
   border-radius: 50%;
   border: 1.5px solid var(--border-strong);
   flex: none;
-  transition: border var(--dur) var(--ease);
+  transition: border var(--dur-fast) var(--ease);
 }
 .att-choice.on .att-radio {
   border: 4px solid var(--ink);
@@ -184,4 +184,137 @@
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* M3：派给谁、绑定版本、过期提示（docs/design/19 §5） */
+.att-ctx {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  margin-top: var(--sp-2);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.att-ctx-item {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.att-ctx-item > svg {
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+}
+.att-assignees {
+  color: var(--text);
+  font-weight: 500;
+}
+.att-duty {
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: var(--text-label);
+  color: var(--text-2);
+}
+.att-bound {
+  color: var(--text-2);
+  text-decoration: none;
+  transition: color var(--dur-fast) var(--ease);
+}
+.att-bound:hover {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
+.att-stale-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--st-stale-soft);
+  color: var(--st-stale);
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+.att-stale-chip svg {
+  width: 12px;
+  height: 12px;
+}
+.att-stale {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: var(--st-stale-soft);
+  color: var(--st-stale);
+  font-size: var(--text-ui);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--st-stale) 26%, transparent);
+}
+.att-stale > svg {
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  flex: none;
+}
+.att-stale b {
+  font-weight: 600;
+  color: var(--text);
+}
+.att-stale-sub {
+  display: block;
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+.att-stale-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex: none;
+  color: var(--st-stale);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.att-stale-link:hover {
+  text-decoration: underline;
+}
+.att-stale-link svg {
+  width: 12px;
+  height: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .att-bound {
+    transition: none;
+  }
+}
+
+/* 待办页筛选条：全部 / 派给我 + 我是谁 */
+.att-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.att-me {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--text-meta);
+}
+.att-me > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.att-me .select {
+  height: 26px;
+  font-size: var(--text-meta);
 }

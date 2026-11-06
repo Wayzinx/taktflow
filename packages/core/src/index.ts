@@ -37,3 +37,7 @@ export * from './plugins/workflow.js'
 export * from './store/fs-chat.js'
 export { listReviews, reviewDetail } from './insights/reviews.js'
 export * from './lead/index.js'
+export * from './route/index.js'
+export * from './commands/index.js'
+
+export { setReviewDisposition, listReviewDispositions } from './review/index.js'

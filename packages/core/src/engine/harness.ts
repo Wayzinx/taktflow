@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
-import type { Actor, AgentProfile, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeState, RunState } from '../types.js'
+import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeState, RunState } from '../types.js'
 import { estimateTokens } from '../util/tokens.js'
 import { addUsage } from '../insights/usage.js'
 import { assertNoSymlinks } from '../store/fs-utils.js'
@@ -13,6 +13,9 @@ import { system } from './actor.js'
 import { WriteGuard } from './guard.js'
 import { harnessSelectors, resolveHarnessSelector, selectHarness } from './selection.js'
 import { intersectWriteScopes } from './scope.js'
+import { completionPrompt, completionSchema, checkCompletion, resultSummary } from './completion.js'
+import { FailureError } from './fingerprint.js'
+import { extractJsonBlock } from '../util/json-block.js'
 import { workingDirectory, sandboxCall, cwdGuard, saveWorktreeDiff } from './execution.js'
 
 export class BlockedError extends Error {}
@@ -27,6 +30,7 @@ export interface HarnessHost {
   semaphore: Semaphore
   guard: WriteGuard
   override?: string
+  setLessonRecall?(nodeId: string, recalled: Awaited<ReturnType<NonNullable<EngineDeps['lessons']>['recall']>> | undefined): void
 }
 
 export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState, acquireSlot = true, directories: string[] = []): Promise<{ data: unknown; actor: Actor }> {
@@ -46,24 +50,35 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       items.push({ id: `${source}-${items.length}`, source, title, ref, tokens: estimateTokens(text), included: true })
     }
     add('role', profile.title, profile.instructions)
-    add('prompt', node.title, [task, retryNote].filter(Boolean).join('\n'))
-    for (const input of ns.inputs ?? []) {
-      const text = await ctx.readArtifact(input.path)
-      add('artifact', input.path, text ?? '', input.path)
-    }
+    const skills = `技能清单：${profile.skills.join(', ') || '（无）'}`
+    add('skill', '技能清单', skills)
     const summaries: string[] = []
     for (const query of node.knowledge ?? []) {
       const { hits, sources } = await createKnowledgeRouter(knowledge).query(query)
       await host.emit('knowledge.query', { query, sources, hits: hits.length }, node.id)
       for (const hit of hits) { add('knowledge', hit.title, hit.snippet, hit.ref); summaries.push(`${hit.ref}: ${hit.snippet}`) }
     }
+    const recalled = host.deps.lessons && await host.deps.lessons.recall({ runId: ctx.runId, nodeId: node.id, role: node.role,
+      paths: [...(node.writeScope ?? profile.writeScope), ...(node.inputs ?? []).map((input) => input.path)], feedback: [ctx.feedback, ns.error].filter(Boolean).join('\n') || undefined })
+    if (node.kind === 'agent' && host.setLessonRecall) host.setLessonRecall(node.id, recalled)
+    const lessonText = recalled && !recalled.holdout && recalled.text ? `经验：\n${recalled.text}` : ''
+    if (lessonText) add('lesson', '经验', lessonText)
+    if (recalled?.lessons.length) await host.emit('lesson.recalled', { ids: recalled.lessons.map((lesson) => lesson.id), holdout: recalled.holdout, tokens: recalled.tokens }, node.id)
+    const artifacts: string[] = []
+    for (const input of ns.inputs ?? []) {
+      const text = await ctx.readArtifact(input.path)
+      add('artifact', input.path, text ?? '', input.path)
+      artifacts.push(`${input.path}@${input.version ?? 'latest'}：\n${text ?? ''}`)
+    }
+    const schema = completionSchema(node.resultSchema, node.completion)
+    const completion = completionPrompt(node.completion)
+    add('prompt', node.title, [task, completion, retryNote].filter(Boolean).join('\n'))
     const context = { nodeId: node.id, at: host.timestamp(), budgetTokens: stores.config.contextBudgetTokens ?? 200000, totalTokens: items.reduce((sum, item) => sum + item.tokens, 0), items }
     await stores.runs.saveContext(host.state.runId, context)
     await host.emit('context.assembled', context, node.id)
-    const prompt = [task, ...summaries,
+    const prompt = [skills, ...summaries, lessonText, ...artifacts,
       `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
-      node.resultSchema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(node.resultSchema)}` : '',
-      retryNote,
+      task, schema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(schema)}` : '', completion,
     ].filter(Boolean).join('\n\n')
     const priorOutputs = ns.outputs.length || node.session !== 'resume' ? ns.outputs
       : ((await stores.events.read(host.state.runId, { nodeId: node.id, types: ['node.finished'] })).at(-1)?.data as EventPayloads['node.finished'] | undefined)?.outputs ?? []
@@ -78,7 +93,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       const resume = node.session === 'resume' && harness.capabilities?.resume
       const history = node.session === 'resume' && !resume
         ? `该 harness 不支持续聊，本次使用新会话。上一轮产物清单：\n${priorOutputs.length ? priorOutputs.map((ref) => `${ref.workspace}/${ref.path} (version ${ref.version ?? 'latest'})`).join('\n') : '（无已登记产物）'}` : ''
-      const requestPrompt = [prompt, history].filter(Boolean).join('\n\n')
+      const requestPrompt = [prompt, history, retryNote].filter(Boolean).join('\n\n')
       if (history) {
         const historyItem: ContextItem = { id: `history-${index}`, source: 'history', title: '上一轮产物清单', tokens: estimateTokens(history), included: true }
         const resumedContext = { ...context, at: host.timestamp(), items: [...items, historyItem], totalTokens: context.totalTokens + historyItem.tokens }
@@ -110,6 +125,15 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         }
       }
       catch (error) { await sandbox.dispose(); throw error }
+      let finishOutputs: () => Promise<Array<{ path: string; sha256: string }>>
+      try {
+        const quarantine = node.strictOutputs ? join(stores.taktDir, 'quarantine', ctx.runId, node.id) : undefined
+        if (quarantine) await assertNoSymlinks(stores.taktDir, quarantine)
+        finishOutputs = await host.guard.watchOutputs(ctx.workspaceDir, node.outputs?.map((output) => output.path) ?? [], quarantine)
+      } catch (error) {
+        try { await finishGuard() } finally { await sandbox.dispose() }
+        throw error
+      }
       let eventChain = Promise.resolve()
       let eventError: unknown
       const onEvent = (event: HarnessEvent): void => {
@@ -140,7 +164,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         const request: HarnessRequest = { prompt: requestPrompt, cwd, sandbox, model,
           effort: selector.effort, provider,
           modelConfig: modelConfig ? { price: modelConfig.price, contextWindow: modelConfig.contextWindow } : undefined,
-          systemAppend: profile.instructions, timeoutMs: node.timeoutMs, resultSchema: harness.capabilities?.structuredOutput ? node.resultSchema : undefined,
+          systemAppend: profile.instructions, timeoutMs: node.timeoutMs, resultSchema: harness.capabilities?.structuredOutput ? schema : undefined,
           sessionId: resume && ns.sessionRef?.harness === harness.id ? ns.sessionRef.sessionId : undefined,
           env,
           tools: { writeScope, allowBash: profile.allowBash === true },
@@ -150,7 +174,11 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       } catch (error) { failure = error }
       finally { try { await sandbox.dispose() } catch (error) { failure ??= error } }
       await eventChain
-      const violation = await finishGuard()
+      let violation: Awaited<ReturnType<typeof finishGuard>>
+      try { violation = await finishGuard() } catch (error) { await finishOutputs(); throw error }
+      const untracked = await finishOutputs()
+      if (node.strictOutputs && untracked.length) await host.emit('guard.violation', { rule: 'output-contract', paths: untracked.map((item) => item.path), action: 'reverted' }, node.id, actor)
+      else for (const item of untracked) await host.emit('artifact.untracked', item, node.id, actor)
       await saveWorktreeDiff(host, node.id, ns)
       if (violation.paths.length) {
         await host.emit('guard.violation', { rule: violation.ambiguous ? 'concurrent-write' : 'writeScope', paths: violation.paths, action: violation.action }, node.id, violation.ambiguous ? system : actor)
@@ -161,10 +189,13 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       if (failure || !result?.ok) {
         previous = failure instanceof Error ? failure.message : String(failure ?? result?.error ?? 'harness failed')
         if (/429|503|401|sign in|timeout/i.test(previous) && index < chain.length - 1) continue
-        throw new Error(previous)
+        throw failure instanceof Error ? failure : new Error(previous)
       }
       if (result.sessionId) ns.sessionRef = { harness: harness.id, sessionId: result.sessionId }
-      if (harness.capabilities?.usage && result.usage) ns.usage = result.usage
+      if (harness.capabilities?.usage && result.usage) {
+        if (!ns.usage) await host.emit('harness.usage', result.usage, node.id, actor)
+        ns.usage = result.usage
+      }
       if (!harness.capabilities?.usage || !ns.usage) {
         const inputTokens = estimateTokens(profile.instructions) + estimateTokens(requestPrompt)
         const outputTokens = estimateTokens(result.finalText)
@@ -174,8 +205,18 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         await host.emit('harness.usage', estimated, node.id, actor)
       }
       await host.save()
-      const data = result.structured !== undefined ? result.structured : node.resultSchema ? parseResult(result.finalText, node.resultSchema) : result.finalText
-      if (node.resultSchema) validateSchema(data, node.resultSchema)
+      const data = result.structured !== undefined ? result.structured : schema ? extractJsonBlock(result.finalText) : result.finalText
+      ns.summary = resultSummary(typeof data === 'string' ? extractJsonBlock(result.finalText) ?? data : data, result.finalText)
+      if (node.completion?.length) {
+        const checked = checkCompletion(node.completion, data)
+        ns.checks = checked.checks
+        await host.emit('node.checks', checked, node.id, actor)
+        if (checked.unmet.length) throw new FailureError(`完成标准未满足：${checked.unmet.join('、')}`, 'completion.unmet', checked.unmet.join(','))
+      }
+      if (schema) {
+        if (data === undefined) parseResult(result.finalText, schema)
+        validateSchema(data, schema)
+      }
       return { data, actor }
     }
     throw new Error(previous || '没有可用 harness')

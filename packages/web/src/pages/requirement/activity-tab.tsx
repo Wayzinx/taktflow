@@ -7,13 +7,15 @@ import { EmptyState, Segmented, SkeletonRows } from '../../components/ui'
 
 type Filter = 'key' | 'all' | 'artifact' | 'human' | 'quality'
 
-const KEY_TYPES = new Set(['run.started', 'run.finished', 'node.finished', 'node.failed', 'node.stale', 'artifact.written', 'artifact.edited', 'gate.result', 'judge.verdict', 'human.requested', 'human.answered', 'guard.violation', 'dag.expanded', 'context.compacted'])
+const KEY_TYPES = new Set(['run.started', 'run.finished', 'node.finished', 'node.failed', 'node.stale', 'artifact.written', 'artifact.edited', 'gate.result', 'judge.verdict', 'human.requested', 'human.answered', 'guard.violation', 'dag.expanded', 'context.compacted', 'route.decided', 'rework.started', 'review.exhausted', 'review.arbitrated', 'review.disposition', 'node.checks', 'retry.suppressed', 'budget.warning', 'budget.exhausted', 'lesson.learned'])
+/** 门禁 / 判决 / 守卫，加上本轮的拦截来源：完成标准、失败指纹、评审裁决、预算。 */
+const QUALITY_TYPES = new Set(['gate.result', 'judge.verdict', 'guard.violation', 'node.checks', 'retry.suppressed', 'review.exhausted', 'review.arbitrated', 'budget.warning', 'budget.exhausted'])
 const MATCH: Record<Filter, (e: EventEnvelope) => boolean> = {
   key: (e) => KEY_TYPES.has(e.type),
   all: () => true,
   artifact: (e) => e.type.startsWith('artifact.'),
   human: (e) => e.type.startsWith('human.'),
-  quality: (e) => e.type === 'gate.result' || e.type === 'judge.verdict' || e.type === 'guard.violation',
+  quality: (e) => QUALITY_TYPES.has(e.type),
 }
 
 export function ActivityTab({ id, runs }: { id: string; runs?: RunSummary[] }) {
@@ -38,7 +40,7 @@ export function ActivityTab({ id, runs }: { id: string; runs?: RunSummary[] }) {
             { value: 'key', label: '关键事件' },
             { value: 'artifact', label: '产物' },
             { value: 'human', label: '人工' },
-            { value: 'quality', label: '门禁 / 判决 / 守卫' },
+            { value: 'quality', label: '校验与拦截' },
             { value: 'all', label: '全部' },
           ]}
         />

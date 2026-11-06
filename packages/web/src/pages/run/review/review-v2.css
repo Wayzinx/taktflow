@@ -1,0 +1,69 @@
+/* 评审 v2（docs/design/19 §4）：未关闭计数、早停、裁决、处置、本轮未提及 */
+.rv-head { row-gap: var(--sp-2); }
+.rv-open { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); font-size: var(--text-meta); }
+.rv-open-label { color: var(--text-3); }
+.rv-seq { margin-left: 4px; font-size: var(--text-label); color: var(--text-3); }
+.rv-step-flag { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; color: var(--text-2); font-weight: 500; }
+.rv-step-flag svg { width: 11px; height: 11px; }
+
+.rv-stop {
+  display: flex; gap: var(--sp-2); margin-top: var(--sp-3); padding: var(--sp-3);
+  border-radius: var(--radius); background: var(--st-waiting-soft); color: var(--st-waiting);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--st-waiting) 28%, transparent);
+}
+.rv-stop > svg { width: 16px; height: 16px; margin-top: 2px; }
+.rv-stop b { color: var(--text); font-weight: 600; }
+.rv-stop p { margin: 2px 0 0; color: var(--text-2); font-size: var(--text-ui); line-height: 1.55; }
+
+.rv-arb { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); padding: 6px var(--sp-3); border-radius: var(--radius-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); font-size: var(--text-ui); }
+.rv-arb svg { width: 14px; height: 14px; color: var(--text-2); }
+.rv-arb b { font-weight: 600; }
+.rv-arb.stop svg { color: var(--st-waiting); }
+
+.rv-reviewer.arbiter { box-shadow: inset 0 1px 0 var(--edge-light), 0 1px 2px var(--shadow-color), 0 0 0 1px var(--border-strong); }
+.rv-arbiter { display: inline-flex; align-items: center; gap: 3px; height: 18px; padding: 0 5px; border-radius: var(--radius-xs); background: var(--ink); color: var(--text-inverse); font-size: var(--text-label); font-weight: 600; }
+.rv-arbiter svg { width: 11px; height: 11px; }
+
+.rv-issue-title { min-width: 0; font-weight: 500; color: var(--text); }
+.rv-issue.closed .rv-issue-desc, .rv-issue.closed .rv-issue-title { color: var(--text-3); }
+.rv-issue.muted { background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--border); }
+.rv-issue.muted .rv-issue-desc { color: var(--text-2); font-size: var(--text-ui); }
+.rv-rework-why { margin: var(--sp-1) 0 0; font-size: var(--text-meta); color: var(--text-2); }
+
+/* 人工处置 */
+.rv-dispo { margin-top: var(--sp-2); }
+.rv-dispo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); }
+.rv-dispo-label { margin-right: var(--sp-1); font-size: var(--text-meta); color: var(--text-3); }
+.rv-dispo-actions .btn.on { background: var(--surface-active); }
+.rv-dispo-form {
+  display: grid; gap: var(--sp-2); margin-top: var(--sp-2); transform-origin: top left;
+  transition: opacity 160ms var(--ease), transform 160ms var(--ease);
+}
+.rv-dispo-form[data-state='enter'] { opacity: 0; transform: translateY(-4px); }
+.rv-dispo-form[data-state='exit'] { opacity: 0; transform: translateY(-2px); transition-duration: 120ms; }
+.rv-dispo-form .textarea { width: 100%; }
+.rv-dispo-form-foot { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-2); font-size: var(--text-meta); }
+.rv-dispo-form-foot > .faint { margin-right: auto; }
+.rv-dispo-note { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-top: var(--sp-2); font-size: var(--text-ui); }
+.rv-dispo-reason { color: var(--text-2); min-width: 0; }
+.rv-dispo-by { margin-left: auto; font-size: var(--text-meta); }
+.rv-dispo-note.expired .rv-dispo-reason { color: var(--text-3); }
+
+/* 本轮未提及 */
+.rv-missing { margin-top: var(--sp-3); }
+.rv-missing-head {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); width: 100%; padding: 6px var(--sp-2);
+  border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text); font: inherit; font-size: var(--text-ui); text-align: left; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.rv-missing-head:hover { background: var(--surface-hover); }
+.rv-missing-head:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.rv-missing-head svg { width: 14px; height: 14px; color: var(--text-3); }
+.rv-missing-head .faint { font-size: var(--text-meta); }
+.rv-missing-list { margin-top: var(--sp-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .rv-dispo-form, .rv-missing-head { transition: none; }
+}
+.rv-issue-head { flex-wrap: wrap; row-gap: 2px; }
+.rv-issue-head .rv-issue-loc { max-width: 100%; }

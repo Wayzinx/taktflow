@@ -1,4 +1,5 @@
-import type { RoomMember } from '@taktflow/core'
+import type { LeadPresence, RoomMember } from '@taktflow/core'
+import { LeadLight } from '../../../components/lead-light'
 import { StatusDot } from '../../../components/ui'
 import { MemberAvatar } from './message-item'
 
@@ -9,7 +10,7 @@ const GROUPS: Array<{ kind: RoomMember['kind']; label: string }> = [
 ]
 
 /** 成员栏：按 真人 / Lead / 子 Agent 分组；点名字把 @id 插进输入框。busy 是正在干活的成员 id。 */
-export function MemberList({ members, busy, onMention }: { members: RoomMember[]; busy: Set<string>; onMention(id: string): void }) {
+export function MemberList({ members, busy, lead, onMention }: { members: RoomMember[]; busy: Set<string>; lead?: LeadPresence; onMention(id: string): void }) {
   return (
     <nav className="chat-members" aria-label="群成员">
       <div className="chat-members-head">
@@ -31,7 +32,8 @@ export function MemberList({ members, busy, onMention }: { members: RoomMember[]
                       <span className="chat-member-name truncate">{m.name}</span>
                       {m.role && <span className="chat-member-role truncate">{m.role}</span>}
                     </span>
-                    {busy.has(m.id) && (
+                    {m.kind === 'lead' && <LeadLight presence={lead} />}
+                    {m.kind !== 'lead' && busy.has(m.id) && (
                       <span className="chat-member-busy" title="正在执行任务">
                         <StatusDot tone="running" pulse />
                         <span className="sr-only">正在执行任务</span>

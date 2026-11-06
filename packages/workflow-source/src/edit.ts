@@ -131,6 +131,10 @@ export function applyEdits(source: string, edits: WorkflowEdit[]): { source: str
         summaries.push(`修改 ${edit.id}.${key}`)
         break
       }
+      case 'setMetaValue':
+        source = setProperty(source, parsed.spans.root!, edit.key, edit.value)
+        summaries.push(`修改 ${edit.key}`)
+        break
       case 'setMeta':
         source = setProperty(source, parsed.spans.root!, edit.key, { kind: 'literal', value: edit.value })
         summaries.push(`修改 ${edit.key}`)

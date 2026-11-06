@@ -1,0 +1,148 @@
+/* 运行页底部实时事件滚动条（C 组）。新事件从左侧轻推入场（160ms、4px），悬停暂停。 */
+.event-ticker {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-meta);
+  min-width: 0;
+}
+
+.ticker-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 92px;
+  padding: 0 12px 0 24px;
+  border-right: 1px solid var(--divider);
+  font-family: var(--font-sans);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.ticker-label svg {
+  width: 13px;
+  height: 13px;
+}
+.event-ticker.is-live .ticker-label svg {
+  color: var(--accent);
+}
+.event-ticker.is-paused .ticker-label {
+  color: var(--text-2);
+}
+.event-ticker.is-paused .ticker-label svg {
+  color: var(--text-2);
+}
+.ticker-label b {
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.ticker-list {
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 64px), transparent);
+}
+.ticker-list::-webkit-scrollbar {
+  display: none;
+}
+.ticker-empty {
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-family: var(--font-sans);
+  color: var(--text-3);
+}
+
+.ticker-item {
+  flex: none;
+  display: flex;
+  border-right: 1px solid var(--divider);
+}
+.ticker-item.fresh {
+  animation: ticker-in 160ms var(--ease) both;
+}
+@keyframes ticker-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+.ticker-hit {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 420px;
+  height: 100%;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--text-2);
+  text-align: left;
+  white-space: nowrap;
+}
+button.ticker-hit {
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+button.ticker-hit:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+button.ticker-hit:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.ticker-time {
+  color: var(--text-3);
+}
+.ticker-icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--ev-tone);
+}
+.ticker-node {
+  color: var(--text);
+  font-weight: 500;
+}
+.ticker-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-sans);
+}
+/* 滚动条里的标题只要一行：去掉块级的列表 / 预格式化 */
+.ticker-text pre,
+.ticker-text ul {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .ticker-label {
+    min-width: 0;
+    padding-left: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-item.fresh {
+    animation: none;
+  }
+}

@@ -160,7 +160,18 @@
   border-radius: var(--radius);
   background: var(--surface);
   box-shadow: var(--shadow-md);
-  animation: chat-pop var(--dur) var(--ease) both;
+  transform-origin: left bottom;
+  transition:
+    opacity 140ms var(--ease),
+    transform 140ms var(--ease);
+}
+.chat-mention-menu[data-state='enter'],
+.chat-mention-menu[data-state='exit'] {
+  opacity: 0;
+  transform: translateY(4px) scale(0.985);
+}
+.chat-mention-menu[data-state='exit'] {
+  transition-duration: 120ms;
 }
 .chat-mention-menu li {
   display: flex;
@@ -180,12 +191,6 @@
 .chat-mention-menu li.active {
   background: var(--surface-hover);
   box-shadow: inset 2px 0 0 var(--accent);
-}
-@keyframes chat-pop {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
 }
 
 /* ---- 窄屏：成员栏收成顶部一条横向列表 */
@@ -225,9 +230,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-enter,
-  .chat-mention-menu {
+  .chat-enter {
     animation: none;
+  }
+  .chat-mention-menu {
+    transition: none;
   }
   .chat-caret {
     animation: none;

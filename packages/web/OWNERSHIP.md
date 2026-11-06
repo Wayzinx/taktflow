@@ -1,43 +1,74 @@
-# packages/web 文件归属（M2 W2/W3 并行开发）
+# packages/web 文件归属（M3 并行开发，docs/dev/m3-web.md）
 
-每个 agent 只改自己名下的文件。名下没有、又必须改的文件（尤其是 `api/**`），在交付说明里写"共享文件变更请求"，由汇总 agent 合入。路径都相对 `packages/web/src/`。
+每个组只改自己名下的文件（可以在名下目录新建文件）。名下没有、又必须改的文件（尤其是 `api/**`、`app.tsx`、`lib/router.tsx`），写进交付说明的 knownIssues，由汇总合入。路径都相对 `packages/web/src/`。
 
-| 归属 | 文件 |
+| 组 | 负责文件 |
 |---|---|
-| **A 空间** | `pages/settings/**`、`components/space-switcher.*`、`lib/space.ts`、`pages/workflows-list*` |
-| **B 群聊** | `pages/requirement/chat-tab.tsx`、`pages/requirement/chat/**` |
-| **C 评审** | `pages/requirement/reviews-tab.tsx`（样式放 `reviews-tab.css`）、`pages/run/review/**`、`pages/run/dag-nodes.tsx`、`pages/run/dag-edges.tsx`、`components/event-timeline.*` |
-| **D 编辑器画布** | `pages/workflow/index.tsx`、`pages/workflow/workflow.css`、`pages/workflow/canvas/**`、`pages/workflow/palette/**`、`pages/workflow/properties/**` |
-| **E 编辑器协同** | `pages/workflow/state.ts`（在骨架上完善，导出的接口只增不改）、`pages/workflow/collab/**` |
-| **共享（只有汇总 agent 能改）** | `api/**`、`app.tsx`、`lib/router.tsx`、`styles/**`、`components/{layout,ui,takt,command-palette}.*`，以及挂载各 Tab 的 `pages/requirement/index.tsx`、`pages/run/node-drawer.tsx` |
+| **A 群聊与路由** | `pages/requirement/chat-tab.tsx`、`pages/requirement/chat/**`、`components/tier-glyph.tsx`、`components/lead-light.*`、`components/route-card.*` |
+| **B 评审与待办** | `pages/run/review/**`、`pages/requirement/reviews-tab.*`、`components/attention-card.*`、`pages/attention.tsx`、`pages/run/dag-nodes.tsx`、`pages/run/dag-edges.tsx` |
+| **C 运行页** | `pages/run/**`（除 `review/**`、`dag-nodes.tsx`、`dag-edges.tsx`）、`components/event-timeline.*`、`components/event-ticker.*` |
+| **D 总览与需求页** | `pages/overview.*`、`pages/overview-quality.tsx`、`components/stat-card.*`、`pages/requirements*.tsx`、`pages/requirement/{index.tsx,requirement.css,artifacts-tab.tsx,metrics-tab.tsx,runs-tab.tsx,activity-tab.tsx,trace-tab.tsx,decisions.tsx}`、`components/budget-bar.*` |
+| **E 空间与编辑器** | `pages/settings/**`、`pages/workflow/properties/**`、`pages/workflow/palette/**`、`pages/workflow/canvas/canvas-nodes.tsx` |
+| **F 动效与命令** | `styles/**`、`lib/motion.tsx`、`components/{ui,command-palette,takt,layout,topbar,stage-bar}.*`、`components/ui/**`（dialog / popover / reason-dialog / overlay.css，经 `components/ui.tsx` 再导出）、`components/command-palette/**`（items / schema / fields / command-form）、新建 `scripts/motion-audit.mjs`、`package.json` 的 scripts、`.github/workflows/ci.yml`（只加一步）、`DESIGN.md` 的动效章节 |
+| **共享（只有汇总能改）** | `api/**`、`app.tsx`、`main.tsx`、`lib/router.tsx`、`lib/{format,status,space,theme,markdown,json-view,capabilities}.*` |
 
-没列出的已有文件（overview、attention、requirement 的其他 Tab、run 的其他文件）本轮不改。
+`components/tier-glyph.tsx` 已由骨架完整实现（A 组可微调样式，但 props 不改），D / E 组直接用。`lib/motion.tsx` 与 `styles/motion.css` 由骨架提供，F 组完善；其他组只用、不改。
 
-## 约定的接口（占位组件已建好，props 不要改；要加 props 写变更请求）
+## 占位组件（骨架已建好并挂到页面；props 不要改，要加 props 写变更请求）
 
-| 文件 | 导出 | props | 挂载位置 |
-|---|---|---|---|
-| `pages/workflows-list.tsx` | `WorkflowsListPage` | 无 | 路由 `/workflows` |
-| `pages/settings/workflows-tab.tsx` | `WorkflowsTab` | `{ space?: SpaceDetail }` | 设置页 `?tab=workflows` |
-| `pages/settings/knowledge-tab.tsx` | `KnowledgeTab` | `{ space?: SpaceDetail }` | 设置页 `?tab=knowledge` |
-| `pages/requirement/chat-tab.tsx` | `ChatTab` | `{ id: string; detail?: RequirementDetail }` | 需求页 `?tab=chat` |
-| `pages/requirement/reviews-tab.tsx` | `ReviewsTab` | `{ id: string }` | 需求页 `?tab=reviews` |
-| `pages/run/review/review-tab.tsx` | `ReviewTab` | `{ d: NodeDetail; runId: string; requirementId: string }` | 节点抽屉 `dtab=review`（仅 `kind=review`） |
-| `pages/workflow/index.tsx` | `WorkflowEditorPage` | `{ id: string }` | 路由 `/workflows/:id` |
-| `pages/workflow/canvas/workflow-canvas.tsx` | `WorkflowCanvas` | `{ wf: WorkflowDocState; selected?: string; onSelect(id?): void; highlight?: string[] }` | 编辑器中栏 |
-| `pages/workflow/palette/node-palette.tsx` | `NodePalette` | `{ wf: WorkflowDocState }` | 编辑器左栏 |
-| `pages/workflow/properties/properties-panel.tsx` | `PropertiesPanel` | `{ wf: WorkflowDocState; nodeId?: string }` | 编辑器右栏 |
-| `pages/workflow/collab/save-status.tsx` | `SaveStatusBar` | `{ wf: WorkflowDocState }` | 编辑器顶栏 |
-| `pages/workflow/collab/revisions-drawer.tsx` | `RevisionsDrawer` | `{ wf; workflowId: string; open: boolean; onClose(): void }` | 编辑器 |
-| `pages/workflow/collab/conflict-dialog.tsx` | `ConflictDialog` | `{ wf }`（`wf.conflict` 为空时不渲染） | 编辑器 |
-| `pages/workflow/collab/remote-change-banner.tsx` | `RemoteChangeBanner` | `{ wf; onShowDiff(rev: string): void }` | 编辑器 |
-| `pages/workflow/collab/source-view.tsx` | `SourceView` | `{ wf }` | 编辑器"源码"视图 |
-| `pages/workflow/collab/changed-nodes.ts` | `changedNodeIds(before, after)` | — | 画布高亮 |
+| 组 | 文件 | 导出 | props | 挂载位置 |
+|---|---|---|---|---|
+| A | `components/route-card.tsx` | `RouteCard` | `{ route: RouteDecision; requirementId: string; runId?: string }` | `chat/message-item.tsx`：`m.kind === 'route' && m.route` 时作为消息体 |
+| A | `components/lead-light.tsx` | `LeadLight` | `{ presence?: LeadPresence; showLabel?: boolean }` | `chat/member-list.tsx` 的 Lead 成员行（替代原"工作中"点）；`chat-tab.tsx` 群头（`showLabel`） |
+| A | `components/tier-glyph.tsx`（完整实现） | `TierGlyph`、`TIER_LABEL` | `{ tier: Tier; size?: number /*16*/; label?: boolean /*true*/; className?: string }` | 路由卡、需求列表、workflow 元数据表单 |
+| C | `pages/run/run-counters.tsx` | `RunCounters` | `{ detail: RunDetail }` | 运行页 `run-title-row`，状态徽标之后 |
+| C | `components/event-ticker.tsx` | `EventTicker` | `{ runId: string; live: boolean; liveTick: number; onLocate(nodeId: string): void }` | 运行页底部（`run-body` 之后，`run-page` 的最后一个子元素） |
+| C | `pages/run/completion-tab.tsx` | `CompletionTab` | `{ d: NodeView; runId: string; requirementId: string }` | 节点抽屉 `dtab=completion`（"完成标准"；有 completion / completionChecks / failures 时显示） |
+| D | `pages/requirement/decisions.tsx` | `Decisions` | `{ requirementId: string; detail?: RequirementDetail; run?: RunDetail; budget?: BudgetStatus }` | 需求页头部，阶段条卡片之后 |
+| D | `components/budget-bar.tsx` | `BudgetBar` | `{ budget?: BudgetStatus; runId?: string }` | 需求页头部，`Decisions` 之后 |
+| D | `pages/requirements-current.tsx` | `CurrentNodeCell` | `{ current?: RequirementSummary['current']; tier?: Tier }` | `requirements-table.tsx` 的"当前节点"列（`full` 时） |
+| D | `pages/overview-quality.tsx` | `QualityStat` | `{ totals: ProjectOverview['totals'] }` | 总览读数条（`StatStrip`）最后一格 |
+| E | `pages/settings/lessons-tab.tsx` | `LessonsTab` | `{ space?: SpaceDetail }` | 设置页 `?tab=lessons`（"经验"） |
 
-D 和 E 只通过 `useWorkflowDocument(id)`（`pages/workflow/state.ts`）交互：画布改模型一律调 `wf.applyEdits(edits)`，拖动位置调 `wf.saveLayout(layout)`，不要直接调 DataSource 的写接口。
+需求页取最近一次流水线运行：`requirement/index.tsx` 里 `useAsync((ds) => ds.run(r.latestRunId))`，把 `latest.data` 和 `latest.data?.budget` 传给 `Decisions` / `BudgetBar`。
+
+## 共享工具
+
+- `lib/motion.tsx`：`usePresence(open, exitMs = 140)` → `{ mounted, state: 'enter' | 'open' | 'exit' }`；挂载先 `enter` 一帧再 `open`，关闭保留最后一帧 `exitMs`，退出途中重开直接回 `open`，reduced-motion 下不等待。`useLastDefined(value)` 保留最后一个非空值（退出动画期间渲染关闭前的内容）。`prefersReducedMotion()`。CSS 用 `[data-state='enter' | 'exit']` 写初始与退出样式。
+- `styles/motion.css`（`main.tsx` 全局引入）：
+  - `.shimmer-text`：运行中标题的节拍橙扫光（2 拍一次）；底色用 `--shimmer-base`（默认 `--text`）；
+  - `.jump-highlight`：跳转定位后高亮，2.4s 淡出（重新触发时先移除 class 再加，或换 key）；
+  - `.meter > .meter-fill`：`--meter` 取 0..1，`transform: scaleX()`；`data-tone="running | success | warning | danger"`，`.meter-lg` 6px 高；
+  - reduced-motion：扫光静止为纯色文字，高亮保持 2.4s 后一次性消失，进度条不过渡。
 
 ## 数据层（`api/`，共享）
 
-- `source.ts`：`DataSource` 已含评审（`requirementReviews`）与 workflow 全部接口；409 统一抛 `WorkflowConflictError`（`.conflict` 为 `WorkflowConflict`）。
-- `workflow-edit.ts`：`WorkflowEdit` 的纯函数实现（`applyWorkflowEdits`、`invertWorkflowEdits`、`findNode`、`allNodes`、`literalOf`、`lit`、`code`），mock 与编辑器共用。
-- 演示数据：`mock-reviews.ts`（REQ-001 / REQ-003 的评审节点、轮次、打回边 `kind: 'route', label: '打回'`、review.* 事件）；`mock-workflows.ts` + `mock-workflow-seed.ts` + `mock-workflow-print.ts`（sdlc 可编辑、task 可编辑、hotfix 只读；修订历史 3 条；订阅 sdlc 约 9 秒后 Lead 修改一次）。
+`DataSource`（`source.ts`）本轮新增，HTTP 客户端（`client.ts`，带 `/api/s/:spaceId` 前缀）与演示数据实现同一份：
+
+| 方法 | 路由 |
+|---|---|
+| `disposeReview(runId, nodeId, ReviewDispositionRequest)` → `ReviewDisposition` | `POST /runs/:runId/nodes/:nodeId/dispositions` |
+| `routePreview(requirementId, RoutePreviewRequest)` → `RouteDecision` | `POST /requirements/:id/route` |
+| `commands()` → `CommandInfo[]` | `GET /commands` |
+| `runCommand(id, CommandRunRequest)` → `CommandRunResponse`（业务失败 `ok: false`，不抛错） | `POST /commands/:id` |
+| `lessons(status?)` → `Lesson[]` | `GET /lessons?status=` |
+| `updateLesson(id, LessonUpdateRequest)` → `Lesson` | `PATCH /lessons/:id` |
+| `subscribeChat(id, onMessage, onLead?)` | 群聊 SSE；`event: lead` 的 data 为 `LeadPresence`，交给 `onLead`。`useChat` 已暴露 `lead`（初值 `Room.lead`） |
+
+`editArtifact` 的 body 支持 `impact: 'cosmetic' | 'semantic'`（cosmetic 不传播 stale）。
+
+演示数据按领域分文件：
+
+| 文件 | 内容 |
+|---|---|
+| `mock-route.ts` | 各需求的路由卡（REQ-002 带"T3 → T2"调整说明）、`routePreview` 启发式与改档留痕 |
+| `mock-quick-fix.ts` | REQ-007（T1，quick-fix）：短 spec → 实现（完成标准 3 条全过）→ 代码评审（运行中）→ 交付校验；worktree 引导、经验召回事件 |
+| `mock-m3-nodes.ts` | 节点目标 / 负责人 / 完成标准 / 小结，职责 → 成员（`DUTY_MEMBERS`） |
+| `mock-m3-runs.ts` | 预算（REQ-002 告警 84%）、失败指纹抑制（REQ-004 系分门禁同一指纹 2 次 → blocked + `kind: 'retry'` 待办）、过期审批（REQ-003 PRD 审批绑定 spec v1，之后 cosmetic 修改出 v2）、待办 `kind / boundTo / owner / assignees`、`stale` 读模型、`BudgetStatus`、`QualityMetrics` |
+| `mock-reviews.ts` | 评审修订与全局 seq（REQ-001 系分评审打回一次 → 修订 2 第 1 轮）、`groupKey / fingerprint`、问题观察（新增 / 重复 / 有变化 / 本轮未提及 / 回潮）、`ReviewFacets`、人工处置 |
+| `mock-lessons.ts` | 经验库 5 条：启用 2、试用 2、退役 1 |
+| `mock-commands.ts` | 命令注册表与执行校验（write / dangerous 需要 reason） |
+| `mock-chat.ts` | 路由卡消息（kind `route`）、Lead 状态灯（订阅后 thinking → working → waiting → idle 循环） |
+| `mock-events.ts` | 事件插入与重排哈希链的共用函数 |
+| `mock-space.ts` | 成员 `duties`（wayne pm / lin arch,rd / chen rd / qiao qa）、仓库 `bootstrap / share` |
+| `mock-workflow-seed.ts` | sdlc 的 `useWhen / tiers / leadInstructions / dynamicRules / budget`；新增 quick-fix workflow |

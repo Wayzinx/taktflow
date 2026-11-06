@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react'
 import { ArrowDown, Sparkles } from 'lucide-react'
 import type { RoomMessage } from '@taktflow/core'
 import { TaktRuler } from '../../../components/takt'
@@ -52,7 +52,20 @@ function dayLabel(ts: string): string {
  * 消息流：贴底时新消息自动滚到底；用户往上翻时不打扰，只显示"N 条新消息"。
  * role=log + aria-live 让读屏播报新消息。
  */
-export function MessageFeed({ messages, ctx, leadThinking }: { messages: RoomMessage[]; ctx: MessageCtx; leadThinking: boolean }) {
+export interface FeedApi {
+  /** 滚到这条消息并高亮 2.4s；返回 false 表示消息不在列表里。 */
+  jumpTo(messageId: string): boolean
+}
+
+/** 把消息 id 映射到它所在的行（同一任务的多条 task 消息合并在第一条的行里）。 */
+function rowKeyOf(messages: RoomMessage[], id: string): string | undefined {
+  const m = messages.find((x) => x.id === id)
+  if (!m) return undefined
+  const t = m.kind === 'task' ? m.refs?.taskRunId : undefined
+  return t ? messages.find((x) => x.kind === 'task' && x.refs?.taskRunId === t)!.id : m.id
+}
+
+export function MessageFeed({ messages, ctx, leadThinking, apiRef }: { messages: RoomMessage[]; ctx: MessageCtx; leadThinking: boolean; apiRef?: Ref<FeedApi> }) {
   const box = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const seen = useRef(messages.length)
@@ -86,6 +99,29 @@ export function MessageFeed({ messages, ctx, leadThinking }: { messages: RoomMes
     return () => ro.disconnect()
   }, [])
 
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  useEffect(() => () => clearTimeout(flashTimer.current), [])
+  useImperativeHandle(apiRef, () => ({
+    jumpTo(id) {
+      const key = rowKeyOf(messages, id)
+      const row = key ? box.current?.querySelector<HTMLElement>(`[data-row="${CSS.escape(key)}"]`) : null
+      if (!row) return false
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+      stick.current = false
+      // 高过视口八成的行（路由卡、任务卡）顶端对齐，其余居中
+      const tall = row.offsetHeight > (box.current?.clientHeight ?? 0) * 0.8
+      row.scrollIntoView({ block: tall ? 'start' : 'center', behavior: reduce ? 'auto' : 'smooth' })
+      // 重新触发高亮：先摘掉 class、强制回流，再加回去
+      const target = row.querySelector<HTMLElement>('.chat-msg, .chat-system') ?? row
+      box.current?.querySelectorAll('.jump-highlight').forEach((el) => el.classList.remove('jump-highlight'))
+      void target.offsetWidth
+      target.classList.add('jump-highlight')
+      clearTimeout(flashTimer.current)
+      flashTimer.current = setTimeout(() => target.classList.remove('jump-highlight'), 2500)
+      return true
+    },
+  }))
+
   function onScroll() {
     const el = box.current!
     stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
@@ -100,7 +136,7 @@ export function MessageFeed({ messages, ctx, leadThinking }: { messages: RoomMes
             const prev = rows[i - 1]?.m
             const newDay = !prev || new Date(prev.at).toDateString() !== new Date(m.at).toDateString()
             return (
-              <div key={key} className={initial.current.has(key) ? 'chat-row' : 'chat-row chat-enter'}>
+              <div key={key} data-row={key} className={initial.current.has(key) ? 'chat-row' : 'chat-row chat-enter'}>
                 {newDay && (
                   <div className="chat-day" role="separator">
                     <span>{dayLabel(m.at)}</span>

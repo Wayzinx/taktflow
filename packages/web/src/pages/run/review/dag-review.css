@@ -1,26 +1,19 @@
 /* DAG 上的评审角标与打回边 */
 .rv-dag-round {
-  gap: 5px;
+  gap: 4px;
 }
-.rv-dag-ticks {
-  display: inline-flex;
-  gap: 2px;
+.rv-dag-sep {
+  margin: 0 1px;
+  color: var(--text-3);
 }
-.rv-dag-ticks > i {
-  width: 2px;
-  height: 8px;
-  border-radius: 1px;
-  background: var(--st-pending);
+.rv-dag-round.pass {
+  color: var(--st-success);
 }
-.rv-dag-ticks > i.on {
-  background: var(--text-2);
-}
-.rv-dag-round.pass .rv-dag-ticks > i.on {
-  background: var(--st-success);
-}
-/* 评审进行中：当前轮那一格按节拍跳（The Quiet Until Live Rule） */
-.rv-dag-round.live .rv-dag-ticks > i.on:last-of-type,
-.rv-dag-round.live .rv-dag-ticks > i.on:has(+ i:not(.on)) {
+/* 评审进行中：一枚节拍橙小点按拍子跳（The Quiet Until Live Rule）；reduced-motion 下静止但仍可见 */
+.rv-dag-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
   background: var(--accent);
   animation: rv-dag-tick var(--takt) steps(1, end) infinite;
 }
@@ -88,8 +81,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rv-dag-round.live .rv-dag-ticks > i.on:last-of-type,
-  .rv-dag-round.live .rv-dag-ticks > i.on:has(+ i:not(.on)),
+  .rv-dag-dot,
   .react-flow__edge-path.rv-edge-path.live {
     animation: none;
   }

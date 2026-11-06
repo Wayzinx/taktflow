@@ -4,6 +4,7 @@ import { acCoverage, readArtifactData } from './artifacts.js'
 import { eventMetrics } from './event-metrics.js'
 import { buildTraceGraph } from './trace.js'
 import { addUsage, summarizeUsage } from './usage.js'
+import { qualityMetrics } from './quality.js'
 
 export class FsInsights implements Insights {
   constructor(private readonly stores: ProjectStores) {}
@@ -27,7 +28,7 @@ export class FsInsights implements Insights {
     }
     const batches = await Promise.all(runs.map(async (run) => {
       const [events, snapshot] = await Promise.all([this.stores.events.read(run.runId), this.stores.runs.getWorkflow(run.runId)])
-      return { counts: eventMetrics(events, run, snapshot), usage: summarizeUsage(events) }
+      return { events, counts: eventMetrics(events, run, snapshot), usage: summarizeUsage(events) }
     }))
     let total = 0
     let passed = 0
@@ -41,6 +42,7 @@ export class FsInsights implements Insights {
       }
       metrics.usage = addUsage(metrics.usage, usage)
     }
+    metrics.quality = await qualityMetrics(batches.flatMap(batch => batch.events), { store: this.stores.workspaces, requirementId })
     if (total > 0) metrics.firstPassRate = passed / total
     return metrics
   }

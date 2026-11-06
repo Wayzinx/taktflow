@@ -1,0 +1,85 @@
+/* 预算条：需求页顶部常驻，一行读数。填充走 .meter（scaleX），80% 一根告警刻度。 */
+.budget-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  min-height: 40px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.budget-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.budget-label svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2;
+}
+.budget-meter-wrap {
+  position: relative;
+  flex: 1 1 160px;
+  max-width: 320px;
+  min-width: 120px;
+}
+.budget-meter-wrap .meter {
+  display: block;
+}
+.budget-tick {
+  position: absolute;
+  left: 80%;
+  top: -3px;
+  bottom: -3px;
+  width: 1px;
+  background: var(--border-strong);
+}
+.budget-pct {
+  min-width: 3ch;
+  font-weight: 600;
+  color: var(--text);
+}
+.budget-bar[data-tone='warning'] .budget-pct,
+.budget-bar[data-tone='warning'] .budget-state {
+  color: var(--st-waiting);
+}
+.budget-bar[data-tone='danger'] .budget-pct,
+.budget-bar[data-tone='danger'] .budget-state {
+  color: var(--st-failed);
+}
+.budget-state {
+  color: var(--text-3);
+}
+.budget-dims {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+}
+.budget-dim {
+  display: inline-flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.budget-dim.hot > .mono {
+  color: var(--text);
+  font-weight: 600;
+}
+.budget-run {
+  margin-left: auto;
+  font-size: var(--text-label);
+  color: var(--text-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+.budget-run:hover {
+  color: var(--text);
+}

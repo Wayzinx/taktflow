@@ -103,15 +103,21 @@
   overflow: hidden;
   box-shadow: inset 0 0 0 1px var(--divider);
 }
+.stage-cell-bar {
+  position: relative;
+}
+/* 进度用 scaleX（动效规范：不动画 width） */
 .stage-cell-bar > span {
-  display: block;
-  height: 100%;
+  position: absolute;
+  inset: 0;
   border-radius: inherit;
   background: var(--tone);
-  transition: width 500ms var(--ease);
+  transform: scaleX(clamp(0, var(--p, 0), 1));
+  transform-origin: left center;
+  transition: transform 180ms var(--ease);
 }
 .stage-cell.st-done .stage-cell-bar > span {
-  width: 100% !important;
+  transform: scaleX(1);
 }
 .stage-cell-body {
   display: flex;

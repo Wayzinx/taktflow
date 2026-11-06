@@ -3,6 +3,8 @@ import type { Entry } from '../graph.js'
 import type { NodeHost } from './host.js'
 import type { GateCheckResult } from '../../types.js'
 import { BlockedError } from '../harness.js'
+import { checkAcceptance } from '../acceptance.js'
+import { FailureError } from '../fingerprint.js'
 import { RUBRIC_SCHEMA } from './schemas.js'
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 
@@ -22,8 +24,7 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
         const result = await host.guard.system(host.workspacePaths(node.outputs?.map((output) => output.path)), () => check.fn(ctx), true)
         checks.push({ ...result, id: check.id, pass: result.pass === true })
       } else if (check.kind === 'acceptance') {
-        // 交付校验由 m3-engine 实现；实现前按 fail-closed 处理
-        checks.push({ id: check.id, pass: false, message: '交付校验尚未实现' })
+        checks.push(await checkAcceptance(host, entry, check.id, check.role))
       } else {
         const value = await host.model(entry, ctx, check.role, `按以下 rubric 检查并输出 score、pass、message：\n${check.rubric}`, RUBRIC_SCHEMA) as GateCheckResult
         checks.push({ ...value, id: check.id, pass: value.pass && value.score! >= check.threshold })
@@ -38,8 +39,11 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   ns.result = { pass, checks }
   await host.emit('gate.result', { pass, checks }, node.id)
   if (!pass) {
+    for (const check of checks.filter((check) => !check.pass)) {
+      if (await host.noteFailure(entry, `gate:${check.id}`, check.id, check.message)) return
+    }
     if (node.onFail === 'human') await host.request(entry, `门禁未通过，请裁决：${JSON.stringify(checks.filter((c) => !c.pass))}`, 'approve', undefined, true)
-    else throw new Error(`门禁未通过：${checks.filter((check) => !check.pass).map((check) => `${check.id}: ${check.message ?? '失败'}`).join('; ')}`)
+    else throw new FailureError(`门禁未通过：${checks.filter((check) => !check.pass).map((check) => `${check.id}: ${check.message ?? '失败'}`).join('; ')}`, 'gate', undefined, true)
   }
 
 }

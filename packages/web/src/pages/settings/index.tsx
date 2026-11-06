@@ -1,10 +1,11 @@
-import { BookOpen, Cpu, FileCog, GitFork, Sparkles, UserRoundCog, Users, Workflow } from 'lucide-react'
+import { BookOpen, Cpu, FileCog, GitFork, Lightbulb, Sparkles, UserRoundCog, Users, Workflow } from 'lucide-react'
 import { useAsync } from '../../api'
 import { PageHeader, useCrumbs } from '../../components/layout'
 import { ErrorState, Skeleton, Tabs } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
 import { FilesTab } from './files-tab'
 import { KnowledgeTab } from './knowledge-tab'
+import { LessonsTab } from './lessons-tab'
 import { MembersTab } from './members-tab'
 import { ReposTab } from './repos-tab'
 import { RuntimeTab } from './runtime-tab'
@@ -12,7 +13,7 @@ import { WorkflowsTab } from './workflows-tab'
 import './settings.css'
 import './space.css'
 
-const TABS = ['members', 'repos', 'skills', 'agents', 'workflows', 'knowledge', 'runtime'] as const
+const TABS = ['members', 'repos', 'skills', 'agents', 'workflows', 'knowledge', 'lessons', 'runtime'] as const
 type Tab = (typeof TABS)[number]
 
 /** 空间设置：成员 / 代码仓库 / 技能 / 角色 / workflow / 知识源 / 模型与 harness，对应空间目录里的 takt.config.json 与各子目录。 */
@@ -52,6 +53,7 @@ export function SettingsPage() {
               { id: 'agents', label: '角色', icon: UserRoundCog, count: sp?.agents.length },
               { id: 'workflows', label: 'Workflow', icon: Workflow, count: sp?.workflows.length },
               { id: 'knowledge', label: '知识源', icon: BookOpen, count: sp?.knowledge.length },
+              { id: 'lessons', label: '经验', icon: Lightbulb },
               { id: 'runtime', label: '模型与 Harness', icon: Cpu },
             ]}
           />
@@ -62,6 +64,7 @@ export function SettingsPage() {
             {tab === 'agents' && <FilesTab kind="agent" space={sp} />}
             {tab === 'workflows' && <WorkflowsTab space={sp} />}
             {tab === 'knowledge' && <KnowledgeTab space={sp} />}
+            {tab === 'lessons' && <LessonsTab space={sp} />}
             {tab === 'runtime' && <RuntimeTab />}
           </div>
         </>

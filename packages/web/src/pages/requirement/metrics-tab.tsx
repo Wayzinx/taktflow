@@ -1,9 +1,10 @@
 import type { CSSProperties, ReactNode } from 'react'
-import type { GraphNode, Usage } from '@taktflow/core'
+import type { GraphNode, QualityMetrics, Usage } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, Skeleton } from '../../components/ui'
 import { fmtCost, fmtPct, fmtTokens, totalTokens } from '../../lib/format'
 import { NODE_KIND, VERDICT, VERDICT_ORDER } from '../../lib/status'
+import { INTERCEPT_SOURCES } from '../overview-quality'
 
 function Ring({ value }: { value?: number }) {
   const r = 22
@@ -46,7 +47,7 @@ function Bars({ bars, format }: { bars: Bar[]; format: (n: number) => string }) 
         <div key={b.key} className={`hbar${b.value === 0 ? ' zero' : ''}`}>
           <span className="hbar-label">{b.label}</span>
           <span className="hbar-track">
-            <span style={{ width: `${(b.value / max) * 100}%`, background: b.color } as CSSProperties} />
+            <span style={{ '--bar': b.value > 0 ? Math.max(b.value / max, 0.012) : 0, background: b.color } as CSSProperties} />
           </span>
           <span className="hbar-value mono num">{format(b.value)}</span>
           {b.extra !== undefined && <span className="hbar-extra">{b.extra}</span>}
@@ -75,7 +76,7 @@ function sumBy(nodes: GraphNode[], key: (n: GraphNode) => string | undefined): A
   return [...m.entries()].sort((a, b) => totalTokens(b[1]) - totalTokens(a[1]))
 }
 
-export function MetricsTab({ id }: { id: string }) {
+export function MetricsTab({ id, quality }: { id: string; quality?: QualityMetrics }) {
   const q = useAsync(async (ds) => {
     const [metrics, runs] = await Promise.all([ds.metrics(id), ds.runs(id)])
     const details = await Promise.all(runs.map((r) => ds.run(r.runId)))
@@ -96,6 +97,7 @@ export function MetricsTab({ id }: { id: string }) {
       </div>
     )
   const { metrics: m, nodes } = q.data
+  const qm = m.quality ?? quality
   const verdictTotal = Object.values(m.verdicts).reduce((s, n) => s + (n ?? 0), 0)
   const byRole = sumBy(nodes, roleKey)
   const byHarness = sumBy(nodes, (n) => n.harness)
@@ -112,6 +114,7 @@ export function MetricsTab({ id }: { id: string }) {
         <Kpi label="交付周期" value={m.leadTimeHours !== undefined ? <>{m.leadTimeHours.toFixed(1)}<span className="kpi-unit">h</span></> : '—'} hint="需求创建到准出" />
         <Kpi label="Token / 成本" value={fmtTokens(tokens)} hint={<>{fmtCost(m.usage.costUsd)} · {m.runs} 次运行</>} />
       </div>
+      {qm && <QualityCard q={qm} />}
       <div className="metrics-grid">
         <section className="card">
           <div className="card-head">
@@ -179,5 +182,48 @@ export function MetricsTab({ id }: { id: string }) {
         </section>
       </div>
     </div>
+  )
+}
+
+/** 校验与拦截（docs/design/19 §6）：已校验 / 已拦截两个数 + 拦截按来源的条形图。 */
+function QualityCard({ q }: { q: QualityMetrics }) {
+  return (
+    <section className="card quality-card">
+      <div className="card-head">
+        <span className="card-title">校验与拦截</span>
+        <span className="spacer" />
+        <span className="faint" style={{ fontSize: 12 }}>交付前被拦下的问题，按是谁拦下的拆</span>
+      </div>
+      <div className="quality-body">
+        <div className="quality-nums">
+          <div>
+            <div className="kpi-label">已校验</div>
+            <div className="kpi-value num quality-ok">{q.verified}</div>
+            <div className="kpi-hint">通过的门禁检查、交付校验与评审轮</div>
+          </div>
+          <div>
+            <div className="kpi-label">已拦截</div>
+            <div className="kpi-value num">{q.intercepted}</div>
+            <div className="kpi-hint">没让它们流到交付之后</div>
+          </div>
+        </div>
+        <div className="quality-bars">
+          <Bars
+            format={(n) => String(n)}
+            bars={INTERCEPT_SOURCES.map((s) => ({
+              key: s.key,
+              label: (
+                <>
+                  <span className="hbar-key">{s.label}</span>
+                  <span className="faint">{s.hint}</span>
+                </>
+              ),
+              value: q.interceptedBy[s.key],
+              color: s.color,
+            }))}
+          />
+        </div>
+      </div>
+    </section>
   )
 }

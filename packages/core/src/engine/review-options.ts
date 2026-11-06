@@ -13,6 +13,8 @@ export function configureReviews(workflow: WorkflowDefinition, args: Record<stri
     const humanSignoff = options.humanSignoff ?? node.humanSignoff
     if (typeof maxRounds !== 'number' || !Number.isInteger(maxRounds) || maxRounds < 1) throw new Error('review.maxRounds 必须是正整数')
     if (humanSignoff !== undefined && typeof humanSignoff !== 'boolean') throw new Error('review.humanSignoff 必须是布尔值')
+    const stopAfterNoProgress = options.stopAfterNoProgress ?? node.stopAfterNoProgress
+    if (stopAfterNoProgress !== undefined && (typeof stopAfterNoProgress !== 'number' || !Number.isInteger(stopAfterNoProgress) || stopAfterNoProgress < 0)) throw new Error('review.stopAfterNoProgress 必须是非负整数')
     let onExhausted = node.onExhausted
     if (typeof onExhausted === 'object') {
       const rework = options.rework ?? onExhausted.rework
@@ -20,7 +22,7 @@ export function configureReviews(workflow: WorkflowDefinition, args: Record<stri
       if (typeof rework !== 'string' || typeof maxReworks !== 'number' || !Number.isInteger(maxReworks) || maxReworks < 0) throw new Error('review.rework / maxReworks 不合法')
       onExhausted = { rework, maxReworks }
     }
-    return { ...node, maxRounds, humanSignoff, onExhausted }
+    return { ...node, maxRounds, humanSignoff, onExhausted, stopAfterNoProgress }
   })
   return { ...workflow, nodes: visit(workflow.nodes) }
 }

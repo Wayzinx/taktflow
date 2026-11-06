@@ -120,8 +120,20 @@
   }
 }
 
+/* 减少动态效果：所有节律静止，但"在跑"的信号仍可见 */
 @media (prefers-reduced-motion: reduce) {
+  .takt-ruler.running > span {
+    animation: none;
+  }
+  .takt-ruler.running > span:first-child {
+    background: var(--accent);
+  }
+  .takt-beat.live .takt-beat-dot {
+    animation: none;
+  }
   .takt-track.running::after {
-    display: none;
+    animation: none;
+    left: 12%;
+    transform: none;
   }
 }

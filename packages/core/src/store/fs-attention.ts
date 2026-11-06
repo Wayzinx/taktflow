@@ -46,6 +46,7 @@ export class FsAttentionStore implements AttentionStore {
       if (current.answeredAt !== undefined) throw new AttentionAlreadyAnsweredError(rid)
       const answered: AttentionItem = { ...current, answeredAt: new Date().toISOString(), answeredBy: input.by }
       if (input.decision !== undefined) answered.decision = input.decision
+      if (input.boundTo !== undefined) answered.boundTo = current.boundTo ?? input.boundTo
       if (input.answer !== undefined) answered.answer = input.answer
       await appendLine(file, JSON.stringify(answered))
       return answered

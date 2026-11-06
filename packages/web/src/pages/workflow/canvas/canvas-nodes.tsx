@@ -6,6 +6,7 @@ import { KindIcon } from '../../../components/ui'
 import { NODE_KIND } from '../../../lib/status'
 import type { LaneData, LoopData, WfNodeData } from './build-flow'
 import { titleOf } from './graph'
+import '../properties/node-card.css'
 
 function Handles() {
   return (
@@ -78,18 +79,31 @@ const cls = (data: WfNodeData, extra = '') =>
 export function WfNodeView({ data }: NodeProps<Node<WfNodeData, 'wf'>>) {
   const n = data.node
   const t = titleOf(n)
+  const rawGoal = literalOf(n.props.goal)
+  const goal = typeof rawGoal === 'string' ? rawGoal.trim() : undefined
+  const rawOwner = literalOf(n.props.owner)
+  const owner = typeof rawOwner === 'string' ? rawOwner : undefined
+  const tip = [t.text, goal && `目标：${goal}`, `${n.id} · ${NODE_KIND[n.kind].label}${owner ? ` · 负责人 ${owner}` : ''}`, subline(n)].filter(Boolean).join('\n')
   return (
-    <div className={cls(data, `k-${n.kind}`)} title={`${t.text}\n${n.id} · ${NODE_KIND[n.kind].label}`}>
+    <div className={cls(data, `k-${n.kind}`)} title={tip}>
       <Handles />
       <div className="wf-node-card">
         <div className="wf-row">
           <KindIcon kind={n.kind} size={22} />
           <span className={`wf-title truncate${t.code ? ' mono wf-code-title' : ''}`}>{t.text}</span>
         </div>
-        <div className="wf-row wf-sub">
-          <span className="mono truncate">{n.id}</span>
-          <span className="wf-node-meta truncate">{subline(n)}</span>
-        </div>
+        {/* 有目标时第二行只显示目标（一行，超出省略），id 与配置摘要进 tooltip；卡片高度不变 */}
+        {goal ? (
+          <div className="wf-row wf-sub wf-goal-row">
+            <span className="wf-goal truncate">{goal}</span>
+            {owner && <span className="wf-owner mono">{owner}</span>}
+          </div>
+        ) : (
+          <div className="wf-row wf-sub">
+            <span className="mono truncate">{n.id}</span>
+            <span className="wf-node-meta truncate">{subline(n)}</span>
+          </div>
+        )}
       </div>
       {n.kind === 'planner' && (
         <div className="wf-planner-tray" aria-hidden>

@@ -1,3 +1,11 @@
+import type { StartRunInput } from '../interfaces.js'
+import type { LeadAction, LeadPresence, RouteDecision } from '../types.js'
+import { createCommandRegistry } from '../commands/index.js'
+import type { CommandRegistry, CommandSpec } from '../commands/contracts.js'
+import { routeRequirement } from '../route/index.js'
+import { snapshotWorkflow } from '../store/snapshot.js'
+import { actionSchemas } from './schema.js'
+import { recordTaskImpact } from './task-impact.js'
 import type { AttentionItem, Engine } from '../interfaces.js'
 import type { Actor, AgentProfile, EventEnvelope, LeadActionResult, LeadTurn, RoomMessage, RunState, WorkflowDefinition } from '../types.js'
 import { stageProgress } from '../insights/graph.js'
@@ -28,6 +36,20 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   const queues = new Map<string, Promise<unknown>>()
   const jobs = new Set<Promise<unknown>>()
   const engines = new Map<string, Engine>()
+  const presence = new Map<string, LeadPresence>()
+  const thinking = new Set<string>()
+  async function setPresence(id: string, state: LeadPresence['state']) {
+    if (presence.get(id)?.state === state) return
+    const value = { state, since: new Date().toISOString() }
+    presence.set(id, value)
+    await options.onPresence?.(id, value)
+  }
+  async function refreshPresence(id: string) {
+    if (thinking.has(id)) return
+    const pending = await stores.attention.list({ requirementId: id, pending: true })
+    const runs = await stores.runs.list({ requirementId: id })
+    await setPresence(id, pending.length ? 'waiting' : runs.some((run) => run.workflowId !== 'lead' && run.status === 'running') ? 'working' : 'idle')
+  }
   const post = (id: string, message: Omit<RoomMessage, 'id' | 'seq' | 'roomId' | 'at'>) => stores.chat.post(id, message)
   const audit = (runId: string, message: unknown) => stores.events.append(runId, { type: 'log', actor: author, data: { level: 'info', message: JSON.stringify(message) } })
   const scopedEngine = createLeadEngine(options, profiles, onRunEvent, audit)
@@ -39,7 +61,9 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
 
   async function onRunEvent(runId: string, event: EventEnvelope): Promise<void> {
-    if (!['node.started', 'node.finished', 'node.failed', 'run.finished', 'human.requested', 'review.round', 'rework.started'].includes(event.type)) return
+    const observed = await stores.runs.get(runId)
+    if (observed && observed.workflowId !== 'lead') await refreshPresence(observed.requirementId)
+    if (!['node.finished', 'run.finished', 'human.requested', 'review.exhausted', 'budget.warning', 'budget.exhausted', 'retry.suppressed', 'route.decided'].includes(event.type)) return
     const file = join(stores.taktDir, 'runs', runId, 'lead-projection.json')
     await withFileLock(file, async () => {
       const projection = await readJsonFile<{ events: number[]; stages: string[] }>(file) ?? { events: [], stages: [] }
@@ -48,7 +72,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       if (!state || state.workflowId === 'lead') return
       if (event.type === 'run.finished') engines.delete(runId)
       const refs = { runId, nodeId: event.nodeId }
-      if (state.kind === 'task' && ['node.started', 'node.finished', 'node.failed', 'run.finished', 'human.requested', 'review.round'].includes(event.type)) {
+      if (state.kind === 'task' && event.type === 'run.finished') {
         const node = event.nodeId && state.nodes[event.nodeId]
         await post(state.requirementId, { author, kind: 'task', text: `${state.origin?.title ?? state.workflowId}：${state.status}${node ? `；${node.id} ${node.status}` : ''}`,
           replyTo: state.origin?.messageId, refs: { ...refs, taskRunId: runId, artifacts: Object.values(state.nodes).flatMap((node) => node.outputs) } })
@@ -61,8 +85,11 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       let text: string | undefined
       if (event.type === 'run.finished') text = `运行结束：${(event.data as { status: string }).status}`
       else if (event.type === 'human.requested') { const data = event.data as { ask: string; requestId: string }; text = `需要人工处理：${data.ask}` }
-      else if (event.type === 'review.round') { const data = event.data as { round: number; passed: boolean }; text = `评审 ${event.nodeId} 第 ${data.round} 轮${data.passed ? '通过' : '未通过'}` }
-      else if (event.type === 'rework.started') { const data = event.data as { from: string; to: string; feedback: string }; text = `已打回重做：${data.from} → ${data.to}。${data.feedback}` }
+      else if (event.type === 'review.exhausted') text = `评审轮次已耗尽：${event.nodeId}`
+      else if (event.type === 'budget.warning') text = '预算用量已达到告警线'
+      else if (event.type === 'budget.exhausted') text = '预算已耗尽，需要决策'
+      else if (event.type === 'retry.suppressed') text = `相同失败停止重试：${event.nodeId}`
+      else if (event.type === 'route.decided') { const route = event.data as RouteDecision; text = `路由已决定：${route.tier} · ${route.workflowId}；${route.reason}` }
       else if (event.type === 'node.finished') {
         const snapshot = await stores.runs.getWorkflow(runId)
         if (snapshot) for (const stage of stageProgress(snapshot, state).filter((stage) => stage.status === 'done')) {
@@ -82,7 +109,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return scopedEngine({ message, title, profiles: scopedProfiles, created, kind })
   }
 
-  async function launch(workflow: WorkflowDefinition, requirementId: string, message: RoomMessage, scopedProfiles = profiles, args: Record<string, unknown> = {}, parentRunId?: string): Promise<string> {
+  async function launch(workflow: WorkflowDefinition, requirementId: string, message: RoomMessage, scopedProfiles = profiles, args: Record<string, unknown> = {}, parentRunId?: string, start: Pick<StartRunInput, 'budget' | 'route'> = {}): Promise<string> {
     let resolveCreated!: (id: string) => void
     let rejectCreated!: (error: unknown) => void
     const ready = new Promise<string>((resolve, reject) => { resolveCreated = resolve; rejectCreated = reject })
@@ -93,7 +120,10 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       if (workflow.id.startsWith('task:')) await post(requirementId, { author, kind: 'task', text: `${workflow.title}：已派发`, replyTo: message.id, refs: { taskRunId: state.runId, runId: state.runId } })
       resolveCreated(state.runId)
     }, workflow.id.startsWith('task:') ? 'task' : 'workflow')
-    const job = engine.start({ workflow, requirementId, args }).catch(async (error: unknown) => {
+    const job = engine.start({ workflow, requirementId, args, ...start }).then(async (state) => {
+      if (state.kind === 'task') await recordTaskImpact(stores, state)
+      await refreshPresence(requirementId)
+    }).catch(async (error: unknown) => {
       rejectCreated(error)
       await post(requirementId, { author: system, kind: 'system', text: `运行失败：${errorText(error)}`, replyTo: message.id })
     }).finally(() => { jobs.delete(job) })
@@ -102,7 +132,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return ready
   }
 
-  async function action(value: unknown, requirementId: string, message: RoomMessage, runId: string, index: number): Promise<LeadActionResult> {
+  async function executeAction(value: unknown, requirementId: string, message: RoomMessage, runId: string, index: number, route?: RouteDecision): Promise<LeadActionResult> {
     let actionName = (value && typeof value === 'object' && 'type' in value ? value.type : 'unknown') as LeadActionResult['action']
     try {
       validateAction(value)
@@ -121,7 +151,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         case 'start_run': {
           if (!options.workflows) throw new Error('未接入 workflow 加载器')
           const workflow = await options.workflows.load(value.workflowId)
-          const id = await launch(workflow, requirementId, message, profiles, value.args, runId)
+          const id = await launch(workflow, requirementId, message, profiles, { ...value.args, ...(route ? { tier: route.tier } : {}) }, runId, { budget: value.budget, route })
           return { action: actionName, ok: true, message: '运行已启动', refs: { runId: id } }
         }
         case 'resume_run': {
@@ -137,9 +167,6 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         }
         case 'cancel_run': {
           await requireRun(value.runId, requirementId)
-          const member = message.author.type === 'human' && stores.config.members?.find((member) => member.id === (message.author as { id: string }).id)
-          if (!member || !['owner', 'maintainer'].includes(member.role)) throw new Error('取消运行需要 maintainer 或 owner 发起')
-          if (!value.reason.trim()) throw new Error('取消运行必须说明原因')
           await (engines.get(value.runId) ?? options.engineFactory({ stores, profiles, harnesses: options.harnesses })).cancel(value.runId)
           break
         }
@@ -167,6 +194,67 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     } catch (error) { return { action: actionName, ok: false, message: errorText(error) } }
   }
 
+  async function action(value: unknown, requirementId: string, message: RoomMessage, runId: string, index: number): Promise<LeadActionResult> {
+    try {
+      validateAction(value)
+      let current: LeadAction = value
+      let route: RouteDecision | undefined
+      const delegate = async (next: LeadAction) => {
+        const result = await executeAction(next, requirementId, message, runId, index, route)
+        if (!result.ok) throw new Error(result.message)
+        return result
+      }
+      const local = createCommandRegistry({ stores, audit: (entry) => audit(runId, { kind: 'command', ...entry }),
+        startRun: (input) => delegate({ type: 'start_run', workflowId: input.workflowId, ...(input.args ? { args: input.args } : {}), ...(input.budget ? { budget: input.budget } : {}) }),
+        dispatchTask: (input) => delegate({ type: 'dispatch_task', task: input.task }),
+        resumeRun: (input) => delegate({ type: 'resume_run', runId: input.runId }),
+        cancelRun: (input, context) => delegate({ type: 'cancel_run', runId: input.runId, reason: context.reason! }),
+        route: async (input, context) => {
+          if (!options.workflows) throw new Error('未接入 workflow 加载器')
+          const workflows = options.workflows.list ? await options.workflows.list() : await Promise.all(stores.config.workflows.map(async (id) => {
+            const workflow = await options.workflows!.load(id)
+            return { id: workflow.id, snapshot: snapshotWorkflow(workflow) }
+          }))
+          return (options.route ?? routeRequirement)({ stores, ...input, workflows, model: options.routeModel, by: context.actor })
+        },
+        extensions: (['reply', 'request_human', 'propose_workflow_change', 'update_notes'] as const).map((type): CommandSpec => ({
+          id: `lead.${type}`, title: type, kind: 'command', risk: 'write', minRole: 'member',
+          input: { type: 'object', ...actionSchemas[type] }, handler: (input) => delegate({ ...input, type } as LeadAction),
+        })),
+      })
+      const commands = options.commands ?? local
+      const context = { actor: message.author, reason: current.type === 'cancel_run' ? current.reason : `Lead 响应消息 ${message.id}：${message.text}` }
+      if (current.type === 'command') {
+        if (commands.list().find((command) => command.id === (current as Extract<LeadAction, { type: 'command' }>).id)?.risk !== 'read') throw new Error('command 动作只允许 read 命令')
+        const input = { ...current.input }
+        if (input.requirementId && input.requirementId !== requirementId) throw new Error('命令不能查询其他需求')
+        if (input.runId) await requireRun(String(input.runId), requirementId)
+        if (['requirement.status', 'attention.list'].includes(current.id)) input.requirementId = requirementId
+        const result = await commands.run(current.id, input, { actor: author })
+        return { action: current.type, ok: result.ok, message: result.ok ? JSON.stringify(result.result ?? result.message) : result.message }
+      }
+      if (current.type === 'start_run' && current.workflowId === 'auto') {
+        const result = await commands.run('route.preview', { requirementId, hint: message.text }, context)
+        if (!result.ok) throw new Error(result.message)
+        route = result.result as RouteDecision
+        if (!route?.workflowId) throw new Error('路由器没有返回流程')
+        await post(requirementId, { author, kind: 'route', text: `${route.tier} · ${route.workflowId}：${route.reason}`, route, replyTo: message.id })
+        current = { ...current, workflowId: route.workflowId, args: { ...current.args, tier: route.tier } }
+      }
+      const mapping: Partial<Record<LeadAction['type'], string>> = { start_run: 'run.start', resume_run: 'run.resume', cancel_run: 'run.cancel', dispatch_task: 'task.dispatch' }
+      const id = mapping[current.type] ?? `lead.${current.type}`
+      if (current.type === 'resume_run' || current.type === 'cancel_run') await requireRun(current.runId, requirementId)
+      const registry: CommandRegistry = commands.list().some((command) => command.id === id) ? commands : local
+      const result = await registry.run(id, { ...current, requirementId, ...(route ? { route } : {}) }, context)
+      const executed = result.result as LeadActionResult | undefined
+      return executed && typeof executed === 'object' && 'action' in executed ? executed
+        : { action: current.type, ok: result.ok, message: result.message,
+          ...(result.ok && result.result && typeof result.result === 'object' && 'runId' in result.result ? { refs: { runId: String(result.result.runId), ...(current.type === 'dispatch_task' ? { taskRunId: String(result.result.runId) } : {}) } } : {}) }
+    } catch (error) {
+      return { action: value && typeof value === 'object' && 'type' in value ? value.type as LeadAction['type'] : 'reply', ok: false, message: errorText(error) }
+    }
+  }
+
   async function requireRun(runId: string, requirementId: string) {
     const state = await stores.runs.get(runId)
     if (!state || state.requirementId !== requirementId) throw new Error('运行不存在或属于其他需求')
@@ -180,7 +268,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
 
   async function turn(requirementId: string, message: RoomMessage): Promise<LeadTurnResult> {
-    const prompt = await leadContext(stores, requirementId, message)
+    const prompt = await leadContext(stores, requirementId, message, { instructions: profiles.lead!.instructions, commands: options.commands?.list() ?? createCommandRegistry({ stores, audit: async () => {} }).list() })
     const workflow: WorkflowDefinition = { id: 'lead', title: 'Lead 回合', version: '1', stages: [], nodes: [{
       id: 'lead', kind: 'agent', title: 'Lead 回合', role: 'lead', harness: selector, prompt, resultSchema: LEAD_TURN_SCHEMA, writeScope: [], session: 'fresh',
     }] }
@@ -199,7 +287,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       if (value.type === 'propose_workflow_change') executed.action = value.type
       results.push(executed)
       await audit(state.runId, { kind: 'lead.action-result', result: executed, onBehalfOf: message.author })
-      await post(requirementId, { author: system, kind: 'system', text: `${executed.action}：${executed.ok ? '成功' : '失败'}；${executed.message}`, replyTo: message.id, refs: executed.refs })
+      if (!executed.ok || value.type === 'command') await post(requirementId, { author: system, kind: 'system', text: `${executed.action}：${executed.ok ? '成功' : '失败'}；${executed.message}`, replyTo: message.id, refs: executed.refs })
     }
     return { run: state, results }
   }
@@ -213,7 +301,10 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     const task = taskWorkflow(state.args.__leadTask as import('../types.js').TaskSpec, stores, profiles)
     const engine = engines.get(runId) ?? instrument(trigger, task.workflow.title, task.profiles, async () => {})
     engines.set(runId, engine)
-    return engine.resume(runId, task.workflow)
+    const resumed = await engine.resume(runId, task.workflow)
+    await recordTaskImpact(stores, resumed)
+    await refreshPresence(state.requirementId)
+    return resumed
   }
 
   async function onAttention(input: AttentionItem): Promise<boolean> {
@@ -251,9 +342,14 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     onMessage(requirementId: string, message: RoomMessage, input: { private?: boolean } = {}): Promise<LeadTurnResult | undefined> {
       if (message.author.type !== 'human' || !(input.private || message.mentions?.includes('lead') || /(^|\s)@lead\b/i.test(message.text))) return Promise.resolve(undefined)
       if (message.roomId !== requirementId) return Promise.reject(new Error('消息不属于当前需求'))
-      return serial(requirementId, () => turn(requirementId, message))
+      return serial(requirementId, async () => {
+        thinking.add(requirementId)
+        try { await setPresence(requirementId, 'thinking'); return await turn(requirementId, message) }
+        finally { thinking.delete(requirementId); await refreshPresence(requirementId) }
+      })
     },
-    onRunEvent, onAttention, resumeTask,
+    getPresence: (requirementId: string): LeadPresence => ({ ...(presence.get(requirementId) ?? { state: 'idle', since: new Date().toISOString() }) }),
+    onRunEvent, onAttention: async (item: AttentionItem) => { try { return await onAttention(item) } finally { await refreshPresence(item.requirementId) } }, resumeTask,
     async drain(): Promise<void> {
       while (queues.size || jobs.size) await Promise.all([...queues.values(), ...jobs])
     },

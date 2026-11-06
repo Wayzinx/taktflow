@@ -6,6 +6,16 @@ import type {
   ArtifactRecord,
   AttentionItem,
   ChatPostRequest,
+  CommandInfo,
+  CommandRunRequest,
+  CommandRunResponse,
+  LeadPresence,
+  Lesson,
+  LessonUpdateRequest,
+  ReviewDisposition,
+  ReviewDispositionRequest,
+  RouteDecision,
+  RoutePreviewRequest,
   EventEnvelope,
   HarnessInfo,
   ModelInfo,
@@ -88,6 +98,8 @@ export interface DataSource {
   space(): Promise<SpaceDetail>
   setMembers(members: SpaceMember[]): Promise<SpaceDetail>
   addRepo(repo: RepoBinding): Promise<SpaceDetail>
+  /** 修改已绑定仓库的可变字段（bootstrap / share / defaultBranch 等）；后端待补 PATCH /api/space/repos/:id。 */
+  updateRepo(repoId: string, patch: Partial<Omit<RepoBinding, 'id'>>): Promise<SpaceDetail>
   syncRepo(repoId: string): Promise<{ head: string }>
   spaceFile(kind: SpaceFileKind, name: string): Promise<SpaceFile>
   saveSpaceFile(kind: SpaceFileKind, name: string, body: { content: string; reason: string }): Promise<SpaceFile>
@@ -97,11 +109,28 @@ export interface DataSource {
   addRoomMembers(requirementId: string, members: RoomMember[]): Promise<Room>
   chat(requirementId: string, opts?: { after?: number; limit?: number }): Promise<RoomMessage[]>
   postChat(requirementId: string, body: ChatPostRequest): Promise<RoomMessage>
-  /** 新消息实时到达（SSE）；同一个 id 再次到达表示消息被更新。 */
-  subscribeChat(requirementId: string, onMessage: (m: RoomMessage) => void): () => void
+  /**
+   * 新消息实时到达（SSE）；同一个 id 再次到达表示消息被更新。
+   * onLead：同一条 SSE 上的 `event: lead`（Lead 状态灯）；Room.lead 是订阅前的初始值。
+   */
+  subscribeChat(requirementId: string, onMessage: (m: RoomMessage) => void, onLead?: (p: LeadPresence) => void): () => void
 
   // ---- 评审（docs/design/18）
   requirementReviews(requirementId: string): Promise<ReviewSummary[]>
+  /** 人对评审问题的处置（resolved / dismissed / open），reason 必填，进审计。 */
+  disposeReview(runId: string, nodeId: string, body: ReviewDispositionRequest): Promise<ReviewDisposition>
+
+  // ---- 外部参考改进（docs/design/19）
+  /** 路由预览：只算路由卡，不启动运行；给 tier 表示改档（需要 reason）。 */
+  routePreview(requirementId: string, body: RoutePreviewRequest): Promise<RouteDecision>
+  /** ⌘K、Lead、CLI 共用的命令注册表。 */
+  commands(): Promise<CommandInfo[]>
+  /** 执行命令；write / dangerous 需要 reason。业务失败时 ok 为 false（不抛错）。 */
+  runCommand(id: string, body: CommandRunRequest): Promise<CommandRunResponse>
+  /** 经验库；status 不给时返回全部。 */
+  lessons(status?: Lesson['status']): Promise<Lesson[]>
+  /** 修改经验（启用 / 退役 / 改正文），reason 必填。 */
+  updateLesson(id: string, body: LessonUpdateRequest): Promise<Lesson>
 
   // ---- workflow 协同编辑（docs/design/16），作用于当前空间
   workflows(): Promise<WorkflowSummary[]>

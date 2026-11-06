@@ -47,14 +47,20 @@ export async function persistArtifactInvalidation(stores: ProjectStores, runId: 
   })
 }
 
-export async function markArtifactEdited(stores: ProjectStores, cause: ArtifactRef, actor: Actor, reason: string): Promise<Array<{ runId: string; nodeId: string }>> {
-  if (actor.type !== 'human') throw new Error('人工产物修改必须使用 human actor')
-  if (!reason.trim()) throw new Error('人工产物修改必须填写原因')
+export async function markArtifactEdited(stores: ProjectStores, cause: ArtifactRef, actor: Actor, reason: string, impact: 'cosmetic' | 'semantic' = 'semantic'): Promise<Array<{ runId: string; nodeId: string }>> {
+  assertRequirementId(cause.workspace)
+  assertArtifactPath(cause.path)
+  if (actor.type !== 'human' && actor.type !== 'agent') throw new Error('产物修改必须使用 human 或 agent actor')
+  if (!reason.trim()) throw new Error('产物修改必须填写原因')
   const affected: Array<{ runId: string; nodeId: string }> = []
   for (const run of await stores.runs.list({ requirementId: cause.workspace })) {
+    if (impact === 'cosmetic') {
+      await stores.events.append(run.runId, { type: 'artifact.edited', actor, data: { ref: cause, reason, impact } })
+      continue
+    }
     const ids = await persistArtifactInvalidation(stores, run.runId, cause)
     if (!ids.length) continue
-    await stores.events.append(run.runId, { type: 'artifact.edited', actor, data: { ref: cause, reason } })
+    await stores.events.append(run.runId, { type: 'artifact.edited', actor, data: { ref: cause, reason, impact } })
     for (const nodeId of ids) {
       await stores.events.append(run.runId, { type: 'node.stale', actor, nodeId, data: { cause } })
       affected.push({ runId: run.runId, nodeId })

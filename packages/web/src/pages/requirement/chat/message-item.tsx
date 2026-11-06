@@ -1,8 +1,11 @@
+import { useState } from 'react'
 import { Activity, Bot, Cog, CornerUpLeft, Info, Sparkles } from 'lucide-react'
 import type { AttentionItem, RoomMember, RoomMessage } from '@taktflow/core'
+import { RouteCard } from '../../../components/route-card'
 import { Avatar } from '../../../components/ui'
 import { fmtTime } from '../../../lib/format'
 import { AttentionMessage } from './attention-message'
+import { hasLeadMarks, LeadText } from './lead-text'
 import { MessageRefs } from './message-refs'
 import { MentionText, StreamingText } from './streaming-text'
 import { TaskCard } from './task-card'
@@ -14,9 +17,12 @@ export interface MessageCtx {
   live: Set<string>
   pulse: Record<string, number>
   attention?: AttentionItem[]
+  requirementId: string
   onReply(m: RoomMessage): void
   /** 任务卡片上报某个任务里正在运行的角色，成员栏据此标"工作中"。 */
   onTaskRoles(runId: string, roles: string[]): void
+  /** 定位到某条消息并高亮（引用、跳转）。 */
+  onJump?(messageId: string): void
 }
 
 function authorLabel(m: RoomMessage, member?: RoomMember): { name: string; tag?: string; kind: RoomMember['kind'] | 'system' } {
@@ -52,6 +58,7 @@ function SystemLine({ m }: { m: RoomMessage }) {
 
 /** 一条消息；grouped 时与上一条同作者，省掉头像和名字。 */
 export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: boolean; ctx: MessageCtx }) {
+  const [streamDone, setStreamDone] = useState(false)
   if (m.kind === 'system') return <SystemLine m={m} />
   const member = findMember(ctx.members, m.author)
   const who = authorLabel(m, member)
@@ -59,9 +66,12 @@ export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: bool
   const streaming = ctx.live.has(m.id)
   const self = m.author.type === 'human' && m.author.id === 'web'
   const mentionsMe = m.mentions?.includes('web')
+  // Lead 的"待确认 / 下一步"标签块：流出期间先按纯文本显示，流完再换成标签块
+  const marks = who.kind === 'lead' && (m.kind === 'text' || m.kind === 'progress') && hasLeadMarks(m.text)
 
   let body
   if (m.kind === 'attention') body = <AttentionMessage m={m} items={ctx.attention} />
+  else if (m.kind === 'route' && m.route) body = <RouteCard route={m.route} requirementId={ctx.requirementId} runId={m.refs?.runId} />
   else if (m.kind === 'task') body = <TaskCard m={m} pulse={(m.refs?.taskRunId && ctx.pulse[m.refs.taskRunId]) || 0} onRoles={ctx.onTaskRoles} />
   else
     body = (
@@ -72,7 +82,11 @@ export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: bool
             进度
           </span>
         )}
-        <p>{streaming ? <StreamingText text={m.text} members={ctx.members} /> : <MentionText text={m.text} members={ctx.members} />}</p>
+        {marks && !(streaming && !streamDone) ? (
+          <LeadText text={m.text} members={ctx.members} />
+        ) : (
+          <p>{streaming ? <StreamingText text={marks ? m.text.replace(/\*\*/g, '') : m.text} members={ctx.members} onDone={() => setStreamDone(true)} /> : <MentionText text={m.text} members={ctx.members} />}</p>
+        )}
       </div>
     )
 
@@ -98,11 +112,11 @@ export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: bool
           </header>
         )}
         {quoted && (
-          <div className="chat-quote">
+          <button type="button" className="chat-quote" title="定位到原消息" onClick={() => ctx.onJump?.(quoted.id)}>
             <CornerUpLeft aria-hidden="true" />
             <span className="chat-quote-who">{authorId(quoted.author)}</span>
-            <span className="truncate">{quoted.text}</span>
-          </div>
+            <span className="truncate">{quoted.text.replace(/\*\*/g, '')}</span>
+          </button>
         )}
         {body}
         <MessageRefs m={m} />

@@ -37,15 +37,20 @@
 .rv-step-mark svg { width: 12px; height: 12px; }
 .rv-step.pass .rv-step-mark { color: var(--st-success); background: var(--st-success-soft); }
 .rv-step.fail .rv-step-mark { color: var(--st-waiting); background: var(--st-waiting-soft); }
+/* 当前轮按节拍跳；reduced-motion 下静止但橙环仍在 */
 .rv-step.current .rv-step-mark { box-shadow: 0 0 0 2px var(--accent-ring); animation: rv-beat var(--takt) var(--ease-in-out) infinite; }
 .rv-step-text { display: grid; line-height: 1.35; }
 .rv-step-title { font-size: var(--text-ui); font-weight: 500; white-space: nowrap; }
 .rv-step-sub { font-size: var(--text-meta); color: var(--text-3); white-space: nowrap; }
 .rv-rework-step {
-  align-self: flex-end; display: flex; align-items: center; gap: var(--sp-1); height: 44px; padding: 0 var(--sp-2);
+  position: relative; align-self: flex-end; display: grid; align-content: center; gap: 1px; height: 46px; max-width: 220px; padding: 0 var(--sp-3) 0 var(--sp-4);
   border-radius: var(--radius-sm); border: 1px dashed color-mix(in oklch, var(--st-stale) 45%, transparent);
   color: var(--st-stale); background: var(--st-stale-soft); font-size: var(--text-meta); white-space: nowrap;
 }
+/* 修订之间断开：左缘一道断口刻度 */
+.rv-break { position: absolute; left: 6px; top: 8px; bottom: 8px; width: 2px; background: repeating-linear-gradient(to bottom, var(--st-stale) 0 3px, transparent 3px 6px); }
+.rv-rework-step-main { display: inline-flex; align-items: center; gap: var(--sp-1); font-weight: 600; }
+.rv-rework-step-why { color: var(--text-2); font-size: var(--text-label); }
 .rv-rework-step svg { width: 14px; height: 14px; }
 @keyframes rv-beat { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.12); } 30% { transform: scale(1); } }
 
@@ -69,7 +74,7 @@
 .rv-score { display: flex; align-items: center; gap: var(--sp-2); }
 .rv-score-num { font-size: var(--text-title); font-weight: 600; color: var(--text); min-width: 2ch; }
 .rv-score-track { position: relative; flex: 1; height: 4px; border-radius: var(--radius-pill); background: var(--surface-active); }
-.rv-score-fill { position: absolute; inset: 0 auto 0 0; border-radius: inherit; background: var(--tone); transition: width var(--dur-slow) var(--ease); }
+.rv-score-fill { position: absolute; inset: 0; border-radius: inherit; background: var(--tone); transform-origin: left center; transition: transform var(--dur-slow) var(--ease); }
 .rv-score-threshold { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--text-2); }
 
 .rv-sev {

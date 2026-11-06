@@ -5,6 +5,7 @@ export function snapshotWorkflow(def: WorkflowDefinition): WorkflowSnapshot {
     id: def.id,
     title: def.title,
     description: def.description,
+    useWhen: def.useWhen, tiers: def.tiers, leadInstructions: def.leadInstructions, dynamicRules: def.dynamicRules, budget: def.budget,
     version: def.version,
     stages: def.stages,
     nodes: def.nodes.map(snapshotNode),
@@ -19,6 +20,7 @@ function snapshotNode(node: NodeDef): SnapshotNode {
     id: node.id,
     kind: node.kind,
     title: node.title,
+    goal: node.goal, owner: node.owner,
     stage: node.stage,
     needs: node.needs ?? [],
     inputs: node.inputs,
@@ -26,6 +28,7 @@ function snapshotNode(node: NodeDef): SnapshotNode {
   }
   switch (node.kind) {
     case 'agent':
+      snapshot.completion = node.completion
       snapshot.prompt = typeof node.prompt === 'string' ? node.prompt : undefined
       snapshot.repo = node.repo
       snapshot.role = node.role
@@ -34,7 +37,8 @@ function snapshotNode(node: NodeDef): SnapshotNode {
     case 'review':
       snapshot.review = { target: node.target, author: node.author.role,
         reviewers: node.reviewers.map((reviewer) => ({ role: reviewer.role, focus: reviewer.focus, harness: reviewer.harness?.harness })),
-        pass: node.pass ?? 'all', maxRounds: node.maxRounds, onExhausted: node.onExhausted, humanSignoff: node.humanSignoff }
+        pass: node.pass ?? 'all', maxRounds: node.maxRounds, onExhausted: node.onExhausted, humanSignoff: node.humanSignoff, stopAfterNoProgress: node.stopAfterNoProgress,
+        arbiter: node.arbiter && { role: node.arbiter.role, focus: node.arbiter.focus, harness: node.arbiter.harness?.harness } }
       break
     case 'judge':
       snapshot.role = node.role

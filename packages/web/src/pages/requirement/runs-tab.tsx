@@ -1,5 +1,6 @@
 import { GitBranch } from 'lucide-react'
 import type { RunSummary } from '@taktflow/core'
+import { TierGlyph } from '../../components/tier-glyph'
 import { EmptyState, SkeletonRows, StatusBadge } from '../../components/ui'
 import { durationBetween, fmtCost, fmtDate, fmtDuration, fmtRelative, fmtTokens, totalTokens } from '../../lib/format'
 import { navigate } from '../../lib/router'
@@ -35,7 +36,11 @@ export function RunsTab({ runs }: { runs?: RunSummary[] }) {
               <tr key={r.runId} className="clickable" onClick={() => navigate(`/run/${r.runId}`)}>
                 <td>
                   <div className="mono" style={{ fontWeight: 560 }}>{r.runId}</div>
-                  <div className="faint mono" style={{ fontSize: 11 }}>{r.workflowId}</div>
+                  <div className="run-sub faint">
+                    {r.tier && <TierGlyph tier={r.tier} size={12} />}
+                    <span className="mono">{r.workflowId}</span>
+                    {r.kind === 'task' && <span title={r.origin?.title}>· 临时任务{r.origin?.title ? `：${r.origin.title}` : ''}</span>}
+                  </div>
                 </td>
                 <td>
                   <StatusBadge meta={RUN_STATUS[r.status]} />

@@ -5,7 +5,7 @@ export const REVIEW_SCHEMA = {
     verdict: { type: 'string', enum: ['approve', 'request_changes', 'reject'] }, score: { type: 'number' }, summary: { type: 'string' },
     issues: { type: 'array', items: { type: 'object', required: ['id', 'severity', 'description'], properties: {
       id: { type: 'string' }, severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
-      description: { type: 'string' }, location: { type: 'string' }, suggestion: { type: 'string' },
+      title: { type: 'string' }, category: { type: 'string' }, description: { type: 'string' }, location: { type: 'string' }, suggestion: { type: 'string' },
     } } },
   },
 }

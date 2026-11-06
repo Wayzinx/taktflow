@@ -333,8 +333,13 @@ export function ContextTab({ d }: { d: NodeDetail }) {
           )}
         </div>
         <div className="ctx-bar">
-          {bySource.map((x) => (
-            <span key={x.s} style={{ width: `${(x.tokens / scale) * 100}%`, background: CONTEXT_SOURCE[x.s].color }} title={`${CONTEXT_SOURCE[x.s].label} ${fmtTokens(x.tokens)}`} />
+          {bySource.map((x, i) => {
+            // 段宽用 scaleX（动效规范：用量条不动画 width）：每段铺满整条、从自己的起点按比例缩放
+            const start = bySource.slice(0, i).reduce((n, y) => n + y.tokens, 0) / scale
+            return <span key={x.s} className="ctx-seg" style={{ left: `${start * 100}%`, transform: `scaleX(${x.tokens / scale})`, background: CONTEXT_SOURCE[x.s].color }} title={`${CONTEXT_SOURCE[x.s].label} ${fmtTokens(x.tokens)}`} />
+          })}
+          {bySource.slice(1).map((x, i) => (
+            <span key={`sep-${x.s}`} className="ctx-sep" style={{ left: `${(bySource.slice(0, i + 1).reduce((n, y) => n + y.tokens, 0) / scale) * 100}%` }} aria-hidden />
           ))}
           {over && <span className="ctx-over" style={{ left: `${(snap.budgetTokens / scale) * 100}%`, width: `${((snap.totalTokens - snap.budgetTokens) / scale) * 100}%` }} />}
           <span className="ctx-budget" style={{ left: `${(snap.budgetTokens / scale) * 100}%` }}>
@@ -602,7 +607,7 @@ function GateScore({ score, pass, threshold }: { score: number; pass: boolean; t
       </div>
       <div className="gate-score-track" role="img" aria-label={threshold === undefined ? `得分 ${score}` : `得分 ${score}，阈值 ${threshold}`}>
         {threshold !== undefined && <span className="gate-pass-zone" style={{ left: `${clamp(threshold)}%` }} />}
-        <span className="gate-score-fill" style={{ width: `${clamp(score)}%` }} />
+        <span className="gate-score-fill" style={{ transform: `scaleX(${clamp(score) / 100})` }} />
         {threshold !== undefined && (
           <span className="gate-threshold" style={{ left: `${clamp(threshold)}%` }}>
             <span className="gate-threshold-label">

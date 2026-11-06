@@ -1,3 +1,5 @@
+import type { WorkspaceStore } from '../../interfaces.js'
+import { sha256 } from '../../util/hash.js'
 import type { ArtifactRef, NodeContext, ReviewNodeDef } from '../../types.js'
 import type { Runtime } from '../runtime.js'
 import { resolveInputs } from '../artifacts.js'
@@ -41,4 +43,15 @@ export async function reviewTargets(host: Runtime, node: ReviewNodeDef, ctx: Nod
   if (!paths.length) throw new Error(`评审 ${node.id} 没有可评审产物`)
   return host.guard.system(host.workspacePaths(paths), () => resolveInputs(host.deps.stores, host.state,
     { ...node, inputs: paths.map((path) => ({ path })) }, host.emit))
+}
+
+export async function targetFingerprint(workspaces: WorkspaceStore, refs: ArtifactRef[], code: boolean): Promise<string> {
+  const ordered = [...refs].sort((a, b) => a.path.localeCompare(b.path))
+  if (!code) return sha256(ordered.map((ref) => `${ref.path}@${ref.version}`).join('\n'))
+  const patches = await Promise.all(ordered.map(async (ref) => {
+    const bytes = await workspaces.readArtifact(ref)
+    if (!bytes) throw new Error(`评审目标不可读：${ref.path} v${ref.version}`)
+    return bytes.toString()
+  }))
+  return sha256(patches.join('\n'))
 }

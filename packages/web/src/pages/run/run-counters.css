@@ -1,0 +1,144 @@
+/* 运行页顶部：LIVE 标记与"已校验 / 已拦截"计数（C 组）。计数频繁变化，不加入场动画。 */
+.run-counters {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.run-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.run-live > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.run-live:not(.beating) {
+  color: var(--st-waiting);
+  background: var(--st-waiting-soft);
+}
+.run-live:not(.beating) > i {
+  background: var(--st-waiting);
+}
+.run-live.beating > i {
+  animation: takt-beat var(--takt) var(--ease-in-out) infinite;
+}
+
+.run-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  background: var(--surface-hover);
+  white-space: nowrap;
+}
+.run-count svg {
+  width: 12px;
+  height: 12px;
+}
+.run-count b {
+  font-weight: 600;
+  color: var(--text);
+}
+.run-count.tone-ok svg {
+  color: var(--st-success);
+}
+.run-count.tone-cut {
+  cursor: default;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.run-count.tone-cut.has svg {
+  color: var(--st-waiting);
+}
+.run-count.tone-cut:hover,
+.run-count.tone-cut[aria-expanded='true'] {
+  background: var(--surface-active);
+}
+.run-count.tone-cut:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+.run-count-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.run-count-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  gap: 6px;
+  width: 240px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-meta);
+  transform-origin: top left;
+  transition:
+    opacity 140ms var(--ease),
+    transform 140ms var(--ease);
+}
+.run-count-pop[data-state='enter'],
+.run-count-pop[data-state='exit'] {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.985);
+}
+.run-count-pop[data-state='exit'] {
+  transition-duration: 120ms;
+}
+.run-count-pop-head {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.run-count-row {
+  display: grid;
+  grid-template-columns: 64px 1fr 24px;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+}
+.run-count-row b {
+  text-align: right;
+  color: var(--text);
+}
+.run-count-row.zero b,
+.run-count-row.zero .run-count-label {
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-live.beating > i {
+    animation: none;
+  }
+  .run-count-pop {
+    transition: opacity 120ms linear;
+  }
+  .run-count-pop[data-state='enter'],
+  .run-count-pop[data-state='exit'] {
+    transform: none;
+  }
+}

@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { AlertTriangle, Check, CircleDashed, GitBranch, GitFork, LoaderCircle, Plus, RefreshCw, X } from 'lucide-react'
+import { AlertTriangle, Check, Pencil, CircleDashed, FolderSymlink, GitBranch, GitFork, LoaderCircle, Plus, RefreshCw, SquareTerminal, X } from 'lucide-react'
 import type { SpaceDetail } from '@taktflow/core'
 import { useSource } from '../../api'
 import { EmptyState, SkeletonRows, StatusBadge, toast } from '../../components/ui'
 import type { StatusMeta } from '../../lib/status'
+import { RepoSetupEdit } from './repo-setup-edit'
 
 type Repo = SpaceDetail['repos'][number]
 
@@ -19,6 +20,7 @@ const PURPOSE: Record<string, string> = { app: '应用', library: '库', test: '
 function RepoRow({ repo, onChanged }: { repo: Repo; onChanged: () => void }) {
   const ds = useSource()
   const [syncing, setSyncing] = useState(false)
+  const [editing, setEditing] = useState(false)
   const status = syncing ? 'syncing' : repo.status
 
   async function sync() {
@@ -53,6 +55,23 @@ function RepoRow({ repo, onChanged }: { repo: Repo; onChanged: () => void }) {
             {repo.head && <span className="faint"> @ {repo.head}</span>}
           </span>
         </div>
+        {editing ? (
+          <RepoSetupEdit
+            repo={repo}
+            onDone={(changed) => {
+              setEditing(false)
+              if (changed) onChanged()
+            }}
+          />
+        ) : (
+          <div className="repo-setup-row">
+            <WorktreeSetup repo={repo} />
+            <button className="btn btn-ghost btn-sm repo-setup-btn" onClick={() => setEditing(true)} aria-label={`编辑 ${repo.id} 的 worktree 引导`}>
+              <Pencil />
+              编辑引导
+            </button>
+          </div>
+        )}
         {repo.message && status !== 'syncing' && (
           <p className={`repo-message${repo.status === 'error' ? ' error' : ''}`}>
             {repo.status === 'error' && <AlertTriangle aria-hidden />}
@@ -69,15 +88,61 @@ function RepoRow({ repo, onChanged }: { repo: Repo; onChanged: () => void }) {
   )
 }
 
+/** worktree 引导：建好 worktree 后执行的命令，以及从主检出软链进来的共享目录。 */
+function WorktreeSetup({ repo }: { repo: Repo }) {
+  if (!repo.bootstrap && !repo.share?.length)
+    return <p className="repo-setup is-empty faint">没有引导命令：新 worktree 直接开工（依赖需要节点自己装）。</p>
+  return (
+    <dl className="repo-setup" aria-label={`${repo.id} 的 worktree 引导`}>
+      {repo.bootstrap && (
+        <div title="worktree 建好后在其中执行；失败则节点 blocked">
+          <dt>
+            <SquareTerminal aria-hidden />
+            引导命令
+          </dt>
+          <dd>
+            <code className="repo-cmd">{repo.bootstrap}</code>
+          </dd>
+        </div>
+      )}
+      {repo.share && repo.share.length > 0 && (
+        <div title="从仓库主检出软链进 worktree，避免每个 worktree 重装">
+          <dt>
+            <FolderSymlink aria-hidden />
+            共享目录
+          </dt>
+          <dd>
+            {repo.share.map((d) => (
+              <span key={d} className="chip chip-sm mono">
+                {d}
+              </span>
+            ))}
+          </dd>
+        </div>
+      )}
+    </dl>
+  )
+}
+
+const splitList = (s: string) => s.split(/[\n,]/).map((x) => x.trim()).filter(Boolean)
+
 function AddRepo({ onDone }: { onDone: () => void }) {
   const ds = useSource()
-  const [f, setF] = useState({ id: '', url: '', defaultBranch: 'main' })
+  const [f, setF] = useState({ id: '', url: '', defaultBranch: 'main', bootstrap: '', share: '' })
   const [busy, setBusy] = useState(false)
   const valid = /^[a-z0-9][a-z0-9-]*$/.test(f.id) && f.url.trim() !== ''
   async function submit() {
     setBusy(true)
     try {
-      await ds.addRepo({ id: f.id, url: f.url.trim(), path: `.takt/repos/${f.id}`, defaultBranch: f.defaultBranch || 'main' })
+      const share = splitList(f.share)
+      await ds.addRepo({
+        id: f.id,
+        url: f.url.trim(),
+        path: `.takt/repos/${f.id}`,
+        defaultBranch: f.defaultBranch || 'main',
+        ...(f.bootstrap.trim() ? { bootstrap: f.bootstrap.trim() } : {}),
+        ...(share.length ? { share } : {}),
+      })
       toast(`已绑定 ${f.id}`, { body: '点同步把仓库镜像到本地。' })
       onDone()
     } catch (e) {
@@ -106,11 +171,19 @@ function AddRepo({ onDone }: { onDone: () => void }) {
         <span className="field-label">默认分支</span>
         <input className="input mono" value={f.defaultBranch} onChange={(e) => setF({ ...f, defaultBranch: e.target.value.trim() })} />
       </label>
+      <label className="grow">
+        <span className="field-label">引导命令（可选）</span>
+        <input className="input mono" placeholder="npm ci --prefer-offline" value={f.bootstrap} onChange={(e) => setF({ ...f, bootstrap: e.target.value })} />
+      </label>
+      <label className="grow">
+        <span className="field-label">共享目录（可选，逗号分隔）</span>
+        <input className="input mono" placeholder="node_modules, .cache" value={f.share} onChange={(e) => setF({ ...f, share: e.target.value })} />
+      </label>
       <button className="btn btn-primary" type="submit" disabled={!valid || busy}>
         绑定
       </button>
       <p className="faint repo-add-hint">
-        id 用小写字母、数字和短横线。镜像放在 <span className="mono">.takt/repos/{f.id || '<id>'}</span>，每个写代码的任务从镜像开自己的 worktree。
+        id 用小写字母、数字和短横线。镜像放在 <span className="mono">.takt/repos/{f.id || '<id>'}</span>，每个写代码的任务从镜像开自己的 worktree；引导命令在 worktree 建好后执行，失败则节点 blocked；共享目录从主检出软链进来，免得每个 worktree 重装依赖。
       </p>
     </form>
   )

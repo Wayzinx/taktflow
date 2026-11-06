@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, FileCode2, FileJson, FileText, FolderOpen, GitCommitHorizontal, Image as ImageIcon, MessageSquare, Pencil, Send, TriangleAlert, X } from 'lucide-react'
-import type { ArtifactEditResponse, ArtifactRecord, ArtifactVersion, RequirementDetail } from '@taktflow/core'
+import type { ArtifactEditResponse, ArtifactKind, ArtifactRecord, ArtifactVersion, RequirementDetail, RunDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
-import { Avatar, EmptyState, ErrorState, Skeleton, SkeletonRows, toast } from '../../components/ui'
+import { Avatar, EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows, toast } from '../../components/ui'
 import { JsonView } from '../../lib/json-view'
 import { Markdown } from '../../lib/markdown'
 import { actorName, fmtDate, fmtRelative } from '../../lib/format'
@@ -22,14 +22,48 @@ function authorLabel(v: ArtifactVersion) {
   return v.author.type === 'agent' ? v.author.role : actorName(v.author)
 }
 
-export function ArtifactsTab({ id, detail }: { id: string; detail?: RequirementDetail }) {
+/** 按 spec 类型分组（docs/design/19 §13）：需求 / 技术 / 测试 / 其他，组内按产物类型的流水线顺序。 */
+const SPEC_GROUPS: Array<{ id: string; label: string; kinds: ArtifactKind[] }> = [
+  { id: 'req', label: '需求', kinds: ['input', 'clarification', 'spec'] },
+  { id: 'tech', label: '技术', kinds: ['design', 'contract', 'task', 'code-change', 'decision'] },
+  { id: 'test', label: '测试', kinds: ['test-plan', 'case', 'script', 'evidence', 'verdict'] },
+  { id: 'other', label: '其他', kinds: ['review', 'report', 'knowledge', 'other'] },
+]
+const kindRank = (k: ArtifactKind) => ARTIFACT_KIND_ORDER.indexOf(k)
+
+/** "当前阶段产物"：由最近一次流水线运行里当前阶段的节点产出（任一版本）。 */
+function currentStagePaths(detail: RequirementDetail, run?: RunDetail): Set<string> | undefined {
+  if (!detail.stage || !run) return undefined
+  const nodes = new Set(run.graph.nodes.filter((n) => n.stage === detail.stage).map((n) => n.id))
+  const runId = run.run.runId
+  return new Set(detail.artifacts.filter((r) => r.versions.some((v) => v.producedBy?.runId === runId && nodes.has(v.producedBy.nodeId))).map((r) => r.path))
+}
+
+export function ArtifactsTab({ id, detail, run }: { id: string; detail?: RequirementDetail; run?: RunDetail }) {
   const { query } = useLocation()
-  const records = detail?.artifacts
+  const onlyCurrent = query.get('scope') === 'stage'
+  const all = detail?.artifacts
+  const stagePaths = useMemo(() => (detail ? currentStagePaths(detail, run) : undefined), [detail, run])
+  const stageTitle = detail?.stages.find((s) => s.id === detail.stage)?.title
+  const records = onlyCurrent && all && stagePaths ? all.filter((r) => stagePaths.has(r.path)) : all
   const selectedPath = query.get('path') ?? records?.find((r) => r.kind === 'spec')?.path ?? records?.[0]?.path
   const groups = useMemo(() => {
     if (!records) return []
-    return ARTIFACT_KIND_ORDER.map((k) => ({ kind: k, items: records.filter((r) => r.kind === k) })).filter((g) => g.items.length)
+    return SPEC_GROUPS.map((g) => ({ ...g, items: records.filter((r) => g.kinds.includes(r.kind)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)) })).filter((g) => g.items.length)
   }, [records])
+  const scopeSwitch = stagePaths && (
+    <div className="art-scope">
+      <Segmented<'all' | 'stage'>
+        value={onlyCurrent ? 'stage' : 'all'}
+        onChange={(v) => setQuery({ scope: v === 'stage' ? 'stage' : undefined, path: undefined, v: undefined })}
+        options={[
+          { value: 'all', label: `全部 ${all?.length ?? 0}` },
+          { value: 'stage', label: `当前阶段 ${stagePaths.size}` },
+        ]}
+      />
+      {stageTitle && <span className="art-scope-stage faint truncate">{stageTitle}</span>}
+    </div>
+  )
 
   if (!records)
     return (
@@ -42,6 +76,17 @@ export function ArtifactsTab({ id, detail }: { id: string; detail?: RequirementD
           <Skeleton w="90%" h={11} style={{ marginTop: 20 }} />
           <Skeleton w="76%" h={11} style={{ marginTop: 10 }} />
           <Skeleton w="82%" h={11} style={{ marginTop: 10 }} />
+        </div>
+      </div>
+    )
+  if (records.length === 0 && onlyCurrent)
+    return (
+      <div className="art-layout">
+        <nav className="card art-list" aria-label="产物列表">
+          {scopeSwitch}
+        </nav>
+        <div className="card">
+          <EmptyState icon={FolderOpen} title="当前阶段还没有产物" hint={<>{stageTitle ?? '当前阶段'}的节点产出后会出现在这里；切回"全部"可以看之前阶段的产物。</>} />
         </div>
       </div>
     )
@@ -64,10 +109,11 @@ export function ArtifactsTab({ id, detail }: { id: string; detail?: RequirementD
   return (
     <div className="art-layout">
       <nav className="card art-list" aria-label="产物列表">
+        {scopeSwitch}
         {groups.map((g) => (
-          <div key={g.kind} className="art-group">
+          <div key={g.id} className="art-group">
             <div className="art-group-head">
-              <span>{ARTIFACT_KIND[g.kind]}</span>
+              <span>{g.label}</span>
               <span className="num">{g.items.length}</span>
             </div>
             {g.items.map((r) => {
@@ -78,7 +124,10 @@ export function ArtifactsTab({ id, detail }: { id: string; detail?: RequirementD
                   <Icon className="art-item-icon" />
                   <span className="art-item-text">
                     <span className="art-item-title truncate">{r.title ?? r.path.split('/').pop()}</span>
-                    <span className="art-item-path mono truncate">{r.path}</span>
+                    <span className="art-item-path truncate">
+                      {r.title !== ARTIFACT_KIND[r.kind] && <span className="art-item-kind">{ARTIFACT_KIND[r.kind]}</span>}
+                      <span className="mono">{r.path}</span>
+                    </span>
                   </span>
                   <span className={`art-ver mono${r.versions.length > 1 ? ' multi' : ''}`}>v{v.version}</span>
                 </button>
@@ -142,6 +191,7 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [reason, setReason] = useState('')
+  const [impact, setImpact] = useState<'semantic' | 'cosmetic'>('semantic')
   const [saving, setSaving] = useState(false)
   const [result, setResult] = useState<ArtifactEditResponse | null>(null)
   const image = record.mediaType.startsWith('image/')
@@ -149,13 +199,14 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
   function startEdit() {
     setDraft(content.data?.content ?? '')
     setReason('')
+    setImpact('semantic')
     setEditing(true)
     setResult(null)
   }
   async function save() {
     setSaving(true)
     try {
-      const res = await ds.editArtifact(reqId, record.path, { content: draft, reason: reason.trim() })
+      const res = await ds.editArtifact(reqId, record.path, { content: draft, reason: reason.trim(), impact })
       setResult(res)
       setEditing(false)
       setQuery({ v: undefined })
@@ -259,6 +310,14 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
           <div className="art-editor">
             <textarea className="textarea mono" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} />
             <div className="art-editor-foot">
+              <Segmented<'semantic' | 'cosmetic'>
+                value={impact}
+                onChange={setImpact}
+                options={[
+                  { value: 'semantic', label: '语义修改' },
+                  { value: 'cosmetic', label: '措辞调整' },
+                ]}
+              />
               <input className="input" placeholder="修改原因（必填，进审计日志）" value={reason} onChange={(e) => setReason(e.target.value)} autoFocus />
               <button className="btn" onClick={() => setEditing(false)}>
                 取消
@@ -267,7 +326,9 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
                 保存为 v{latest(record).version + 1}
               </button>
             </div>
-            <div className="art-editor-hint faint">保存后，读过这个产物的节点及其下游会被标记为"过期"，由你决定是否重跑。</div>
+            <div className="art-editor-hint faint">
+              {impact === 'semantic' ? '保存后，读过这个产物的节点及其下游会被标记为"过期"，由你决定是否重跑。' : '措辞调整只改表述、不改含义：下游节点不会过期，但已有审批会提示"审批对象已更新"。'}
+            </div>
           </div>
         ) : content.error ? (
           <ErrorState error={content.error} onRetry={content.reload} />

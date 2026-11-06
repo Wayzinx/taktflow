@@ -33,6 +33,8 @@ export function validateDag(nodes: NodeDef[], stages?: Set<string>, scope = ''):
     }
     if (node.kind === 'planner' && (!Number.isInteger(node.maxItems) || node.maxItems < 1)) throw new Error('maxItems 必须是正整数')
     if (node.kind === 'review') {
+      if ([...node.reviewers, ...(node.arbiter ? [node.arbiter] : [])].some((reviewer) => reviewer.role === node.author.role)) throw new Error('评审者不能是作者角色')
+      if (!Number.isInteger(node.stopAfterNoProgress ?? 2) || (node.stopAfterNoProgress ?? 2) < 0) throw new Error('stopAfterNoProgress 必须是非负整数')
       if (!node.reviewers.length) throw new Error('reviewers 不能为空')
       if (!Number.isInteger(node.maxRounds) || node.maxRounds < 1) throw new Error('maxRounds 必须是正整数')
       if (new Set(node.reviewers.map((reviewer) => reviewer.role)).size !== node.reviewers.length) throw new Error('同一评审的 reviewer.role 不能重复')

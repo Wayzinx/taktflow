@@ -1,0 +1,116 @@
+/* ---- Lead 消息里的"待确认 / 下一步"标签块 */
+.chat-text p + p,
+.chat-text p + .chat-callout,
+.chat-text .chat-callout + p,
+.chat-text .chat-callout + .chat-callout {
+  margin-top: 6px;
+}
+.chat-callout {
+  max-width: 640px;
+  padding: 6px 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.chat-callout[data-kind='confirm'] {
+  border-color: color-mix(in oklch, var(--st-waiting) 35%, var(--border));
+  background: var(--st-waiting-soft);
+}
+.chat-callout-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text);
+}
+.chat-callout[data-kind='confirm'] .chat-callout-tag {
+  color: var(--st-waiting);
+}
+.chat-callout-tag svg {
+  width: 13px;
+  height: 13px;
+}
+.chat-callout p {
+  margin: 2px 0 0;
+}
+
+/* ---- 引用条可点：定位到原消息 */
+button.chat-quote {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-meta);
+  text-align: left;
+  cursor: pointer;
+  transition: color 100ms var(--ease);
+}
+button.chat-quote:hover {
+  color: var(--text-2);
+}
+button.chat-quote:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+/* ---- 输入框占位语轮播：逐字淡入（每字 28ms 错开、120ms 淡入），整行 140ms 快速退出 */
+.chat-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+.chat-hint-rot {
+  position: absolute;
+  top: 7px;
+  left: 11px;
+  right: 11px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-body);
+  line-height: 1.6;
+  color: var(--text-3);
+  pointer-events: none;
+  transition:
+    opacity 140ms var(--ease),
+    transform 140ms var(--ease);
+}
+.chat-hint-rot[data-phase='out'] {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+.chat-hint-try {
+  margin-right: 6px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+  animation: chat-hint-ch 120ms var(--ease) both;
+}
+.chat-hint-ch {
+  display: inline-block;
+  white-space: pre;
+  animation: chat-hint-ch 120ms var(--ease) both;
+}
+@keyframes chat-hint-ch {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-hint-rot,
+  button.chat-quote {
+    transition: none;
+  }
+  .chat-hint-ch,
+  .chat-hint-try {
+    animation: none;
+  }
+}

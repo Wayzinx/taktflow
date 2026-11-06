@@ -3,23 +3,71 @@ import type { RequirementDetail, RoomMessage } from '@taktflow/core'
 import { MessagesSquare } from 'lucide-react'
 import { useAsync } from '../../api'
 import { EmptyState, ErrorState } from '../../components/ui'
+import { LeadLight } from '../../components/lead-light'
 import { TaktLoader } from '../../components/takt'
+import { setQuery, useLocation } from '../../lib/router'
 import { Composer, type ComposerApi } from './chat/composer'
 import { MemberList } from './chat/member-list'
-import { MessageFeed } from './chat/message-feed'
+import { MessageFeed, type FeedApi } from './chat/message-feed'
 import type { MessageCtx } from './chat/message-item'
 import { useChat } from './chat/use-chat'
 import './chat/chat.css'
 import './chat/chat-messages.css'
 import './chat/chat-task.css'
+import './chat/chat-lead.css'
 
-/** 需求页 · 群聊：成员栏 + 消息流（实时到达、Lead 逐字流出）+ 输入框（@ 成员 / @lead）。 */
+/**
+ * 从 URL 找要定位的消息：`msg=<消息 id>`；`artifact=<路径>`（可带 `v=<版本>`）或 `node=<节点 id>`
+ * 取最近一条引用它的消息。
+ */
+function jumpTarget(messages: RoomMessage[], q: URLSearchParams): string | undefined {
+  const msg = q.get('msg')
+  if (msg) return msg
+  const art = q.get('artifact')
+  const v = q.get('v')
+  const node = q.get('node')
+  if (!art && !node) return undefined
+  const hit = [...messages].reverse().find((m) => {
+    if (art) return m.refs?.artifacts?.some((a) => a.path === art && (!v || String(a.version) === v))
+    return m.refs?.nodeId === node
+  })
+  return hit?.id
+}
+
+/**
+ * 需求页 · 群聊：成员栏 + 消息流（实时到达、Lead 逐字流出）+ 输入框（@ 成员 / @lead）。
+ * URL：`?tab=chat&compose=<文本>` 预填输入框；`msg` / `artifact` / `node` 定位并高亮消息（见 jumpTarget）。
+ */
 export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail }) {
   const chat = useChat(id)
   const attention = useAsync((ds) => ds.attention(), [id])
   const [replyTo, setReplyTo] = useState<RoomMessage>()
   const [taskRoles, setTaskRoles] = useState<Record<string, string[]>>({})
   const composer = useRef<ComposerApi>(null)
+  const feed = useRef<FeedApi>(null)
+  const { query } = useLocation()
+  const compose = query.get('compose')
+  const jumpKey = ['msg', 'artifact', 'v', 'node'].map((k) => query.get(k) ?? '').join('|')
+  const ready = Boolean(chat.room) && !chat.loading
+
+  // ?compose= 预填一次后从 URL 摘掉，刷新不会重复覆盖草稿
+  useEffect(() => {
+    if (!ready || compose === null) return
+    composer.current?.prefill(compose)
+    setQuery({ compose: undefined })
+  }, [ready, compose])
+
+  // 引用跳转：消息到齐后定位；找到就摘掉参数（找不到先保留，等实时消息）
+  useEffect(() => {
+    if (!ready || jumpKey === '|||') return
+    const id = jumpTarget(chat.messages, query)
+    if (!id) return
+    const t = requestAnimationFrame(() => {
+      if (feed.current?.jumpTo(id)) setQuery({ msg: undefined, artifact: undefined, v: undefined, node: undefined })
+    })
+    return () => cancelAnimationFrame(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, jumpKey, chat.messages.length])
 
   // 群里出现新的待办或待办状态变化时，重新拉待办列表（保留旧数据，不闪）
   const attnPulse = Object.entries(chat.pulse)
@@ -45,11 +93,13 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
     live: chat.live,
     pulse: chat.pulse,
     attention: attention.data?.filter((a) => a.requirementId === id),
+    requirementId: id,
     onReply: (m) => {
       setReplyTo(m)
       composer.current?.focus()
     },
     onTaskRoles,
+    onJump: (mid) => feed.current?.jumpTo(mid),
   }
 
   if (chat.error && !chat.room) return <ErrorState error={chat.error} onRetry={chat.reload} />
@@ -63,12 +113,13 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
   const room = chat.room
   return (
     <div className="chat-layout">
-      <MemberList members={room.members} busy={busy} onMention={(mid) => composer.current?.mention(mid)} />
+      <MemberList members={room.members} busy={busy} lead={chat.lead} onMention={(mid) => composer.current?.mention(mid)} />
       <section className="card chat-main" aria-label={`${detail?.title ?? id} 需求群`}>
         <header className="card-head chat-head">
           <MessagesSquare aria-hidden="true" />
           <h3 className="card-title truncate">{room.title}</h3>
           <span className="spacer" />
+          <LeadLight presence={chat.lead} showLabel />
           {room.external && <span className="chip mono">已绑定 {room.external.kind}</span>}
           <span className="faint chat-head-count">{room.members.length} 位成员</span>
         </header>
@@ -77,7 +128,7 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
             <EmptyState icon={MessagesSquare} title="群里还没有消息" hint="@lead 问进度、提要求，Lead 会派任务并把结果回帖到这里。" />
           </div>
         ) : (
-          <MessageFeed messages={chat.messages} ctx={ctx} leadThinking={chat.leadThinking} />
+          <MessageFeed apiRef={feed} messages={chat.messages} ctx={ctx} leadThinking={chat.leadThinking} />
         )}
         <Composer
           apiRef={composer}

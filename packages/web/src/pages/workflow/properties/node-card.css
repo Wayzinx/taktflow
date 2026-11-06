@@ -1,0 +1,19 @@
+/* 画布节点卡片的目标行（E 组 M3；由 canvas/canvas-nodes.tsx 引入）。只占原第二行，卡片高度不变。 */
+.wf-goal-row {
+  gap: var(--sp-2);
+}
+.wf-goal {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-label);
+  color: var(--text-2);
+}
+.wf-owner {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border);
+  font-size: var(--text-label);
+  line-height: 16px;
+  color: var(--text-3);
+}

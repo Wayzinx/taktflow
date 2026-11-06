@@ -34,9 +34,10 @@ import type { EventEnvelope, EventPayloads, ReviewResponse, ReviewVerdict } from
 import { actorName, fmtDate, fmtTime, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
 import { NODE_STATUS, VERDICT, toneVar, type Tone } from '../lib/status'
+import { describeM3 } from './event-timeline-m3'
 import './event-timeline.css'
 
-interface Described {
+export interface Described {
   icon: LucideIcon
   tone: Tone | 'neutral' | 'accent'
   title: ReactNode
@@ -53,7 +54,8 @@ const EXHAUSTED_ACTION = { rework: '打回上游重做', human: '交人处理', 
 
 const d = <T extends keyof EventPayloads>(e: EventEnvelope, _t: T) => e.data as EventPayloads[T]
 
-function describe(e: EventEnvelope): Described {
+/** 事件的图标、色调、一句话标题与可选详情；事件滚动条也用它。 */
+export function describe(e: EventEnvelope): Described {
   switch (e.type) {
     case 'run.started':
       return { icon: Play, tone: 'accent', title: <>运行开始 · <span className="mono">{d(e, 'run.started').workflowId}@{d(e, 'run.started').workflowVersion}</span></> }
@@ -82,7 +84,13 @@ function describe(e: EventEnvelope): Described {
     }
     case 'artifact.edited': {
       const x = d(e, 'artifact.edited')
-      return { icon: FilePen, tone: 'waiting', title: <>人工修改 <span className="mono">{x.ref.path}@v{x.ref.version}</span></>, detail: <>原因：{x.reason}</> }
+      const cosmetic = x.impact === 'cosmetic'
+      return {
+        icon: FilePen,
+        tone: cosmetic ? 'neutral' : 'waiting',
+        title: <>人工修改 <span className="mono">{x.ref.path}@v{x.ref.version}</span>{cosmetic ? ' · 措辞调整' : ' · 语义修改'}</>,
+        detail: <>原因：{x.reason}{cosmetic && <span className="faint"> · 不影响下游</span>}</>,
+      }
     }
     case 'artifact.untracked':
       return { icon: FileWarning, tone: 'waiting', title: <>发现绕过引擎的改动 <span className="mono">{d(e, 'artifact.untracked').path}</span></> }
@@ -236,11 +244,11 @@ function describe(e: EventEnvelope): Described {
       return { icon: Send, tone: 'running', title: <>派发任务「{x.title}」给 <span className="mono">{x.role}</span></>, detail: <span className="mono faint">{x.taskRunId} · 由 {actorName(x.by)} 派发</span> }
     }
     default:
-      return { icon: ChevronRight, tone: 'neutral', title: <span className="mono">{e.type}</span> }
+      return describeM3(e) ?? { icon: ChevronRight, tone: 'neutral', title: <span className="mono">{e.type}</span> }
   }
 }
 
-const toneColor = (t: Described['tone']) => (t === 'neutral' ? 'var(--text-3)' : t === 'accent' ? 'var(--accent)' : toneVar(t))
+export const toneColor = (t: Described['tone']) => (t === 'neutral' ? 'var(--text-3)' : t === 'accent' ? 'var(--accent)' : toneVar(t))
 
 export function EventTimeline({ events, showNode, showRun, showDate }: { events: EventEnvelope[]; showNode?: boolean; showRun?: boolean; showDate?: boolean }) {
   return (
@@ -254,7 +262,7 @@ export function EventTimeline({ events, showNode, showRun, showDate }: { events:
 
 function EventRow({ e, showNode, showRun, showDate }: { e: EventEnvelope; showNode?: boolean; showRun?: boolean; showDate?: boolean }) {
   const info = describe(e)
-  const collapsible = e.type === 'harness.tool_call' || e.type === 'harness.started' || e.type === 'rework.started'
+  const collapsible = e.type === 'harness.tool_call' || e.type === 'harness.started' || e.type === 'rework.started' || e.type === 'worktree.bootstrapped'
   const [open, setOpen] = useState(!collapsible)
   const Icon = info.icon
   return (

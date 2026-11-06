@@ -215,8 +215,9 @@ taktflow 的控制台像一间精密仪器的控制室：深石墨的控制导�
 - 右侧：演示数据（虚线中性描边，不是告警）、节拍指示（"N 个需求在跑"，有运行时橙点按拍子跳）、⌘K 按钮。
 
 ### 命令面板（⌘K / Ctrl+K）
-- 640px 宽、10px 圆角、lg 阴影，从顶部 12vh 处出现（160ms 淡入 + 轻微下落）。
-- 分组：页面 / 需求 / 运行 / 操作（主题切换）；多词全命中过滤，标识前缀命中排前。
+- 640px 宽、10px 圆角、lg 阴影，从顶部 12vh 处出现（200ms 淡入 + 6px 下落，150ms 退出）。
+- 分组：页面 / 查询 / 命令 / 需求 / 运行 / 操作（主题切换）；多词全命中过滤，标识前缀命中排前，分组按组内最佳匹配排序。
+- 查询 / 命令来自 `/api/commands`：风险用图标（只读 眼睛 / 写入 笔 / 危险 盾牌，危险用失败色）；选中后进入按 input schema 生成的表单，需求 / 运行 / 节点从当前页面自动带入（标"来自当前页面"）；write / dangerous 必须写原因；⌘↵ 执行，Esc 返回列表。别的界面用 `openCommand(id, input)` 直接打开某条命令。
 - 选中行：hover 底 + 左缘 2px 节拍橙刻度 + 回车图标；↑↓ 选择、↵ 打开、Esc 关闭，关闭后焦点回到触发处。
 
 ### 节拍尺（Signature）
@@ -233,10 +234,41 @@ taktflow 的控制台像一间精密仪器的控制室：深石墨的控制导�
 
 ## Motion
 
-- 曲线：`--ease`（`cubic-bezier(0.22, 1, 0.36, 1)`，快出稳停，默认）；`--ease-in-out`（循环节律）；`--ease-spring`（`linear()` 弹簧近似，只用于抽屉与窄屏导轨这类"有质量"的面板）。
-- 时长：`--dur-fast` 110ms（hover）、`--dur` 160ms（状态切换）、`--dur-slow` 320ms（面板进出）、`--takt` 1200ms（一拍）。
+规范来源：`docs/dev/m3-web.md`「动效规范」；`npm run motion:audit -w @taktflow/web` 在 CI 里检查。
+
+### 曲线与时长
+- 曲线：`--ease`（`cubic-bezier(0.22, 1, 0.36, 1)`，快出稳停，默认）；`--ease-in-out`（循环节律）；`--ease-spring`（`linear()` 弹簧近似，只用于抽屉与窄屏导轨这类"有质量"的面板）。退出用加速曲线（先慢后快），让东西"走开"而不是"停下"。
+- 时长 token（`styles/tokens.css`）：
+
+| token | 值 | 用途（规范区间） |
+|---|---|---|
+| `--dur-press` | 100ms | 直接反馈：按下、勾选、切换（80–120） |
+| `--dur-fast` | 110ms | hover 颜色 / 底色 |
+| `--dur-pop` / `--dur-pop-exit` | 150 / 120ms | 下拉、气泡、菜单、列表项、toast（120–180） |
+| `--dur` | 160ms | 一般状态切换 |
+| `--dur-enter` / `--dur-exit` | 200 / 150ms | 对话框、⌘K 进 / 出（进 180–220，出 120–180） |
+| `--dur-slow` | 320ms | 只给抽屉与窄屏导轨（配 `--ease-spring`） |
+| `--takt` | 1200ms | 一拍：所有节律类动画以它为单位 |
+
+### 幅度
+- 位移 2–8px；缩放不低于 0.985；禁止 `scale(0)`、禁止 `transition: all`。
+- **进度条 / 用量条用 `transform: scaleX()`**（`.meter > .meter-fill`，`--meter` 取 0..1；`<Meter>` 组件同），不动画 width / height。
+
+### 进出场
+- 弹层、对话框、⌘K、下拉、抽屉、toast 都有退出动画：用 `lib/motion.tsx` 的 `usePresence(open, exitMs)` 保留卸载前的最后一帧，退出途中重开直接折返（用过渡而不是关键帧，所以能从当前位置打断）。
+- 样式写在 `data-state`：`enter`（初始）/ `open`（常态）/ `exit`（退出）。现成的类：`.presence-pop`（150 进 / 120 出，4px + 0.985）、`.presence-dialog`（200 进 / 150 出，6px + 0.985）、`.presence-scrim`（遮罩淡入淡出）。
+- 原语：`components/ui` 的 `Dialog`、`Popover`、`Menu`、`ReasonDialog`（write / dangerous 操作的原因输入）都已接好进出场、Esc、焦点还原。
+
+### 节律
 - 运行中的状态点、节拍指示按 `takt-beat` 跳：拍头放大 1.35 倍，然后回落——像节拍器，不是呼吸灯。
-- `prefers-reduced-motion: reduce` 时，所有循环动画只播一次、过渡瞬时完成，传送带光带隐藏；信息不依赖动效。
+- 运行中的标题用 `.shimmer-text`（两拍扫一次的节拍橙窄高光）；跳转定位用 `.jump-highlight`（2.4s 淡出）。
+
+### 不加动画的地方
+- 拖拽本体严格跟手，不加缓动；流式文本、虚拟列表行、频繁更新的计数不加入场动画。
+- hover 放大 / 上浮只在 `(hover: hover) and (pointer: fine)` 下生效（`.hover-lift`）。
+
+### 减少动态效果
+- `prefers-reduced-motion: reduce`：无限动画（脉动、闪烁、扫光、传送带）**静止且仍可见**——每个无限动画在自己的 CSS 文件里写兜底（`motion:audit` 检查）；进出场只保留透明度，去掉位移与缩放；过渡瞬时完成；信息不依赖动效。
 
 ## Iconography
 

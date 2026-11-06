@@ -7,12 +7,6 @@
   align-items: flex-start;
   padding: 12vh var(--sp-4) var(--sp-4);
   background: var(--scrim);
-  animation: cmdk-scrim-in var(--dur) var(--ease) both;
-}
-@keyframes cmdk-scrim-in {
-  from {
-    opacity: 0;
-  }
 }
 .cmdk {
   width: min(640px, 100%);
@@ -23,13 +17,7 @@
   border-radius: var(--radius-lg);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
-  animation: cmdk-in var(--dur-slow) var(--ease) both;
-}
-@keyframes cmdk-in {
-  from {
-    opacity: 0;
-    transform: translateY(-6px) scale(0.985);
-  }
+  /* 进出场：.presence-dialog（200ms 进 / 150ms 出），见 styles/motion.css */
 }
 .cmdk-input-row {
   display: flex;
@@ -143,4 +131,133 @@
 }
 .cmdk-input:focus-visible {
   outline: none;
+}
+
+/* ---------------------------------------------------------------- 命令行 */
+.cmdk-code-dim {
+  color: var(--text-3);
+  font-size: var(--text-label);
+}
+.cmdk-hint.ctx {
+  color: var(--accent-text);
+}
+.cmdk-item.danger .cmdk-label {
+  color: var(--st-failed);
+}
+
+/* 列表 ↔ 表单切换：150ms 淡入 + 2px 上浮（不是流式内容，可以有入场） */
+@keyframes cmdk-step-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+.cmdk-step {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  animation: cmdk-step-in var(--dur-pop) var(--ease) both;
+}
+.cmdk[data-state='enter'] .cmdk-step {
+  animation: none;
+}
+
+/* ---------------------------------------------------------------- 命令表单 */
+.cmdk-form-head {
+  gap: var(--sp-2);
+  padding-left: var(--sp-2);
+}
+.cmdk-form-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text);
+}
+.cmdk-form-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  align-content: start;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  overscroll-behavior: contain;
+}
+.cmdk-form-none {
+  margin: 0;
+  font-size: var(--text-ui);
+  color: var(--text-3);
+}
+.cmdk-danger-note {
+  margin: 0;
+  padding: 8px 10px 8px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--st-failed-soft);
+  box-shadow: inset 2px 0 0 var(--st-failed);
+  font-size: var(--text-ui);
+  color: var(--text);
+}
+.cmdk-ctx-tag {
+  font-size: var(--text-label);
+  font-weight: 400;
+  color: var(--accent-text);
+}
+.cmdk-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-ui);
+  color: var(--text);
+  cursor: pointer;
+}
+.cmdk-check input {
+  accent-color: var(--accent);
+}
+.cmdk-seg {
+  justify-self: start;
+}
+.cmdk-result {
+  display: grid;
+  gap: var(--sp-2);
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--divider);
+  animation: cmdk-step-in var(--dur-pop) var(--ease) both;
+}
+.cmdk-result.fail {
+  background: var(--st-failed-soft);
+  box-shadow: inset 2px 0 0 var(--st-failed);
+}
+.cmdk-result-msg {
+  font-size: var(--text-ui);
+  color: var(--text);
+}
+.cmdk-result-json {
+  max-height: 220px;
+  overflow: auto;
+}
+.cmdk-foot-blocker {
+  margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmdk-foot .btn {
+  flex: none;
+  gap: 6px;
+}
+.cmdk-foot .btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmdk-step,
+  .cmdk-result {
+    animation: none;
+  }
 }

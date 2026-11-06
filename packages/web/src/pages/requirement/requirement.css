@@ -714,12 +714,17 @@
 .hbar-track > span {
   display: block;
   height: 100%;
+  width: 100%;
   border-radius: var(--radius-xs);
-  min-width: 2px;
-  transition: width 500ms var(--ease);
+  /* 长度用 --bar（0..1）驱动 scaleX，不动画 width（docs/dev/m3-web.md 动效规范） */
+  transform: scaleX(var(--bar, 0));
+  transform-origin: left center;
+  transition: transform 180ms var(--ease);
 }
-.hbar.zero .hbar-track > span {
-  min-width: 0;
+@media (prefers-reduced-motion: reduce) {
+  .hbar-track > span {
+    transition: none;
+  }
 }
 .hbar-value {
   text-align: right;
@@ -770,4 +775,226 @@
   --xy-controls-button-color: var(--text-2);
   --xy-controls-button-color-hover: var(--text);
   --xy-controls-button-border-color: var(--border);
+}
+
+/* ---------------------------------------------------------------- 头部：一句话状态 */
+.req-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: var(--sp-2);
+  font-size: var(--text-body);
+  color: var(--text);
+}
+.req-summary .status-dot {
+  margin-right: 2px;
+}
+.req-summary-sub {
+  font-size: var(--text-ui);
+  color: var(--text-3);
+}
+.req-summary a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--dur-fast) var(--ease);
+}
+.req-summary a:hover {
+  text-decoration-color: currentColor;
+}
+.req-summary .tier-glyph {
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- 头部：需要你决策 */
+.req-decisions {
+  margin-top: var(--sp-3);
+}
+.req-decisions-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  height: 40px;
+  padding: 0 var(--sp-2) 0 var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+}
+.req-decisions-urgent {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--st-failed);
+  background: var(--st-failed-soft);
+}
+.req-decisions-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+@keyframes decision-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.decision-row {
+  display: grid;
+  grid-template-columns: 22px 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px var(--sp-3) 10px var(--sp-4);
+  animation: decision-in 160ms var(--ease) both;
+  animation-delay: calc(min(var(--i, 0), 6) * 30ms);
+}
+.decision-row + .decision-row {
+  border-top: 1px solid var(--divider);
+}
+.decision-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  color: var(--tone);
+  background: var(--tone-soft);
+}
+.decision-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+}
+.decision-kind {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--tone);
+  white-space: nowrap;
+}
+.decision-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.decision-title {
+  font-size: var(--text-ui);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.decision-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.decision-detail {
+  color: var(--text-2);
+}
+.decision-go svg {
+  width: 13px;
+  height: 13px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .decision-row {
+    animation: none;
+  }
+}
+@media (max-width: 720px) {
+  .decision-row {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+  .decision-kind {
+    grid-column: 2;
+  }
+  .decision-body,
+  .decision-go {
+    grid-column: 2;
+  }
+  .decision-go {
+    justify-self: start;
+  }
+}
+
+/* ---------------------------------------------------------------- 度量：校验与拦截 */
+.quality-body {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: var(--sp-6);
+  align-items: center;
+  padding: var(--sp-4) var(--sp-5);
+}
+.quality-nums {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4);
+}
+.quality-ok {
+  color: var(--st-success);
+}
+.quality-bars .hbar {
+  grid-template-columns: 236px minmax(0, 1fr) 48px;
+}
+.quality-bars .hbar-key {
+  width: 64px;
+  font-size: var(--text-ui);
+  color: var(--text);
+}
+@media (max-width: 1080px) {
+  .quality-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .quality-bars .hbar {
+    grid-template-columns: 96px minmax(0, 1fr) 36px;
+  }
+  .quality-bars .hbar-label .faint {
+    display: none;
+  }
+}
+.quality-card {
+  margin-top: 16px;
+}
+
+/* ---------------------------------------------------------------- 公共产物：分组与"只看当前阶段" */
+.art-scope {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 4px 4px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--divider);
+}
+.art-scope-stage {
+  min-width: 0;
+  font-size: var(--text-meta);
+}
+.art-item-path {
+  display: flex;
+  gap: 6px;
+}
+.art-item-kind {
+  flex: none;
+  color: var(--text-2);
+}
+.art-item-path .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.run-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 360px;
+  font-size: var(--text-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.run-sub .tier-glyph {
+  flex: none;
 }

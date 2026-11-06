@@ -4,6 +4,7 @@ import { TaktRuler } from './takt'
 import type { NodeKind } from '@taktflow/core'
 import { NODE_KIND, toneSoftVar, toneVar, type StatusMeta, type Tone } from '../lib/status'
 import { initials } from '../lib/format'
+import { prefersReducedMotion } from '../lib/motion'
 import './ui.css'
 
 export function StatusBadge({ meta, subtle }: { meta: StatusMeta; subtle?: boolean }) {
@@ -139,11 +140,12 @@ export function Segmented<T extends string>({ options, value, onChange }: { opti
   )
 }
 
-/** 进度条：一段或多段。 */
+/** 进度条：--meter 驱动 transform: scaleX()（styles/motion.css .meter），不动画 width。 */
 export function Meter({ value, tone = 'success', height = 6 }: { value: number; tone?: Tone; height?: number }) {
+  const v = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
   return (
-    <span className="meter" style={{ height }}>
-      <span style={{ width: `${Math.max(0, Math.min(1, value)) * 100}%`, background: toneVar(tone) }} />
+    <span className="meter meter-inline" role="meter" aria-valuemin={0} aria-valuemax={1} aria-valuenow={Number(v.toFixed(2))} style={{ height, '--meter': v, '--meter-color': toneVar(tone) } as CSSProperties}>
+      <span className="meter-fill" />
     </span>
   )
 }
@@ -155,6 +157,7 @@ interface ToastItem {
   title: string
   body?: ReactNode
   tone?: Tone
+  leaving?: boolean
 }
 let toastId = 0
 const toastSubs = new Set<(t: ToastItem) => void>()
@@ -163,22 +166,33 @@ export function toast(title: string, opts: { body?: ReactNode; tone?: Tone } = {
   toastSubs.forEach((f) => f(t))
 }
 
+const TOAST_MS = 6000
+const TOAST_EXIT_MS = 150
+
+/** 右下角通知：进场 150ms 上浮淡入；6s 后先播 150ms 退出再移除；悬停时不消失。 */
 export function Toaster() {
   const [items, setItems] = useState<ToastItem[]>([])
+  const [hover, setHover] = useState(false)
   useEffect(() => {
-    const add = (t: ToastItem) => {
-      setItems((s) => [...s, t])
-      setTimeout(() => setItems((s) => s.filter((x) => x.id !== t.id)), 6000)
-    }
+    const add = (t: ToastItem) => setItems((s) => [...s, t])
     toastSubs.add(add)
     return () => {
       toastSubs.delete(add)
     }
   }, [])
+  useEffect(() => {
+    if (hover) return
+    const timers = items.map((t) =>
+      t.leaving
+        ? setTimeout(() => setItems((s) => s.filter((x) => x.id !== t.id)), prefersReducedMotion() ? 0 : TOAST_EXIT_MS)
+        : setTimeout(() => setItems((s) => s.map((x) => (x.id === t.id ? { ...x, leaving: true } : x))), TOAST_MS),
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [items, hover])
   return (
-    <div className="toaster">
+    <div className="toaster" role="status" aria-live="polite" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       {items.map((t) => (
-        <div key={t.id} className="toast fade-in" style={{ '--tone': toneVar(t.tone ?? 'success') } as CSSProperties}>
+        <div key={t.id} className="toast" data-state={t.leaving ? 'exit' : 'open'} style={{ '--tone': toneVar(t.tone ?? 'success') } as CSSProperties}>
           <span className="toast-bar" />
           <div>
             <div className="toast-title">{t.title}</div>
@@ -189,3 +203,9 @@ export function Toaster() {
     </div>
   )
 }
+
+// ---------------------------------------------------------------- 弹层原语（components/ui/）
+
+export { Dialog, trapKeys, useRestoreFocus, type DialogProps } from './ui/dialog'
+export { Popover, Menu, type MenuItem, type Placement, type PopoverProps } from './ui/popover'
+export { ReasonDialog, ReasonField, RiskTag, RISK, reasonOk, type Risk } from './ui/reason-dialog'

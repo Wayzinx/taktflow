@@ -1,6 +1,6 @@
 import { join, relative } from 'node:path'
 import type { AttentionItem, EngineDeps } from '../interfaces.js'
-import type { Actor, AgentNodeDef, HumanNodeDef, NodeContext, NodeDef, NodeState, PlannedItem, RunState, WorkflowDefinition } from '../types.js'
+import type { Actor, AgentNodeDef, ArtifactRef, FailureRecord, HumanNodeDef, NodeContext, NodeDef, NodeState, PlannedItem, RunState, WorkflowDefinition } from '../types.js'
 import { readJsonFile, writeFileAtomic } from '../store/fs-utils.js'
 import type { RunGraphNode } from '../store/run-graph.js'
 import { answerOrRead, recordAnswerOnce } from './answers.js'
@@ -10,14 +10,18 @@ import { runDir } from '../store/paths.js'
 import { collectOutputs, readCurrent, resolveInputs } from './artifacts.js'
 import { expandPlanner, qualify, validateDag, type Entry, type Graph } from './graph.js'
 import { WriteGuard } from './guard.js'
-import { saveWorktreeDiff } from './execution.js'
+import { saveWorktreeDiff, workingDirectory } from './execution.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
+import { BudgetGuard } from './budget.js'
+import { checkCompletion } from './completion.js'
+import { failureCode, FailureError, recordFailure } from './fingerprint.js'
+import { serializePlannerGroups } from './nodes/planner.js'
 import { validateWorkflowHarnesses } from './selection.js'
 
 export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
 export type GraphRecord = RunGraphNode
-export interface RuntimeRecord { reviews?: Record<string, ReviewProgress>; feedback?: Record<string, string>; nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
+export interface RuntimeRecord { failureHistory?: Record<string, FailureRecord[]>; retryFingerprints?: Record<string, string>; budgetAnswers?: string[]; reviews?: Record<string, ReviewProgress>; feedback?: Record<string, string>; nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
 export { system } from './actor.js'
 import { system } from './actor.js'
 import { postEventMessage } from './chat-events.js'
@@ -40,13 +44,18 @@ export class Runtime implements HarnessHost {
   readonly reviews: Record<string, ReviewProgress> = {}
   readonly feedback: Record<string, string> = {}
   readonly requests: Record<string, string> = {}
+  readonly budget: BudgetGuard
+  private readonly retryFingerprints: Record<string, string> = {}
+  private readonly failureHistory: Record<string, FailureRecord[]> = {}
+  private readonly lessonRecalls = new Map<string, Awaited<ReturnType<NonNullable<EngineDeps['lessons']>['recall']>>>()
   private saves = Promise.resolve()
   private readonly restarting = new Set<string>()
   private readonly attempts: Record<string, number> = {}
   private readonly reservedAttempts: Record<string, number> = {}
   private logs: Promise<void>[] = []
   constructor(readonly deps: EngineDeps, readonly state: RunState, readonly workflow: WorkflowDefinition, readonly options: EngineOptions, guard?: WriteGuard) {
-    this.semaphore = new Semaphore(options.concurrency ?? 4)
+    this.semaphore = new Semaphore(Math.max(1, Math.floor(Math.min(options.concurrency ?? 4, state.budget?.concurrency ?? Infinity))))
+    this.budget = new BudgetGuard(this, () => this.persistGraph())
     this.guard = guard ?? new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements))
     this.override = options.harnessOverride
   }
@@ -77,11 +86,12 @@ export class Runtime implements HarnessHost {
     if (type === 'run.finished') data = { status: this.state.status } as typeof data
     const event = await this.deps.stores.events.append(this.state.runId, { type, data, nodeId, actor })
     await postEventMessage(this.deps.stores, this.state, event, snapshotWorkflow(this.workflow))
+    if (type === 'harness.usage') await this.budget.check()
   }
   async persistGraph(): Promise<void> {
     for (const node of Object.values(this.state.nodes)) this.attempts[node.id] = Math.max(this.attempts[node.id] ?? 0, node.attempts)
     const record: RuntimeRecord = {
-      requests: { ...this.requests },
+      requests: { ...this.requests }, failureHistory: structuredClone(this.failureHistory), budgetAnswers: [...this.budget.handled], retryFingerprints: { ...this.retryFingerprints },
       reviews: structuredClone(this.reviews), feedback: { ...this.feedback },
       attempts: { ...this.attempts },
       reservedAttempts: { ...this.reservedAttempts },
@@ -99,6 +109,7 @@ export class Runtime implements HarnessHost {
         // 重建先预留新代际，否则 store 会把旧的较大内层 iteration 合并回来。
         const next = attempts > 0 ? attempts + 1 : 0
         this.state.nodes[def.id] = fresh(def.id, def.kind === 'loop' ? undefined : iteration, next)
+        this.state.nodes[def.id]!.failures = this.failureHistory[def.id]
         if (next > 0) {
           this.reservedAttempts[def.id] = next
           this.restarting.add(def.id)
@@ -111,6 +122,9 @@ export class Runtime implements HarnessHost {
     validateDag(this.workflow.nodes, new Set(this.workflow.stages.map((stage) => stage.id)))
     const stored = await readJsonFile<RuntimeRecord>(runtimeFile(this.deps, this.state.runId))
     Object.assign(this.requests, stored?.requests)
+    Object.assign(this.failureHistory, stored?.failureHistory)
+    Object.assign(this.retryFingerprints, stored?.retryFingerprints)
+    this.budget.handled.push(...(stored?.budgetAnswers ?? []))
     Object.assign(this.reviews, stored?.reviews)
     Object.assign(this.feedback, stored?.feedback)
     Object.assign(this.attempts, stored?.attempts)
@@ -125,6 +139,7 @@ export class Runtime implements HarnessHost {
         const expansion = this.state.expansions.find((item) => item.plannerId === node.id)
         if (expansion) {
           const groups = expandPlanner(node, expansion.items)
+          serializePlannerGroups(groups)
           const ids = groups.flatMap((group) => group.nodes.map((child) => child.id))
           if (JSON.stringify(ids) !== JSON.stringify(expansion.nodeIds)) throw new Error(`planner 展开定义已改变：${node.id}`)
           const definitions = snapshotWorkflow({ ...this.workflow, nodes: groups.flatMap((group) => group.nodes) }).nodes
@@ -140,6 +155,7 @@ export class Runtime implements HarnessHost {
   }
   removeChildren(parent: string): void {
     for (const id of [...this.graph.keys()]) if (id.startsWith(`${parent}/`)) {
+      if (this.state.nodes[id]!.failures) this.failureHistory[id] = this.state.nodes[id]!.failures!
       // 内层 iteration 会从 1 重新开始，attempts 不能跟着归零，否则旧失效记录会压住新执行。
       this.attempts[id] = Math.max(this.attempts[id] ?? 0, this.state.nodes[id]!.attempts)
       this.graph.delete(id)
@@ -204,6 +220,26 @@ export class Runtime implements HarnessHost {
   private async consume(entry: Entry, item: AttentionItem, actor = item.answeredBy ?? system): Promise<void> {
     const ns = this.state.nodes[entry.def.id]!
     await this.recordAnswer(item, actor)
+    if (item.kind === 'retry') {
+      if (item.decision === 'choice' && item.answer === '再试一次') {
+        const failure = ns.failures?.find((failure) => failure.fingerprint === this.retryFingerprints[ns.id])
+        if (failure) failure.count = 0
+        ns.status = 'pending'
+        delete ns.error
+        delete ns.endedAt
+        delete this.requests[ns.id]
+      } else if (item.answer === '终止运行' || item.decision === 'cancelled') {
+        this.state.status = 'cancelled'
+        this.controller.abort(new Error('人工终止运行'))
+        ns.status = 'cancelled'
+      } else {
+        ns.status = 'blocked'
+        ns.error = '重复失败已交给人处理'
+      }
+      await this.persistGraph()
+      await this.save()
+      return
+    }
     if (entry.def.kind === 'review') { await answerReview(this, entry, item); await this.save(); return }
     const answer = { decision: item.decision, answer: item.answer }
     ns.result = entry.def.kind === 'judge' ? { ...ns.result as object, ...answer } : answer
@@ -219,10 +255,13 @@ export class Runtime implements HarnessHost {
     } else await this.finish(entry, actor)
   }
   async restoreAnswers(): Promise<void> {
+    await this.budget.restore()
+    this.semaphore.setLimit(Math.max(1, Math.floor(Math.min(this.options.concurrency ?? 4, this.state.budget?.concurrency ?? Infinity))))
+    if (this.state.status === 'cancelled') this.controller.abort(new Error('人工停止运行'))
     const attention = await this.deps.stores.attention.list({ requirementId: this.state.requirementId })
     for (const entry of this.graph.values()) {
       const ns = this.state.nodes[entry.def.id]!
-      if (ns.status === 'waiting_human') {
+      if (ns.status === 'waiting_human' || ns.status === 'blocked' && this.requests[ns.id]) {
         const requestId = this.requests[ns.id]
         const item = requestId ? attention.find((item) => item.requestId === requestId) : undefined
         if (item?.answeredAt) {
@@ -239,17 +278,21 @@ export class Runtime implements HarnessHost {
     }
     await this.save()
   }
-  async request(entry: Entry, ask: string, form: HumanNodeDef['form'], choices?: string[], autoApprove = false): Promise<void> {
+  async request(entry: Entry, ask: string, form: HumanNodeDef['form'], choices?: string[], signoff = false, boundTo?: ArtifactRef[]): Promise<void> {
+    return this.requestAttention(entry, ask, form, choices, signoff, boundTo)
+  }
+  private async requestAttention(entry: Entry, ask: string, form: HumanNodeDef['form'], choices?: string[], autoApprove = false, boundTo?: ArtifactRef[], kind?: AttentionItem['kind']): Promise<void> {
     const ns = this.state.nodes[entry.def.id]!
     const all = await this.deps.stores.attention.list({ requirementId: this.state.requirementId })
     const base = `${this.state.runId}:${ns.id}`
     const prior = all.filter((item) => item.runId === this.state.runId && item.nodeId === ns.id)
     const requestId = prior.length ? `${base}#${prior.length + 1}` : base
     const item = await this.deps.stores.attention.create({
-      requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices,
+      requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices, kind, boundTo: boundTo ?? (entry.def.kind === 'human' ? ns.inputs : undefined),
+      owner: entry.def.owner, assignees: entry.def.owner ? this.deps.stores.config.members?.filter((member) => member.duties?.includes(entry.def.owner!)).map((member) => member.id) : undefined,
     })
     this.requests[ns.id] = requestId
-    if (!this.signal.aborted) ns.status = 'waiting_human'
+    if (!this.signal.aborted) ns.status = kind === 'retry' ? 'blocked' : 'waiting_human'
     await this.persistGraph()
     await this.emit('human.requested', { requestId, ask, form, choices }, ns.id)
     if (this.signal.aborted) {
@@ -269,6 +312,7 @@ export class Runtime implements HarnessHost {
   async schedule(ids: string[]): Promise<void> {
     const running = new Map<string, Promise<void>>()
     while (!this.signal.aborted) {
+      if (!await this.budget.check()) break
       for (const id of ids) {
         const ns = this.state.nodes[id]!
         if (ns.status !== 'pending' || running.has(id)) continue
@@ -297,7 +341,10 @@ export class Runtime implements HarnessHost {
     this.state.nodes[entry.def.id]!.status = 'ready'
     await this.emit('node.ready', {}, entry.def.id)
     if (entry.def.kind === 'loop' || entry.def.kind === 'planner' || entry.def.kind === 'review') await this.runAttempts(entry)
-    else await this.semaphore.use(() => this.runAttempts(entry))
+    else await this.semaphore.use(async () => {
+      if (!await this.budget.check()) { this.state.nodes[entry.def.id]!.status = 'pending'; return }
+      await this.runAttempts(entry)
+    })
   }
   private async beginAttempt(ns: NodeState, announce = true): Promise<void> {
     ns.status = 'running'
@@ -341,6 +388,8 @@ export class Runtime implements HarnessHost {
       }
       try {
         this.signal.throwIfAborted()
+        if (!await this.budget.check()) { ns.status = 'pending'; return }
+        delete ns.checks
         await this.beginAttempt(ns)
         if ((ns.status as NodeState['status']) === 'stale') return
         const ctx = this.context(entry)
@@ -356,13 +405,68 @@ export class Runtime implements HarnessHost {
         const actor = await this.execute(entry, ctx)
         await this.flushLogs()
         if (this.state.nodes[node.id] === ns && ns.status === 'running') await this.finish(entry, actor)
+        await this.recordLessonOutcome(entry, ns)
         return
       } catch (error) {
         await this.flushLogs()
+        if (node.kind === 'agent' && node.completion?.length && !ns.checks) {
+          const checked = checkCompletion(node.completion, undefined)
+          ns.checks = checked.checks
+          await this.emit('node.checks', checked, node.id)
+        }
         await this.fail(ns, error)
+        await this.recordLessonOutcome(entry, ns)
+        if (!this.signal.aborted && (ns.status as NodeState['status']) !== 'stale' && !(error instanceof FailureError && error.recorded)) {
+          if (await this.noteFailure(entry, failureCode(error), error instanceof FailureError ? error.target : undefined, errorText(error))) return
+        }
         if (this.state.nodes[node.id]!.status !== 'failed' || retry === (node.retry?.max ?? 0)) return
       }
     }
+  }
+  setLessonRecall(nodeId: string, recalled: Awaited<ReturnType<NonNullable<EngineDeps['lessons']>['recall']>> | undefined): void {
+    if (recalled) this.lessonRecalls.set(nodeId, recalled)
+  }
+  private async recordLessonOutcome(entry: Entry, ns: NodeState): Promise<void> {
+    if (entry.def.kind !== 'agent' || ns.attempts !== 1 || !this.deps.lessons) return
+    const recalled = this.lessonRecalls.get(ns.id)
+    if (!recalled?.lessons.length) return
+    this.lessonRecalls.delete(ns.id)
+    const changes = await this.deps.lessons.record({ runId: this.state.runId, nodeId: ns.id, ids: recalled.lessons.map((lesson) => lesson.id),
+      holdout: recalled.holdout, outcome: ns.status === 'succeeded' ? 'helped' : 'hurt' })
+    for (const change of changes) await this.emit('lesson.updated', change, ns.id)
+  }
+  async failureSource(entry: Entry): Promise<NodeState> {
+    const ns = this.state.nodes[entry.def.id]!
+    const inputs = await this.guard.system(this.workspacePaths(entry.def.inputs?.map((input) => input.path)), () =>
+      resolveInputs(this.deps.stores, this.state, entry.def, this.emit))
+    if (entry.def.kind === 'agent' && entry.def.repo) await workingDirectory(this, entry.def, this.context(entry), ns)
+    return { ...ns, inputs }
+  }
+  async noteFailure(entry: Entry, code: string, target?: string, message?: string, source?: NodeState): Promise<boolean> {
+    const ns = this.state.nodes[entry.def.id]!
+    let failure: FailureRecord
+    try { failure = await recordFailure(ns, code, target, this.timestamp(), message, source) } catch (error) {
+      ns.status = 'blocked'
+      ns.error = `无法确定失败输入身份：${errorText(error)}`
+      await this.emit('node.failed', { error: ns.error, attempt: ns.attempts }, ns.id)
+      return true
+    }
+    this.failureHistory[ns.id] = ns.failures!
+    await this.save()
+    if (code === 'judge:flaky' || failure.count < (this.deps.stores.config.retry?.maxSameFailure ?? 2)) return false
+    ns.error = `同样的失败已出现 ${failure.count} 次：${message ?? code}`
+    ns.status = 'blocked'
+    await this.emit('retry.suppressed', { fingerprint: failure.fingerprint, code, count: failure.count, reason: ns.error }, ns.id)
+    if (entry.def.kind === 'loop') return true
+    let parent = entry.parent
+    while (parent) {
+      const ancestor = this.graph.get(parent)
+      if (ancestor?.def.kind === 'loop') return true
+      parent = ancestor?.parent
+    }
+    this.retryFingerprints[ns.id] = failure.fingerprint
+    await this.requestAttention(entry, ns.error, 'choice', ['再试一次', '交给人处理', '终止运行'], false, ns.inputs, 'retry')
+    return true
   }
   workspacePaths(paths: string[] = []): string[] {
     const prefix = relative(this.deps.stores.projectDir, this.deps.stores.workspaces.dir(this.state.requirementId))
@@ -423,7 +527,7 @@ export class Runtime implements HarnessHost {
   containerState(ns: NodeState, ids: string[]): void {
     this.signal.throwIfAborted()
     if (ids.every((id) => done(this.state.nodes[id]!))) return
-    if (ids.some((id) => this.state.nodes[id]!.status === 'waiting_human')) ns.status = 'waiting_human'
+    if (this.budget.paused || ids.some((id) => this.state.nodes[id]!.status === 'waiting_human' || this.state.nodes[id]!.status === 'blocked' && this.requests[id])) ns.status = 'waiting_human'
     else throw new Error(`子 DAG 未完成：${ids.filter((id) => !done(this.state.nodes[id]!)).join(', ')}`)
   }
   private resetReview(id: string): void {
@@ -453,6 +557,7 @@ export class Runtime implements HarnessHost {
       const old = this.state.nodes[id]!
       const next = fresh(id, old.iteration, old.attempts + 1)
       next.worktree = old.worktree
+      next.failures = old.failures
       next.reworks = id === target ? count : old.reworks
       this.state.nodes[id] = next
       this.reservedAttempts[id] = next.attempts
@@ -476,10 +581,18 @@ export class Runtime implements HarnessHost {
     }
     await this.save()
     await updateRequirement(this.deps.stores, this.state, snapshotWorkflow(this.workflow))
-    await this.schedule(this.workflow.nodes.map((node) => node.id))
-    await this.flushLogs()
+    // 长时间运行的脚本可能不报告 token；分钟预算仍需及时通知，已启动的节点继续完成。
+    const monitor = this.state.budget?.minutes ? setInterval(() => {
+      const pending = this.budget.check().then(() => undefined)
+      void pending.catch(() => undefined)
+      this.logs.push(pending)
+    }, Math.max(10, Math.min(1000, this.state.budget.minutes * 6000))) : undefined
+    try { await this.schedule(this.workflow.nodes.map((node) => node.id)) } finally {
+      if (monitor) clearInterval(monitor)
+      await this.flushLogs()
+    }
     if (this.signal.aborted) this.state.status = 'cancelled'
-    else if (Object.values(this.state.nodes).some((node) => node.status === 'waiting_human')) this.state.status = 'waiting_human'
+    else if (this.budget.paused || (await this.deps.stores.attention.list({ pending: true, requirementId: this.state.requirementId })).some((item) => item.runId === this.state.runId && this.requests[item.nodeId] === item.requestId && this.state.nodes[item.nodeId]?.status === 'blocked') || Object.values(this.state.nodes).some((node) => node.status === 'waiting_human')) this.state.status = 'waiting_human'
     else if (this.workflow.nodes.every((node) => done(this.state.nodes[node.id]!))) this.state.status = 'succeeded'
     else this.state.status = 'failed'
     this.state.endedAt = this.timestamp()

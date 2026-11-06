@@ -1,4 +1,5 @@
 import ts from 'typescript'
+import { lintModel } from './lint.js'
 import type { EditableNode, EditableValue, EditableWorkflow, NodeKind, WorkflowDiagnostic } from '@taktflow/core'
 
 export interface SourceSpan { start: number; end: number }
@@ -126,6 +127,9 @@ export function parseWorkflowSource(source: string, fileName = 'workflow.ts'): P
       title: props.title ?? literal(''), version: props.version ?? literal(''),
       ...(props.description ? { description: props.description } : {}),
     }
+    for (const key of ['useWhen', 'tiers', 'leadInstructions', 'dynamicRules', 'budget'] as const) {
+      if (props[key]) model.meta[key] = props[key]
+    }
     for (const key of ['stages', 'nodes']) {
       const property = root.properties.find((p) => p.name && keyOf(p.name) === key)
       if (!property || !ts.isPropertyAssignment(property) || !ts.isArrayLiteralExpression(property.initializer)) {
@@ -144,5 +148,6 @@ export function parseWorkflowSource(source: string, fileName = 'workflow.ts'): P
 }
 
 export function lintWorkflowSource(source: string): WorkflowDiagnostic[] {
-  return parseWorkflowSource(source).diagnostics
+  const parsed = parseWorkflowSource(source)
+  return [...parsed.diagnostics, ...lintModel(parsed.model)]
 }

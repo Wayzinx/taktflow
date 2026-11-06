@@ -9,7 +9,9 @@ import { addUsage } from '../../insights/usage.js'
 import { sha256 } from '../../util/hash.js'
 import { system } from '../actor.js'
 import { assertResponses, REVIEW_SCHEMA, RESPONSES_SCHEMA, reviewPassed } from './review-schema.js'
-import { reviewTargets } from './review-target.js'
+import { reviewTargets, targetFingerprint } from './review-target.js'
+import { noReviewProgress, reviewContinuity } from './review-continuity.js'
+import { normalizeRounds } from '../../review/records.js'
 
 export interface ReviewProgress {
   history?: ReviewRound[]
@@ -33,10 +35,10 @@ async function persist(host: Runtime, node: ReviewNodeDef, progress: ReviewProgr
   const ns = host.state.nodes[node.id]!
   const round = progress.rounds.at(-1)
   ns.result = { passed: progress.phase === 'done', rounds: progress.rounds.length }
-  if (round) await saveArtifact(host, node, `reviews/${node.id}/round-${round.round}.json`, JSON.stringify(round, null, 2), round.records.flatMap((record) => record.artifacts))
+  if (round) await saveArtifact(host, node, `reviews/${node.id}/r${round.revision ?? 1}-round-${round.round}.json`, JSON.stringify(round, null, 2), round.records.flatMap((record) => record.artifacts))
   const lines = [`# ${node.title}`, '', `状态：${progress.phase === 'done' ? '通过' : progress.phase === 'revise' ? '作者修改中' : '评审中 / 未通过'}`, '']
   for (const item of [...(progress.history ?? []), ...progress.rounds]) {
-    lines.push(`## 第 ${item.round} 轮：${item.passed ? '通过' : '未通过'}`)
+    lines.push(`## 修订 ${item.revision ?? 1} · 第 ${item.round} 轮（序号 ${item.seq ?? item.round}）：${item.passed ? '通过' : '未通过'}`)
     for (const record of item.records) {
       lines.push(`### ${record.reviewer}：${record.verdict}`, record.summary,
         `产物：${record.artifacts.map((ref) => `${ref.path} v${ref.version}`).join('、')}`)
@@ -71,6 +73,11 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
   if (node.kind !== 'review') throw new Error('内部错误：不是 review')
   const ns = host.state.nodes[node.id]!
   const progress = host.reviews[node.id] ??= { rounds: [], phase: 'review' }
+  const normalized = normalizeRounds([...(progress.history ?? []), ...progress.rounds])
+  const historyCount = progress.history?.length ?? 0
+  progress.history = normalized.slice(0, historyCount)
+  progress.rounds = normalized.slice(historyCount)
+  ns.revision = progress.rounds.at(-1)?.revision ?? (progress.history.at(-1)?.revision ?? 0) + 1
   for (;;) {
     host.signal.throwIfAborted()
     if (ns.status === 'stale') return
@@ -78,8 +85,10 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
     if (progress.phase === 'review') {
       const artifacts = await reviewTargets(host, node, ctx)
       ns.inputs = [...new Map([...(ns.inputs ?? []), ...artifacts].map((ref) => [ref.path, ref])).values()]
-      const prior = progress.rounds.at(-1)
-      const round: ReviewRound = { round: progress.rounds.length + 1, passed: false, records: [], responses: [], revised: [] }
+      const prior = progress.rounds.at(-1) ?? progress.history?.at(-1)
+      const round: ReviewRound = { round: progress.rounds.length + 1, revision: ns.revision, seq: (prior?.seq ?? 0) + 1,
+        targetFingerprint: await targetFingerprint(host.deps.stores.workspaces, artifacts, !Array.isArray(node.target)),
+        passed: false, records: [], responses: [], revised: [] }
       ns.round = round.round
       await host.save()
       for (const reviewer of node.reviewers) {
@@ -94,8 +103,23 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
         round.records.push({ ...value, round: round.round, reviewer: reviewer.role, artifacts, at: host.timestamp() })
       }
       round.passed = reviewPassed(round.records, node.pass)
+      const conflict = round.records.some((record) => record.verdict === 'approve')
+        && round.records.some((record) => record.verdict !== 'approve' && record.issues.some((issue) => issue.severity === 'blocker'))
+      if (node.arbiter && conflict) {
+        const arbiter = node.arbiter
+        const value = await invoke(host, node, ctx, arbiter.role, arbiter.harness,
+          `裁决第 ${round.round} 轮评审冲突。只读产物，不修改文件。\n目标：${JSON.stringify(artifacts)}\n全部评审记录：${JSON.stringify(round.records)}\nfocus：${arbiter.focus ?? ''}\nchecklist：${JSON.stringify(arbiter.checklist ?? [])}\nrubric：${node.rubric ?? ''}`,
+          REVIEW_SCHEMA, []) as Pick<ReviewRecord, 'verdict' | 'score' | 'summary' | 'issues'>
+        if (value.score !== undefined && !Number.isFinite(value.score)) throw new Error('评审分数必须是有限数值')
+        if (value.issues.some((issue) => !issue.id.trim()) || new Set(value.issues.map((issue) => issue.id)).size !== value.issues.length) throw new Error('评审问题 ID 必须非空且唯一')
+        round.records.push({ ...value, round: round.round, reviewer: arbiter.role, artifacts, at: host.timestamp(), arbiter: true })
+        round.passed = value.verdict === 'approve'
+        await host.emit('review.arbitrated', { round: round.round, arbiter: arbiter.role, verdict: value.verdict, conflict: '评审者通过与含 blocker 的修改 / 拒绝意见冲突' }, node.id)
+      }
+      round.continuity = reviewContinuity(round, prior)
       progress.rounds.push(round)
-      progress.phase = round.passed ? node.humanSignoff ? 'signoff' : 'done' : round.round < node.maxRounds ? 'revise' : 'exhausted'
+      if (noReviewProgress(progress.rounds, node.stopAfterNoProgress)) round.stopReason = 'no_progress'
+      progress.phase = round.passed ? node.humanSignoff ? 'signoff' : 'done' : !round.stopReason && round.round < node.maxRounds ? 'revise' : 'exhausted'
       await persist(host, node, progress)
       await host.emit('review.round', { round: round.round, passed: round.passed, verdicts: round.records.map((record) => ({ reviewer: record.reviewer, verdict: record.verdict, score: record.score, issues: record.issues.length })) }, node.id)
     } else if (progress.phase === 'revise') {
@@ -117,20 +141,21 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
       await host.emit('review.response', { round: round.round, responses: round.responses, revised: round.revised }, node.id)
       if (progress.restartAfterRevision) {
         progress.history = [...(progress.history ?? []), ...progress.rounds]
-        progress.rounds = []; delete progress.restartAfterRevision
+        progress.rounds = []; ns.revision = (ns.revision ?? 1) + 1; ns.round = 0; delete progress.restartAfterRevision
         await host.persistGraph()
       }
     } else if (progress.phase === 'signoff') {
-      await host.request(entry, `评审 ${node.title} 第 ${ns.round} 轮已通过，请人工确认。`, 'approve', undefined, true)
+      await host.request(entry, `评审 ${node.title} 第 ${ns.round} 轮已通过，请人工确认。`, 'approve', undefined, true, progress.rounds.at(-1)!.records[0]!.artifacts)
       return
     } else if (progress.phase === 'exhausted') {
       const action = typeof node.onExhausted === 'object' ? 'rework' : node.onExhausted
-      await host.emit('review.exhausted', { rounds: progress.rounds.length, action }, node.id)
-      if (action === 'fail') throw new Error(`评审 ${node.id} 已用完 ${node.maxRounds} 轮`)
+      await host.emit('review.exhausted', { rounds: progress.rounds.length, action, reason: progress.rounds.at(-1)?.stopReason }, node.id)
+      if (action === 'fail') throw new Error(progress.rounds.at(-1)?.stopReason === 'no_progress'
+        ? `评审 ${node.id} 连续无进展，提前结束` : `评审 ${node.id} 已用完 ${node.maxRounds} 轮`)
       if (typeof node.onExhausted === 'object') {
         const target = host.state.nodes[node.onExhausted.rework]!
         if ((target.reworks ?? 0) < (node.onExhausted.maxReworks ?? 1)) {
-          await host.rework(entry, node.onExhausted.rework, feedback(progress)); return
+          await rework(host, entry, node.onExhausted.rework, progress); return
         }
       }
       progress.phase = 'decision'
@@ -157,7 +182,6 @@ export async function answerReview(host: Runtime, entry: Entry, item: AttentionI
     if (item.decision === 'approve') progress.phase = 'done'
     else if (item.decision === 'reject') {
       progress.humanFeedback = item.answer ?? '人工拒绝本轮评审'
-      progress.rounds.at(-1)!.passed = false
       progress.phase = progress.rounds.length < node.maxRounds ? 'revise' : 'exhausted'
     } else throw new Error('评审确认需要 approve / reject')
   } else if (progress.phase === 'decision') {
@@ -166,11 +190,21 @@ export async function answerReview(host: Runtime, entry: Entry, item: AttentionI
     else if (item.answer === '终止') throw new Error('人工终止评审')
     else if (item.answer === '打回') {
       // 没有显式 rework 策略时，重启本评审的作者修改轮次，不猜测上游作者节点。
-      if (typeof node.onExhausted === 'object') { await host.rework(entry, node.onExhausted.rework, feedback(progress)); return }
+      if (typeof node.onExhausted === 'object') { await rework(host, entry, node.onExhausted.rework, progress); return }
       progress.restartAfterRevision = true
       progress.phase = 'revise'
     } else throw new Error('未知评审裁决选项')
   } else throw new Error(`评审阶段不能消费人工回答：${progress.phase}`)
   ns.status = 'pending'
   await persist(host, node, progress)
+}
+
+async function rework(host: Runtime, entry: Entry, target: string, progress: ReviewProgress): Promise<void> {
+  await host.rework(entry, target, feedback(progress))
+  for (const [id, current] of Object.entries(host.reviews)) {
+    if (host.state.nodes[id] && !current.rounds.length && current.history?.length) {
+      host.state.nodes[id]!.revision = (normalizeRounds(current.history).at(-1)?.revision ?? 1) + 1
+    }
+  }
+  await host.save()
 }

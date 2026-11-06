@@ -2,7 +2,7 @@
  * 需求群聊演示：每个需求一个群（真人 + Lead + 临时出现的子 Agent）。
  * REQ-002 第一次被订阅时，用定时器播放一段 Lead 对话：有人 @lead → Lead 派发临时任务 → dev 实现 → reviewer 评审 → Lead 请求审批合入。
  */
-import type { Actor, AttentionItem, ChatPostRequest, Room, RoomMember, RoomMessage } from '@taktflow/core'
+import type { Actor, AttentionItem, ChatPostRequest, LeadPresence, Room, RoomMember, RoomMessage } from '@taktflow/core'
 import type { MockDb } from './mock-data'
 import { createTaskRun } from './mock-task-run'
 
@@ -20,15 +20,25 @@ interface RoomState {
   room: Room
   messages: RoomMessage[]
   subs: Set<(m: RoomMessage) => void>
+  leadSubs: Set<(p: LeadPresence) => void>
+  leadTimer?: ReturnType<typeof setTimeout>
   scripted: boolean
 }
+
+/** Lead 状态灯演示：thinking → working → waiting → idle 循环（毫秒为该状态持续时长）。 */
+const LEAD_CYCLE: Array<[LeadPresence['state'], number, string]> = [
+  ['thinking', 3200, '正在读群消息与运行状态'],
+  ['working', 7000, '正在派发任务、跟进当前节点'],
+  ['waiting', 6000, '等负责人确认待办'],
+  ['idle', 8000, '没有需要处理的事'],
+]
 
 export interface MockChat {
   room(id: string): Room | undefined
   addMembers(id: string, members: RoomMember[]): Room | undefined
   list(id: string, opts?: { after?: number; limit?: number }): RoomMessage[] | undefined
   post(id: string, body: ChatPostRequest, by: Actor): RoomMessage | undefined
-  subscribe(id: string, on: (m: RoomMessage) => void): () => void
+  subscribe(id: string, on: (m: RoomMessage) => void, onLead?: (p: LeadPresence) => void): () => void
   /** 群里的待办被处理后，Lead 跟进一句。 */
   onAnswered(item: AttentionItem): void
 }
@@ -53,7 +63,7 @@ export function createMockChat(db: MockDb): MockChat {
       ...(req.members ?? [req.owner ?? 'web']).map((id): RoomMember => ({ id, kind: 'human', name: id, role: id === req.owner ? '负责人' : '成员' })),
       { id: 'lead', kind: 'lead', name: 'Lead', role: '项目经理 · 调度' },
     ]
-    const st: RoomState = { room: { id: `room-${reqId}`, requirementId: reqId, title: `${reqId} ${req.title}`, members, createdAt: req.createdAt }, messages: [], subs: new Set(), scripted: false }
+    const st: RoomState = { room: { id: `room-${reqId}`, requirementId: reqId, title: `${reqId} ${req.title}`, members, createdAt: req.createdAt, lead: { state: 'idle', since: new Date().toISOString(), detail: LEAD_CYCLE[3]![2] } }, messages: [], subs: new Set(), leadSubs: new Set(), scripted: false }
     rooms.set(reqId, st)
     seed(st, reqId)
     return st
@@ -64,6 +74,11 @@ export function createMockChat(db: MockDb): MockChat {
     push(st, { author: ENGINE, at: st.room.createdAt, kind: 'system', text: `需求群已创建，成员：${names}、Lead` })
     push(st, { author: LEAD, at: st.room.createdAt, kind: 'text', text: '我是这个需求的 Lead：盯进度、派任务、找人审批，不直接写代码。@lead 问进度或提要求都可以。' })
     const items = db.attention.filter((a) => a.requirementId === reqId).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
+    // 路由卡：每次流水线运行开始时 Lead 发一张（docs/design/19 §1）
+    for (const run of [...db.runs.values()].filter((r) => r.state.requirementId === reqId && r.state.route).sort((a, b) => Date.parse(a.state.startedAt) - Date.parse(b.state.startedAt))) {
+      const r = run.state.route!
+      push(st, { author: LEAD, at: r.at, kind: 'route', text: `按 ${r.tier} 走「${run.workflow.title}」：${r.reason}`, route: r, refs: { runId: run.state.runId } })
+    }
     if (reqId === 'REQ-002') {
       const env = items.find((a) => a.requestId === 'att-0002-env')
       push(st, { author: ENGINE, at: ago(140), kind: 'system', text: '进入「研发测试 Loop」阶段', refs: { runId: 'run-20261104-0002' } })
@@ -74,6 +89,7 @@ export function createMockChat(db: MockDb): MockChat {
       push(st, { author: LEAD, at: ago(31), kind: 'progress', text: '研发测试 Loop 第 2 轮：8 条用例 6 条通过。TC-EXP-003（金额格式）和 TC-EXP-005（大数据量导出）仍判为产品缺陷，已路由回 fix-code。', refs: { runId: 'run-20261104-0002', artifacts: [{ workspace: reqId, path: 'evidence/summary.json' }] } })
       push(st, { author: human('qiao'), at: ago(23), kind: 'text', text: 'TC-EXP-005 是不是要等分片方案？设计里写的是 2000 行一片。', refs: { artifacts: [{ workspace: reqId, path: 'design/design.md' }] } })
       push(st, { author: LEAD, at: ago(22), kind: 'text', mentions: ['qiao'], text: '对，design/design.md 第 3 节已经定了分片方案，fix-code 这一轮会按它实现。@qiao 想改分片大小的话直接在群里说，我来发起修改。' })
+      push(st, { author: LEAD, at: ago(20), kind: 'text', mentions: ['lin'], text: 'TC-EXP-003 的金额格式问题定位到 csv.ts:42，fix-code 已改好。**待确认** @lin 确认合入 fix-code 的改动 **下一步** 合入后重跑 TC-EXP-003 与 TC-EXP-005', refs: { runId: 'run-20261104-0002', nodeId: 'fix-code' } })
       return
     }
     for (const a of items) push(st, { author: ENGINE, at: a.createdAt, kind: 'attention', text: a.ask, refs: { requestId: a.requestId, runId: a.runId, nodeId: a.nodeId } })
@@ -141,6 +157,13 @@ export function createMockChat(db: MockDb): MockChat {
     return `收到。${now}${pending ? `等人处理的事有 ${pending} 件，群里的待办卡片可以直接处理。` : '目前没有等人处理的事。'}要改产物或代码的话，我会派临时任务给对应角色，结果回帖到这里。`
   }
 
+  function cycleLead(st: RoomState, i: number) {
+    const [state, ms, detail] = LEAD_CYCLE[i % LEAD_CYCLE.length]!
+    st.room.lead = { state, since: new Date().toISOString(), detail }
+    st.leadSubs.forEach((f) => f(structuredClone(st.room.lead!)))
+    st.leadTimer = setTimeout(() => cycleLead(st, i + 1), ms)
+  }
+
   function addMembers(id: string, members: RoomMember[]) {
     const st = ensure(id)
     if (!st) return undefined
@@ -165,12 +188,23 @@ export function createMockChat(db: MockDb): MockChat {
       if (mentions.includes('lead')) setTimeout(() => push(st, { author: LEAD, kind: 'text', text: leadReply(id), replyTo: m.id, mentions: by.type === 'human' ? [by.id] : undefined }), 1800)
       return m
     },
-    subscribe(id, on) {
+    subscribe(id, on, onLead) {
       const st = ensure(id)
       if (!st) return () => {}
       st.subs.add(on)
+      if (onLead) {
+        st.leadSubs.add(onLead)
+        if (!st.leadTimer) cycleLead(st, 0)
+      }
       if (id === 'REQ-002' && !st.scripted) play(st)
-      return () => st.subs.delete(on)
+      return () => {
+        st.subs.delete(on)
+        if (onLead) st.leadSubs.delete(onLead)
+        if (!st.leadSubs.size && st.leadTimer) {
+          clearTimeout(st.leadTimer)
+          st.leadTimer = undefined
+        }
+      }
     },
     onAnswered(item) {
       const st = rooms.get(item.requirementId)

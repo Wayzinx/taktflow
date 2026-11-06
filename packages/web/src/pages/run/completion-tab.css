@@ -1,0 +1,174 @@
+/* 节点抽屉"完成标准"Tab（C 组）。 */
+.cpl-sum {
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
+  font-weight: 600;
+  line-height: 18px;
+}
+.cpl-sum.pass {
+  color: var(--st-success);
+  background: var(--st-success-soft);
+}
+.cpl-sum.fail {
+  color: var(--st-failed);
+  background: var(--st-failed-soft);
+}
+.cpl-sum.pending {
+  color: var(--text-2);
+  background: var(--surface-hover);
+}
+.cpl-title-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.cpl-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.cpl-row {
+  --cpl-tone: var(--text-3);
+  display: grid;
+  grid-template-columns: 20px 24px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 10px 12px;
+}
+.cpl-row + .cpl-row {
+  border-top: 1px solid var(--divider);
+}
+.cpl-row.v-pass {
+  --cpl-tone: var(--st-success);
+}
+.cpl-row.v-fail,
+.cpl-row.v-no-evidence {
+  --cpl-tone: var(--st-failed);
+}
+.cpl-mark {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  color: var(--cpl-tone);
+  background: color-mix(in srgb, var(--cpl-tone) 13%, transparent);
+}
+.cpl-mark svg {
+  width: 11px;
+  height: 11px;
+}
+.cpl-row.v-pending .cpl-mark {
+  background: none;
+}
+.cpl-row.v-pending .cpl-mark svg {
+  width: 15px;
+  height: 15px;
+}
+.cpl-id {
+  padding-top: 2px;
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+.cpl-criterion {
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--text);
+}
+.cpl-evidence {
+  margin-top: 2px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.cpl-row.v-no-evidence .cpl-evidence,
+.cpl-row.v-fail .cpl-evidence {
+  color: var(--st-failed);
+}
+
+.fp-list {
+  display: grid;
+  gap: 8px;
+}
+.fp-card {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+.fp-card.stopped {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--st-failed) 28%, transparent),
+    var(--shadow-xs);
+}
+.fp-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: var(--text-ui);
+}
+.fp-code {
+  font-weight: 600;
+  color: var(--text);
+}
+.fp-count {
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--st-waiting);
+  background: var(--st-waiting-soft);
+}
+.fp-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--st-failed);
+}
+.fp-stop svg {
+  width: 12px;
+  height: 12px;
+}
+.fp-msg {
+  margin-top: 6px;
+  font-size: var(--text-ui);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.fp-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 2px 12px;
+  margin: 8px 0 0;
+  font-size: var(--text-meta);
+}
+.fp-meta dt {
+  color: var(--text-3);
+}
+.fp-meta dd {
+  margin: 0;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+div.fp-meta {
+  display: block;
+}
+.d-note a {
+  color: var(--text-2);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.d-note a:hover {
+  color: var(--text);
+}

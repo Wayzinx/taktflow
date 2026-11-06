@@ -75,7 +75,7 @@ export function createMockSource(): DataSource {
   }
   const summary = (d: SpaceDetail): SpaceSummary => ({ id: d.id, name: d.name, description: d.description, requirements: d.requirements, active: d.active })
 
-  const spaceApi: Pick<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
+  const spaceApi: Pick<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
     spaces: () => delay(spaces.map((s) => summary(s.detail)), 60),
     // 空间详情里的 workflow 列表以 workflow 存储为准（编辑后 rev / 更新时间会变）
     space: () => withSpace(async (sp) => ({ ...(await delay(sp.detail)), workflows: await workflowsOf(sp).workflows() })),
@@ -89,6 +89,13 @@ export function createMockSource(): DataSource {
       withSpace((sp) => {
         if (sp.detail.repos.some((r) => r.id === repo.id)) return fail(`代码仓库 ${repo.id} 已存在`)
         sp.detail.repos.push({ ...repo, status: 'missing', message: '已登记，点同步拉取镜像。' })
+        return delay(sp.detail, 160)
+      }),
+    updateRepo: (repoId, patch) =>
+      withSpace((sp) => {
+        const repo = sp.detail.repos.find((r) => r.id === repoId)
+        if (!repo) return fail(`代码仓库 ${repoId} 不存在`)
+        Object.assign(repo, clone(patch))
         return delay(sp.detail, 160)
       }),
     syncRepo: (repoId) =>

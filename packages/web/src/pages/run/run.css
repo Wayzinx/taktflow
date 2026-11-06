@@ -29,8 +29,9 @@
 }
 .run-title-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 6px 10px;
   min-width: 0;
 }
 .run-title {
@@ -40,6 +41,7 @@
   white-space: nowrap;
 }
 .run-wf {
+  white-space: nowrap;
   font-size: var(--text-meta);
   color: var(--text-3);
 }
@@ -330,7 +332,6 @@
 }
 .dag-node.st-running {
   border-color: color-mix(in srgb, var(--st-running) 55%, transparent);
-  animation: pulse-ring 1.8s ease-out infinite;
 }
 .dag-node.st-waiting_human {
   border-color: color-mix(in srgb, var(--st-waiting) 60%, transparent);

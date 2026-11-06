@@ -1,4 +1,4 @@
-import type { ApiError, WorkflowConflict } from '@taktflow/core'
+import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
 import { WorkflowConflictError, type DataSource } from './source'
 
@@ -71,6 +71,7 @@ export function createHttpSource(base = '/api'): DataSource {
     space: () => get('/space'),
     setMembers: (members) => req('PUT', '/space/members', members),
     addRepo: (repo) => req('POST', '/space/repos', repo),
+    updateRepo: (repoId, patch) => req('PATCH', `/space/repos/${enc(repoId)}`, patch),
     syncRepo: (repoId) => req('POST', `/space/repos/${enc(repoId)}/sync`),
     spaceFile: (kind, name) => get(`/space/files${qs({ kind, name })}`),
     saveSpaceFile: (kind, name, body) => req('PUT', `/space/files${qs({ kind, name })}`, body),
@@ -78,8 +79,14 @@ export function createHttpSource(base = '/api'): DataSource {
     addRoomMembers: (id, members) => req('POST', `/requirements/${enc(id)}/room/members`, members),
     chat: (id, opts = {}) => get(`/requirements/${enc(id)}/chat${qs({ after: opts.after, limit: opts.limit })}`),
     postChat: (id, body) => req('POST', `/requirements/${enc(id)}/chat`, body),
-    subscribeChat: (id, onMessage) => stream(scoped(`/requirements/${enc(id)}/chat/stream`), onMessage),
+    subscribeChat: (id, onMessage, onLead) => stream<RoomMessage>(scoped(`/requirements/${enc(id)}/chat/stream`), onMessage, onLead && { lead: (d) => onLead(d as LeadPresence) }),
     requirementReviews: (id) => get(`/requirements/${enc(id)}/reviews`),
+    disposeReview: (runId, nodeId, body) => req('POST', `/runs/${enc(runId)}/nodes/${enc(nodeId)}/dispositions`, body),
+    routePreview: (id, body) => req('POST', `/requirements/${enc(id)}/route`, body),
+    commands: () => get('/commands'),
+    runCommand: (id, body) => req('POST', `/commands/${enc(id)}`, body),
+    lessons: (status) => get(`/lessons${qs({ status })}`),
+    updateLesson: (id, body) => req('PATCH', `/lessons/${enc(id)}`, body),
     workflows: () => get('/workflows'),
     workflow: (id) => get(`/workflows/${enc(id)}`),
     editWorkflow: (id, body) => req('PATCH', `/workflows/${enc(id)}`, body),
@@ -92,15 +99,18 @@ export function createHttpSource(base = '/api'): DataSource {
   }
 }
 
-function stream<T>(url: string, on: (v: T) => void): () => void {
+/** SSE：默认事件（无 event: 行）交给 on；named 里的具名事件（如群聊的 `event: lead`）分别处理。 */
+function stream<T>(url: string, on: (v: T) => void, named?: Record<string, (data: unknown) => void>): () => void {
   const es = new EventSource(url)
-  es.onmessage = (m) => {
+  const parse = (raw: unknown, fn: (v: never) => void) => {
     try {
-      on(JSON.parse(m.data as string) as T)
+      fn(JSON.parse(raw as string) as never)
     } catch {
       // 非 JSON 的保活行忽略
     }
   }
+  es.onmessage = (m) => parse(m.data, on)
+  for (const [name, fn] of Object.entries(named ?? {})) es.addEventListener(name, (m) => parse((m as MessageEvent).data, fn))
   return () => es.close()
 }
 

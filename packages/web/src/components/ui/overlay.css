@@ -1,0 +1,197 @@
+/* 共享弹层原语：对话框、气泡、下拉菜单、风险标签（进出场样式见 styles/motion.css 的 .presence-*） */
+
+/* ---------------------------------------------------------------- 对话框 */
+.ov-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 14vh var(--sp-4) var(--sp-4);
+  background: var(--scrim);
+}
+.ov-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(520px, 100%);
+  max-height: min(680px, 80vh);
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+}
+.ov-dialog.ov-sm {
+  width: min(440px, 100%);
+}
+.ov-dialog.ov-lg {
+  width: min(720px, 100%);
+}
+.ov-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3) var(--sp-5);
+}
+.ov-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.ov-title {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+/* 危险操作：标题前一根失败色刻度，与节拍尺同一记号 */
+.ov-danger .ov-title::before {
+  content: '';
+  display: inline-block;
+  width: 2px;
+  height: 0.9em;
+  margin-right: 8px;
+  border-radius: 1px;
+  vertical-align: -0.1em;
+  background: var(--st-failed);
+}
+.ov-desc {
+  margin: 4px 0 0;
+  font-size: var(--text-ui);
+  color: var(--text-2);
+  line-height: 1.55;
+}
+.ov-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--sp-5) var(--sp-4);
+  overscroll-behavior: contain;
+}
+.ov-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--divider);
+  background: var(--surface-2);
+}
+.ov-error {
+  margin-right: auto;
+  font-size: var(--text-meta);
+  color: var(--st-failed);
+}
+
+/* ---------------------------------------------------------------- 表单字段（对话框与 ⌘K 共用） */
+.ov-form {
+  display: grid;
+  gap: var(--sp-4);
+}
+.ov-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.ov-field-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--text-meta);
+  font-weight: 500;
+  color: var(--text-2);
+}
+.ov-field-hint {
+  margin-left: auto;
+  font-weight: 400;
+  color: var(--text-3);
+}
+.ov-req {
+  font-size: var(--text-label);
+  font-weight: 500;
+  color: var(--accent-text);
+}
+
+/* ---------------------------------------------------------------- 气泡 / 下拉 */
+.ov-pop {
+  position: fixed;
+  z-index: 120;
+  max-width: min(360px, calc(100vw - 16px));
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.ov-menu-list {
+  display: grid;
+  gap: 1px;
+  min-width: 180px;
+  max-height: min(360px, 60vh);
+  overflow-y: auto;
+  padding: 4px;
+  outline: none;
+}
+.ov-mi {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+.ov-mi.on {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.ov-mi.danger {
+  color: var(--st-failed);
+}
+.ov-mi.disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+.ov-mi-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.ov-mi-label {
+  flex: 1;
+}
+.ov-mi-hint {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.ov-mi-check {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--accent-text);
+}
+
+/* ---------------------------------------------------------------- 风险标签 */
+.risk-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: var(--text-label);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.risk-tag svg {
+  width: 12px;
+  height: 12px;
+}
+.risk-tag.risk-write {
+  color: var(--text-2);
+}
+.risk-tag.risk-dangerous {
+  color: var(--st-failed);
+}

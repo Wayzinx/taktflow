@@ -1,5 +1,6 @@
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, type Edge, type EdgeProps } from '@xyflow/react'
 import { Undo2 } from 'lucide-react'
+import { prefersReducedMotion } from '../../lib/motion'
 import { NH, NW, REWORK_LABEL } from './dag-layout'
 import './review/dag-review.css'
 
@@ -12,7 +13,7 @@ const TAKT_MS = 1200
 /**
  * 数据正在流过的边：上游已产出、下游在跑。
  * 光点按节拍从上游"送"到下游（缓入缓出，到站停半拍再发下一颗），像传送带上的工件，而不是匀速的蚂蚁线。
- * 减少动效时 CSS 隐藏光点，边本身保持运行色，信息不丢。
+ * 减少动效时不跑 SMIL 动画：光点静止停在边的中点（仍可见），边本身保持运行色，信息不丢。
  */
 export function FlowEdgeView(props: EdgeProps<FlowEdge>) {
   const { sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd, style, label, labelStyle, labelBgStyle, labelBgPadding, labelBgBorderRadius } = props
@@ -35,14 +36,21 @@ export function FlowEdgeView(props: EdgeProps<FlowEdge>) {
         labelBgBorderRadius={labelBgBorderRadius}
       />
       <path d={path} className="flow-trail" style={{ stroke: color }} />
-      <g className="flow-dot" aria-hidden>
-        <circle r={6} className="flow-dot-halo" style={{ fill: color }}>
-          <animateMotion {...motion} />
-        </circle>
-        <circle r={2.6} className="flow-dot-core" style={{ fill: color }}>
-          <animateMotion {...motion} />
-        </circle>
-      </g>
+      {prefersReducedMotion() ? (
+        <g className="flow-dot-still" aria-hidden>
+          <circle cx={labelX} cy={labelY} r={6} style={{ fill: color, opacity: 0.18 }} />
+          <circle cx={labelX} cy={labelY} r={2.6} style={{ fill: color }} />
+        </g>
+      ) : (
+        <g className="flow-dot" aria-hidden>
+          <circle r={6} className="flow-dot-halo" style={{ fill: color }}>
+            <animateMotion {...motion} />
+          </circle>
+          <circle r={2.6} className="flow-dot-core" style={{ fill: color }}>
+            <animateMotion {...motion} />
+          </circle>
+        </g>
+      )}
     </>
   )
 }

@@ -122,6 +122,7 @@ export const ARTIFACT_KIND: Record<ArtifactKind, string> = {
   report: '报告',
   decision: '决策',
   knowledge: '知识回流',
+  defect: '缺陷归因',
   other: '其他',
 }
 
@@ -142,6 +143,7 @@ export const ARTIFACT_KIND_ORDER: ArtifactKind[] = [
   'report',
   'decision',
   'knowledge',
+  'defect',
   'other',
 ]
 

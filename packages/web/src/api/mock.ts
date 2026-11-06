@@ -14,6 +14,10 @@ import type {
   Usage,
 } from '@taktflow/core'
 import { createMockChat } from './mock-chat'
+import { MOCK_COMMANDS, runMockCommand } from './mock-commands'
+import { createMockLessons } from './mock-lessons'
+import { attentionView, budgetStatus, decorateAttentions, enrichM3, qualityOf, sumQuality } from './mock-m3-runs'
+import { previewRoute } from './mock-route'
 import { addUsage, ZERO, type MockDb, type MockRun } from './mock-data'
 import { createMockReviews } from './mock-reviews'
 import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
@@ -21,15 +25,18 @@ import type { WorkflowApi } from './mock-workflows'
 import type { DataSource, NodeView } from './source'
 
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
-export type ProjectSource = Omit<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi>
+export type ProjectSource = Omit<DataSource, 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi>
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const LOADED = Date.now()
 
 /** 演示数据源：实现与 HTTP 客户端相同的接口，状态保存在内存里（刷新即复位）。 */
 export function createProjectMock(db: MockDb): ProjectSource {
+  enrichM3(db)
   const chat = createMockChat(db)
   const reviews = createMockReviews(db)
+  decorateAttentions(db)
+  const lessons = createMockLessons(db.requirements.length > 0)
   const delay = <T,>(v: T, ms = 90): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
   const fail = (msg: string) => Promise.reject(new Error(msg))
 
@@ -83,6 +90,9 @@ export function createProjectMock(db: MockDb): ProjectSource {
         failed: ns.filter((n) => n.status === 'failed' || n.status === 'blocked').length,
       },
       usage: runUsage(run),
+      kind: run.state.kind,
+      origin: run.state.origin,
+      tier: run.state.route?.tier,
     }
   }
 
@@ -93,6 +103,8 @@ export function createProjectMock(db: MockDb): ProjectSource {
     const latest = runs.find((r) => r.state.workflowId !== 'task')
     const stages = stageProgress(latest)
     const current = stages.find((s) => s.status !== 'done')?.id ?? stages[stages.length - 1]?.id
+    // 当前节点：运行中的优先，其次等人的、被拦下的（与 server 读模型同一顺序）
+    const pick = latest && (['running', 'waiting_human', 'blocked', 'failed'] as const).map((st) => latest.graph.nodes.find((n) => n.status === st && n.kind !== 'loop' && n.kind !== 'planner')).find(Boolean)
     return {
       ...req,
       stage: latest ? current : undefined,
@@ -100,6 +112,9 @@ export function createProjectMock(db: MockDb): ProjectSource {
       latestRunId: latest?.state.runId,
       pendingAttention: db.attention.filter((a) => a.requirementId === id && !a.answeredAt).length,
       usage: runs.reduce<Usage>((acc, r) => addUsage(acc, runUsage(r)), ZERO),
+      current: latest && pick ? { runId: latest.state.runId, nodeId: pick.id, title: pick.title, status: pick.status } : undefined,
+      tier: latest?.state.route?.tier,
+      quality: runs.length ? sumQuality(runs.map(qualityOf)) : undefined,
     }
   }
 
@@ -124,7 +139,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
         name: db.project.name,
         description: db.project.description,
         requirements,
-        attention: db.attention.filter((a) => !a.answeredAt),
+        attention: db.attention.filter((a) => !a.answeredAt).map((a) => attentionView(db, a)),
         totals: {
           requirements: requirements.length,
           active: requirements.filter((r) => r.status === 'active').length,
@@ -132,6 +147,8 @@ export function createProjectMock(db: MockDb): ProjectSource {
           blocked: requirements.filter((r) => r.status === 'blocked').length,
           runs: db.runs.size,
           usage: requirements.reduce<Usage>((acc, r) => addUsage(acc, r.usage), ZERO),
+          verified: requirements.reduce((s, r) => s + (r.quality?.verified ?? 0), 0),
+          intercepted: requirements.reduce((s, r) => s + (r.quality?.intercepted ?? 0), 0),
         },
       })
     },
@@ -173,7 +190,9 @@ export function createProjectMock(db: MockDb): ProjectSource {
           for (const e of run.graph.edges) if (e.from === cur) queue.push(e.to)
           for (const n of run.graph.nodes) if (n.parent === cur) queue.push(n.id)
         }
-        appendEvent(run, 'artifact.edited', author, { ref: { workspace: id, path, version }, reason: body.reason })
+        appendEvent(run, 'artifact.edited', author, { ref: { workspace: id, path, version }, reason: body.reason, impact: body.impact })
+        // 措辞调整只记录，不传播 stale（docs/design/19 §5）
+        if (body.impact === 'cosmetic') continue
         for (const nodeId of seen) {
           const g = run.graph.nodes.find((n) => n.id === nodeId)
           if (!g || g.status !== 'succeeded') continue
@@ -196,13 +215,14 @@ export function createProjectMock(db: MockDb): ProjectSource {
       const m = db.metrics.get(id)
       if (!m) return fail(`需求 ${id} 不存在`)
       const runs = runsOf(id)
-      return delay({ ...m, runs: runs.length, usage: runs.reduce<Usage>((acc, r) => addUsage(acc, runUsage(r)), ZERO) })
+      return delay({ ...m, runs: runs.length, usage: runs.reduce<Usage>((acc, r) => addUsage(acc, runUsage(r)), ZERO), quality: runs.length ? sumQuality(runs.map(qualityOf)) : undefined })
     },
     runs: (requirement) => delay((requirement ? runsOf(requirement) : [...db.runs.values()]).map(runSummary)),
     run(runId) {
       const run = getRun(runId)
       if (!run) return fail(`运行 ${runId} 不存在`)
-      return delay({ run: run.state, workflow: run.workflow, stages: stageProgress(run), graph: { nodes: graphNodes(run), edges: run.graph.edges } })
+      const usage = runUsage(run)
+      return delay({ run: run.state, workflow: run.workflow, stages: stageProgress(run), usage, graph: { nodes: graphNodes(run), edges: run.graph.edges }, budget: budgetStatus(run, usage), quality: qualityOf(run) })
     },
     events(runId, opts = {}) {
       const run = getRun(runId)
@@ -232,6 +252,11 @@ export function createProjectMock(db: MockDb): ProjectSource {
         gate: gateEvent ? (gateEvent.data as NodeDetail['gate']) : undefined,
         checks: t.checks,
         review: t.kind === 'review' ? reviews.detail(runId, nodeId) : undefined,
+        goal: t.goal,
+        summary: state.summary,
+        completion: t.completion,
+        completionChecks: state.checks,
+        failures: state.failures,
         events,
       }
       return delay(detail)
@@ -241,17 +266,22 @@ export function createProjectMock(db: MockDb): ProjectSource {
       if (!run) return fail(`运行 ${runId} 不存在`)
       return delay({ ok: true })
     },
-    attention: (pending) => delay(db.attention.filter((a) => (pending ? !a.answeredAt : true)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))),
+    attention: (pending) => delay(db.attention.filter((a) => (pending ? !a.answeredAt : true)).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).map((a) => attentionView(db, a))),
     answer(requestId, body) {
       const item = db.attention.find((a) => a.requestId === requestId)
       if (!item) return fail(`待办 ${requestId} 不存在`)
       // 和 server / CLI 的校验保持一致：已处理的不能再答；choice 编码为 decision='choice'、answer=选项原文
       if (item.answeredAt) return fail(`待办 ${requestId} 已处理`)
       if (item.form === 'choice' && (body.decision !== 'choice' || !body.answer || !item.choices?.includes(body.answer))) return fail(`选项不在 ${(item.choices ?? []).join(' / ')} 之中`)
-      Object.assign(item, { answeredAt: new Date().toISOString(), answeredBy: { type: 'human', id: 'web' }, decision: body.decision, answer: body.answer })
+      // 审批绑定回答时看到的版本：boundTo 刷新为各产物的最新版本
+      const boundTo = item.boundTo?.map((r) => {
+        const rec = db.artifacts.get(r.workspace)?.find((a) => a.path === r.path)
+        return { ...r, version: rec?.versions[rec.versions.length - 1]?.version ?? r.version }
+      })
+      Object.assign(item, { answeredAt: new Date().toISOString(), answeredBy: { type: 'human', id: 'web' }, decision: body.decision, answer: body.answer, boundTo })
       const run = getRun(item.runId)
       if (run) {
-        appendEvent(run, 'human.answered', { type: 'human', id: 'web' }, { requestId, decision: body.decision, answer: body.answer }, item.nodeId)
+        appendEvent(run, 'human.answered', { type: 'human', id: 'web' }, { requestId, decision: body.decision, answer: body.answer, boundTo }, item.nodeId)
         const g = run.graph.nodes.find((n) => n.id === item.nodeId)
         if (g && g.status === 'waiting_human' && body.decision !== 'reject') {
           g.status = 'succeeded'
@@ -259,7 +289,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
         }
       }
       chat.onAnswered(item)
-      return delay(item, 160)
+      return delay(attentionView(db, item), 160)
     },
     harnesses: () => delay(MOCK_HARNESSES, 140),
     models: () => delay(MOCK_MODELS, 140),
@@ -280,8 +310,34 @@ export function createProjectMock(db: MockDb): ProjectSource {
       const m = chat.post(id, body, { type: 'human', id: 'web' })
       return m ? delay(m, 60) : fail(`需求 ${id} 不存在`)
     },
-    subscribeChat: (id, on) => chat.subscribe(id, on),
+    subscribeChat: (id, on, onLead) => chat.subscribe(id, on, onLead),
     requirementReviews: (id) => (db.requirements.some((r) => r.id === id) ? delay(reviews.list(id), 100) : fail(`需求 ${id} 不存在`)),
+    disposeReview(runId, nodeId, body) {
+      const d = reviews.dispose(runId, nodeId, body)
+      return typeof d === 'string' ? fail(d) : delay(d, 140)
+    },
+    routePreview(id, body) {
+      const r = previewRoute(db, id, body)
+      return typeof r === 'string' ? fail(r) : delay(r, 380)
+    },
+    commands: () => delay(MOCK_COMMANDS, 60),
+    runCommand(id, body) {
+      const viaRun = (fn: () => Promise<unknown>, message: string) => fn().then((result) => ({ ok: true, message, result }))
+      return delay(null, 120).then(() =>
+        runMockCommand(id, body, {
+          'route.preview': (i, reason) => viaRun(() => this.routePreview(String(i.requirementId), { tier: i.tier as never, reason: (i.reason as string | undefined) ?? reason }), '路由预览已生成'),
+          'review.dispose': (i, reason) => viaRun(() => this.disposeReview(String(i.runId), String(i.nodeId), { groupKey: String(i.groupKey), state: i.state as never, reason: reason! }), '处置已记录'),
+          'lesson.update': (i, reason) => viaRun(() => this.updateLesson(String(i.id), { status: i.status as never, reason: reason! }), '经验状态已更新'),
+          'attention.list': (i) => viaRun(() => this.attention(true).then((l) => (i.mine ? l.filter((a) => a.assignees?.includes('web')) : l)), '已列出待办'),
+          'requirement.status': (i) => viaRun(() => this.requirement(String(i.requirementId)).then((r) => ({ id: r.id, title: r.title, stage: r.stage, current: r.current })), '已读取需求状态'),
+        }),
+      )
+    },
+    lessons: (status) => delay(lessons.list(status), 100),
+    updateLesson(id, body) {
+      const l = lessons.update(id, body)
+      return typeof l === 'string' ? fail(l) : delay(l, 160)
+    },
     subscribe(runId, onEvent) {
       const run = getRun(runId)
       if (!run || run.live.length === 0) return () => {}

@@ -377,6 +377,11 @@ a.chip:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* 转圈图标停在原位；骨架屏留静态底色 */
+  .spin,
+  .skeleton {
+    animation: none;
+  }
   *,
   *::before,
   *::after {

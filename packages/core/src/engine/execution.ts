@@ -1,7 +1,7 @@
 import { access } from 'node:fs/promises'
 import { dirname, relative } from 'node:path'
 import type { AgentNodeDef, EventPayloads, NodeContext, NodeState, SandboxProvider, SandboxMount, TaktConfig } from '../types.js'
-import type { HarnessHost } from './harness.js'
+import { BlockedError, type HarnessHost } from './harness.js'
 import { WriteGuard } from './guard.js'
 import { sha256 } from '../util/hash.js'
 
@@ -28,6 +28,11 @@ export async function workingDirectory(host: HarnessHost, node: AgentNodeDef, ct
     const previous = host.state.nodes[node.id]?.worktree ?? events.map((event) => event.data as EventPayloads['worktree.created']).filter((tree) => tree.repo === node.repo).at(-1)
     if (previous?.repo === node.repo) { ns.worktree = previous; host.state.nodes[node.id]!.worktree = previous; await host.save(); return previous.path }
     const tree = await host.guard.system(['.takt/worktrees/**'], () => repos.createWorktree({ repoId: node.repo!, runId: ctx.runId, nodeId: node.id }))
+      .catch((error: unknown) => { throw new BlockedError(`worktree 引导失败：${error instanceof Error ? error.message : String(error)}`) })
+    if (tree.bootstrap) {
+      await host.emit('worktree.bootstrapped', { ...tree.bootstrap, repo: node.repo, path: tree.path }, node.id)
+      if (!tree.bootstrap.ok) throw new BlockedError(`worktree 引导失败：${tree.bootstrap.output ?? node.repo}`)
+    }
     ns.worktree = { ...tree, repo: node.repo }
     // review 的临时会话也必须把工作树身份落到真实节点状态。
     host.state.nodes[node.id]!.worktree = ns.worktree

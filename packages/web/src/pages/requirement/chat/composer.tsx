@@ -2,11 +2,15 @@ import { useImperativeHandle, useMemo, useRef, useState, type KeyboardEvent, typ
 import { CornerUpLeft, SendHorizontal, X } from 'lucide-react'
 import type { RoomMember, RoomMessage } from '@taktflow/core'
 import { toast } from '../../../components/ui'
+import { useLastDefined, usePresence } from '../../../lib/motion'
+import { ComposerHint, DEFAULT_HINT } from './composer-hint'
 import { MemberAvatar } from './message-item'
 
 export interface ComposerApi {
   mention(id: string): void
   focus(): void
+  /** 用给定文本替换草稿并聚焦（URL ?compose= 预填用）。 */
+  prefill(text: string): void
 }
 
 /** 光标前的 @片段（@ 前面是行首或空白才算）。 */
@@ -27,6 +31,7 @@ export function Composer({ members, replyTo, onCancelReply, onSend, apiRef }: { 
   const [active, setActive] = useState(0)
   const [dismissed, setDismissed] = useState<number>()
   const [busy, setBusy] = useState(false)
+  const [focused, setFocused] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
 
   const query = mentionQuery(text, caret)
@@ -37,6 +42,9 @@ export function Composer({ members, replyTo, onCancelReply, onSend, apiRef }: { 
     return sorted.filter((m) => m.id.toLowerCase().startsWith(query.q) || m.name.toLowerCase().includes(query.q) || (m.role ?? '').includes(query.q)).slice(0, 8)
   }, [members, query?.q, query?.start]) // eslint-disable-line react-hooks/exhaustive-deps
   const open = Boolean(query) && options.length > 0 && dismissed !== query?.start
+  // 下拉收起时保留最后一帧（120ms 淡出），快速重开直接回到打开态
+  const menu = usePresence(open, 120)
+  const shown = useLastDefined(open ? options : undefined) ?? []
 
   function setDraft(next: string, pos: number) {
     setText(next)
@@ -63,6 +71,7 @@ export function Composer({ members, replyTo, onCancelReply, onSend, apiRef }: { 
       setDraft(next, next.length)
     },
     focus: () => ta.current?.focus(),
+    prefill: (next) => setDraft(next, next.length),
   }))
 
   async function submit() {
@@ -120,9 +129,9 @@ export function Composer({ members, replyTo, onCancelReply, onSend, apiRef }: { 
           </button>
         </div>
       )}
-      {open && (
-        <ul className="chat-mention-menu" id={listId} role="listbox" aria-label="选择要 @ 的成员">
-          {options.map((m, i) => (
+      {menu.mounted && (
+        <ul className="chat-mention-menu" data-state={menu.state} id={listId} role="listbox" aria-label="选择要 @ 的成员">
+          {shown.map((m, i) => (
             <li key={m.id} id={`${listId}-${m.id}`} role="option" aria-selected={i === active} className={i === active ? 'active' : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(m)} onMouseEnter={() => setActive(i)}>
               <MemberAvatar kind={m.kind} name={m.name} />
               <span className="mono">@{m.id}</span>
@@ -132,12 +141,13 @@ export function Composer({ members, replyTo, onCancelReply, onSend, apiRef }: { 
         </ul>
       )}
       <div className="chat-input-row">
+        <div className="chat-input-wrap">
         <textarea
           ref={ta}
           className="textarea chat-input"
           rows={2}
           value={text}
-          placeholder="发消息，@lead 让 Lead 处理，@ 成员通知对方"
+          placeholder={focused ? DEFAULT_HINT : ''}
           aria-label="群聊消息"
           role="combobox"
           aria-expanded={open}
@@ -151,7 +161,11 @@ export function Composer({ members, replyTo, onCancelReply, onSend, apiRef }: { 
           }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
           onKeyDown={onKeyDown}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
         />
+        <ComposerHint active={!focused && !text} />
+        </div>
         <button className="btn btn-primary chat-send" disabled={busy || !text.trim()} onClick={() => void submit()}>
           <SendHorizontal />
           发送

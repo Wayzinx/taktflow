@@ -47,7 +47,8 @@ export function command(run: string, cwd: string, env: Record<string, string>, s
 export class Semaphore {
   private count = 0
   private readonly waiters: Array<() => void> = []
-  constructor(private readonly limit: number) {}
+  constructor(private limit: number) {}
+  setLimit(limit: number): void { this.limit = limit }
   async use<T>(fn: () => Promise<T>): Promise<T> {
     if (this.count >= this.limit) await new Promise<void>((resolve) => this.waiters.push(resolve))
     else this.count++

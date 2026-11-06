@@ -5,6 +5,7 @@ import { findNode, lit, literalOf } from '../../../api/workflow-edit'
 import { useRoleOptions, withCurrent } from '../properties/options'
 import type { WorkflowDocState } from '../state'
 import { addNode, type Placement } from './add-node'
+import { prefersReducedMotion } from '../../../lib/motion'
 
 interface Draft {
   title: string
@@ -71,6 +72,13 @@ export function ReviewWizard({ wf, placement, onClose, onDone }: { wf: WorkflowD
     maxReworks: 1,
   })
   const up = (patch: Partial<Draft>) => setD((c) => ({ ...c, ...patch }))
+  // 退出动画：先进入 exit 状态保留最后一帧 150ms，再真正关闭（原生 close 事件触发 onClose 卸载）
+  const [closing, setClosing] = useState(false)
+  const close = () => {
+    if (closing) return
+    setClosing(true)
+    setTimeout(() => ref.current?.close(), prefersReducedMotion() ? 0 : 150)
+  }
 
   useEffect(() => {
     ref.current?.showModal()
@@ -88,7 +96,7 @@ export function ReviewWizard({ wf, placement, onClose, onDone }: { wf: WorkflowD
     const id = await addNode(wf, 'review', toProps(d), placement)
     setBusy(false)
     if (id) onDone?.(id)
-    onClose()
+    close()
   }
 
   const roleSelect = (value: string, onChange: (v: string) => void, label: string) => (
@@ -101,11 +109,21 @@ export function ReviewWizard({ wf, placement, onClose, onDone }: { wf: WorkflowD
   )
 
   return (
-    <dialog ref={ref} className="wf-dialog wf-wizard" onClose={onClose} aria-labelledby="wf-wizard-title">
+    <dialog
+      ref={ref}
+      className="wf-dialog wf-wizard"
+      data-state={closing ? 'exit' : 'open'}
+      onClose={onClose}
+      onCancel={(e) => {
+        e.preventDefault()
+        close()
+      }}
+      aria-labelledby="wf-wizard-title"
+    >
       <header className="wf-dialog-head">
         <h2 id="wf-wizard-title">新增评审节点</h2>
         <span className="muted">{placement.parent ? `放入 ${placement.parent}` : placement.stage ? `阶段 ${placement.stage}` : ''}</span>
-        <button className="btn btn-ghost btn-sm btn-icon" onClick={onClose} aria-label="关闭">
+        <button className="btn btn-ghost btn-sm btn-icon" onClick={close} aria-label="关闭">
           <X />
         </button>
       </header>
@@ -192,7 +210,7 @@ export function ReviewWizard({ wf, placement, onClose, onDone }: { wf: WorkflowD
       </div>
       <footer className="wf-dialog-foot">
         <span className="wf-problem" role="status">{problem}</span>
-        <button className="btn btn-sm" onClick={() => (step ? setStep(step - 1) : onClose())}>{step ? <><ChevronLeft />上一步</> : '取消'}</button>
+        <button className="btn btn-sm" onClick={() => (step ? setStep(step - 1) : close())}>{step ? <><ChevronLeft />上一步</> : '取消'}</button>
         {step < STEPS.length - 1 ? (
           <button className="btn btn-sm btn-primary" disabled={!!problem} onClick={() => setStep(step + 1)}>下一步<ChevronRight /></button>
         ) : (

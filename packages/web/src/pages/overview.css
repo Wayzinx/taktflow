@@ -131,3 +131,73 @@
   font-size: var(--text-meta);
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------- 读数条：已校验 / 已拦截 */
+.stat-unit-strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.quality-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+}
+.quality-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.quality-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-xs);
+}
+
+/* ---------------------------------------------------------------- 需求表：档位与当前节点 */
+.req-id-cell {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.req-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+.req-tier .tier-glyph {
+  flex: none;
+}
+.current-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  margin-left: -6px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+  color: var(--text);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.current-cell:hover {
+  background: var(--surface-active);
+}
+.current-cell .truncate {
+  min-width: 0;
+}
+.current-cell-state {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.req-meta .current-cell {
+  padding: 0 4px;
+  margin-left: -4px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}

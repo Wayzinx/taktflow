@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { Bot, ClipboardCheck, FileInput, Layers, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
+import { Bot, ClipboardCheck, FileInput, Layers, ListChecks, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, Tabs, type TabDef } from '../../components/ui'
@@ -7,6 +7,8 @@ import { setQuery, useLocation } from '../../lib/router'
 import { NODE_STATUS } from '../../lib/status'
 import { nodeLabel } from './node-label'
 import { ContextTab, GateTab, IoTab, JudgeTab, OverviewTab, PromptTab, TraceTab } from './drawer-tabs'
+import { CompletionTab } from './completion-tab'
+import { NodeBrief } from './node-brief'
 import { ReviewTab } from './review/review-tab'
 import './drawer.css'
 
@@ -66,6 +68,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
 
   const tabs: TabDef[] = [
     { id: 'overview', label: '概览', icon: ListTree },
+    { id: 'completion', label: '完成标准', icon: ListChecks, hidden: !d || !(d.completion?.length || d.completionChecks?.length || d.failures?.length), count: d?.completion?.length },
     { id: 'io', label: '输入输出', icon: FileInput, count: d ? d.inputs.length + d.outputs.length : undefined },
     { id: 'trace', label: 'Trace', icon: ScrollText, count: d?.events.length },
     { id: 'context', label: '上下文', icon: Layers, hidden: !d || d.context.snapshots.length === 0 },
@@ -79,6 +82,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
   const tab = visible.includes(requested) ? requested : 'overview'
   const kind = d?.kind ?? graphNode?.kind
   const status = d?.state.status ?? graphNode?.status
+  const title = graphNode ? nodeLabel(graphNode, expansions).title : d?.title
 
   return (
     <aside className={`drawer${closing ? ' closing' : ''}`} style={{ width } as CSSProperties} aria-label="节点详情" inert={closing || undefined}>
@@ -87,7 +91,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
         <div className="drawer-title-row">
           {kind && <KindIcon kind={kind} size={28} />}
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className="drawer-title truncate">{graphNode ? nodeLabel(graphNode, expansions).title : (d?.title ?? <Skeleton w={160} h={16} />)}</div>
+            <div className={`drawer-title truncate${status === 'running' ? ' shimmer-text' : ''}`}>{title ?? <Skeleton w={160} h={16} />}</div>
             <div className="drawer-sub">
               <span className="mono truncate">{nodeId}</span>
               {(d?.role ?? graphNode?.role) && <span className="mono">{d?.role ?? graphNode?.role}</span>}
@@ -99,6 +103,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             <X />
           </button>
         </div>
+        <NodeBrief d={d} graphNode={graphNode} runId={runId} requirementId={requirementId} title={title ?? nodeId} liveTick={liveTick} />
         <Tabs size="sm" tabs={tabs} value={tab} onChange={(t) => setQuery({ dtab: t === 'overview' ? undefined : t })} />
       </div>
       <div className="drawer-body">
@@ -114,6 +119,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
         ) : (
           <div className="drawer-pane fade-in" key={tab}>
             {tab === 'overview' && <OverviewTab d={d} runId={runId} requirementId={requirementId} />}
+            {tab === 'completion' && <CompletionTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'io' && <IoTab d={d} requirementId={requirementId} />}
             {tab === 'trace' && <TraceTab d={d} />}
             {tab === 'context' && <ContextTab d={d} />}

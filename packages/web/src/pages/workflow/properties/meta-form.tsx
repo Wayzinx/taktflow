@@ -4,8 +4,9 @@ import { literalOf } from '../../../api/workflow-edit'
 import { stagesOf, type Stage } from '../canvas/graph'
 import { CodeValue } from './code-value'
 import { Field, LongText, TextInput, useDraft } from './fields'
+import { RoutingMeta } from './meta-routing'
 
-/** 未选节点时：workflow 元信息（setMeta）与阶段列表（setStages）。阶段 id 被节点引用时不能删除。 */
+/** 未选节点时：workflow 元信息（setMeta）、阶段列表（setStages）与路由 / 总负责元数据（setMetaValue）。阶段 id 被节点引用时不能删除。 */
 export function MetaForm({ model, disabled, apply }: { model: EditableWorkflow; disabled: boolean; apply(edits: WorkflowEdit[], reason: string): void }) {
   const meta = (key: 'title' | 'description' | 'version', label: string, long?: boolean) => {
     const v = model.meta[key]
@@ -26,6 +27,7 @@ export function MetaForm({ model, disabled, apply }: { model: EditableWorkflow; 
       <Field label="阶段" hint={model.stages.kind === 'code' ? '阶段由代码生成，画布不能编辑' : '每个阶段是画布上的一条泳道；被节点使用的阶段不能删除'}>
         {model.stages.kind === 'code' ? <CodeValue id="wf-meta-stages" code={model.stages.code} disabled /> : <StagesEditor model={model} disabled={disabled} apply={apply} />}
       </Field>
+      <RoutingMeta model={model} disabled={disabled} apply={apply} />
     </div>
   )
 }

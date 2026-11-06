@@ -1,0 +1,167 @@
+/*
+ * 共享动效工具（docs/dev/m3-web.md 动效规范）。
+ * 进度 / 用量一律 transform: scaleX()；无限动画在 reduced-motion 下静止且仍可见。
+ */
+
+/* ---------------------------------------------------------------- 运行中标题的扫光：一道很窄的节拍橙高光，两拍扫过一次 */
+@keyframes shimmer-text {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.shimmer-text {
+  --shimmer-base: var(--text);
+  background: linear-gradient(100deg, var(--shimmer-base) 42%, color-mix(in oklch, var(--accent-text) 70%, var(--shimmer-base)) 50%, var(--shimmer-base) 58%) 0 0 / 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer-text calc(var(--takt) * 2) linear infinite;
+}
+
+/* ---------------------------------------------------------------- 跳转定位后的高亮：出现即亮，2.4s 内淡出 */
+@keyframes jump-highlight {
+  0%,
+  35% {
+    background-color: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-ring);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+}
+.jump-highlight {
+  border-radius: var(--radius-sm);
+  animation: jump-highlight 2400ms var(--ease) both;
+}
+
+/* ---------------------------------------------------------------- 进度 / 用量条：填充用 scaleX，--meter 取 0..1 */
+.meter {
+  --meter: 0;
+  --meter-color: var(--ink);
+  position: relative;
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--divider);
+  overflow: hidden;
+}
+.meter > .meter-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--meter-color);
+  transform: scaleX(clamp(0, var(--meter), 1));
+  transform-origin: left center;
+  transition:
+    transform 180ms var(--ease),
+    background-color 120ms var(--ease);
+}
+.meter[data-tone='running'] {
+  --meter-color: var(--st-running);
+}
+.meter[data-tone='success'] {
+  --meter-color: var(--st-success);
+}
+.meter[data-tone='warning'] {
+  --meter-color: var(--st-waiting);
+}
+.meter[data-tone='danger'] {
+  --meter-color: var(--st-failed);
+}
+.meter.meter-lg {
+  height: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text {
+    animation: none !important;
+    background: none;
+    color: var(--shimmer-base);
+  }
+  /* 不做淡出：高亮保持 2.4s 后一次性消失，定位提示仍在 */
+  .jump-highlight {
+    animation: jump-highlight 2400ms steps(1, end) both !important;
+  }
+  .meter > .meter-fill {
+    transition: none !important;
+  }
+}
+
+/* ---------------------------------------------------------------- 进出场（配合 lib/motion.tsx 的 usePresence → data-state）
+ * 用过渡而不是关键帧：退出途中重开时从当前位置折返，不会跳帧。
+ * .presence-pop：下拉 / 气泡 / 菜单（150ms 进、120ms 出，位移 4px、缩放 0.985）；
+ *   --pop-dy 控制位移方向（向上展开时设为 4px）。
+ * .presence-dialog：对话框 / ⌘K（200ms 进、150ms 出，位移 6px、缩放 0.985）。
+ * .presence-scrim：遮罩淡入淡出。
+ */
+.presence-pop {
+  --pop-dy: -4px;
+  transition:
+    opacity var(--dur-pop) var(--ease),
+    transform var(--dur-pop) var(--ease);
+}
+.presence-pop[data-state='enter'],
+.presence-pop[data-state='exit'] {
+  opacity: 0;
+  transform: translateY(var(--pop-dy)) scale(0.985);
+}
+.presence-pop[data-state='exit'] {
+  transition-duration: var(--dur-pop-exit);
+  pointer-events: none;
+}
+
+.presence-dialog {
+  transition:
+    opacity var(--dur-enter) var(--ease),
+    transform var(--dur-enter) var(--ease);
+}
+.presence-dialog[data-state='enter'] {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+}
+.presence-dialog[data-state='exit'] {
+  opacity: 0;
+  transform: translateY(-3px) scale(0.99);
+  transition-duration: var(--dur-exit);
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  pointer-events: none;
+}
+
+.presence-scrim {
+  transition: opacity var(--dur-enter) var(--ease);
+}
+.presence-scrim[data-state='enter'],
+.presence-scrim[data-state='exit'] {
+  opacity: 0;
+}
+.presence-scrim[data-state='exit'] {
+  transition-duration: var(--dur-exit);
+  pointer-events: none;
+}
+
+/* 悬停放大只给精确指针（触屏上 hover 会粘住） */
+@media (hover: hover) and (pointer: fine) {
+  .hover-lift {
+    transition: transform var(--dur-press) var(--ease);
+  }
+  .hover-lift:hover {
+    transform: translateY(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* 只保留透明度，去掉位移 / 缩放 */
+  .presence-pop[data-state='enter'],
+  .presence-pop[data-state='exit'],
+  .presence-dialog[data-state='enter'],
+  .presence-dialog[data-state='exit'] {
+    transform: none;
+  }
+  .hover-lift:hover {
+    transform: none;
+  }
+}

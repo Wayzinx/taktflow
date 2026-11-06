@@ -98,10 +98,27 @@
   box-shadow: var(--shadow-lg);
 }
 .wf-dialog[open] {
-  animation: wf-dialog-in var(--dur-slow) var(--ease);
+  /* 动效规范：大弹窗进入 200ms、退出 150ms（data-state=exit 保留最后一帧） */
+  animation: wf-dialog-in 200ms var(--ease);
+  transition: opacity 150ms var(--ease), transform 150ms var(--ease);
 }
 .wf-dialog::backdrop {
   background: var(--scrim);
+  animation: wf-backdrop-in 200ms var(--ease);
+  transition: opacity 150ms var(--ease);
+}
+.wf-dialog[data-state='exit'] {
+  opacity: 0;
+  transform: translateY(-4px) scale(0.99);
+  pointer-events: none;
+}
+.wf-dialog[data-state='exit']::backdrop {
+  opacity: 0;
+}
+@keyframes wf-backdrop-in {
+  from {
+    opacity: 0;
+  }
 }
 @keyframes wf-dialog-in {
   from {
@@ -185,4 +202,12 @@
   flex: 1;
   font-size: var(--text-meta);
   color: var(--st-waiting);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-dialog[open],
+  .wf-dialog::backdrop {
+    animation: none;
+    transition: none;
+  }
 }

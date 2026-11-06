@@ -6,6 +6,7 @@ import type { Readable } from 'node:stream'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { WorkflowDiagnostic, WorkflowSnapshot } from '@taktflow/core'
+import { lintModel } from './lint.js'
 import { parseWorkflowSource } from './parse.js'
 
 export interface WorkflowValidation { snapshot?: WorkflowSnapshot; diagnostics: WorkflowDiagnostic[] }
@@ -48,7 +49,7 @@ export async function validateWorkflowSource(file: string): Promise<WorkflowVali
       else {
         try {
           const result = JSON.parse(response) as WorkflowValidation & { message?: string; stack?: string }
-          if (code === 0 && result.snapshot) { resolveResult({ snapshot: result.snapshot, diagnostics: [] }); return }
+          if (code === 0 && result.snapshot) { resolveResult({ snapshot: result.snapshot, diagnostics: lintModel(parsed.model) }); return }
           message = result.message ?? `workflow 校验进程退出（${code}）`
           stack = result.stack ?? ''
         } catch {

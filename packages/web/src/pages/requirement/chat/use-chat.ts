@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Actor, Room, RoomMember, RoomMessage } from '@taktflow/core'
+import type { Actor, LeadPresence, Room, RoomMember, RoomMessage } from '@taktflow/core'
 import { useSource } from '../../../api'
 
 /** 消息作者对应的群成员 id：真人用 id，Lead 是 'lead'，子 Agent 用角色名。 */
@@ -33,6 +33,8 @@ export interface ChatState {
   pulse: Record<string, number>
   /** 发出 @lead 后到 Lead 回复前为 true。 */
   leadThinking: boolean
+  /** Lead 状态灯：初始值取 Room.lead，之后由群聊 SSE 的 `event: lead` 更新。 */
+  lead?: LeadPresence
   send(text: string, mentions: string[], replyTo?: string): Promise<void>
   reload(): void
 }
@@ -46,6 +48,7 @@ export function useChat(reqId: string): ChatState {
   const [live, setLive] = useState<Set<string>>(() => new Set())
   const [pulse, setPulse] = useState<Record<string, number>>({})
   const [leadThinking, setLeadThinking] = useState(false)
+  const [lead, setLead] = useState<LeadPresence>()
   const [tick, setTick] = useState(0)
   const roomRef = useRef<Room | undefined>(undefined)
   const thinkTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -71,6 +74,7 @@ export function useChat(reqId: string): ChatState {
         if (!alive) return
         roomRef.current = r
         setRoom(r)
+        setLead((cur) => cur ?? r.lead)
         setMessages(list)
         setLoading(false)
       },
@@ -95,7 +99,7 @@ export function useChat(reqId: string): ChatState {
       // 新出现的子 Agent（派发任务时拉进群）：重新拉一次成员
       if (m.author.type !== 'system' && !findMember(roomRef.current?.members, m.author)) refreshRoom()
       if (m.kind === 'task' || m.kind === 'system') refreshRoom()
-    })
+    }, (p) => alive && setLead(p))
     return () => {
       alive = false
       off()
@@ -116,5 +120,5 @@ export function useChat(reqId: string): ChatState {
     [ds, reqId],
   )
 
-  return { room, messages, error, loading, live, pulse, leadThinking, send, reload: () => setTick((t) => t + 1) }
+  return { room, messages, error, loading, live, pulse, leadThinking, lead, send, reload: () => setTick((t) => t + 1) }
 }

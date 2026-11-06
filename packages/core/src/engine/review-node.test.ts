@@ -8,6 +8,9 @@ import { createEngine } from './index.js'
 import { listReviews, reviewDetail } from '../insights/reviews.js'
 import { buildRunGraph } from '../insights/graph.js'
 import type { AgentProfile, HarnessAdapter, HarnessRequest, NodeDef, ReviewNodeDef, ReviewRecord } from '../types.js'
+import { setReviewDisposition, listReviewDispositions } from '../review/dispositions.js'
+import { withAttentionStaleness } from '../insights/attention.js'
+import { markArtifactEdited } from '../store/artifact-edits.js'
 import { reviewPassed } from './nodes/review-schema.js'
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
@@ -94,7 +97,7 @@ it('三轮用完打回上游，保留历史、注入反馈；再次超限交人'
   const feedback: Array<string | undefined> = []
   const workflow = def([{ ...f.write, run: async (ctx) => { feedback.push(ctx.feedback); await writeFile(join(ctx.workspaceDir, 'spec.md'), `设计 ${feedback.length}`) } },
     script({ id: 'middle', title: '中间节点', needs: ['write'], run: async () => {} }),
-    reviewNode({ needs: ['middle'], maxRounds: 3, onExhausted: { rework: 'write' } })])
+    reviewNode({ needs: ['middle'], maxRounds: 3, stopAfterNoProgress: 0, onExhausted: { rework: 'write' } })])
   const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow })
   expect(state.status).toBe('waiting_human')
   expect(state.nodes.write?.reworks).toBe(1)
@@ -263,4 +266,124 @@ it('打回意见注入 agent prompt；重新生成后通过并保留两轮历史
   const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow })
   expect(state.status).toBe('succeeded'); expect(writes).toBe(2)
   expect((await reviewDetail(f.stores, state.runId, 'review'))?.rounds).toHaveLength(2)
+})
+
+it.each([2, 0])('重复重大问题按配置早停，0 关闭（%s）', async (stopAfterNoProgress) => {
+  let round = 0
+  const f = await fixture(async (req) => req.env!.TAKT_ROLE === 'author'
+    ? { responses: [{ round, reviewer: 'r1', issueId: 'I1', action: 'fixed', note: '已修' }] }
+    : (++round, changes))
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId,
+    workflow: def([f.write, reviewNode({ maxRounds: 5, stopAfterNoProgress })]) })
+  expect(state.status).toBe('failed')
+  expect(round).toBe(stopAfterNoProgress ? 3 : 5)
+  const detail = await reviewDetail(f.stores, state.runId, 'review')
+  expect(detail?.rounds.at(-1)?.stopReason).toBe(stopAfterNoProgress ? 'no_progress' : undefined)
+  expect(detail?.facets?.observed).toMatchObject({ repeated: 1, regressed: 1 })
+  expect(detail?.facets?.open.major).toBe(1)
+  expect((await f.stores.events.read(state.runId, { types: ['review.exhausted'] }))[0]?.data)
+    .toMatchObject(stopAfterNoProgress ? { reason: 'no_progress' } : { rounds: 5 })
+})
+
+it.each(['conflict', 'minor', 'agree'] as const)('裁决只处理含 blocker 的结论冲突：%s', async (mode) => {
+  const f = await fixture(async (req) => req.env!.TAKT_ROLE === 'r2' && mode !== 'agree'
+    ? { ...changes, issues: [{ ...changes.issues[0], severity: mode === 'conflict' ? 'blocker' : 'minor' }] } : approve)
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write,
+    reviewNode({ reviewers: [{ role: 'r1' }, { role: 'r2' }], arbiter: { role: 'r3', focus: '独立裁决' }, maxRounds: 1 })]) })
+  expect(state.status).toBe(mode === 'minor' ? 'failed' : 'succeeded')
+  const arbitrations = f.calls.filter((req) => req.env!.TAKT_ROLE === 'r3')
+  expect(arbitrations).toHaveLength(mode === 'conflict' ? 1 : 0)
+  const detail = await reviewDetail(f.stores, state.runId, 'review')
+  expect(detail?.rounds[0]?.records.filter((record) => record.arbiter)).toHaveLength(arbitrations.length)
+  expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
+  expect((await f.stores.events.read(state.runId, { types: ['review.arbitrated'] }))).toHaveLength(arbitrations.length)
+  if (mode === 'conflict') {
+    expect(arbitrations[0]?.prompt).toContain('全部评审记录')
+    expect(detail?.facets).toMatchObject({ outcome: 'approved', coverage: 'full', open: { blocker: 1 } })
+  }
+})
+
+it('作者不能作为评审者或裁决者，非法早停配置被拒绝', () => {
+  const write = script({ id: 'write', title: '', run: async () => {} })
+  expect(() => def([write, reviewNode({ reviewers: [{ role: 'author' }] })])).toThrow('评审者不能是作者角色')
+  expect(() => def([write, reviewNode({ arbiter: { role: 'author' } })])).toThrow('评审者不能是作者角色')
+  expect(() => def([write, reviewNode({ stopAfterNoProgress: -1 })])).toThrow('stopAfterNoProgress')
+})
+
+it('打回生成新修订、全局序号与独立文件，移除运行日志仍读回所有修订', async () => {
+  let count = 0
+  const f = await fixture(async () => ++count === 1 ? changes : approve)
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write,
+    reviewNode({ maxRounds: 1, onExhausted: { rework: 'write' } })]) })
+  expect(state.nodes.review?.revision).toBe(2)
+  const files = (await f.stores.workspaces.listArtifacts(f.requirementId)).map((artifact) => artifact.path)
+  expect(files).toEqual(expect.arrayContaining(['reviews/review/r1-round-1.json', 'reviews/review/r2-round-1.json']))
+  const summary = await f.stores.workspaces.readArtifact({ workspace: f.requirementId, path: 'reviews/review/summary.md' })
+  expect(summary?.toString()).toContain('修订 1'); expect(summary?.toString()).toContain('修订 2')
+  await rm(join(f.stores.taktDir, 'runs', state.runId, 'engine.json'))
+  const detail = await reviewDetail(f.stores, state.runId, 'review')
+  expect(detail?.rounds.map((round) => [round.revision, round.round, round.seq])).toEqual([[1, 1, 1], [2, 1, 2]])
+  expect(detail?.rounds[1]?.continuity).toMatchObject([{ observation: 'not_observed' }])
+  expect(detail?.facets).toMatchObject({ outcome: 'no_findings', freshness: 'current', open: { major: 1 } })
+  expect((await listReviews(f.stores, f.requirementId))[0]?.revision).toBe(2)
+})
+
+it('问题需人工处置，指纹变化后重新打开；审计、处置历史与拒绝非法输入', async () => {
+  const f = await fixture(async () => ({ ...approve, issues: changes.issues }))
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode()]) })
+  const detail = (await reviewDetail(f.stores, state.runId, 'review'))!
+  const issue = detail.rounds[0]!.records[0]!.issues[0]!
+  const input = { groupKey: issue.groupKey!, state: 'resolved' as const, reason: '人工验证边界用例通过', by: { type: 'human' as const, id: 'owner' } }
+  await expect(setReviewDisposition(f.stores, state.runId, 'review', { ...input, groupKey: 'unknown' })).rejects.toThrow('不存在')
+  await expect(setReviewDisposition(f.stores, state.runId, 'review', { ...input, reason: ' ' })).rejects.toThrow('原因')
+  await expect(setReviewDisposition(f.stores, state.runId, 'review', { ...input, by: { type: 'agent', role: 'author', harness: 'mock' } })).rejects.toThrow('human')
+  const saved = await setReviewDisposition(f.stores, state.runId, 'review', input)
+  expect(saved.fingerprint).toBe(issue.fingerprint)
+  expect((await reviewDetail(f.stores, state.runId, 'review'))?.facets?.open.major).toBe(0)
+  await setReviewDisposition(f.stores, state.runId, 'review', { ...input, state: 'dismissed', reason: '已记录为不适用' })
+  expect(await listReviewDispositions(f.stores, state.runId, 'review')).toMatchObject([{ state: 'dismissed' }])
+  const history = JSON.parse((await f.stores.workspaces.readArtifact({ workspace: f.requirementId, path: 'reviews/review/dispositions.json' }))!.toString()) as unknown[]
+  expect(history).toHaveLength(2)
+  expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
+  expect(await f.stores.events.read(state.runId, { types: ['review.disposition'] })).toHaveLength(2)
+  // 同一标题的问题升级严重度，仍是同组，但旧处置不得关闭新指纹。
+  const next = structuredClone(detail.rounds[0]!)
+  next.round = 2; next.seq = 2
+  const changed = next.records[0]!.issues[0]!
+  changed.category = 'major'; changed.severity = 'blocker'
+  await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'reviews/review/r1-round-2.json' },
+    content: JSON.stringify(next), kind: 'review', author: { type: 'system', id: 'test' }, producedBy: { runId: state.runId, nodeId: 'review' } })
+  await rm(join(f.stores.taktDir, 'runs', state.runId, 'engine.json'))
+  expect((await reviewDetail(f.stores, state.runId, 'review'))?.facets?.open.blocker).toBe(1)
+})
+
+it('审批绑定评审版本；新版使审批和评审过期，历史结论不变', async () => {
+  const f = await fixture(async () => approve)
+  const workflow = def([f.write, reviewNode({ humanSignoff: true })])
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow })
+  const [item] = await f.stores.attention.list({ pending: true })
+  expect(item?.boundTo).toEqual([{ workspace: f.requirementId, path: 'spec.md', version: 1 }])
+  await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'spec.md' }, content: 'v2', kind: 'spec', author: { type: 'human', id: 'owner' }, reason: '改版' })
+  expect((await withAttentionStaleness(f.stores, [item!]))[0]?.stale).toBe(true)
+  await f.stores.attention.answer(item!.requestId, { decision: 'approve', by: { type: 'human', id: 'owner' } })
+  await createEngine(f.deps).resume(state.runId, workflow)
+  const answered = (await f.stores.attention.list())[0]!
+  expect(answered.boundTo?.[0]?.version).toBe(1)
+  const event = (await f.stores.events.read(state.runId, { types: ['human.answered'] }))[0]
+  expect(event?.data).toMatchObject({ boundTo: item!.boundTo })
+  const detail = await reviewDetail(f.stores, state.runId, 'review')
+  expect(detail?.facets).toMatchObject({ freshness: 'stale', outcome: 'no_findings' })
+  expect(detail?.rounds[0]?.passed).toBe(true)
+})
+
+it('cosmetic 修改只记录，semantic 修改传播 stale；Agent 修改保留真实 actor', async () => {
+  const f = await fixture(async () => approve)
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode()]) })
+  const actor = { type: 'agent', role: 'editor', harness: 'mock' } as const
+  const ref = await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'spec.md' }, content: '修正文案', kind: 'spec', author: actor })
+  expect(await markArtifactEdited(f.stores, ref, actor, '只改措辞', 'cosmetic')).toEqual([])
+  expect((await f.stores.runs.get(state.runId))?.nodes.review?.status).toBe('succeeded')
+  expect((await f.stores.events.read(state.runId, { types: ['artifact.edited'] }))[0]).toMatchObject({ actor, data: { impact: 'cosmetic' } })
+  expect(await markArtifactEdited(f.stores, ref, actor, '重新判为语义变化')).toContainEqual({ runId: state.runId, nodeId: 'review' })
+  expect((await f.stores.runs.get(state.runId))?.nodes.review?.status).toBe('stale')
 })

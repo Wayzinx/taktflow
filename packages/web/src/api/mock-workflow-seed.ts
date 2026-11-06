@@ -95,6 +95,15 @@ export default defineWorkflow({
 })
 `
 
+/** 标准流水线的路由与总负责元数据（docs/design/19 §1、§7）。 */
+const SDLC_META: Partial<EditableWorkflow['meta']> = {
+  useWhen: lit('多个改动面的功能需求：需要 PRD、系分、测分与交叉评审；改动面有先后依赖时研发任务串行（T2），两两不相交时并行（T3）。'),
+  tiers: lit(['T2', 'T3']),
+  leadInstructions: lit('一次只问一个最高优先级的问题，带推荐选项和影响；评审打回超过 1 次时在群里说明原因并 @ 负责人。'),
+  dynamicRules: lit('允许提议：跳过已有结论的澄清轮次；把同一改动面的任务合并；预算告警时降低评审并发。提议都需要负责人批准。'),
+  budget: lit({ tokens: 1_200_000, costUsd: 12, minutes: 720, concurrency: 4 }),
+}
+
 export function workflowSeeds(): Record<string, WorkflowSeed> {
   return {
     sdlc: {
@@ -102,7 +111,32 @@ export function workflowSeeds(): Record<string, WorkflowSeed> {
       preamble: HOOKS_IMPORT,
       ageMin: 26 * 60,
       runs: 6,
-      model: { meta: { id: 'sdlc', title: lit('标准交付流水线'), description: lit('需求理解 → 系分 → 测分 → 研发 → 测试 Loop → 准出，每个产出都经交叉评审'), version: lit('0.2.0') }, stages: lit(STAGES), nodes: structuredClone(SDLC_NODES), editable: true },
+      model: { meta: { id: 'sdlc', title: lit('标准交付流水线'), description: lit('需求理解 → 系分 → 测分 → 研发 → 测试 Loop → 准出，每个产出都经交叉评审'), version: lit('0.2.0'), ...SDLC_META }, stages: lit(STAGES), nodes: structuredClone(SDLC_NODES), editable: true },
+    },
+    'quick-fix': {
+      file: 'workflows/quick-fix.workflow.ts',
+      preamble: '/** T0 / T1：改动已写死或只有一个改动面。短 spec → 实现 → 代码评审 → 交付校验。 */',
+      ageMin: 2 * 24 * 60,
+      runs: 1,
+      model: {
+        meta: {
+          id: 'quick-fix',
+          title: lit('快速修复'),
+          version: lit('0.1.0'),
+          useWhen: lit('改动已经写死（给定 diff / 命令），或恰好一个改动面（一个模块 / 目录 / 仓库）：文案、格式、配置、单点缺陷。'),
+          tiers: lit(['T0', 'T1']),
+          leadInstructions: lit('不拆任务、不开交叉评审；发现第二个改动面时停下来，在群里提议升到 T2。'),
+          budget: lit({ tokens: 160_000, costUsd: 1.5, minutes: 60 }),
+        },
+        stages: lit([{ id: 'spec', title: '短 spec' }, { id: 'build', title: '实现与评审' }, { id: 'verify', title: '交付校验' }]),
+        nodes: [
+          n('agent', { id: 'spec', title: '短 spec', stage: 'spec', role: 'pm', goal: '把需求写成两条可验证的 AC', owner: 'pm', prompt: '写一份不超过 20 行的 spec：改动面、现状、AC。', outputs: [{ path: 'spec/spec.md', kind: 'spec' }] }),
+          n('agent', { id: 'implement', title: '实现', stage: 'build', needs: ['spec'], role: 'dev', goal: '按 spec 实现并补单测', owner: 'rd', completion: ['只改路由卡里的改动面', '每条 AC 有对应单测', '本地单测全部通过'], prompt: c('`按 spec/spec.md 实现，只改 ${args.surface}`') }),
+          n('review', { id: 'code-review', title: '代码评审', stage: 'build', needs: ['implement'], target: { code: { repo: 'app' } }, author: { role: 'dev' }, reviewers: [{ role: 'reviewer' }], maxRounds: 2, stopAfterNoProgress: 2, onExhausted: 'human' }),
+          n('gate', { id: 'acceptance', title: '交付校验', stage: 'verify', needs: ['code-review'], goal: '每条 AC 有用例、最近一次执行通过、有证据', owner: 'qa', checks: [{ id: 'acceptance', kind: 'acceptance', role: 'verifier' }] }),
+        ],
+        editable: true,
+      },
     },
     task: {
       file: 'workflows/task.workflow.ts',

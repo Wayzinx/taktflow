@@ -1,0 +1,137 @@
+/* Lead 状态灯（docs/design/19 §13）：工作随节拍脉动、等人琥珀慢闪、空闲暗呼吸、思考扫光 */
+.lead-light {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  outline: none;
+}
+.lead-light.with-label {
+  height: 24px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  cursor: default;
+}
+.lead-light.with-label:focus-visible {
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.lead-light-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--text-3);
+  transition: background-color var(--dur) var(--ease);
+}
+.lead-light-label {
+  font-weight: 500;
+  animation: lead-label-in 120ms var(--ease) both;
+}
+@keyframes lead-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+/* working：一拍一跳，与全站运行中状态点同拍 */
+.lead-light[data-state='working'] .lead-light-dot {
+  background: var(--st-running);
+  animation: takt-beat var(--takt) var(--ease) infinite;
+}
+.lead-light[data-state='working'] .lead-light-label {
+  color: var(--st-running);
+}
+/* waiting：琥珀慢闪，两拍一次 */
+.lead-light[data-state='waiting'] .lead-light-dot {
+  background: var(--st-waiting);
+  animation: lead-blink calc(var(--takt) * 2) var(--ease-in-out) infinite;
+}
+.lead-light[data-state='waiting'] .lead-light-label {
+  color: var(--st-waiting);
+}
+@keyframes lead-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+/* idle：暗色缓慢呼吸，四拍一次，幅度很小 */
+.lead-light[data-state='idle'] .lead-light-dot {
+  background: var(--text-3);
+  animation: lead-breathe calc(var(--takt) * 4) var(--ease-in-out) infinite;
+}
+@keyframes lead-breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+/* thinking：节拍橙一道窄光扫过圆点；文字用共享 .shimmer-text */
+.lead-light[data-state='thinking'] .lead-light-dot {
+  background: linear-gradient(100deg, var(--text-3) 35%, var(--accent-text) 50%, var(--text-3) 65%) 0 0 / 300% 100%;
+  animation: shimmer-text var(--takt) linear infinite;
+}
+
+/* 悬停 / 聚焦显示 detail：120ms 淡入、退出同样有过渡 */
+.lead-light-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 6;
+  width: max-content;
+  max-width: 280px;
+  padding: 6px var(--sp-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--text);
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition:
+    opacity 120ms var(--ease),
+    transform 120ms var(--ease);
+}
+.lead-light-tip-state {
+  display: block;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.lead-light:hover .lead-light-tip,
+.lead-light:focus-visible .lead-light-tip {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lead-light .lead-light-dot,
+  .lead-light-label {
+    animation: none;
+  }
+  .lead-light[data-state='idle'] .lead-light-dot {
+    opacity: 0.7;
+  }
+  .lead-light[data-state='thinking'] .lead-light-dot {
+    background: var(--accent-text);
+  }
+  .lead-light-tip {
+    transition: none;
+  }
+}

@@ -308,3 +308,151 @@
     grid-column: 2;
   }
 }
+
+/* ---------------------------------------------------------------- 成员职责标签（E 组 M3） */
+.member-row {
+  grid-template-columns: 28px minmax(120px, 0.8fr) minmax(0, 1.2fr) auto auto;
+}
+.duties {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.duty-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  padding: 0 2px 0 7px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  font-size: var(--text-meta);
+  color: var(--text);
+}
+.duty-remove,
+.duty-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.duty-remove {
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+}
+.duty-remove svg,
+.duty-add svg {
+  width: 12px;
+  height: 12px;
+}
+.duty-remove:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.duty-add {
+  gap: 3px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  border: 1px dashed var(--border-strong);
+  font-size: var(--text-meta);
+}
+.duty-add:hover {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+.duty-input {
+  width: 88px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: var(--text-meta);
+}
+@media (max-width: 720px) {
+  .member-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto auto;
+  }
+  .member-row .duties {
+    grid-column: 2 / -1;
+    grid-row: 2;
+  }
+}
+
+/* ---------------------------------------------------------------- 仓库的 worktree 引导（E 组 M3） */
+.repo-add .grow {
+  flex: 1 1 220px;
+}
+.repo-setup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  margin: 6px 0 0;
+  font-size: var(--text-meta);
+}
+.repo-setup.is-empty {
+  margin-top: 6px;
+}
+.repo-setup > div {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.repo-setup dt {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+}
+.repo-setup dt svg {
+  width: 12px;
+  height: 12px;
+}
+.repo-setup dd {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+}
+.repo-cmd {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: max(11px, 0.93em);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.repo-setup-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.repo-setup-row .repo-setup {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.repo-setup-btn {
+  flex: none;
+  color: var(--text-3);
+}
+.repo-setup-edit {
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  border-bottom: 0;
+  border-radius: var(--radius-sm);
+}

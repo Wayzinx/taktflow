@@ -8,6 +8,7 @@ import { StatCard, StatStrip } from '../components/stat-card'
 import { EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows } from '../components/ui'
 import { fmtCost, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
+import { QualityStat } from './overview-quality'
 import { RequirementsTable } from './requirements-table'
 import './overview.css'
 
@@ -49,6 +50,7 @@ function Stats({ p }: { p: ProjectOverview }) {
       >
         <TokenShare reqs={p.requirements} />
       </StatCard>
+      <QualityStat totals={p.totals} requirements={p.requirements} />
     </StatStrip>
   )
 }
@@ -57,7 +59,7 @@ function OverviewSkeleton() {
   return (
     <>
       <StatStrip label="项目读数">
-        {[0, 1, 2, 3].map((i) => (
+        {[0, 1, 2, 3, 4].map((i) => (
           <div key={i} className="stat-cell stat-skeleton">
             <Skeleton w={72} h={11} />
             <Skeleton w={56} h={26} />

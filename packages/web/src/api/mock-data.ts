@@ -23,6 +23,7 @@ import type {
   NodeState,
   NodeStatus,
   PlannedItem,
+  QualityMetrics,
   Requirement,
   RequirementMetrics,
   RunState,
@@ -68,6 +69,10 @@ export interface TplNode {
   ask?: string
   form?: AttentionItem['form']
   checks?: SnapshotNode['checks']
+  /** docs/design/19：一句话目标、职责标签、完成标准（mock-m3-nodes.ts 补齐）。 */
+  goal?: string
+  owner?: string
+  completion?: string[]
 }
 
 const L = 'dev-test-loop'
@@ -327,6 +332,8 @@ export interface MockRun {
   gates: RunPlan['gates']
   /** 运行中的节点：用于模拟实时 token 增长。 */
   live: string[]
+  /** 校验与拦截（docs/design/19），由 mock-m3-runs.ts 补齐。 */
+  quality?: QualityMetrics
 }
 
 const NARRATION: Record<string, { plan: string; tools: Array<[string, string, string?, boolean?]>; final: string }> = {

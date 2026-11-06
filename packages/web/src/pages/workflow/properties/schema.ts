@@ -6,6 +6,7 @@ export type FieldType =
   | 'role' | 'harness' | 'stage' | 'node' | 'needs'
   | 'strings' | 'roles' | 'paths' | 'outputs' | 'reviewers' | 'json'
   | 'author' | 'pass' | 'exhausted' | 'routes' | 'target'
+  | 'duty' | 'checklist' | 'arbiter'
 
 export interface FieldSpec {
   key: string
@@ -15,6 +16,8 @@ export interface FieldSpec {
   hint?: string
   /** 缺省时是否允许删除这个键（可选属性）。 */
   optional?: boolean
+  /** 可选但总是显示（不收进"更多属性"）：目标、负责人、完成标准、早停、裁决者。 */
+  always?: boolean
   min?: number
   max?: number
 }
@@ -23,6 +26,8 @@ const o = (...vals: Array<[string, string]>): Option[] => vals.map(([value, labe
 
 const HEAD: FieldSpec[] = [
   { key: 'title', label: '标题', type: 'string' },
+  { key: 'goal', label: '目标', type: 'string', optional: true, always: true, hint: '一句话目标：画布卡片和运行页节点抽屉只显示这一行' },
+  { key: 'owner', label: '负责人', type: 'duty', optional: true, always: true, hint: '职责标签：本节点的待办派给 duties 含此标签的空间成员' },
   { key: 'stage', label: '阶段', type: 'stage', optional: true },
   { key: 'needs', label: '依赖', type: 'needs', optional: true, hint: '也可以在画布上拖线添加、选中连线删除' },
 ]
@@ -40,6 +45,7 @@ const BY_KIND: Record<NodeKind, FieldSpec[]> = {
   agent: [
     { key: 'role', label: '角色', type: 'role' },
     { key: 'prompt', label: 'Prompt', type: 'text' },
+    { key: 'completion', label: '完成标准', type: 'checklist', optional: true, always: true, hint: '逐条可验证；任何一条缺失、未通过或没有证据，节点即失败（不以退出码为准）。排序会改变编号 c1、c2…' },
     { key: 'harness', label: 'Harness', type: 'harness', optional: true, hint: '留空用角色默认的 harness' },
     { key: 'repo', label: '代码仓库', type: 'mono', optional: true },
     ...IO,
@@ -83,6 +89,8 @@ const BY_KIND: Record<NodeKind, FieldSpec[]> = {
     { key: 'pass', label: '通过规则', type: 'pass', optional: true },
     { key: 'maxRounds', label: '最多轮次（含首轮）', type: 'number', min: 1, max: 10 },
     { key: 'onExhausted', label: '轮次用尽', type: 'exhausted' },
+    { key: 'stopAfterNoProgress', label: '早停轮数', type: 'number', optional: true, always: true, min: 0, max: 10, hint: '连续这么多轮没有新增或变化的 blocker / major 仍不通过，就提前按"轮次用尽"处理；留空默认 2，0 关闭' },
+    { key: 'arbiter', label: '裁决者', type: 'arbiter', optional: true, always: true, hint: '只在评审者结论冲突时调用（有人通过、有人要求修改且含 blocker）' },
     { key: 'humanSignoff', label: '评审通过后交人确认', type: 'bool', optional: true },
     { key: 'rubric', label: '评分标准', type: 'text', optional: true },
   ],

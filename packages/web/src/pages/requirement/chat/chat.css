@@ -162,11 +162,11 @@
 
 /* 新到达的消息：短促落位，不弹跳 */
 .chat-enter {
-  animation: chat-in var(--dur-slow) var(--ease) both;
+  animation: chat-in 180ms var(--ease) both;
 }
 @keyframes chat-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
 }

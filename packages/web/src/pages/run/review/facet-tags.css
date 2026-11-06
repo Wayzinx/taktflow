@@ -1,0 +1,13 @@
+/* 评审标签：结论 · 覆盖 · 新鲜度、观察标记、处置 */
+.rv-tag {
+  display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 6px;
+  border-radius: var(--radius-xs); font-size: var(--text-label); font-weight: 600; letter-spacing: 0.02em;
+  color: var(--tone); background: var(--tone-soft); white-space: nowrap;
+}
+.rv-tag svg { width: 12px; height: 12px; flex: none; }
+.rv-tag.neutral { color: var(--text-2); background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+.rv-facets { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 3px; }
+.rv-facet-sep { color: var(--text-3); font-size: var(--text-meta); }
+.rv-facets.compact .rv-tag { height: 18px; padding: 0 5px; }
+.rv-facets.compact .rv-facet-sep { display: none; }
+.rv-open-counts { display: inline-flex; flex-wrap: wrap; gap: var(--sp-1); }

@@ -6,6 +6,8 @@ import { CodeValue } from './code-value'
 import { Field, JsonEditor, ListEditor, LongText, NumberInput, Select, TextInput, Toggle } from './fields'
 import type { Option } from './options'
 import { fieldsOf, HIDDEN_KEYS, type FieldSpec } from './schema'
+import { ChecklistEditor } from './checklist'
+import { ArbiterField, DutySelect, type ArbiterValue } from './owner-fields'
 import { ExhaustedField, NeedsField, PassField, RoutesField, siblingOptions, TargetField } from './special-fields'
 
 export interface FormCtx {
@@ -14,6 +16,8 @@ export interface FormCtx {
   disabled: boolean
   roles: Option[]
   harnesses: Option[]
+  /** 负责人下拉的职责标签（空间成员 duties）。 */
+  duties?: Option[]
   apply(edits: WorkflowEdit[], reason: string): void
 }
 
@@ -67,6 +71,12 @@ function literalField(f: FieldSpec, v: unknown, fid: string, ctx: FormCtx, set: 
       return <RoutesField id={fid} value={(v ?? {}) as Partial<Record<VerdictCategory, string>>} nodes={siblings} disabled={disabled} onCommit={set} />
     case 'target':
       return <TargetField id={fid} value={v as never} disabled={disabled} onCommit={set} />
+    case 'duty':
+      return <DutySelect id={fid} value={v as string | undefined} options={ctx.duties ?? []} disabled={disabled} onCommit={set} />
+    case 'checklist':
+      return <ChecklistEditor id={fid} value={Array.isArray(v) ? v.map(String) : []} disabled={disabled} onCommit={(a) => set(a.length ? a : undefined)} />
+    case 'arbiter':
+      return <ArbiterField id={fid} value={v as ArbiterValue | undefined} roles={ctx.roles} disabled={disabled} onCommit={set} />
     case 'json':
     case 'needs':
       return <JsonEditor id={fid} value={v} disabled={disabled} onCommit={set} />
@@ -110,8 +120,8 @@ export function NodeForm({ ctx }: { ctx: FormCtx }) {
   const specs = fieldsOf(node.kind, inLoop)
   const known = new Set(specs.map((f) => f.key))
   const extra: FieldSpec[] = Object.keys(node.props).filter((k) => !known.has(k) && !HIDDEN_KEYS.has(k)).map((k) => ({ key: k, label: k, type: 'json', optional: true }))
-  const shown = [...specs.filter((f) => !f.optional || node.props[f.key] || f.type === 'needs'), ...extra]
-  const more = specs.filter((f) => f.optional && !node.props[f.key] && f.type !== 'needs')
+  const shown = [...specs.filter((f) => !f.optional || f.always || node.props[f.key] || f.type === 'needs'), ...extra]
+  const more = specs.filter((f) => f.optional && !f.always && !node.props[f.key] && f.type !== 'needs')
   return (
     <div className="wf-form">
       {shown.map((f) => <FieldRow key={f.key} f={f} ctx={ctx} />)}

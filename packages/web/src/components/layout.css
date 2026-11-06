@@ -329,7 +329,6 @@
     inset: 0;
     z-index: 55;
     background: var(--scrim);
-    animation: cmdk-scrim-in var(--dur) var(--ease) both;
   }
   .shell-content {
     padding: var(--sp-5) var(--sp-4) var(--sp-10);

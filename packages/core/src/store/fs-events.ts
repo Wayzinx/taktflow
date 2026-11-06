@@ -10,13 +10,18 @@ import { withFileLock } from './file-lock.js'
 import { eventsFile } from './paths.js'
 
 const ZERO_HASH = '0'.repeat(64)
-const EVENT_TYPES = new Set<EventType>([
-  'run.started', 'run.finished', 'node.ready', 'node.started', 'node.finished', 'node.failed', 'node.stale',
-  'artifact.written', 'artifact.edited', 'artifact.untracked', 'gate.result', 'judge.verdict',
-  'human.requested', 'human.answered', 'harness.started', 'harness.message', 'harness.tool_call',
-  'harness.usage', 'context.assembled', 'context.compacted', 'knowledge.query', 'dag.expanded',
-  'guard.violation', 'log', 'review.round', 'review.response', 'review.exhausted', 'rework.started', 'worktree.created', 'task.dispatched',
-])
+// 用 Record 穷举：协议里新增事件类型而这里漏写时编译报错，不会在回读时才发现
+const EVENT_TYPE_TABLE: Record<EventType, true> = {
+  'run.started': true, 'run.finished': true, 'node.ready': true, 'node.started': true, 'node.finished': true, 'node.failed': true, 'node.stale': true,
+  'artifact.written': true, 'artifact.edited': true, 'artifact.untracked': true, 'gate.result': true, 'judge.verdict': true,
+  'human.requested': true, 'human.answered': true, 'harness.started': true, 'harness.message': true, 'harness.tool_call': true,
+  'harness.usage': true, 'context.assembled': true, 'context.compacted': true, 'knowledge.query': true, 'dag.expanded': true,
+  'guard.violation': true, log: true, 'review.round': true, 'review.response': true, 'review.exhausted': true,
+  'review.arbitrated': true, 'review.disposition': true, 'rework.started': true, 'worktree.created': true, 'worktree.bootstrapped': true,
+  'task.dispatched': true, 'node.checks': true, 'retry.suppressed': true, 'budget.warning': true, 'budget.exhausted': true,
+  'route.decided': true, 'node.recipe': true, 'lesson.recalled': true, 'lesson.learned': true, 'lesson.updated': true,
+}
+const EVENT_TYPES = new Set(Object.keys(EVENT_TYPE_TABLE))
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
