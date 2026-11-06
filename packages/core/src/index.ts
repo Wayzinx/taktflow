@@ -14,6 +14,7 @@ export * from './store/fs-workspace.js'
 export * from './store/fs-events.js'
 export * from './store/fs-runs.js'
 export * from './store/fs-attention.js'
+export * from './store/lease.js'
 export * from './store/snapshot.js'
 export { buildRunGraph, stageProgress } from './insights/graph.js'
 export { summarizeRun } from './insights/run.js'
@@ -22,7 +23,12 @@ export { FsInsights, createInsights } from './insights/fs-insights.js'
 export { createEngine, type EngineOptions } from './engine/index.js'
 export { assertRunId, assertRequirementId, assertNodeId, assertArtifactPath } from './store/paths.js'
 export { withLock } from './store/locks.js'
-export { validateAnswer, AttentionAlreadyAnsweredError } from './store/attention-rules.js'
+export {
+  validateAnswer,
+  checkAnswerFreshness,
+  AttentionAlreadyAnsweredError,
+  type AnswerFreshness,
+} from './store/attention-rules.js'
 export { loadRunGraph, type RunGraphNode } from './store/run-graph.js'
 export { markArtifactEdited, persistArtifactInvalidation } from './store/artifact-edits.js'
 export { deriveRequirementState } from './insights/requirement.js'
@@ -59,3 +65,12 @@ export { answerOrRead } from './engine/answers.js'
 
 export { startRouted } from './route/start.js'
 export { getEvalOutput } from './eval/output.js'
+
+export { withFileLock } from './store/file-lock.js'
+export { assertNoSymlinks, readJsonFile, toJsonText, writeFileAtomic } from './store/fs-utils.js'
+export { command as runShellCommand } from './engine/process.js'
+export { updateRequirement } from './engine/requirement.js'
+export { assertAnswerFreshness, AttentionStaleError } from './store/attention-freshness.js'
+export { createLeaseScope, withSpaceLease, LeaseHeldError, type LeaseScopeOptions } from './store/lease-scope.js'
+
+export * from './engine/environment.js'

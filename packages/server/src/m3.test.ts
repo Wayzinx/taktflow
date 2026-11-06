@@ -94,7 +94,8 @@ it('读模型返回自检、目标、预算、质量、评审处置与审批过�
   const pending = (await request(server, '/api/attention?pending=1')).data[0]
   expect(pending.assignees).toEqual(['alice']); expect(pending.boundTo[0].version).toBe(1)
   expect((await request(server, `/api/requirements/${req.id}/artifact?path=spec.md`, 'PUT', { content: 'AC-1：措辞', reason: '文案调整', impact: 'cosmetic' })).data.staleNodes).toEqual([])
-  expect((await request(server, `/api/attention/${encodeURIComponent(pending.requestId)}`, 'POST', { decision: 'approve' })).data.boundTo[0].version).toBe(1)
+  expect((await request(server, `/api/attention/${encodeURIComponent(pending.requestId)}`, 'POST', { decision: 'approve' })).status).toBe(409)
+  expect((await request(server, '/api/attention?pending=1')).data[0].subjects[0].version).toBe(1)
   expect((await request(server, '/api/attention')).data[0].stale).toBe(true)
   const overview = (await request(server, '/api/project')).data
   expect(overview.totals).toMatchObject({ verified: 1, intercepted: 0, interceptedBy: { review: 0 } })

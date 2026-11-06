@@ -365,15 +365,43 @@ it('审批绑定评审版本；新版使审批和评审过期，历史结论不�
   expect(item?.boundTo).toEqual([{ workspace: f.requirementId, path: 'spec.md', version: 1 }])
   await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'spec.md' }, content: 'v2', kind: 'spec', author: { type: 'human', id: 'owner' }, reason: '改版' })
   expect((await withAttentionStaleness(f.stores, [item!]))[0]?.stale).toBe(true)
-  await f.stores.attention.answer(item!.requestId, { decision: 'approve', by: { type: 'human', id: 'owner' } })
-  await createEngine(f.deps).resume(state.runId, workflow)
-  const answered = (await f.stores.attention.list())[0]!
-  expect(answered.boundTo?.[0]?.version).toBe(1)
-  const event = (await f.stores.events.read(state.runId, { types: ['human.answered'] }))[0]
-  expect(event?.data).toMatchObject({ boundTo: item!.boundTo })
+  await expect(f.stores.attention.answer(item!.requestId, { decision: 'approve', by: { type: 'human', id: 'owner' } })).rejects.toThrow('待办已过期')
+  const pending = (await f.stores.attention.list({ pending: true }))[0]!
+  expect(pending.boundTo?.[0]?.version).toBe(1)
+  expect(pending.subjects).toEqual(item!.boundTo)
+  expect(await f.stores.events.read(state.runId, { types: ['human.answered'] })).toHaveLength(0)
   const detail = await reviewDetail(f.stores, state.runId, 'review')
   expect(detail?.facets).toMatchObject({ freshness: 'stale', outcome: 'no_findings' })
   expect(detail?.rounds[0]?.passed).toBe(true)
+})
+
+it('M3 人工处置冻结 attempt 和评审对象，更新或重试后失效；过期评审不能再处置', async () => {
+  const f = await fixture(async () => ({ ...approve, issues: changes.issues }))
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode()]) })
+  const detail = (await reviewDetail(f.stores, state.runId, 'review'))!
+  const input = { groupKey: detail.rounds[0]!.records[0]!.issues[0]!.groupKey!, state: 'resolved' as const, reason: '人工检查', by: { type: 'human' as const, id: 'owner' } }
+  const disposition = await setReviewDisposition(f.stores, state.runId, 'review', input)
+  expect(disposition).toMatchObject({ attempt: 1, subjects: [{ workspace: f.requirementId, path: 'spec.md', version: 1 }] })
+  state.nodes.review!.attempts++
+  await f.stores.runs.save(state)
+  expect((await listReviewDispositions(f.stores, state.runId, 'review'))[0]?.stale).toBe(true)
+  expect((await reviewDetail(f.stores, state.runId, 'review'))?.facets?.open.major).toBe(1)
+  await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'spec.md' }, content: '新版本', kind: 'spec', author: input.by, reason: '更新评审对象' })
+  await expect(setReviewDisposition(f.stores, state.runId, 'review', input)).rejects.toThrow('待办已过期')
+  expect(await f.stores.events.read(state.runId, { types: ['review.disposition'] })).toHaveLength(1)
+})
+
+it('批准后恢复前产物变化也不能消费旧批准', async () => {
+  const f = await fixture(async () => approve)
+  const workflow = def([f.write, reviewNode({ humanSignoff: true })])
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow })
+  const [item] = await f.stores.attention.list({ pending: true })
+  await f.stores.attention.answer(item!.requestId, { decision: 'approve', by: { type: 'human', id: 'owner' } })
+  await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'spec.md' }, content: '新版', kind: 'spec', author: { type: 'system', id: 'fixture' } })
+  const resumed = await createEngine(f.deps).resume(state.runId, workflow)
+  expect(resumed.status).toBe('failed')
+  expect(resumed.nodes.review?.error).toContain('待办已过期')
+  expect(await f.stores.events.read(state.runId, { types: ['human.answered'] })).toHaveLength(0)
 })
 
 it('cosmetic 修改只记录，semantic 修改传播 stale；Agent 修改保留真实 actor', async () => {

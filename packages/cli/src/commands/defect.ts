@@ -1,4 +1,4 @@
-import { projectCommands } from '@taktflow/server'
+import { projectCommands } from '../project-commands.js'
 import { executeCommand } from '../execute-command.js'
 import { waitDefectAttribution, type DefectDetail } from '@taktflow/core'
 import { expectPositionals, UsageError } from '../args.js'

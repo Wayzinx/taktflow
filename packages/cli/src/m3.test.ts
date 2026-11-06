@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { initProject, openProject } from '@taktflow/core'
+import { acquireLease, releaseLease, initProject, openProject } from '@taktflow/core'
 import { attachLessons } from '@taktflow/server'
 import { main } from './index.js'
 
@@ -25,6 +25,28 @@ async function cli(root: string, args: string[]) {
   try { const code = await main([...args, '--project', root, '--json']); return { code, data: JSON.parse(chunks.join('')) } }
   finally { spy.mockRestore() }
 }
+
+it('M3 CLI 写入口及 run auto 的路由消息在租约占用时全部拒绝', async () => {
+  const { root, stores, req } = await setup()
+  const before = await stores.chat.list(req.id)
+  await acquireLease(stores.taktDir, 'dsh:other')
+  try {
+    for (const args of [
+      ['run', 'auto', '--req', req.id], ['cmd', 'requirement.create', '--input', '{"title":"拒绝"}', '--reason', '测试'],
+      ['eval', 'collect'], ['eval', 'run', 'node:quick/confirm'],
+      ['defect', 'report', req.id, '--title', '缺陷', '--desc', '测试', '--severity', 'major'],
+      ['defect', 'attribute', req.id, 'D-1'], ['defect', 'confirm', req.id, 'D-1'],
+      ['review', 'dispose', 'run-1', 'review', 'group', '--state', 'resolved', '--reason', '验证'],
+      ['lessons', 'activate', 'lesson-1', '--reason', '验证'],
+    ]) {
+      const result = await cli(root, args)
+      expect(result.code).toBe(2); expect(result.data.error).toContain('空间正被 dsh:other')
+    }
+  } finally { await releaseLease(stores.taktDir, 'dsh:other') }
+  expect(await stores.chat.list(req.id)).toEqual(before)
+  expect(await stores.workspaces.listRequirements()).toHaveLength(1)
+  expect(await stores.runs.list()).toEqual([])
+})
 
 it('route、auto run、cmd answer 共用路由与预算，继续后回读已完成运行', async () => {
   const { root, stores, req } = await setup()

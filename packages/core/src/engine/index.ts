@@ -12,9 +12,12 @@ import { postEventMessage } from './chat-events.js'
 import { answerOrRead, recordAnswerOnce } from './answers.js'
 import { requirementLock, updateRequirement } from './requirement.js'
 import { validateDag } from './graph.js'
+import { assertSupportedNodes } from './kinds.js'
 import { validateWorkflowHarnesses } from './selection.js'
 import { WriteGuard } from './guard.js'
 import { Runtime, system, type EngineOptions } from './runtime.js'
+import { finalizeEnvironment } from './environment-cleanup.js'
+import { validateEnvironment } from './environment-config.js'
 
 export type { EngineOptions } from './runtime.js'
 
@@ -22,7 +25,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   const concurrency = opts.concurrency ?? 4
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('concurrency 必须是正整数')
   const active = new Map<string, Runtime>()
-  const guard = new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements))
+  const guard = new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements), relative(deps.stores.projectDir, deps.stores.paths.evals ?? `${deps.stores.taktDir}/evals`))
   const timestamp = () => (opts.now?.() ?? new Date()).toISOString()
   async function execute(runtime: Runtime, resume = false): Promise<RunState> {
     const id = runtime.state.runId
@@ -38,7 +41,9 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   }
   return {
     async start(input) {
+      validateEnvironment(deps.stores.config.environment)
       input = { ...input, workflow: configureRepositories(configureReviews(input.workflow, input.args ?? {}), input.args ?? {}) }
+      assertSupportedNodes(input.workflow.nodes)
       validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
@@ -64,12 +69,14 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       return execute(new Runtime(deps, state, input.workflow, opts, guard))
     },
     async resume(runId, workflow) {
+      validateEnvironment(deps.stores.config.environment)
       if (active.has(runId)) throw new Error(`运行正在执行：${runId}`)
       const state = await deps.stores.runs.get(runId)
       if (!state) throw new Error(`运行不存在：${runId}`)
       if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
       if (state.status === 'cancelled') return state
       workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
+      assertSupportedNodes(workflow.nodes)
       validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       return execute(new Runtime(deps, state, workflow, opts, guard), true)
     },
@@ -97,6 +104,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       }
       await updateRequirement(deps.stores, state)
       if (!runtime) {
+        await finalizeEnvironment(deps.stores, state)
         const event = await deps.stores.events.append(runId, { type: 'run.finished', actor: system, data: { status: 'cancelled' } })
         await postEventMessage(deps.stores, state, event)
       }

@@ -1,3 +1,5 @@
+import { assertAnswerFreshness } from '../store/attention-freshness.js'
+import { assertSupportedNode } from './kinds.js'
 import { join, relative } from 'node:path'
 import type { AttentionItem, EngineDeps } from '../interfaces.js'
 import type { Actor, AgentNodeDef, ArtifactRef, FailureRecord, EventPayloads, HumanNodeDef, NodeContext, NodeDef, NodeState, PlannedItem, RunState, WorkflowDefinition } from '../types.js'
@@ -16,6 +18,8 @@ import { command, Semaphore } from './process.js'
 import { BudgetGuard } from './budget.js'
 import { failureCode, FailureError, recordFailure } from './fingerprint.js'
 import { serializePlannerGroups } from './nodes/planner.js'
+import { bindEnvironment } from './environment-config.js'
+import { finalizeEnvironment } from './environment-cleanup.js'
 import { validateWorkflowHarnesses } from './selection.js'
 
 export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
@@ -104,6 +108,7 @@ export class Runtime implements HarnessHost {
   }
   add(nodes: NodeDef[], parent?: string, scope = '', item?: PlannedItem, iteration?: number): string[] {
     for (const def of nodes) {
+      assertSupportedNode(def, scope)
       if (this.graph.has(def.id)) throw new Error(`节点 ID 冲突：${def.id}`)
       this.graph.set(def.id, { def, parent, scope, item, iteration })
       if (!this.state.nodes[def.id]) {
@@ -186,7 +191,7 @@ export class Runtime implements HarnessHost {
       scopes.push(ancestor.scope)
       parent = ancestor.parent
     }
-    return {
+    const ctx: NodeContext = {
       runId: this.state.runId, requirementId: this.state.requirementId, nodeId: node.id,
       projectDir: this.deps.stores.projectDir, workspaceDir: this.deps.stores.workspaces.dir(this.state.requirementId),
       signal: this.signal, args: this.state.args, feedback: this.feedback[node.id], iteration: node.kind === 'loop' ? ns.iteration : entry.iteration, item: entry.item,
@@ -201,6 +206,8 @@ export class Runtime implements HarnessHost {
         this.logs.push(pending)
       },
     }
+    bindEnvironment(ctx, this.deps.stores.config.environment)
+    return ctx
   }
   private async flushLogs(): Promise<void> { await Promise.all(this.logs.splice(0)) }
   private async finish(entry: Entry, actor = system): Promise<void> {
@@ -222,6 +229,7 @@ export class Runtime implements HarnessHost {
   }
   private async consume(entry: Entry, item: AttentionItem, actor = item.answeredBy ?? system): Promise<void> {
     const ns = this.state.nodes[entry.def.id]!
+    if (item.decision !== 'cancelled') await assertAnswerFreshness(this.deps.stores, item, ns)
     await this.recordAnswer(item, actor)
     if (item.kind === 'retry') {
       if (item.decision === 'choice' && item.answer === '再试一次') {
@@ -291,7 +299,9 @@ export class Runtime implements HarnessHost {
     const prior = all.filter((item) => item.runId === this.state.runId && item.nodeId === ns.id)
     const requestId = prior.length ? `${base}#${prior.length + 1}` : base
     const item = await this.deps.stores.attention.create({
-      requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices, kind, boundTo: boundTo ?? (entry.def.kind === 'human' ? ns.inputs : undefined),
+      requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices, kind, attempt: ns.attempts,
+      subjects: (boundTo ?? ns.inputs ?? []).map((ref) => ({ ...ref })),
+      boundTo: (boundTo ?? ns.inputs ?? []).map((ref) => ({ ...ref })),
       owner: entry.def.owner, assignees: entry.def.owner ? this.deps.stores.config.members?.filter((member) => member.duties?.includes(entry.def.owner!)).map((member) => member.id) : undefined,
     })
     this.requests[ns.id] = requestId
@@ -519,6 +529,7 @@ export class Runtime implements HarnessHost {
       case 'planner': await runPlanner(this, entry, ctx); break
       case 'review': await runReview(this, entry, ctx); break
       case 'subflow': throw new Error('not implemented')
+      default: throw new Error(`不支持的节点类型：${String((node as NodeDef).kind)}（节点 ${String((node as NodeDef).id)}）`)
     }
     return system
   }
@@ -585,14 +596,21 @@ export class Runtime implements HarnessHost {
       void pending.catch(() => undefined)
       this.logs.push(pending)
     }, Math.max(10, Math.min(1000, this.state.budget.minutes * 6000))) : undefined
-    try { await this.schedule(this.workflow.nodes.map((node) => node.id)) } finally {
-      if (monitor) clearInterval(monitor)
-      await this.flushLogs()
+    try {
+      try { await this.schedule(this.workflow.nodes.map((node) => node.id)) } finally {
+        if (monitor) clearInterval(monitor)
+        await this.flushLogs()
+      }
+      if (this.signal.aborted) this.state.status = 'cancelled'
+      else if (this.budget.paused || (await this.deps.stores.attention.list({ pending: true, requirementId: this.state.requirementId })).some((item) => item.runId === this.state.runId && this.requests[item.nodeId] === item.requestId && this.state.nodes[item.nodeId]?.status === 'blocked') || Object.values(this.state.nodes).some((node) => node.status === 'waiting_human')) this.state.status = 'waiting_human'
+      else if (this.workflow.nodes.every((node) => done(this.state.nodes[node.id]!))) this.state.status = 'succeeded'
+      else this.state.status = 'failed'
+    } catch (error) {
+      this.state.status = this.signal.aborted ? 'cancelled' : 'failed'
+      throw error
+    } finally {
+      if (this.state.status !== 'waiting_human') await this.guard.system([], () => finalizeEnvironment(this.deps.stores, this.state), true)
     }
-    if (this.signal.aborted) this.state.status = 'cancelled'
-    else if (this.budget.paused || (await this.deps.stores.attention.list({ pending: true, requirementId: this.state.requirementId })).some((item) => item.runId === this.state.runId && this.requests[item.nodeId] === item.requestId && this.state.nodes[item.nodeId]?.status === 'blocked') || Object.values(this.state.nodes).some((node) => node.status === 'waiting_human')) this.state.status = 'waiting_human'
-    else if (this.workflow.nodes.every((node) => done(this.state.nodes[node.id]!))) this.state.status = 'succeeded'
-    else this.state.status = 'failed'
     this.state.endedAt = this.timestamp()
     await this.emit('run.finished', { status: this.state.status })
     await updateRequirement(this.deps.stores, this.state, snapshotWorkflow(this.workflow))

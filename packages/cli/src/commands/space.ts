@@ -1,14 +1,24 @@
+import { cliWriteLease, withCliLease } from '../lease.js'
 import { cliActor } from '../actor.js'
 import { cp, lstat, mkdir, readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import { listSkills, type Actor, type WorkflowEdit, type WorkflowEditRequest, type RoomMessage } from '@taktflow/core'
-import { auditSpace, changeConfig, discoverSpaces, members, repoBinding, repoManager, spaceSummary, workflowStore } from '@taktflow/server'
+import { auditSpace, changeConfig, discoverSpaces, members, repoBinding, repoManager, spaceSummary, workflowAccess } from '@taktflow/server'
 import { expectPositionals, UsageError, type ParsedCli } from '../args.js'
 import { postToLead } from '../lead.js'
 import { loadRuntime, openStores } from '../project.js'
 import { createPrinter } from '../output.js'
 
 export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
+  const writes: Record<string, string[]> = { repo: ['add', 'sync'], skill: ['add'], member: ['add'], workflow: ['edit', 'rollback'], chat: ['post'] }
+  if (writes[cli.command ?? '']?.includes(cli.positionals[0]!)) {
+    const stores = await openStores(cli.options.project)
+    return withCliLease(stores.taktDir, () => dispatchSpaceCommand(cli), { takeover: cli.options.takeover })
+  }
+  return dispatchSpaceCommand(cli)
+}
+
+async function dispatchSpaceCommand(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
   const [sub, ...rest] = args
   const printer = createPrinter(options.json)
@@ -72,7 +82,7 @@ export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
       } else throw new UsageError('skill 子命令：add <dir> | ls')
       result = await listSkills(stores.paths.skills)
     } else if (command === 'workflow') {
-      const store = workflowStore(stores)
+      const store = workflowAccess(stores, cliWriteLease)
       if (sub === 'ls') { expectPositionals('workflow ls', rest, 0); result = await store.list() }
       else if (sub === 'show' || sub === 'lint') {
         expectPositionals(`workflow ${sub}`, rest, 1)

@@ -13,6 +13,7 @@ export interface LeadWorkflowAccess {
 }
 
 export interface LeadRuntimeOptions {
+  withWriteLease?: <T>(stores: ProjectStores, fn: () => Promise<T>) => Promise<T>
   stores: ProjectStores
   harnesses: Record<string, HarnessAdapter>
   profiles: Record<string, AgentProfile>

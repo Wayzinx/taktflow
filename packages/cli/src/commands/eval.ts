@@ -1,4 +1,4 @@
-import { projectCommands } from '@taktflow/server'
+import { projectCommands } from '../project-commands.js'
 import { executeCommand } from '../execute-command.js'
 import type { EvalRun } from '@taktflow/core'
 import { getEvalRun, parseEvalTarget, scorecards, waitEvalRun, type EvalVariant, type HarnessSelector, type ScorecardOptions } from '@taktflow/core'

@@ -18,10 +18,11 @@ export interface CommandAudit extends CommandContext { id: string; input: Record
 export interface CommandSpec extends CommandInfo { handler(input: Record<string, unknown>, context: CommandContext): Promise<unknown> }
 export interface CommandDeps extends CommandHandlers {
   stores: ProjectStores
+  withWriteLease?<T>(stores: ProjectStores, task: () => Promise<T>): Promise<T>
   audit(entry: CommandAudit): Promise<unknown>
   extensions?: CommandSpec[]
 }
 export interface CommandRegistry {
   list(): CommandInfo[]
-  run(id: string, input: Record<string, unknown>, context: CommandContext): Promise<CommandRunResponse>
+  run(id: string, input: Record<string, unknown>, context: CommandContext, withWriteLease?: CommandDeps['withWriteLease']): Promise<CommandRunResponse>
 }

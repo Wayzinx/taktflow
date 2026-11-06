@@ -3,7 +3,7 @@
  * args.reviews[节点ID] = { rework, ... } 可覆盖某一评审。动态展开节点使用局部 ID。
  * 默认 3 轮、1 次打回、人工确认；caseCommand / testScript 指定项目测试入口。
  */
-import { agent, defineWorkflow, gate, human, judge, loop, planner, review, script } from '@taktflow/core'
+import { agent, defineWorkflow, gate, human, judge, loop, planner, review, script, hasEnvironment, hasEnvironmentSetup, hasEnvironmentTeardown, setupEnvironment, deployEnvironment, teardownEnvironment } from '@taktflow/core'
 import { integrate } from './taktflow-standard.integration.js'
 import { codeWasFixed, converged, expandTask, freezeBaseline, qualityReport, repairPrompt, runCases, traceCoverage } from './taktflow-standard.hooks.js'
 
@@ -53,9 +53,11 @@ export default defineWorkflow({
       reviewers: [{ role: 'test-designer', focus: '断言有效性、覆盖完整性；禁止弱化断言' }],
       maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'automate', maxReworks: 1 } }),
     script({ id: 'integration', title: '集成任务分支', stage: 'develop', needs: ['implement'], run: integrate, outputs: [{ path: 'tasks/integration.json', kind: 'code-change' }] }),
-    loop({ id: 'dev-test-loop', title: '研发测试 Loop', stage: 'loop', needs: ['integration', 'review-scripts'], maxIterations: 5, onExhausted: 'human', until: converged,
+    script({ id: 'env-setup', title: '准备被测环境', stage: 'loop', needs: ['freeze', 'integration'], when: hasEnvironmentSetup, run: setupEnvironment }),
+    loop({ id: 'dev-test-loop', title: '研发测试 Loop', stage: 'loop', needs: ['integration', 'review-scripts', 'env-setup'], maxIterations: 5, onExhausted: 'human', until: converged,
       body: [
-        script({ id: 'run-cases', title: '执行用例', run: runCases, outputs: [{ path: 'evidence/**', kind: 'evidence' }] }),
+        script({ id: 'deploy-env', title: '部署并检查被测环境', when: hasEnvironment, run: deployEnvironment, outputs: [{ path: 'evidence/env/round-*.json', kind: 'evidence' }] }),
+        script({ id: 'run-cases', title: '执行用例', needs: ['deploy-env'], run: runCases, outputs: [{ path: 'evidence/**', kind: 'evidence' }] }),
         judge({ id: 'judge', title: '失败判决', role: 'judge', needs: ['run-cases'], target: 'run-cases',
           routes: { product_bug: 'fix-code', script_defect: 'fix-script', case_defect: 'fix-case', flaky: 'ignore', env_issue: 'human', requirement_gap: 'human', unknown: 'human' } }),
         agent({ id: 'fix-code', goal: '依据失败证据修复产品行为', owner: 'rd', completion: ["修复差异仅涉及产品代码且未改用例或弱化断言", "修复差异关联判决中的失败用例和根因"], title: '修复产品代码', role: 'dev', repo: 'app', needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
@@ -69,7 +71,8 @@ export default defineWorkflow({
           prompt: repairPrompt('fix-case', '按需求依据修正用例，记录原因；语义修改须经人工确认。') }),
       ],
     }),
-    agent({ id: 'impact', goal: '识别改动影响与剩余风险', owner: 'qa', completion: ["回归范围逐项关联代码改动或执行证据", "未覆盖风险列出原因与受影响的业务场景"], title: '影响面评估', stage: 'impact', needs: ['dev-test-loop'], role: 'reviewer',
+    script({ id: 'env-teardown', title: '回收被测环境', stage: 'loop', needs: ['dev-test-loop'], when: hasEnvironmentTeardown, run: teardownEnvironment }),
+    agent({ id: 'impact', goal: '识别改动影响与剩余风险', owner: 'qa', completion: ["回归范围逐项关联代码改动或执行证据", "未覆盖风险列出原因与受影响的业务场景"], title: '影响面评估', stage: 'impact', needs: ['env-teardown'], role: 'reviewer',
       inputs: [{ path: 'tasks/**' }, { path: 'evidence/**' }], outputs: [{ path: 'reports/impact.md', kind: 'report' }], prompt: '评估改动影响，列回归范围与未覆盖风险。' }),
     script({ id: 'quality-report', title: '质量报告', stage: 'report', needs: ['impact'], run: qualityReport, outputs: [{ path: 'reports/quality.md', kind: 'report' }] }),
     gate({ id: 'delivery-check', title: '交付校验', stage: 'report', goal: '逐条核验验收标准、执行结果与证据', owner: 'qa', needs: ['quality-report'],

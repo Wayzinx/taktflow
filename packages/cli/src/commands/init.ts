@@ -1,4 +1,4 @@
-import { copyFile, mkdir } from 'node:fs/promises'
+import { copyFile, mkdir, stat } from 'node:fs/promises'
 import { basename, join, relative, resolve } from 'node:path'
 import { constants } from 'node:fs'
 import { initProject } from '@taktflow/core'
@@ -35,6 +35,13 @@ export async function runInit(project: string | undefined, options: { name?: str
     await atomicWrite(join(stores.projectDir, 'takt.config.json'), JSON.stringify(stores.config, null, 2) + '\n')
   }
   const workflowCopied = workflows.includes('sdlc.workflow.ts')
+  const compose = (await Promise.all(['docker-compose.yml', 'compose.yaml'].map(async (name) => {
+    try { return (await stat(join(target, name))).isFile() ? name : undefined }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined; throw error }
+  }))).find(Boolean)
+  const environmentSuggestion = compose ? {
+    deploy: 'docker compose up -d --build', teardown: 'docker compose down',
+  } : undefined
   const printer = createPrinter(options.json)
   if (options.json) {
     printer.data({
@@ -42,6 +49,7 @@ export async function runInit(project: string | undefined, options: { name?: str
       name: stores.config.project.name,
       agents,
       workflow: workflowCopied ? 'sdlc.workflow.ts' : undefined, workflows,
+      environmentSuggestion,
     })
   } else {
     const colors = printer.colors
@@ -49,6 +57,7 @@ export async function runInit(project: string | undefined, options: { name?: str
     printer.text(`  角色：${agents.length ? agents.join(', ') : '（已存在，跳过）'}`)
     printer.text(`  流水线：${workflows.length ? workflows.join(', ') : '（已存在，跳过）'}`)
     printer.text('  运行默认流水线前，请确保项目使用 ESM（package.json 的 type 为 module）且可解析 @taktflow/core。')
+    if (environmentSuggestion) printer.text(`  检测到 ${compose}；可在 takt.config.json 中配置 environment（尚未启用）：${JSON.stringify(environmentSuggestion)}`)
   }
   return stores.projectDir
 }

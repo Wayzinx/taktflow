@@ -1,3 +1,5 @@
+import { withSpaceLease } from '../store/lease-scope.js'
+import { assertAnswerFreshness } from '../store/attention-freshness.js'
 import { startRouted } from '../route/start.js'
 import type { StartRunInput } from '../interfaces.js'
 import type { LeadAction, LeadPresence, RouteDecision } from '../types.js'
@@ -53,7 +55,10 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
   const post = (id: string, message: Omit<RoomMessage, 'id' | 'seq' | 'roomId' | 'at'>) => stores.chat.post(id, message)
   const audit = (runId: string, message: unknown) => stores.events.append(runId, { type: 'log', actor: author, data: { level: 'info', message: JSON.stringify(message) } })
-  const scopedEngine = createLeadEngine(options, profiles, onRunEvent, audit)
+  const cancelAll = async () => { await Promise.all([...engines].map(([id, engine]) => engine.cancel(id))) }
+  const withWriteLease: NonNullable<LeadRuntimeOptions['withWriteLease']> = options.withWriteLease ??
+    ((stores, fn) => withSpaceLease(stores.taktDir, `lead:${process.pid}`, fn, { onRenewError: cancelAll }))
+  const scopedEngine = createLeadEngine({ ...options, withWriteLease }, profiles, onRunEvent, audit)
   const serial = <T>(id: string, fn: () => Promise<T>): Promise<T> => {
     const next = (queues.get(id) ?? Promise.resolve()).catch(() => undefined).then(fn)
     queues.set(id, next)
@@ -209,7 +214,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         if (!result.ok) throw new Error(result.message)
         return result
       }
-      const local = createCommandRegistry({ stores, audit: (entry) => audit(runId, { kind: 'command', ...entry }),
+      const local = createCommandRegistry({ stores, withWriteLease, audit: (entry) => audit(runId, { kind: 'command', ...entry }),
         startRun: (input) => delegate({ type: 'start_run', workflowId: input.workflowId, ...(input.args ? { args: input.args } : {}), ...(input.budget ? { budget: input.budget } : {}) }),
         dispatchTask: (input) => delegate({ type: 'dispatch_task', task: input.task }),
         resumeRun: (input) => delegate({ type: 'resume_run', runId: input.runId }),
@@ -235,12 +240,12 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         if (input.requirementId && input.requirementId !== requirementId) throw new Error('命令不能查询其他需求')
         if (input.runId) await requireRun(String(input.runId), requirementId)
         if (['requirement.status', 'attention.list'].includes(current.id)) input.requirementId = requirementId
-        const result = await commands.run(current.id, input, { actor: author })
+        const result = await commands.run(current.id, input, { actor: author }, withWriteLease)
         return { action: current.type, ok: result.ok, message: result.ok ? JSON.stringify(result.result ?? result.message) : result.message }
       }
       if (current.type === 'start_run' && current.workflowId === 'auto') {
         const routed = await startRouted(stores, [], { ...current, requirementId }, author, async () => {
-          const result = await commands.run('route.preview', { requirementId, hint: message.text }, context)
+          const result = await commands.run('route.preview', { requirementId, hint: message.text }, context, withWriteLease)
           if (!result.ok) throw new Error(result.message)
           return result.result as RouteDecision
         }, message.id)
@@ -251,7 +256,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       const id = mapping[current.type] ?? `lead.${current.type}`
       if (current.type === 'resume_run' || current.type === 'cancel_run') await requireRun(current.runId, requirementId)
       const registry: CommandRegistry = commands.list().some((command) => command.id === id) ? commands : local
-      const result = await registry.run(id, { ...current, requirementId, ...(route ? { route } : {}) }, context)
+      const result = await registry.run(id, { ...current, requirementId, ...(route ? { route } : {}) }, context, withWriteLease)
       const executed = result.result as LeadActionResult | undefined
       return executed && typeof executed === 'object' && 'action' in executed ? executed
         : { action: current.type, ok: result.ok, message: result.message,
@@ -267,14 +272,15 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return state
   }
   async function request(runId: string, index: number, requirementId: string, ask: string, form: AttentionItem['form'], to?: string, choices?: string[]): Promise<LeadActionResult> {
-    const item = await stores.attention.create({ requestId: `${runId}:lead-action-${index}`, runId, nodeId: 'lead', requirementId, ask, form, choices })
+    const node = (await stores.runs.get(runId))!.nodes.lead!
+    const item = await stores.attention.create({ requestId: `${runId}:lead-action-${index}`, runId, nodeId: 'lead', requirementId, ask, form, choices, attempt: node.attempts, subjects: (node.inputs ?? []).map((ref) => ({ ...ref })) })
     await stores.events.append(runId, { type: 'human.requested', actor: author, nodeId: 'lead', data: { requestId: item.requestId, ask, form, choices } })
     await post(requirementId, { author, kind: 'attention', text: ask, mentions: to ? [to] : undefined, refs: { requestId: item.requestId, runId } })
     return { action: 'request_human', ok: true, message: ask, refs: { requestId: item.requestId, runId } }
   }
 
   async function turn(requirementId: string, message: RoomMessage): Promise<LeadTurnResult> {
-    const prompt = await leadContext(stores, requirementId, message, { instructions: profiles.lead!.instructions, commands: options.commands?.list() ?? createCommandRegistry({ stores, audit: async () => {} }).list() })
+    const prompt = await leadContext(stores, requirementId, message, { instructions: profiles.lead!.instructions, commands: options.commands?.list() ?? createCommandRegistry({ stores, withWriteLease, audit: async () => {} }).list() })
     const workflow: WorkflowDefinition = { id: 'lead', title: 'Lead 回合', version: '1', stages: [], nodes: [{
       id: 'lead', kind: 'agent', title: 'Lead 回合', role: 'lead', harness: selector, prompt, resultSchema: LEAD_TURN_SCHEMA, writeScope: [], session: 'fresh',
     }] }
@@ -320,6 +326,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return serial(state.requirementId, () => withFileLock(join(stores.taktDir, 'runs', input.runId, 'lead-approval'), async () => {
       const item = (await stores.attention.list()).find((item) => item.requestId === input.requestId)
       if (!item?.answeredAt || item.answeredBy?.type !== 'human') throw new Error('必须由人先回答待办')
+      await assertAnswerFreshness(stores, item)
       const events = await stores.events.read(item.runId, { types: ['log'] })
       const logs = events.map((event) => { try { return JSON.parse((event.data as { message: string }).message) } catch { return {} } })
       if (logs.some((log) => log.kind === 'lead.approval-result' && log.requestId === item.requestId)) return true
@@ -345,18 +352,21 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
 
   return {
-    executeAction,
+    executeAction: (...args: Parameters<typeof executeAction>) => withWriteLease(stores, () => executeAction(...args)),
     onMessage(requirementId: string, message: RoomMessage, input: { private?: boolean } = {}): Promise<LeadTurnResult | undefined> {
       if (message.author.type !== 'human' || !(input.private || message.mentions?.includes('lead') || /(^|\s)@lead\b/i.test(message.text))) return Promise.resolve(undefined)
       if (message.roomId !== requirementId) return Promise.reject(new Error('消息不属于当前需求'))
-      return serial(requirementId, async () => {
+      return withWriteLease(stores, () => serial(requirementId, async () => {
         thinking.add(requirementId)
         try { await setPresence(requirementId, 'thinking'); return await turn(requirementId, message) }
         finally { thinking.delete(requirementId); await refreshPresence(requirementId) }
-      })
+      }))
     },
     getPresence: (requirementId: string): LeadPresence => ({ ...(presence.get(requirementId) ?? { state: 'idle', since: new Date().toISOString() }) }),
-    onRunEvent, onAttention: async (item: AttentionItem) => { try { return await onAttention(item) } finally { await refreshPresence(item.requirementId) } }, resumeTask,
+    onRunEvent: (runId: string, event: EventEnvelope) => withWriteLease(stores, () => onRunEvent(runId, event)),
+    onAttention: (item: AttentionItem) => withWriteLease(stores, async () => { try { return await onAttention(item) } finally { await refreshPresence(item.requirementId) } }),
+    resumeTask: (runId: string) => withWriteLease(stores, () => resumeTask(runId)),
+    cancelAll,
     async drain(): Promise<void> {
       while (queues.size || jobs.size) await Promise.all([...queues.values(), ...jobs])
     },

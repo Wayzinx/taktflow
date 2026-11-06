@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { openProject } from '@taktflow/core'
+import { acquireLease, releaseLease, openProject } from '@taktflow/core'
 import { main } from './index.js'
 import { loadRuntime } from './project.js'
 
@@ -107,4 +107,21 @@ it('space ls 在多空间目录读取配置并列出两个空间；错误 layout
   expect((await cli(parent, ['space', 'ls'])).map((space: { id: string }) => space.id)).toEqual(['hello-delivery', 'standard-delivery'])
   await cli(parent, ['init', '--layout', 'unknown'], 2)
   await cli(parent, ['serve', '--spaces', parent], 1)
+})
+
+
+it('M2 写命令全部遵守空间租约，只读命令可在占用期间查询', async () => {
+  const root = await temp(); await cli(root, ['init'])
+  const stores = await openProject(root)
+  await acquireLease(stores.taktDir, 'dsh:busy')
+  try {
+    for (const args of [
+      ['repo', 'add', 'app', 'app'], ['repo', 'sync'], ['skill', 'add', '/missing'],
+      ['member', 'add', 'alice'], ['workflow', 'edit', 'sdlc'], ['workflow', 'rollback', 'sdlc', 'rev'],
+      ['chat', 'post', 'REQ-1', '@lead go'], ['req', 'new', 'new'], ['ws', 'put', 'REQ-1', 'spec.md', '/missing'],
+    ]) expect((await cli(root, args, 2)).error).toContain('空间正被 dsh:busy')
+    expect(await cli(root, ['repo', 'ls'])).toEqual([])
+    expect(await cli(root, ['member', 'ls'])).toEqual([])
+    expect(await cli(root, ['chat', 'ls', 'REQ-1'])).toEqual([])
+  } finally { await releaseLease(stores.taktDir, 'dsh:busy') }
 })

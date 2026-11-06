@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { createCommandRegistry, evalCommandSpecs, createLessonStore, routeRequirement, setReviewDisposition, answerOrRead, validateAnswer, type CommandHandlers, type EngineDeps, type ProjectStores } from '@taktflow/core'
+import { createCommandRegistry, evalCommandSpecs, createLessonStore, routeRequirement, setReviewDisposition, answerOrRead, validateAnswer, type CommandDeps, type CommandHandlers, type EngineDeps, type ProjectStores, withSpaceLease } from '@taktflow/core'
 import { auditSpace, workflowStore } from './space.js'
 import { serialize } from './stale.js'
 
@@ -9,9 +9,9 @@ export function attachLessons(stores: ProjectStores): void {
     audit: (entry) => auditSpace(stores, entry.by, entry.reason, JSON.stringify(entry)) })
 }
 
-export function projectCommands(stores: ProjectStores, handlers: CommandHandlers = {}, runtime: EngineDeps = { stores, profiles: {}, harnesses: {}, knowledge: [] }) {
+export function projectCommands(stores: ProjectStores, handlers: CommandHandlers = {}, runtime: EngineDeps = { stores, profiles: {}, harnesses: {}, knowledge: [] }, withWriteLease: NonNullable<CommandDeps['withWriteLease']> = (stores, task) => withSpaceLease(stores.taktDir, `commands:${process.pid}`, task)) {
   attachLessons(stores)
-  return createCommandRegistry({ stores,
+  return createCommandRegistry({ stores, withWriteLease,
     audit: (entry) => auditSpace(stores, entry.actor, entry.reason ?? '查询命令', JSON.stringify(entry)),
     route: async (input, context) => {
       return routeRequirement({ stores, ...input, workflows: await routingWorkflows(stores), by: context.actor })
@@ -31,7 +31,7 @@ export function projectCommands(stores: ProjectStores, handlers: CommandHandlers
         const patch = Object.fromEntries(['title', 'body', 'trigger', 'status'].filter((key) => input[key] !== undefined).map((key) => [key, input[key]]))
         return stores.lessons.upsert({ ...previous, ...patch }, context.actor, context.reason!)
       },
-    }, ...evalCommandSpecs({ ...runtime, stores })],
+    }, ...evalCommandSpecs({ ...runtime, stores }, withWriteLease)],
     ...handlers,
   })
 }
@@ -40,6 +40,7 @@ export function answerAttention(stores: ProjectStores, input: { requestId: strin
   return serialize(stores.projectDir, async () => {
     const current = (await stores.attention.list()).find((item) => item.requestId === input.requestId)
     if (!current) throw new Error('待办不存在')
+    if (current.answeredAt !== undefined) throw new Error('待办已处理')
     validateAnswer(current, input)
     return answerOrRead(stores, current, { ...input, by })
   })

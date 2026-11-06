@@ -1,10 +1,10 @@
 import { requireRole, type SpaceMember } from '@taktflow/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { assertArtifactPath, assertNodeId, assertRequirementId, assertRunId, type Actor, type ProjectStores, type Viewer } from '@taktflow/core'
+import type { Actor, ProjectStores, Viewer } from '@taktflow/core'
 
-export class HttpError extends Error {
-  constructor(readonly status: number, message: string) { super(message) }
-}
+import { ApiError as HttpError } from './errors.js'
+export { ApiError as HttpError } from './errors.js'
+export { safeId, runId, relativePath, artifactPath, integer, text } from './validation.js'
 
 export function json(response: ServerResponse, value: unknown, status = 200): void {
   response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
@@ -18,30 +18,6 @@ export function fail(response: ServerResponse, error: unknown): void {
 
 export function decode(value: string): string {
   try { return decodeURIComponent(value) } catch { throw new HttpError(400, 'URL 编码不合法') }
-}
-
-function validated(value: unknown, validate: (value: string) => string): string {
-  if (typeof value !== 'string') throw new HttpError(400, '必须提供字符串路径或 ID')
-  try { return validate(value) } catch (error) {
-    throw new HttpError(400, error instanceof Error ? error.message : String(error))
-  }
-}
-
-export const safeId = (value: string): string => validated(value, assertRequirementId)
-export const runId = (value: string): string => validated(value, assertRunId)
-export const relativePath = (value: unknown): string => validated(value, assertNodeId)
-
-export const artifactPath = (value: unknown): string => validated(value, assertArtifactPath)
-
-export function integer(value: string | null, name: string, min = 0): number | undefined {
-  if (value === null) return undefined
-  if (!/^\d+$/.test(value) || !Number.isSafeInteger(Number(value)) || Number(value) < min) throw new HttpError(400, `${name} 不合法`)
-  return Number(value)
-}
-
-export function text(value: unknown, name: string, empty = false): string {
-  if (typeof value !== 'string' || (!empty && !value.trim())) throw new HttpError(400, `${name} 必须是${empty ? '' : '非空'}字符串`)
-  return value
 }
 
 export async function jsonBody(request: IncomingMessage, allowEmpty = false): Promise<unknown> {
@@ -88,4 +64,8 @@ export function validateWriteRequest(request: IncomingMessage): void {
   const sameOrigin = `http://${request.headers.host}`
   if (origin && origin !== sameOrigin && origin !== 'http://localhost:5173') throw new HttpError(403, '请求来源不允许')
   if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') throw new HttpError(415, '写请求必须使用 application/json')
+}
+
+export function queryParams(url: URL): Record<string, string> {
+  return Object.fromEntries([...new Set(url.searchParams.keys())].map((key) => [key, url.searchParams.get(key)!]))
 }

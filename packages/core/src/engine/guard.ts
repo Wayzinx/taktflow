@@ -10,18 +10,28 @@ type Window = { scope: Scope; start: number; end: number; uncertain?: boolean; s
 const allowed = (scope: Scope, file: string) => scope.profile.some((p) => matchGlob(p, file)) &&
   (scope.node === undefined || scope.node.some((p) => matchGlob(p, file)))
 
-function metadata(file: string, requirements: string): boolean {
+function metadata(file: string, requirements: string, evals: string): boolean {
+  const evaluated = file.startsWith(`${evals}/`) ? file.slice(evals.length + 1) : ''
+  if (/^[^/]+\/[^/]+\.json(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(evaluated)) return true
+  if (/^\.takt\/evals\/runs\/(?:[^/]+\.json(?:\.[\da-f-]+\.tmp)?$|[^/]+\/)/.test(file)) return true
   const relative = file.startsWith(`${requirements}/`) ? file.slice(requirements.length + 1) : ''
-  if (/^[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp|\.lock)?$/.test(relative)) return true
-  return /^\.takt\/(runs|objects|chat)\//.test(file) ||
-    /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+  if (/^[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(relative)) return true
+  return /^\.takt\/(runs|objects)\//.test(file) ||
+    /^\.takt\/chat\/[^/]+\/(?:room\.json|messages\.jsonl)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/(?:space-events\.jsonl|space-chain\.json)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/workflow-revisions\/[^/]+\/(?:log\.jsonl|[a-f0-9]{64}\.ts)(?:\.[\w-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/lease\.json(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/status\/[^/]+\.(?:md|json)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/cache\//.test(file) ||
+    /^\.takt\/dsh\/bindings\.json(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/attention\.jsonl(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
 }
 
-async function snapshot(root: string, requirements: string): Promise<Map<string, string>> {
+async function snapshot(root: string, requirements: string, evals: string): Promise<Map<string, string>> {
   const files = await listFiles(root, ['**'], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects', '.takt/worktrees', '.takt/repos', '.takt/quarantine'] })
   const map = new Map<string, string>()
-  await Promise.all(files.filter((file) => !metadata(file, requirements)).map(async (file) => {
+  await Promise.all(files.filter((file) => !metadata(file, requirements, evals)).map(async (file) => {
     try { map.set(file, sha256(await readFile(join(root, file)))) } catch (error) { if (!isEnoent(error)) throw error }
   }))
   return map
@@ -44,7 +54,7 @@ export class WriteGuard {
   private clock = 0
   private readonly windows: Window[] = []
   private readonly outputWindows: Array<{ workspace: string; outputs: string[]; start: number; end: number }> = []
-  constructor(private readonly root: string, private readonly requirements = '.takt/workspaces') {}
+  constructor(private readonly root: string, private readonly requirements = '.takt/workspaces', private readonly evals = '.takt/evals') {}
 
   async system<T>(paths: string[], fn: () => Promise<T>, uncertain = false): Promise<T> {
     const window: Window = { scope: { profile: paths }, start: ++this.clock, end: Infinity, uncertain, system: true }
@@ -90,10 +100,10 @@ export class WriteGuard {
     this.windows.push(window)
     let before: Map<string, string>
     let humans: Map<string, string>
-    try { [before, humans] = await Promise.all([snapshot(this.root, this.requirements), humanVersions(this.root, this.requirements)]) } catch (error) { this.close(window); throw error }
+    try { [before, humans] = await Promise.all([snapshot(this.root, this.requirements, this.evals), humanVersions(this.root, this.requirements)]) } catch (error) { this.close(window); throw error }
     return async () => {
       try {
-        const [after, latestHumans] = await Promise.all([snapshot(this.root, this.requirements), humanVersions(this.root, this.requirements)])
+        const [after, latestHumans] = await Promise.all([snapshot(this.root, this.requirements, this.evals), humanVersions(this.root, this.requirements)])
         const peers = this.windows.filter((w) => w.end >= window.start)
         const paths = [...new Set([...before.keys(), ...after.keys()])].filter((file) =>
           before.get(file) !== after.get(file) && !peers.some((peer) => allowed(peer.scope, file)))

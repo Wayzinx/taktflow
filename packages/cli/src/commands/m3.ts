@@ -1,6 +1,7 @@
 import { cliActor } from '../actor.js'
 import { waitEvalRun, waitDefectAttribution, type DefectDetail, type EvalRun } from '@taktflow/core'
-import { projectCommands, attachLessons } from '@taktflow/server'
+import { attachLessons } from '@taktflow/server'
+import { projectCommands } from '../project-commands.js'
 import { expectPositionals, UsageError, type ParsedCli } from '../args.js'
 import { loadRuntime, openStores } from '../project.js'
 import { createProjectLead } from '../lead.js'

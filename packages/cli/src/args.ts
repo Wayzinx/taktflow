@@ -40,6 +40,7 @@ export interface CliOptions {
   answer?: string
   choice?: string
   noResume: boolean
+  takeover: boolean
   req?: string
   intent?: string
   port?: string
@@ -78,6 +79,7 @@ export const HELP = `用法：takt <命令> [选项]
     [--budget-tokens N --budget-minutes N]
   resume <runId> [--auto-approve] [--harness <id>] [--mock <file>]
   answer <requestId> (--approve | --reject | --answer "<text>" | --choice <c>) [--no-resume]
+  cancel <runId> [--takeover]                   取消运行
   status [--req <REQ>]
   trace <REQ>
   audit verify <runId>
@@ -105,6 +107,7 @@ export const HELP = `用法：takt <命令> [选项]
 全局选项：
   --project <dir>   项目目录（默认 cwd，并向上查找 takt.config.json）
   --json            机器可读输出
+  --takeover        显式接管已失效的空间租约（写命令）
   --help            显示帮助`
 
 const OPTIONS = {
@@ -140,6 +143,7 @@ const OPTIONS = {
   answer: { type: 'string' },
   choice: { type: 'string' },
   'no-resume': { type: 'boolean' },
+  takeover: { type: 'boolean' },
   req: { type: 'string' },
   intent: { type: 'string' },
   port: { type: 'string' },
@@ -165,6 +169,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     ...(values.defects === undefined ? {} : { defects: values.defects }),
     ...(values.variant === undefined ? {} : { variant: values.variant }),
     noResume: values['no-resume'] === true,
+    takeover: values.takeover === true,
     link: values.link?.[0], links: values.link, ac: values.ac, evidence: values.evidence,
   }
   for (const key of ['by', 'workflow', 'target', 'judge', 'title', 'desc', 'severity', 'note', 'hint', 'tier', 'input', 'state', 'project', 'name', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {

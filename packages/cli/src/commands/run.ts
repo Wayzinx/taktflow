@@ -1,9 +1,10 @@
+import { handleInterrupts, withCliLease } from '../lease.js'
 import { cliActor } from '../actor.js'
 import { routingWorkflows } from '@taktflow/server'
 import { createProjectLead, leadEvents } from '../lead.js'
 import { isAbsolute, resolve } from 'node:path'
 import { startRouted } from '@taktflow/core'
-import type { EventStore, ProjectStores, RunState } from '@taktflow/core'
+import type { Engine, EventStore, ProjectStores, RunState } from '@taktflow/core'
 import { createPrinter, type Printer } from '../output.js'
 import type { ParsedCli } from '../args.js'
 import { parseRunArgs, parsePositiveInt, UsageError } from '../args.js'
@@ -13,6 +14,7 @@ import { serializeRun } from '../resume-lock.js'
 import { readRunOptions, saveRunOptions, type RunCliOptions } from '../run-options.js'
 
 export interface RunOptions {
+  writeLease?: import('../lease.js').WriteLeaseHook
   project?: string
   harness?: string
   mock?: string
@@ -20,12 +22,77 @@ export interface RunOptions {
   json: boolean
 }
 
-/** 包装 events.append 喂进度，runs.create 落盘 CLI 运行选项（agent 执行前就可用）。 */
-export function instrument(stores: ProjectStores, feed: ProgressFeed, cliOptions: RunCliOptions): ProjectStores {
+/** 跟踪正在执行的引擎：信号或租约续约失败时取消运行，并等引擎收敛后才释放租约。 */
+export class ActiveRun {
+  private engine: Engine | undefined
+  private runId: string | undefined
+  private requested = false
+  private cancelling: Promise<void> | undefined
+
+  get cancelled(): boolean {
+    return this.requested
+  }
+
+  async settle(engine: Engine, runId: string): Promise<void> {
+    this.engine = engine
+    this.runId = runId
+    // 取消请求可能早于 run.started；拿到 runId 后补一次。
+    if (this.requested) await this.cancel()
+  }
+
+  cancel(): Promise<void> {
+    this.requested = true
+    if (this.engine === undefined || this.runId === undefined) return Promise.resolve()
+    // 并发信号只触发一次 engine.cancel，后续调用复用同一个进行中的 Promise。
+    this.cancelling ??= this.engine.cancel(this.runId)
+    return this.cancelling
+  }
+
+  async drain(): Promise<void> {
+    if (this.cancelling !== undefined) await this.cancelling
+  }
+}
+
+const messageOf = (error: unknown): string => error instanceof Error ? error.message : String(error)
+
+/**
+ * 执行引擎任务：无论成功还是抛错，都先等取消写入收敛；两个异常同时出现时保留业务错误上下文。
+ */
+export async function runWithDrain<T>(task: () => Promise<T>, drain: () => Promise<void>): Promise<T> {
+  let value: T | undefined
+  let failure: unknown
+  let failed = false
+  try {
+    value = await task()
+  } catch (error) {
+    failure = error
+    failed = true
+  }
+  try {
+    await drain()
+  } catch (drainError) {
+    if (failed) throw new Error(`${messageOf(failure)}；等待取消失败：${messageOf(drainError)}`, { cause: failure })
+    throw drainError
+  }
+  if (failed) throw failure
+  return value as T
+}
+
+/**
+ * 包装 events.append 喂进度，runs.create 落盘 CLI 运行选项（agent 执行前就可用）。
+ * run.started 在 requirement 锁释放后发出，在这里等待取消不会与 updateRequirement 死锁。
+ */
+export function instrument(
+  stores: ProjectStores,
+  feed: ProgressFeed,
+  cliOptions: RunCliOptions,
+  onStarted?: (runId: string) => void | Promise<void>,
+): ProjectStores {
   const events: EventStore = {
     append: async (runId, event) => {
       const envelope = await stores.events.append(runId, event)
       feed.consume(envelope, true)
+      if (event.type === 'run.started') await onStarted?.(runId)
       return envelope
     },
     read: (runId, opts) => stores.events.read(runId, opts),
@@ -49,45 +116,107 @@ export async function runWorkflow(cli: ParsedCli): Promise<number> {
   if (options.req === undefined) throw new UsageError('run 需要 --req <REQ>')
   let args = parseRunArgs(options.arg)
   const context = await loadRuntime(options.project, options.mock === undefined ? {} : { mock: options.mock })
-  const routed = await startRouted(context.stores, workflowId === 'auto' ? await routingWorkflows(context.stores) : [], { requirementId: options.req, workflowId, args }, cliActor(context.stores))
-  const route = routed.route
-  args = routed.args!
-  const workflow = await resolveWorkflow(context, route?.workflowId ?? workflowId)
-  const budget = { ...(options.budgetTokens ? { tokens: parsePositiveInt(options.budgetTokens, '--budget-tokens') } : {}),
-    ...(options.budgetMinutes ? { minutes: parsePositiveInt(options.budgetMinutes, '--budget-minutes') } : {}) }
-  const direct = /[\\/]/.test(workflowId) || workflowId.endsWith('.ts')
-  const cliOptions: RunCliOptions = {
-    // 和 resolveWorkflow 同一基准：项目根目录，不是 CLI 调用方 cwd。
-    ...(direct ? { workflowPath: isAbsolute(workflowId) ? workflowId : resolve(context.stores.projectDir, workflowId) } : {}),
-    ...(options.harness === undefined ? {} : { harness: options.harness }),
-    ...(options.mock === undefined ? {} : { mock: resolve(options.mock) }),
-  }
   const printer = createPrinter(options.json)
-  const feed = new ProgressFeed(printer, workflow)
-  const monitored = leadEvents(context, await createProjectLead(context))
-  const engine = createRunEngine({ ...monitored, stores: instrument(monitored.stores, feed, cliOptions) }, {
-    harness: options.harness,
-    autoApprove: options.autoApprove,
-  })
-  const state = await engine.start({ workflow, requirementId: options.req, args, route, budget })
-  return finishOutput(context, printer, state)
+  const requirementId = options.req
+  const active = new ActiveRun()
+  const interrupts = handleInterrupts(() => active.cancel())
+  try {
+    const state = await withCliLease(context.stores.taktDir, async () => {
+      const routed = await startRouted(context.stores, workflowId === 'auto' ? await routingWorkflows(context.stores) : [], { requirementId, workflowId, args }, cliActor(context.stores))
+      const route = routed.route
+      args = routed.args!
+      const workflow = await resolveWorkflow(context, route?.workflowId ?? workflowId)
+      const budget = { ...(options.budgetTokens ? { tokens: parsePositiveInt(options.budgetTokens, '--budget-tokens') } : {}),
+        ...(options.budgetMinutes ? { minutes: parsePositiveInt(options.budgetMinutes, '--budget-minutes') } : {}) }
+      const direct = /[\\/]/.test(workflowId) || workflowId.endsWith('.ts')
+      const cliOptions: RunCliOptions = {
+        // 和 resolveWorkflow 同一基准：项目根目录，不是 CLI 调用方 cwd。
+        ...(direct ? { workflowPath: isAbsolute(workflowId) ? workflowId : resolve(context.stores.projectDir, workflowId) } : {}),
+        ...(options.harness === undefined ? {} : { harness: options.harness }),
+        ...(options.mock === undefined ? {} : { mock: resolve(options.mock) }),
+      }
+      const feed = new ProgressFeed(printer, workflow)
+      const monitored = leadEvents(context, await createProjectLead(context))
+      let engine: Engine | undefined
+      const created = createRunEngine({
+        ...monitored,
+        stores: instrument(monitored.stores, feed, cliOptions, async (id) => {
+          if (engine !== undefined) await active.settle(engine, id)
+        }),
+      }, {
+        harness: options.harness,
+        autoApprove: options.autoApprove,
+      })
+      engine = created
+      // 引擎抛错时取消写入也可能还在进行；必须在租约释放前等信号处理和取消都收敛。
+      return runWithDrain(
+        () => created.start({ workflow, requirementId, args, route, budget }),
+        async () => {
+          await interrupts.drain()
+          await active.drain()
+        },
+      )
+    }, {
+      takeover: options.takeover,
+      onRenewError: async () => {
+        await active.cancel()
+        await active.drain()
+      },
+    })
+    return interrupts.interrupted ? 130 : await finishOutput(context, printer, state)
+  } finally {
+    interrupts.dispose()
+  }
 }
 
 export async function resumeWorkflow(cli: ParsedCli): Promise<number> {
   const runId = cli.positionals[0]!
   const context = await loadRuntime(cli.options.project)
   const printer = createPrinter(cli.options.json)
-  const current = await context.stores.runs.get(runId)
-  if (current?.workflowId.startsWith('task:')) {
-    const lead = await createProjectLead(await withMock(context, cli.options.mock))
-    const state = await serializeRun(runId, () => lead.resumeTask(runId))
-    return finishOutput(context, printer, state)
+  const active = new ActiveRun()
+  // 监听覆盖 acquire → task → release 整个生命周期；resumeRun 内不再重复安装。
+  const interrupts = handleInterrupts(() => active.cancel())
+  try {
+    const state = await withCliLease(context.stores.taktDir, async () => {
+      return runWithDrain(
+        () => resumeRun(context, runId, cli.options, printer, active),
+        async () => {
+          await interrupts.drain()
+          await active.drain()
+        },
+      )
+    }, {
+      takeover: cli.options.takeover,
+      onRenewError: async () => {
+        await active.cancel()
+        await active.drain()
+      },
+    })
+    return interrupts.interrupted ? 130 : await finishOutput(context, printer, state)
+  } finally {
+    interrupts.dispose()
   }
-  const state = await serializeRun(runId, () => resumeOnce(context, runId, cli.options, printer))
-  return finishOutput(context, printer, state)
 }
 
-export async function resumeOnce(context: ProjectContext, runId: string, options: RunOptions, printer: Printer): Promise<RunState> {
+/** 调用方已持有空间租约并安装了唯一的信号监听；answer 复用这里，避免租约嵌套。 */
+export async function resumeRun(
+  context: ProjectContext,
+  runId: string,
+  options: RunOptions,
+  printer: Printer,
+  active = new ActiveRun(),
+): Promise<RunState> {
+  const current = await context.stores.runs.get(runId)
+  if (current?.workflowId.startsWith('task:')) {
+    const runtime = await withMock(context, options.mock)
+    const lead = await createProjectLead(runtime, undefined, options.writeLease)
+    await active.settle(createRunEngine(runtime, {}), runId)
+    return serializeRun(runId, () => lead.resumeTask(runId))
+  }
+  return serializeRun(runId, () => resumeOnce(context, runId, options, printer, (engine) => active.settle(engine, runId)))
+}
+
+export async function resumeOnce(context: ProjectContext, runId: string, options: RunOptions, printer: Printer, onEngine?: (engine: Engine) => void | Promise<void>): Promise<RunState> {
   const current = await context.stores.runs.get(runId)
   if (!current) throw new Error(`运行不存在：${runId}`)
   const saved = await readRunOptions(context.stores.taktDir, runId)
@@ -106,11 +235,12 @@ export async function resumeOnce(context: ProjectContext, runId: string, options
   }
   await saveRunOptions(context.stores.taktDir, runId, merged)
   const feed = new ProgressFeed(printer, workflow)
-  const monitored = leadEvents(runtime, await createProjectLead(runtime))
+  const monitored = leadEvents(runtime, await createProjectLead(runtime, undefined, options.writeLease))
   const engine = createRunEngine({ ...monitored, stores: instrument(monitored.stores, feed, merged) }, {
     harness,
     autoApprove: options.autoApprove,
   })
+  await onEngine?.(engine)
   return engine.resume(runId, workflow)
 }
 

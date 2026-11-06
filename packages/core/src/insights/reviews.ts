@@ -23,7 +23,7 @@ function latestIssues(rounds: ReviewRound[]): Map<string, ReviewIssue> {
 
 function isOpen(issue: ReviewIssue, dispositions: ReviewDisposition[]): boolean {
   const disposition = dispositions.find((item) => item.groupKey === issue.groupKey)
-  return !disposition || disposition.fingerprint !== issue.fingerprint || disposition.state === 'open'
+  return !disposition || disposition.stale === true || disposition.fingerprint !== issue.fingerprint || disposition.state === 'open'
 }
 
 async function targetState(stores: ProjectStores, state: RunState, config: NonNullable<SnapshotNode['review']>, latest: ReviewRound | undefined, diffs: Map<string, Promise<string>>): Promise<{

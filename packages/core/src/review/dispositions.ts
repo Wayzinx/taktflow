@@ -1,3 +1,6 @@
+import { assertAnswerFreshness } from '../store/attention-freshness.js'
+import { withAttentionStaleness } from '../insights/attention.js'
+import type { AttentionItem } from '../interfaces.js'
 import { join } from 'node:path'
 import type { ProjectStores } from '../interfaces.js'
 import type { Actor, ReviewDisposition } from '../types.js'
@@ -20,7 +23,10 @@ async function history(stores: ProjectStores, runId: string, nodeId: string): Pr
 }
 
 export async function listReviewDispositions(stores: ProjectStores, runId: string, nodeId: string): Promise<ReviewDisposition[]> {
-  return [...new Map((await history(stores, runId, nodeId)).map((item) => [item.groupKey, item])).values()]
+  const items = [...new Map((await history(stores, runId, nodeId)).map((item) => [item.groupKey, item])).values()]
+  const requirementId = (await stores.runs.get(runId))!.requirementId
+  const freshness = await withAttentionStaleness(stores, items.map((item) => binding(item, runId, nodeId, requirementId)))
+  return items.map((item, index) => ({ ...item, stale: freshness[index]!.stale }))
 }
 
 export async function setReviewDisposition(stores: ProjectStores, runId: string, nodeId: string,
@@ -33,10 +39,12 @@ export async function setReviewDisposition(stores: ProjectStores, runId: string,
     const run = await stores.runs.get(runId)
     if (!run) throw new Error(`运行不存在：${runId}`)
     const rounds = await readReviewRounds(stores, runId, nodeId)
-    const issue = rounds.flatMap((round) => round.records.flatMap((record) => record.issues))
-      .filter((issue) => issue.groupKey === input.groupKey).at(-1)
-    if (!issue) throw new Error(`评审问题不存在：${input.groupKey}`)
-    const disposition: ReviewDisposition = { ...input, at: new Date().toISOString(), fingerprint: issue.fingerprint }
+    const selected = rounds.flatMap((round) => round.records.flatMap((record) => record.issues.map((issue) => ({ issue, record, round }))))
+      .filter(({ issue }) => issue.groupKey === input.groupKey).at(-1)
+    if (!selected) throw new Error(`评审问题不存在：${input.groupKey}`)
+    const disposition: ReviewDisposition = { ...input, at: new Date().toISOString(), fingerprint: selected.issue.fingerprint,
+      attempt: run.nodes[nodeId]?.attempts, subjects: selected.record.artifacts.map((ref) => ({ ...ref })) }
+    await assertAnswerFreshness(stores, binding(disposition, runId, nodeId, run.requirementId), run.nodes[nodeId])
     const entries = [...await history(stores, runId, nodeId), disposition]
     await stores.workspaces.writeArtifact({ ref: { workspace: run.requirementId, path: `reviews/${nodeId}/dispositions.json` },
       content: JSON.stringify(entries, null, 2), kind: 'review', author: input.by, reason: input.reason,
@@ -44,4 +52,9 @@ export async function setReviewDisposition(stores: ProjectStores, runId: string,
     await stores.events.append(runId, { type: 'review.disposition', actor: input.by, nodeId, data: disposition })
     return disposition
   })
+}
+
+function binding(item: ReviewDisposition, runId: string, nodeId: string, requirementId: string): AttentionItem {
+  return { requestId: item.groupKey, runId, nodeId, requirementId, ask: item.reason, form: 'approve', createdAt: item.at,
+    attempt: item.attempt, subjects: item.subjects }
 }

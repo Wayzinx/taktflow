@@ -1,9 +1,11 @@
 import { startRouted, type CommandContext, type CommandRegistry, type LeadAction, type RoomMessage } from '@taktflow/core'
-import { projectCommands, answerAttention, routingWorkflows } from '@taktflow/server'
+import { answerAttention, routingWorkflows } from '@taktflow/server'
+import { projectCommands } from './project-commands.js'
 import { engineDependencies, type ProjectContext } from './project.js'
+import { cliWriteLease, type WriteLeaseHook } from './lease.js'
 import type { ProjectLead } from './lead.js'
 
-export function runtimeCommands(context: ProjectContext, lead: () => Pick<ProjectLead, 'executeAction' | 'onAttention'>): CommandRegistry {
+export function runtimeCommands(context: ProjectContext, lead: () => Pick<ProjectLead, 'executeAction' | 'onAttention'>, withWriteLease: WriteLeaseHook = cliWriteLease): CommandRegistry {
   const stores = context.stores
   const execute = async (action: LeadAction, input: { requirementId?: string; runId?: string; route?: import('@taktflow/core').RouteDecision }, by: CommandContext) => {
     const requirementId = input.requirementId ?? (input.runId ? (await stores.runs.get(input.runId))?.requirementId : undefined)
@@ -30,5 +32,5 @@ export function runtimeCommands(context: ProjectContext, lead: () => Pick<Projec
       if (!await lead().onAttention(item)) await execute({ type: 'resume_run', runId: item.runId }, { runId: item.runId }, by)
       return item
     },
-  }, engineDependencies(context))
+  }, engineDependencies(context), withWriteLease)
 }

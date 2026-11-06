@@ -1,3 +1,4 @@
+import type { WriteLease } from './api-core.js'
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { openProject, type AttentionItem } from '@taktflow/core'
@@ -11,6 +12,7 @@ import type { M3Callbacks } from './m3-routes.js'
 import { staticFile } from './static.js'
 
 export interface ServerOptions extends CatalogCallbacks, M3Callbacks {
+  withWriteLease?: WriteLease
   projectDir?: string
   spacesDir?: string
   onLeadMention?: LeadMention
@@ -32,7 +34,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const connections = new Set<() => void>()
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, options,
-    options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
+    options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention, options.withWriteLease)]))
   let closing = false
   const server = httpServer((request, response) => {
     void (async () => {
@@ -102,3 +104,7 @@ export type { LeadMention } from './space-routes.js'
 
 export { projectCommands, attachLessons, answerAttention, routingWorkflows } from './commands.js'
 export type { M3Callbacks } from './m3-routes.js'
+
+export { createApiCore, ApiError } from './api-core.js'
+export type { ApiCore, ApiCoreOptions, ReadOp, WriteOp, WriteLease, EventStream } from './api-core.js'
+export { workflowAccess } from './workflow-access.js'

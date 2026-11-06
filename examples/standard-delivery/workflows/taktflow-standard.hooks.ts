@@ -1,10 +1,7 @@
-import { execFile } from 'node:child_process'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { promisify } from 'node:util'
-import { agent, review, type JudgeVerdict, type NodeContext, type PlannedItem } from '@taktflow/core'
+import { agent, review, environmentFailure, runEnvironmentCaseCommand, type JudgeVerdict, type NodeContext, type PlannedItem } from '@taktflow/core'
 
-const execute = promisify(execFile)
 const acId = /\bAC-\d+(?:-\d+)?\b/g
 interface CaseFile { id: string; covers: string[] }
 interface Summary { cases: Array<{ id: string; status: string; evidence?: string }> }
@@ -44,6 +41,8 @@ export function expandTask(item: PlannedItem) {
   ]
 }
 export async function runCases(ctx: NodeContext) {
+  const failure = await environmentFailure(ctx)
+  if (failure) return failure
   const actual = await readFile(join(ctx.projectDir, String(ctx.args.testScript ?? 'tests/run-cases.mjs')), 'utf8')
   if (actual !== await ctx.readArtifact('scripts/run-cases.mjs')) return { status: 'blocked' as const, message: '实际执行脚本与评审产物不一致' }
   await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
@@ -53,14 +52,7 @@ export async function runCases(ctx: NodeContext) {
     await mkdir(join(cwd, 'tests'), { recursive: true })
     await writeFile(join(cwd, String(ctx.args.testScript ?? 'tests/run-cases.mjs')), actual)
   }
-  try {
-    await execute('/bin/sh', ['-c', String(ctx.args.caseCommand ?? 'npm test')], {
-      cwd, signal: ctx.signal, env: { ...process.env, TAKT_WORKSPACE: ctx.workspaceDir }, maxBuffer: 16 * 1024 * 1024,
-    })
-  } catch (error) {
-    ctx.signal?.throwIfAborted()
-    ctx.log(`用例命令退出非零：${(error as Error).message.slice(0, 300)}`)
-  }
+  await runEnvironmentCaseCommand(ctx, cwd, String(ctx.args.caseCommand ?? 'npm test'))
   const result = await summary(ctx)
   const expected = await cases(ctx)
   if (!result.cases.length || new Set(result.cases.map((test) => test.id)).size !== result.cases.length

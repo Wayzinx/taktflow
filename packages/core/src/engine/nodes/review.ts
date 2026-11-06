@@ -160,7 +160,7 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
       }
       progress.phase = 'decision'
       await host.persistGraph()
-      await host.request(entry, `评审 ${node.title} 轮次或打回次数已用完，请裁决。`, 'choice', ['放行', '打回', '终止'])
+      await host.request(entry, `评审 ${node.title} 轮次或打回次数已用完，请裁决。`, 'choice', ['放行', '打回', '终止'], false, progress.rounds.at(-1)!.records.flatMap((record) => record.artifacts))
       return
     } else return
   }

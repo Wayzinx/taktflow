@@ -1,7 +1,9 @@
+import { assertAnswerFreshness } from './attention-freshness.js'
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { ProjectStores } from '../interfaces.js'
 import type { AgentProfile, HarnessSelector, SkillRecord, TaktConfig } from '../types.js'
+import { validateEnvironment } from '../engine/environment-config.js'
 import { parseFrontmatter } from '../util/frontmatter.js'
 import { FsChatStore } from './fs-chat.js'
 import { FsAttentionStore } from './fs-attention.js'
@@ -50,7 +52,7 @@ export async function openProject(projectDir: string): Promise<ProjectStores> {
   const checked = assertConfig(config, configFile)
   const paths = await resolvePaths(root, checked)
   const chat = new FsChatStore(taktDir)
-  return {
+  const stores: ProjectStores = {
     projectDir: root,
     taktDir,
     config: checked,
@@ -58,8 +60,9 @@ export async function openProject(projectDir: string): Promise<ProjectStores> {
     workspaces: new FsWorkspaceStore(taktDir, paths.requirements, chat),
     events: new FsEventStore(taktDir),
     runs: new FsRunStore(taktDir),
-    attention: new FsAttentionStore(taktDir),
+    attention: new FsAttentionStore(taktDir, (item) => assertAnswerFreshness(stores, item)),
   }
+  return stores
 }
 
 /** 优先传解析后的 paths；兼容旧调用方传 .takt 或模板根目录。 */
@@ -102,6 +105,7 @@ async function findProjectRoot(start: string): Promise<string> {
 function assertConfig(value: unknown, file: string): TaktConfig {
   if (typeof value !== 'object' || value === null) throw new Error(`配置不是对象：${file}`)
   const config = value as TaktConfig
+  validateEnvironment(config.environment)
   if (typeof config.project?.name !== 'string' || config.project.name === '' || !Array.isArray(config.workflows)) {
     throw new Error(`配置缺 project.name 或 workflows：${file}`)
   }

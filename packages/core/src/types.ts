@@ -19,8 +19,10 @@ export type NodeId = string
 
 /** 谁做的事：人、某个角色的 agent、或系统本身。审计里的每一条记录都带 actor。 */
 export type Actor =
-  | { type: 'human'; id: string }
-  | { type: 'agent'; role: string; harness: string; model?: string }
+  /** via：入口渠道（dsh-web / dsh:user-questions / cli / web 等）。 */
+  | { type: 'human'; id: string; via?: string }
+  /** onBehalfOf：agent 代表谁执行（例如 dsh 里的 Lead 会话）。 */
+  | { type: 'agent'; role: string; harness: string; model?: string; onBehalfOf?: string }
   | { type: 'system'; id: string }
 
 export interface Usage {
@@ -459,6 +461,9 @@ export interface ReviewContinuity {
 
 /** 人对问题的显式处置（留痕）；模型没再提到不会自动改变处置。 */
 export interface ReviewDisposition {
+  attempt?: number
+  subjects?: ArtifactRef[]
+  stale?: boolean
   groupKey: string
   state: 'open' | 'resolved' | 'dismissed'
   reason: string
@@ -1310,6 +1315,19 @@ export interface LeadActionResult {
 
 export interface TaktConfig {
   project: { name: string; description?: string }
+  /** 被测环境；未配置时跳过准备、部署与回收。 */
+  environment?: {
+    /** 在空间根或集成 worktree 部署 / 启动。 */
+    deploy: string
+    /** command / url 二选一；默认 120 秒，每 2 秒探测。 */
+    healthcheck?: { command?: string; url?: string; timeoutMs?: number }
+    /** 每次运行只执行一次。 */
+    setup?: string
+    /** 成功、失败、取消都回收；失败只记日志。 */
+    teardown?: string
+    /** 支持 ${ENV_NAME} 宿主变量引用，日志脱敏。 */
+    env?: Record<string, string>
+  }
   /** 项目空间：id 用于多空间 serve 的路由。 */
   space?: { id: string }
   members?: SpaceMember[]

@@ -1,3 +1,4 @@
+import { withSpaceLease } from '../store/lease-scope.js'
 import type { CommandInfo, CommandRunResponse } from '../api.js'
 import type { SpaceMember } from '../types.js'
 import { validateSchema } from '../engine/schema.js'
@@ -9,6 +10,8 @@ import { requireRole } from './permissions.js'
 export { requireRole } from './permissions.js'
 export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
   const { stores } = deps
+  const withWriteLease: NonNullable<CommandDeps['withWriteLease']> = deps.withWriteLease ??
+    ((stores, task) => withSpaceLease(stores.taktDir, `commands:${process.pid}`, task))
   const invoke = <K extends keyof CommandInputs>(name: K): CommandSpec['handler'] => async (input, context) => {
     const handler = deps[name] as ((input: CommandInputs[K], context: CommandContext) => Promise<unknown>) | undefined
     if (!handler) throw new Error(`命令处理器未接入：${name}`)
@@ -36,23 +39,26 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
   if (commands.size !== specs.length) throw new Error('命令 id 重复')
   return {
     list: () => specs.map(({ handler: _handler, ...info }) => structuredClone(info)),
-    async run(id, input, context) {
-      let response: CommandRunResponse
-      try {
-        const spec = commands.get(id)
-        if (!spec) throw new Error(`命令不存在：${id}`)
-        validateSchema(input, spec.input)
-        requireRole(stores, context.actor, spec.minRole ?? 'member', id)
-        if (spec.risk !== 'read' && !context.reason?.trim()) throw new Error('写操作必须说明原因')
-        if (['attention.answer', 'review.dispose'].includes(id) && context.actor.type !== 'human') throw new Error('必须由人显式处理')
-        await deps.audit({ id, input, ...context, phase: 'requested' })
-        const result = await spec.handler(input, context)
-        response = { ok: true, message: `${spec.title}已执行`, result }
-      } catch (error) {
-        response = { ok: false, message: error instanceof Error ? error.message : String(error) }
-      }
-      await deps.audit({ id, input, ...context, phase: 'finished', response })
-      return response
+    async run(id, input, context, lease = withWriteLease) {
+      // 查询命令同样会写审计，整个调用都必须持有租约。
+      return lease(stores, async () => {
+        let response: CommandRunResponse
+        try {
+          const spec = commands.get(id)
+          if (!spec) throw new Error(`命令不存在：${id}`)
+          validateSchema(input, spec.input)
+          requireRole(stores, context.actor, spec.minRole ?? 'member', id)
+          if (spec.risk !== 'read' && !context.reason?.trim()) throw new Error('写操作必须说明原因')
+          if (['attention.answer', 'review.dispose'].includes(id) && context.actor.type !== 'human') throw new Error('必须由人显式处理')
+          await deps.audit({ id, input, ...context, phase: 'requested' })
+          const result = await spec.handler(input, context)
+          response = { ok: true, message: `${spec.title}已执行`, result }
+        } catch (error) {
+          response = { ok: false, message: error instanceof Error ? error.message : String(error) }
+        }
+        await deps.audit({ id, input, ...context, phase: 'finished', response })
+        return response
+      })
     },
   }
 }

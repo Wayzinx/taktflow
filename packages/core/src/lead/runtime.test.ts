@@ -1,3 +1,4 @@
+import { acquireLease, readLease, releaseLease } from '../store/lease.js'
 import type { EventStore } from '../interfaces.js'
 import type { EventEnvelope, EventType } from '../types.js'
 import { leadContext } from './context.js'
@@ -483,3 +484,32 @@ function memoryEvents(): EventStore {
     async verify() { throw new Error('内存替身不提供持久化校验') },
   }
 }
+
+
+
+it('Lead 在空间被占用时拒绝新回合且不创建运行', async () => {
+  const { stores, lead, requirement, message } = await setup([{ reply: '不能执行', actions: [] }])
+  const trigger = await message()
+  await acquireLease(stores.taktDir, 'dsh:other')
+  try {
+    await expect(lead.onMessage(requirement.id, trigger)).rejects.toThrow('空间正被 dsh:other')
+    expect(await stores.runs.list()).toEqual([])
+    expect((await readLease(stores.taktDir))?.owner).toBe('dsh:other')
+  } finally { await releaseLease(stores.taktDir, 'dsh:other') }
+})
+
+it('Lead 回合返回后，后台任务继续持有租约直到任务收敛', async () => {
+  let release!: () => void
+  let started!: () => void
+  const gate = new Promise<void>((resolve) => { release = resolve })
+  const ready = new Promise<void>((resolve) => { started = resolve })
+  const { stores, lead, send } = await setup([{ reply: '派发', actions: [{ type: 'dispatch_task', task: task({ inputs: [], outputs: [], writeScope: [], review: false }) }] }], {
+    task: async () => { started(); await gate },
+  })
+  try {
+    expect((await send())!.results[0]!.ok).toBe(true); await ready
+    expect((await acquireLease(stores.taktDir, 'dsh:other')).ok).toBe(false)
+    expect((await readLease(stores.taktDir))?.owner).toBe(`lead:${process.pid}`)
+  } finally { release(); await lead.drain() }
+  expect(await readLease(stores.taktDir)).toBeUndefined()
+})
