@@ -53,7 +53,7 @@ export async function resolveInputs(stores: ProjectStores, state: RunState, node
   return [...refs.values()]
 }
 
-export async function collectOutputs(stores: ProjectStores, state: RunState, node: NodeDef, ns: NodeState, actor: Actor, emit: Emit): Promise<void> {
+export async function collectOutputs(stores: ProjectStores, state: RunState, node: NodeDef, ns: NodeState, actor: Actor, emit: Emit, invocationId?: string): Promise<void> {
   if (!node.outputs?.length) return
   const available = await files(stores, state.requirementId)
   const collected = new Map<string, ArtifactRef>()
@@ -65,12 +65,16 @@ export async function collectOutputs(stores: ProjectStores, state: RunState, nod
       const content = await readCurrent(stores, state.requirementId, path)
       if (!content) throw new Error(`产物已消失：${path}`)
       if (path.endsWith('.json') && output.schema) validateSchema(JSON.parse(content.toString()), output.schema)
+      const record = (await stores.workspaces.listArtifacts(state.requirementId)).find((record) => record.path === path)
+      const latest = record?.versions.at(-1)
+      const previous = latest ? { workspace: state.requirementId, path, version: latest.version } : undefined
       const ref = await stores.workspaces.writeArtifact({
         ref: { workspace: state.requirementId, path }, content, kind: output.kind, author: actor,
         reason: node.title, derivedFrom: ns.inputs ?? [], producedBy: { runId: state.runId, nodeId: node.id },
       })
       collected.set(path, ref)
       await emit('artifact.written', { ref, kind: output.kind, sha256: sha256(content) }, node.id, actor)
+      await emit('artifact.touched', { invocationId, nodeId: node.id, attempt: ns.attempts, ref, previous, relation: !previous ? 'produced' : previous.version === ref.version ? 'reused' : 'modified' }, node.id, actor)
     }
   }
   ns.outputs = [...collected.values()]

@@ -1,4 +1,5 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { removeTestProject } from './test-cleanup.js'
+import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -10,7 +11,7 @@ import { buildRunGraph } from '../insights/graph.js'
 import type { AgentProfile, HarnessAdapter, HarnessRequest, NodeDef, ReviewNodeDef, ReviewRecord } from '../types.js'
 import { reviewPassed } from './nodes/review-schema.js'
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => { await Promise.all(roots.splice(0).map((root) => removeTestProject(root))) })
 const approve = { verdict: 'approve', summary: '通过', issues: [] }
 const changes = { verdict: 'request_changes', summary: '补充空名字规则', issues: [{ id: 'I1', severity: 'major', description: '缺少空名字规则' }] }
 const def = (nodes: NodeDef[]) => defineWorkflow({ id: 'review', title: '交叉评审', version: '1', stages: [{ id: 's', title: '评审阶段' }], nodes })

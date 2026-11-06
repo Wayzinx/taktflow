@@ -17,11 +17,15 @@ import { BlockedError, callHarness, type Emit, type HarnessHost } from './harnes
 import { command, Semaphore } from './process.js'
 import { validateWorkflowHarnesses } from './selection.js'
 import { bindEnvironment } from './environment-config.js'
+import type { CaptureContext, CaptureOptions, CapturedInputSnapshot, ResultInput } from './capture-types.js'
+import { captureRedactor } from './capture-redaction.js'
+import { putObject } from '../store/objects.js'
+import { sha256, canonicalJson } from '../util/hash.js'
 import { finalizeEnvironment } from './environment-cleanup.js'
 
-export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
+export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean; capture?: CaptureOptions }
 export type GraphRecord = RunGraphNode
-export interface RuntimeRecord { reviews?: Record<string, ReviewProgress>; feedback?: Record<string, string>; nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
+export interface RuntimeRecord { workflowSource?: CapturedInputSnapshot['workflow']; reviews?: Record<string, ReviewProgress>; feedback?: Record<string, string>; nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
 export { system } from './actor.js'
 import { system } from './actor.js'
 import { postEventMessage } from './chat-events.js'
@@ -44,6 +48,11 @@ export class Runtime implements HarnessHost {
   readonly reviews: Record<string, ReviewProgress> = {}
   readonly feedback: Record<string, string> = {}
   readonly requests: Record<string, string> = {}
+  readonly resultInputs = new Map<string, ResultInput[]>()
+  readonly lastInvocations = new Map<string, string>()
+  workflowSource?: CapturedInputSnapshot['workflow']
+  get capture(): CaptureOptions | undefined { return this.options.capture }
+  private events = Promise.resolve()
   private saves = Promise.resolve()
   private readonly restarting = new Set<string>()
   private readonly attempts: Record<string, number> = {}
@@ -75,17 +84,29 @@ export class Runtime implements HarnessHost {
     this.saves = next.catch(() => undefined)
     return next
   }
-  emit: Emit = async (type, data, nodeId, actor = system) => {
-    if (!['harness.message', 'harness.tool_call', 'log', 'knowledge.query', 'context.assembled', 'context.compacted'].includes(type)) await this.save()
-    if (type === 'node.finished' && nodeId && this.state.nodes[nodeId]?.status === 'stale') return
-    if (type === 'run.finished') data = { status: this.state.status } as typeof data
-    const event = await this.deps.stores.events.append(this.state.runId, { type, data, nodeId, actor })
-    await postEventMessage(this.deps.stores, this.state, event, snapshotWorkflow(this.workflow))
+  emit: Emit = (type, data, nodeId, actor = system) => {
+    const next = this.events.then(async () => {
+      if (!['harness.message', 'harness.tool_call', 'log', 'knowledge.query', 'context.assembled', 'context.compacted'].includes(type)) await this.save()
+      if (type === 'node.finished' && nodeId && this.state.nodes[nodeId]?.status === 'stale') return
+      if (type === 'run.finished') data = { status: this.state.status } as typeof data
+      if (type === 'invocation.started') {
+        const start = data as import('../types.js').EventPayloads['invocation.started']
+        const tail = (await this.deps.stores.events.read(this.state.runId)).at(-1)
+        start.invocation.invocationId = `${this.state.runId}:${(tail?.seq ?? 0) + 1}`
+      }
+      const event = await this.deps.stores.events.append(this.state.runId, { type, data, nodeId, actor })
+      if (type === 'invocation.started' && (data as import('../types.js').EventPayloads['invocation.started']).invocation.invocationId !== `${this.state.runId}:${event.seq}`) {
+        throw new Error('调用序号被外部并发写入抢占，拒绝调用 harness；运行写入须持空间租约')
+      }
+      await postEventMessage(this.deps.stores, this.state, event, snapshotWorkflow(this.workflow))
+    })
+    this.events = next.catch(() => undefined)
+    return next
   }
   async persistGraph(): Promise<void> {
     for (const node of Object.values(this.state.nodes)) this.attempts[node.id] = Math.max(this.attempts[node.id] ?? 0, node.attempts)
     const record: RuntimeRecord = {
-      requests: { ...this.requests },
+      requests: { ...this.requests }, workflowSource: this.workflowSource,
       reviews: structuredClone(this.reviews), feedback: { ...this.feedback },
       attempts: { ...this.attempts },
       reservedAttempts: { ...this.reservedAttempts },
@@ -115,6 +136,18 @@ export class Runtime implements HarnessHost {
   async prepare(): Promise<void> {
     validateDag(this.workflow.nodes, new Set(this.workflow.stages.map((stage) => stage.id)))
     const stored = await readJsonFile<RuntimeRecord>(runtimeFile(this.deps, this.state.runId))
+    this.workflowSource = stored?.workflowSource
+    if (!stored && this.capture?.workflowSource) {
+      const source = structuredClone(this.capture.workflowSource)
+      const redact = await captureRedactor({ prompt: '', cwd: this.deps.stores.projectDir }, this.deps.stores.config.providers)
+      const freeze = async (item: { id: string; content: string; revision?: string }) => ({
+        kind: 'file' as const, id: item.id, revision: item.revision, sha256: sha256(item.content),
+        object: await (this.capture?.putObject ?? putObject)(this.deps.stores, redact.text(item.content)),
+      })
+      const main = await freeze(source)
+      const dependencies = await Promise.all((source.dependencies ?? []).sort((a, b) => a.id.localeCompare(b.id)).map(freeze))
+      this.workflowSource = { ...main, dependencies, closureSha256: sha256(canonicalJson({ source: main.sha256, dependencies: dependencies.map(({ id, sha256 }) => ({ id, sha256 })) })), redactions: redact.redactions }
+    }
     Object.assign(this.requests, stored?.requests)
     Object.assign(this.reviews, stored?.reviews)
     Object.assign(this.feedback, stored?.feedback)
@@ -177,8 +210,16 @@ export class Runtime implements HarnessHost {
       projectDir: this.deps.stores.projectDir, workspaceDir: this.deps.stores.workspaces.dir(this.state.requirementId),
       signal: this.signal, args: this.state.args, feedback: this.feedback[node.id], iteration: node.kind === 'loop' ? ns.iteration : entry.iteration, item: entry.item,
       resultOf: (id) => {
-        for (const scope of scopes) if (Object.hasOwn(this.state.nodes, scope + id)) return this.state.nodes[scope + id]!.result
-        return this.state.nodes[id]?.result
+        const sourceId = scopes.map((scope) => scope + id).find((candidate) => Object.hasOwn(this.state.nodes, candidate)) ?? id
+        const source = this.state.nodes[sourceId]
+        if (source) {
+          const inputs = this.resultInputs.get(node.id) ?? []
+          const from = { runId: this.state.runId, nodeId: sourceId, attempt: source.attempts }
+          const value = source.result === undefined ? null : structuredClone(source.result)
+          if (!inputs.some((item) => canonicalJson(item.from) === canonicalJson(from))) inputs.push({ from, value })
+          this.resultInputs.set(node.id, inputs)
+        }
+        return source?.result
       },
       readArtifact: async (path) => (await readCurrent(this.deps.stores, this.state.requirementId, path))?.toString('utf8'),
       log: (message) => {
@@ -194,7 +235,7 @@ export class Runtime implements HarnessHost {
   private async finish(entry: Entry, actor = system): Promise<void> {
     this.signal.throwIfAborted()
     const ns = this.state.nodes[entry.def.id]!
-    await this.guard.system(this.workspacePaths(entry.def.outputs?.map((output) => output.path)), () =>
+    if (!this.lastInvocations.has(ns.id)) await this.guard.system(this.workspacePaths(entry.def.outputs?.map((output) => output.path)), () =>
       collectOutputs(this.deps.stores, this.state, entry.def, ns, actor, this.emit))
     await saveWorktreeDiff(this, entry.def.id, ns)
     this.signal.throwIfAborted()
@@ -354,6 +395,8 @@ export class Runtime implements HarnessHost {
         this.signal.throwIfAborted()
         await this.beginAttempt(ns)
         if ((ns.status as NodeState['status']) === 'stale') return
+        this.resultInputs.delete(node.id)
+        this.lastInvocations.delete(node.id)
         const ctx = this.context(entry)
         if (node.when && !await node.when(ctx)) {
           await this.skipNode(node.id, true)
@@ -390,12 +433,13 @@ export class Runtime implements HarnessHost {
     await this.emit('log', { level: result.code ? 'error' : 'info', message: result.output }, ctx.nodeId)
     return result
   }
-  async model(entry: Entry, ctx: NodeContext, role: string, prompt: string | AgentNodeDef['prompt'], schema: Record<string, unknown>): Promise<unknown> {
+  async model(entry: Entry, ctx: NodeContext, role: string, prompt: string | AgentNodeDef['prompt'], schema: Record<string, unknown>, capture: CaptureContext = {}): Promise<unknown> {
     const node = entry.def
     const result = await callHarness(this, {
       ...node, kind: 'agent', role, prompt, resultSchema: schema,
       harness: 'harness' in node ? node.harness : undefined,
-    }, ctx, this.state.nodes[node.id]!, node.kind === 'planner')
+    }, ctx, this.state.nodes[node.id]!, node.kind === 'planner', [], capture)
+    this.lastInvocations.set(node.id, result.invocationId)
     return result.data
   }
   private async execute(entry: Entry, ctx: NodeContext): Promise<Actor> {
@@ -419,6 +463,7 @@ export class Runtime implements HarnessHost {
       case 'agent': {
         const result = await callHarness(this, node, ctx, ns, false)
         ns.result = result.data
+        this.lastInvocations.set(node.id, result.invocationId)
         return result.actor
       }
       case 'human': await this.request(entry, node.ask, node.form, node.choices, true); break

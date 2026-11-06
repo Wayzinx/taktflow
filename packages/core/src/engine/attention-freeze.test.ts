@@ -1,3 +1,4 @@
+import { removeTestProject } from './test-cleanup.js'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -9,7 +10,7 @@ import { createEngine } from './index.js'
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map((root) => removeTestProject(root)))
 })
 
 it('人工待办冻结创建时的尝试次数和输入产物版本', async () => {

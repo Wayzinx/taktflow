@@ -8,6 +8,7 @@ import { parseFrontmatter } from '../util/frontmatter.js'
 import { FsChatStore } from './fs-chat.js'
 import { FsAttentionStore } from './fs-attention.js'
 import { FsEventStore } from './fs-events.js'
+import { FsQualityStore } from './fs-quality.js'
 import { FsRunStore } from './fs-runs.js'
 import { FsWorkspaceStore } from './fs-workspace.js'
 import { fileExists, isEnoent, readJsonFile, toJsonText, writeFileIfAbsent } from './fs-utils.js'
@@ -59,6 +60,7 @@ export async function openProject(projectDir: string): Promise<ProjectStores> {
     paths, chat,
     workspaces: new FsWorkspaceStore(taktDir, paths.requirements, chat),
     events: new FsEventStore(taktDir),
+    quality: new FsQualityStore(taktDir),
     runs: new FsRunStore(taktDir),
     attention: new FsAttentionStore(taktDir, (item) => assertAnswerFreshness(stores, item)),
   }

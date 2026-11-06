@@ -136,11 +136,16 @@ it('两个容器共享叶子并发额度，容器本身不占用执行槽位', a
   let active = 0
   let peak = 0
   let completed = 0
+  const pair: Array<() => void> = []
   const body = (): NodeDef[] => Array.from({ length: 3 }, (_, index) => script({
     id: `job-${index}`, title: '任务', run: async () => {
       active++
       peak = Math.max(peak, active)
-      await new Promise((resolve) => setTimeout(resolve, 15))
+      // 用两任务屏障验证真实重叠，避免落盘耗时超过固定 15ms 造成假失败。
+      await new Promise<void>((resolve) => {
+        pair.push(resolve)
+        if (pair.length === 2) for (const release of pair.splice(0)) release()
+      })
       active--
       completed++
     },

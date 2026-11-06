@@ -2,9 +2,10 @@ import type { ReviewNodeDef, ReviewRecord, ReviewResponse } from '../../types.js
 
 export const REVIEW_SCHEMA = {
   type: 'object', required: ['verdict', 'summary', 'issues'], properties: {
+    previous: { type: 'array', items: { type: 'object', required: ['key', 'status'], properties: { key: { type: 'string' }, status: { type: 'string', enum: ['resolved', 'still_open', 'not_checked'] }, note: { type: 'string' } } } },
     verdict: { type: 'string', enum: ['approve', 'request_changes', 'reject'] }, score: { type: 'number' }, summary: { type: 'string' },
     issues: { type: 'array', items: { type: 'object', required: ['id', 'severity', 'description'], properties: {
-      id: { type: 'string' }, severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
+      id: { type: 'string' }, key: { type: 'string' }, severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
       description: { type: 'string' }, location: { type: 'string' }, suggestion: { type: 'string' },
     } } },
   },

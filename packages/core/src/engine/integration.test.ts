@@ -1,5 +1,6 @@
+import { removeTestProject } from './test-cleanup.js'
 import { execFileSync } from 'node:child_process'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -11,7 +12,7 @@ import type { AgentProfile, HarnessRequest, SandboxProvider, SandboxSpec, Workfl
 import { integrate } from '../../../../templates/workflows/taktflow-standard.integration.js'
 
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => { await Promise.all(roots.splice(0).map((root) => removeTestProject(root))) })
 const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 async function fixture(handler: (request: HarnessRequest) => Promise<unknown>) {
   const root = await mkdtemp(join(tmpdir(), 'takt-engine-integration-')); roots.push(root)

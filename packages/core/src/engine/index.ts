@@ -1,5 +1,6 @@
 import { relative } from 'node:path'
-import type { Engine, EngineDeps } from '../interfaces.js'
+import type { WorkflowSource } from './capture-types.js'
+import type { Engine, EngineDeps, StartRunInput } from '../interfaces.js'
 import type { RunState } from '../types.js'
 import { newRunId } from '../util/ids.js'
 import { snapshotWorkflow } from '../store/snapshot.js'
@@ -20,7 +21,11 @@ import { validateEnvironment } from './environment-config.js'
 
 export type { EngineOptions } from './runtime.js'
 
-export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine {
+export interface CapturedStartRunInput extends StartRunInput { workflowSource?: WorkflowSource }
+export interface CapturingEngine extends Engine { start(input: CapturedStartRunInput): ReturnType<Engine['start']> }
+
+export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): CapturingEngine {
+  if (opts.capture) opts = { ...opts, capture: { ...opts.capture, workflowSource: structuredClone(opts.capture.workflowSource), profiles: structuredClone(opts.capture.profiles), adapters: structuredClone(opts.capture.adapters) } }
   const concurrency = opts.concurrency ?? 4
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('concurrency 必须是正整数')
   const active = new Map<string, Runtime>()
@@ -40,6 +45,8 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   }
   return {
     async start(input) {
+      const source = structuredClone(input.workflowSource ?? opts.capture?.workflowSource)
+      const options = { ...opts, capture: { ...opts.capture, workflowSource: source } }
       validateEnvironment(deps.stores.config.environment)
       input = { ...input, workflow: configureRepositories(configureReviews(input.workflow, input.args ?? {}), input.args ?? {}) }
       assertSupportedNodes(input.workflow.nodes)
@@ -59,7 +66,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         workflowId: state.workflowId, workflowVersion: state.workflowVersion, args: state.args,
       } })
       await postEventMessage(deps.stores, state, started)
-      return execute(new Runtime(deps, state, input.workflow, opts, guard))
+      return execute(new Runtime(deps, state, input.workflow, options, guard))
     },
     async resume(runId, workflow) {
       validateEnvironment(deps.stores.config.environment)

@@ -14,6 +14,10 @@ function metadata(file: string, requirements: string): boolean {
   const relative = file.startsWith(`${requirements}/`) ? file.slice(requirements.length + 1) : ''
   if (/^[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(relative)) return true
   return /^\.takt\/(runs|objects)\//.test(file) ||
+    /^\.takt\/quality\/(?:log\.jsonl|chain\.json|cursors\.json)(?:\.[a-f0-9]{16}\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/quality\/views\/(?:defects|attributions|observations|evalcases|candidates|evals)\.json(?:\.[a-f0-9]{16}\.tmp)?$/.test(file) ||
+    /^\.takt\/quality\/snapshots\/[^/]+\/.+$/.test(file) ||
+    /^\.takt\/quality\/evals\/candidates\/[a-f0-9]{64}(?:\.[a-f0-9]{16}\.tmp)?\/(?:candidate\.json|objects\/[a-f0-9]{64})$/.test(file) ||
     /^\.takt\/chat\/[^/]+\/(?:room\.json|messages\.jsonl)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/(?:space-events\.jsonl|space-chain\.json)(?:\.tmp|\.[\da-f-]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/workflow-revisions\/[^/]+\/(?:log\.jsonl|[a-f0-9]{64}\.ts)(?:\.[\w-]+\.tmp|\.lock)?$/.test(file) ||

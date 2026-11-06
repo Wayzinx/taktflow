@@ -53,3 +53,8 @@ export * from './lead/index.js'
 
 export { assertAnswerFreshness, AttentionStaleError } from './store/attention-freshness.js'
 export { createLeaseScope, withSpaceLease, LeaseHeldError, type LeaseScopeOptions } from './store/lease-scope.js'
+export * from './store/quality-store.js'
+export * from './store/fs-quality.js'
+export { candidateId } from './store/quality-candidates.js'
+export { putObject, getObject } from './store/objects.js'
+export { materializeSnapshot, verifySnapshot, type SnapshotMaterial } from './store/materialize-snapshot.js'

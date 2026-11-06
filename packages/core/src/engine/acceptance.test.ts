@@ -1,3 +1,4 @@
+import { removeTestProject } from './test-cleanup.js'
 /**
  * 独立边界验收测试（黑盒）：只使用公共协议（Engine / RunState / 事件 / 存储 / DSL），
  * 不假设引擎内部 helper；所有被测项目都建在 os.tmpdir()，harness 是进程内最小实现。
@@ -12,7 +13,7 @@
  *
  * 运行前提：packages/core/src/engine/index.ts 已提供 createEngine。
  */
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -36,7 +37,7 @@ const TEST_TIMEOUT = 30_000
 
 const roots: string[] = []
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  await Promise.all(roots.splice(0).map((root) => removeTestProject(root)))
 })
 
 async function tempProject(label: string): Promise<string> {

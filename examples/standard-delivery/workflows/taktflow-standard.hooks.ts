@@ -16,6 +16,11 @@ async function cases(ctx: NodeContext): Promise<CaseFile[]> {
 async function summary(ctx: NodeContext): Promise<Summary> {
   return JSON.parse((await ctx.readArtifact('evidence/summary.json')) ?? '{"cases":[]}') as Summary
 }
+export async function recordClarification(ctx: NodeContext) {
+  const questions = await ctx.readArtifact('spec/clarify.md')
+  const answer = ctx.resultOf('answer-clarify') as { answer?: string } | undefined
+  await put(ctx, 'spec/clarify-conclusion.md', `# 澄清结论\n\n## 原始问题与依据\n${questions ?? ''}\n\n## 人工答复\n${answer?.answer ?? '未提供答复，仍属未决项'}\n`)
+}
 export async function traceCoverage(ctx: NodeContext) {
   const acs = new Set(((await ctx.readArtifact('spec/prd.md')) ?? '').match(acId) ?? [])
   const tests = await cases(ctx)
@@ -36,7 +41,7 @@ export function expandTask(item: PlannedItem) {
       outputs: [{ path: `tasks/${item.key}.md`, kind: 'task' }, { path: `tasks/${item.key}.diff`, kind: 'code-change' }],
       prompt: `实现任务 ${item.key}「${item.title}」，仓库 ${repo}。在 tasks/${item.key}.md 写改动说明与自测证据，并把本任务统一 diff 写到 tasks/${item.key}.diff。` }),
     review({ id: 'review-code', title: `代码评审：${item.title}`, needs: ['code'], target: { code: { repo } },
-      author: { role: item.role ?? 'dev' }, reviewers: [{ role: 'reviewer', focus: '正确性、复用、风险；审查 diff 与契约' }],
+      author: { role: item.role ?? 'dev' }, reviewers: [{ role: 'reviewer', focus: '正确性、复用、风险；审查 diff 与契约', checklist: ['改动符合契约字段、权限及错误码约定', '新增逻辑有针对性测试，风险和回滚方式有说明'] }],
       maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'code', maxReworks: 1 } }),
   ]
 }

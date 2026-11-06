@@ -3,6 +3,10 @@ import type { Entry } from '../graph.js'
 import type { NodeHost } from './host.js'
 import type { GateCheckResult } from '../../types.js'
 import { BlockedError } from '../harness.js'
+import { inlineAsset } from '../capture-assets.js'
+import { canonicalJson } from '../../util/hash.js'
+import { scheduleCheckpoint, materializeCheckpoint } from '../checkpoint.js'
+import { RUBRIC_TEMPLATE } from '../prompt-renderer.js'
 import { RUBRIC_SCHEMA } from './schemas.js'
 const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)
 
@@ -11,6 +15,11 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   if (node.kind !== 'gate') throw new Error('内部错误：不是 gate')
   const ns = host.state.nodes[node.id]!
 
+  const scheduled = new Map<string, Awaited<ReturnType<typeof scheduleCheckpoint>>>()
+  for (const check of node.checks) if (check.kind === 'rubric') {
+    const duty = inlineAsset(`rubric:${node.id}:${check.id}`, canonicalJson({ template: RUBRIC_TEMPLATE, rubric: check.rubric }))
+    scheduled.set(check.id, await scheduleCheckpoint(host, node.id, (ns.inputs ?? []).map((ref) => ({ ref, role: 'target' })), duty, { checkId: check.id }))
+  }
   const checks: GateCheckResult[] = []
   for (const check of node.checks) {
     try {
@@ -22,7 +31,10 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
         const result = await host.guard.system(host.workspacePaths(node.outputs?.map((output) => output.path)), () => check.fn(ctx), true)
         checks.push({ ...result, id: check.id, pass: result.pass === true })
       } else {
-        const value = await host.model(entry, ctx, check.role, `按以下 rubric 检查并输出 score、pass、message：\n${check.rubric}`, RUBRIC_SCHEMA) as GateCheckResult
+        const checkpoint = scheduled.get(check.id)!
+        const snapshotDir = await materializeCheckpoint(host, checkpoint)
+        const value = await host.model(entry, { ...ctx, workspaceDir: snapshotDir }, check.role, `按以下 rubric 检查并输出 score、pass、message：\n${check.rubric}`, RUBRIC_SCHEMA, { gateCheckId: check.id, checkpoint, snapshotDir, materials: checkpoint.materials,
+          render: { kind: 'rubric', template: RUBRIC_TEMPLATE, params: { rubric: check.rubric }, duty: inlineAsset(`rubric:${node.id}:${check.id}`, canonicalJson({ template: RUBRIC_TEMPLATE, rubric: check.rubric })) } }) as GateCheckResult
         checks.push({ ...value, id: check.id, pass: value.pass && value.score! >= check.threshold })
       }
     } catch (error) {

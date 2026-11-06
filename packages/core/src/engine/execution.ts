@@ -54,13 +54,14 @@ export async function saveWorktreeDiff(host: HarnessHost, nodeId: string, ns: No
   })
 }
 
-export async function sandboxCall(host: HarnessHost, cwd: string, harness: string, ctx: NodeContext, env: Record<string, string>, timeoutMs?: number, directories: string[] = []) {
+export async function sandboxCall(host: HarnessHost, cwd: string, harness: string, ctx: NodeContext, env: Record<string, string>, timeoutMs?: number, directories: string[] = [], snapshotDir?: string) {
   const { stores } = host.deps
   const adapters = await executionAdapters()
   if (host.deps.skillsDir) await host.guard.system(['.agents/skills/**', '.claude/skills/**', '.takt/worktrees/**'],
     () => adapters.syncSkills({ skillsDir: host.deps.skillsDir!, targetRoot: cwd, harness }))
   const provider = host.deps.sandbox ?? await adapters.selectSandboxProvider(stores.config.sandbox)
   const mounts: SandboxMount[] = [{ source: cwd, target: cwd, mode: 'rw' as const }, { source: ctx.workspaceDir, target: ctx.workspaceDir, mode: 'rw' as const }]
+  if (snapshotDir) mounts.push({ source: snapshotDir, target: snapshotDir, mode: 'ro' })
   for (const path of directories) if (path !== cwd) mounts.push({ source: path, target: path, mode: 'rw' })
   if (env.TAKT_TRANSCRIPT) mounts.push({ source: dirname(env.TAKT_TRANSCRIPT), target: dirname(env.TAKT_TRANSCRIPT), mode: 'rw' })
   for (const source of [host.deps.skillsDir ?? stores.paths.skills, stores.paths.knowledge]) {

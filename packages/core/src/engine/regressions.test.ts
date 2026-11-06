@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { removeTestProject } from './test-cleanup.js'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -8,7 +9,7 @@ import type { HarnessAdapter, NodeDef, WorkflowDefinition } from '../types.js'
 import { createEngine } from './index.js'
 
 const roots: string[] = []
-afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
+afterEach(async () => { await Promise.all(roots.splice(0).map((root) => removeTestProject(root))) })
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'takt-regressions-'))
   roots.push(root)

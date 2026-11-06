@@ -4,17 +4,17 @@ import { open, stat } from 'node:fs/promises'
 import { subscribeJsonLines } from './jsonl-tail.js'
 import type { EventStore, EventVerifyReason } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
-import { canonicalJson, sha256 } from '../util/hash.js'
-import { appendLine, isEnoent, readFileIfExists, readJsonFile, toJsonText, writeFileAtomic } from './fs-utils.js'
+import { chainHash, readAnchor, writeAnchor, ZERO_HASH, type ChainAnchor } from './hash-chain.js'
+import { appendLine, isEnoent, readFileIfExists } from './fs-utils.js'
 import { withFileLock } from './file-lock.js'
 import { chainFile, eventsFile } from './paths.js'
 
-const ZERO_HASH = '0'.repeat(64)
 const EVENT_TYPES = new Set<EventType>([
   'run.started', 'run.finished', 'node.ready', 'node.started', 'node.finished', 'node.failed', 'node.stale',
   'artifact.written', 'artifact.edited', 'artifact.untracked', 'gate.result', 'judge.verdict',
   'human.requested', 'human.answered', 'harness.started', 'harness.message', 'harness.tool_call',
   'harness.usage', 'context.assembled', 'context.compacted', 'knowledge.query', 'dag.expanded',
+  'invocation.started', 'invocation.finished', 'checkpoint.scheduled', 'review.result', 'artifact.touched',
   'guard.violation', 'log', 'review.round', 'review.response', 'review.exhausted', 'rework.started', 'worktree.created', 'task.dispatched',
 ])
 
@@ -50,22 +50,6 @@ function hashPayload(envelope: EventEnvelope): Record<string, unknown> {
   }
 }
 
-/** 链尾锚点：追加事件后原子写入，用于发现截尾和正常追加掩盖截尾。 */
-interface ChainAnchor { lastSeq: number; lastHash: string; updatedAt: string }
-
-async function readAnchor(file: string): Promise<ChainAnchor | undefined> {
-  const value = await readJsonFile<unknown>(file)
-  if (value === undefined) return undefined
-  const anchor = value as Partial<ChainAnchor> | null
-  if (anchor === null || typeof anchor !== 'object'
-    || !Number.isSafeInteger(anchor.lastSeq) || (anchor.lastSeq as number) < 1
-    || typeof anchor.lastHash !== 'string' || !/^[a-f0-9]{64}$/.test(anchor.lastHash)
-    || typeof anchor.updatedAt !== 'string') {
-    throw new Error(`链尾锚点损坏：${file}`)
-  }
-  return anchor as ChainAnchor
-}
-
 function lastEnvelope(buf: Buffer): EventEnvelope | undefined {
   const lines = buf.toString('utf8').split('\n').filter((line) => line.trim() !== '')
   const line = lines.at(-1)
@@ -87,7 +71,7 @@ function verifyContent(buf: Buffer, runId: string): { ok: boolean; brokenAt?: nu
       if (!isEnvelope(envelope, runId) || envelope.seq !== seq || envelope.prevHash !== prevHash) {
         return { ok: false, brokenAt: seq }
       }
-      const expected = sha256(prevHash + canonicalJson(hashPayload(envelope)))
+      const expected = chainHash(prevHash, hashPayload(envelope))
       if (envelope.hash !== expected) return { ok: false, brokenAt: seq }
       prevHash = envelope.hash
     }
@@ -100,7 +84,7 @@ const appendTails = new Map<string, AppendTail>()
 function checkedLine(line: string, runId: string): EventEnvelope {
   let value: unknown
   try { value = JSON.parse(line) } catch { throw new Error(`事件日志尾部不是合法 JSON：${runId}`) }
-  if (!isEnvelope(value, runId) || value.hash !== sha256(value.prevHash + canonicalJson(hashPayload(value)))
+  if (!isEnvelope(value, runId) || value.hash !== chainHash(value.prevHash, hashPayload(value))
     || (value.seq === 1 && value.prevHash !== ZERO_HASH)) throw new Error(`事件日志尾部哈希或结构损坏：${runId}`)
   return value
 }
@@ -190,15 +174,11 @@ export class FsEventStore implements EventStore {
         hash: '',
       }
       if (e.nodeId !== undefined) envelope.nodeId = e.nodeId
-      envelope.hash = sha256(envelope.prevHash + canonicalJson(hashPayload(envelope)))
+      envelope.hash = chainHash(envelope.prevHash, hashPayload(envelope))
       await appendLine(file, JSON.stringify(envelope))
       const info = await stat(file)
       appendTails.set(file, { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, seq: envelope.seq, hash: envelope.hash, start: last.size })
-      await writeFileAtomic(anchorFile, toJsonText({
-        lastSeq: envelope.seq,
-        lastHash: envelope.hash,
-        updatedAt: new Date().toISOString(),
-      }))
+      await writeAnchor(anchorFile, envelope)
       return envelope
     })
   }
