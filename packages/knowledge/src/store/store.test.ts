@@ -104,6 +104,18 @@ it('索引 manifest 使用相对路径，空间移动后不误判过期且能精
   expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
   await writeFile(join(moved, 'knowledge/docs/content/doc-3.md'), '# 文档 3\n已修改')
   expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 1 })
+  // 只因来源变化而过期：来源改回原样就自动回到可用，不用重建
+  await writeFile(join(moved, 'knowledge/docs/content/doc-3.md'), '# 文档 3\n内容 3')
+  expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
+  // 改过配置的过期必须重建：来源再怎么改回去也不自动恢复
+  await writeFile(join(moved, 'knowledge/docs/content/doc-3.md'), '# 文档 3\n已修改')
+  expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 1 })
+  // 只改说明不影响索引，状态不变
+  await kb.update('docs', { description: '改了说明' }, by, '改说明')
+  expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 1 })
+  await kb.update('docs', { retrieval: { topK: 3, budgetTokens: 2000 } }, by, '改检索参数')
+  await writeFile(join(moved, 'knowledge/docs/content/doc-3.md'), '# 文档 3\n内容 3')
+  expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 0 })
 })
 it('旧索引中的绝对路径失效后按当前空间根重定位', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'takt-kb-legacy-'))

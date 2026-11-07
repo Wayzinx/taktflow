@@ -1,4 +1,4 @@
-import { trackStale } from './stale.js'
+import { clearSourceStale, isSourceStale, markSourceStale, trackStale } from './stale.js'
 import { configuredEmbedding } from './embedding.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, stat, cp } from 'node:fs/promises'
@@ -234,6 +234,11 @@ export function createKnowledgeStore(
     }
     if (count && kb.status === 'ready') {
       kb.status = 'stale'
+      await save(kb)
+      await markSourceStale(stores, kb.id)
+    } else if (!count && kb.status === 'stale' && (await isSourceStale(stores, kb.id))) {
+      // 来源改回原样（或移动空间后重新定位成功）：不用重建，直接回到可用
+      kb.status = 'ready'
       await save(kb)
     }
     return count
@@ -537,7 +542,12 @@ export function createKnowledgeStore(
             if (patch[key] !== undefined) Object.assign(kb, { [key]: patch[key] })
           if (old.status === 'building') throw new Error('构建期间不能修改配置，请先取消构建')
           validate(kb)
-          if (kb.version) kb.status = 'stale'
+          // 只有影响索引或版本快照的配置（config / retrieval）才需要重建；改名称、说明、意图不用
+          const rebuild = (['config', 'retrieval'] as const).some((key) => patch[key] !== undefined && JSON.stringify(patch[key]) !== JSON.stringify(old[key]))
+          if (kb.version && rebuild) {
+            kb.status = 'stale'
+            await clearSourceStale(stores, id)
+          }
           await auditKnowledge(stores, by, reason, `knowledge.update:${id}`)
           await save(kb)
           return kb
@@ -578,6 +588,7 @@ export function createKnowledgeStore(
       if (kb.version) {
         kb.status = 'stale'
         await save(kb)
+        await clearSourceStale(stores, kb.id)
       }
       return { docs: files.length }
     },

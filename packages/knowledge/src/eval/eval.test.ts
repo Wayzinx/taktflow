@@ -395,11 +395,11 @@ it('显式 caller 并发隔离，route 返回同一 queryId 且每路由只记�
 })
 it('stale 起点持久化，编辑配置不会重置三天计时，发布后清除', async () => {
   const { kb, root, stores } = await setup()
-  await kb.update('docs', { description: '过期变更' }, by, '修改')
+  await kb.update('docs', { retrieval: { topK: 4, budgetTokens: 1500 } }, by, '修改')
   const file = join(root, '.takt/knowledge/docs/stale.json')
   const since = '2026-01-01T00:00:00Z'
   await writeFile(file, JSON.stringify({ since, version: 1 }))
-  await kb.update('docs', { description: '再次编辑' }, by, '再次修改')
+  await kb.update('docs', { retrieval: { topK: 5, budgetTokens: 1500 } }, by, '再次修改')
   expect(JSON.parse(await readFile(file, 'utf8')).since).toBe(since)
   expect(
     (await knowledgeRisks({ id: 'space', stores }, new Date('2026-01-05'))).some((record2) =>
