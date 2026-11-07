@@ -161,12 +161,15 @@ async function skillSettings(stores: ProjectStores, roles: SpaceRoleSettings[]):
   }))
 }
 
+const TEMPLATE_ORDER = ['taktflow-standard', 'quick-fix', 'sdlc']
+
 function workflowTemplates(templates: SpaceTemplates): WorkflowTemplateInfo[] {
+  const rank = (id: string) => { const i = TEMPLATE_ORDER.indexOf(id); return i < 0 ? TEMPLATE_ORDER.length : i }
   return templates.workflows.filter((file) => file.name.endsWith('.workflow.ts')).map((file) => {
     const id = file.name.slice(0, -'.workflow.ts'.length)
     const title = parseWorkflowSource(file.content, file.name).model.meta.title
     return { id, title: title.kind === 'literal' && typeof title.value === 'string' ? title.value : id, description: TEMPLATE_DESCRIPTIONS[id] ?? '' }
-  })
+  }).sort((a, b) => rank(a.id) - rank(b.id) || a.id.localeCompare(b.id))
 }
 
 async function layoutIssues(stores: ProjectStores, workflowIds: string[]): Promise<SpaceSettings['layout']> {

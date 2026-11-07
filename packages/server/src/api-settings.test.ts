@@ -69,7 +69,7 @@ it('space.settings：结构化角色带使用位置，模板与知识源类型�
   expect(pm.file).toBe('agents/pm.md')
   expect(pm.hash).toMatch(/^[a-f0-9]{64}$/)
   expect(pm.usedBy.some((use) => use.workflow === 'taktflow-standard')).toBe(true)
-  expect(value.templates.map((t) => t.id).sort()).toEqual(['quick-fix', 'sdlc', 'taktflow-standard'])
+  expect(value.templates.map((t) => t.id)).toEqual(['taktflow-standard', 'quick-fix', 'sdlc'])
   expect(value.knowledgeKinds.map((k) => k.kind)).toEqual(['grep', 'wiki', 'git-history', 'workspace'])
 })
 

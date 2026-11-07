@@ -123,7 +123,8 @@ export function PolicyTab({ settings, onSaved }: { settings: SpaceSettings; onSa
         actions={<RevisionsButton kind="config" label="配置的修改记录" onRestored={() => void ds.settings().then(onSaved)} />}
       >
         <Field label="流程">
-          <select className="select" value={form.defaultWorkflow} onChange={(e) => set('defaultWorkflow', e.target.value)}>
+          <select className="select" value={form.defaultWorkflow} onChange={(e) => set('defaultWorkflow', e.target.value)} disabled={settings.workflows.length === 0}>
+            {settings.workflows.length === 0 && <option value="">还没有流程，先到 Workflow 页从模板新建</option>}
             {settings.workflows.map((w) => (
               <option key={w.id} value={w.id}>{w.title}（{w.id}）</option>
             ))}

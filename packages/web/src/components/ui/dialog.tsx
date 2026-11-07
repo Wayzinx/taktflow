@@ -74,7 +74,7 @@ export function Dialog({ open, onClose, title, description, children, footer, si
     if (!open || p.state !== 'enter') return
     // 首个可聚焦的输入优先，其次面板本身
     const el = panel.current
-    const target = el?.querySelector<HTMLElement>('[data-autofocus], input, textarea, select') ?? el
+    const target = el?.querySelector<HTMLElement>('[data-autofocus]') ?? el?.querySelector<HTMLElement>('input, textarea, select') ?? el
     target?.focus({ preventScroll: true })
   }, [open, p.state])
 
