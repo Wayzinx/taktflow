@@ -6,7 +6,7 @@ import { ErrorState, PageHeader, Skeleton, SkeletonCard, SkeletonText, StatusBad
 import { fmtRelative } from '../../lib/format'
 import { setQuery, useLocation } from '../../lib/router'
 import { KindGlyph, useLiveBuild } from './card'
-import { KB_STATUS, autoReason, kindMeta } from './meta'
+import { kbStatusMeta, autoReason, kindMeta } from './meta'
 import { PublishDialog } from './publish'
 import { OverviewTab } from './tab-overview'
 import './knowledge.css'
@@ -62,7 +62,7 @@ export function KnowledgeDetailPage({ id }: { id: string }) {
   }
 
   const running = live ? live.status === 'running' : !!b?.building
-  const status = b ? (running ? KB_STATUS.building : KB_STATUS[b.status]) : undefined
+  const status = b ? kbStatusMeta(b, running) : undefined
   const meta = b ? kindMeta(b.kind) : undefined
   const counts: Record<string, number | undefined> = { builds: b?.builds.length || undefined, eval: b?.evalSets.reduce((n, s) => n + s.total, 0) || undefined }
 
@@ -117,7 +117,7 @@ export function KnowledgeDetailPage({ id }: { id: string }) {
           </div>
         ) : (
           <Suspense fallback={<SkeletonCard height={220} />}>
-            {tab === 'overview' && <OverviewTab base={b} live={live} onBuild={() => void build()} />}
+            {tab === 'overview' && <OverviewTab base={b} live={live} onBuild={() => void build()} onPublish={() => setPublishing(true)} />}
             {tab === 'sources' && <SourcesTab base={b} reload={q.reload} />}
             {tab === 'builds' && <BuildsTab base={b} live={live} reload={q.reload} onBuild={() => void build()} />}
             {tab === 'query' && <QueryTab base={b} />}

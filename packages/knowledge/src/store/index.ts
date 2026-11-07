@@ -32,6 +32,7 @@ import { createProjectSecretResolver, validateSecretFields } from './secrets.js'
 import { entries, safeKey, safePath } from './files.js'
 import { builtinKinds } from '../kinds/index.js'
 import { loadIndex, saveIndex, trimHits } from '../kinds/search.js'
+import { collectCurrentSourcePaths, STALE_SOURCE_SCAN_LIMIT } from '../kinds/source-paths.js'
 import { appendQuery, readQueries } from './query-log.js'
 import * as evaluation from '../eval/index.js'
 export interface KnowledgeStoreOptions {
@@ -215,8 +216,12 @@ export function createKnowledgeStore(
     const index = await loadIndex(ctx.indexDir).catch(() => undefined)
     if (!index) return 0
     let count = 0
-    for (const source of index.manifest ?? []) {
+    const manifest = index.manifest ?? []
+    const manifestPaths = new Set(manifest.map((source) => source.path))
+    const manifestResolvedPaths = new Set<string>()
+    for (const source of manifest) {
       const path = await resolveSourcePath(kb, source.path)
+      manifestResolvedPaths.add(path)
       try {
         const info = await stat(path)
         const stamp = `${info.mtimeMs}:${info.ctimeMs}:${info.size}`
@@ -232,6 +237,10 @@ export function createKnowledgeStore(
         count++
       }
     }
+    // 来源目录不在了 / 仓库解绑：manifest 那一侧已经计为过期，这里只找新增文件，不能让详情接口因此报错
+    const currentSources = await collectCurrentSourcePaths(kb, ctx, { limit: STALE_SOURCE_SCAN_LIMIT }).catch(() => [])
+    for (const source of currentSources)
+      if (!manifestPaths.has(source.path) && !manifestResolvedPaths.has(source.full)) count++
     if (count && kb.status === 'ready') {
       kb.status = 'stale'
       await save(kb)

@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { createHttpSource, probeApi } from './client'
-import { createMockSource } from './mock-source'
 import type { DataSource } from './source'
 
 export type { CrudSource, DataSource, EvalOutputSnapshot, KnowledgeSource, RepoPatch, ScorecardBy, StewardSource, StewardThreadDetail, WorkflowRevisionDetail } from './source'
@@ -8,11 +7,11 @@ export { WorkflowConflictError } from './source'
 
 const SourceContext = createContext<DataSource | null>(null)
 
-/** ?mock=1 或 VITE_MOCK=1 强制演示数据；否则探测真实 API，不可达时回退到演示数据。 */
+/** ?mock=1 或 VITE_MOCK=1 强制演示数据；否则探测真实 API，不可达时回退到演示数据（演示数据单独分包，连真实后端时不下载）。 */
 async function pickSource(): Promise<DataSource> {
   const forced = new URLSearchParams(location.search).get('mock') === '1' || import.meta.env.VITE_MOCK === '1'
   if (!forced && (await probeApi())) return createHttpSource()
-  return createMockSource()
+  return (await import('./mock-source')).createMockSource()
 }
 
 export function DataProvider({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {

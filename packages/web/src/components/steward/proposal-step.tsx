@@ -95,7 +95,7 @@ export function ProposalStepView({ index, step, original, preview, proposalId, t
         {step.kind === 'workflow' && (
           <div className="stw-step-actions">
             <WorkflowPreviewButton proposalId={proposalId} threadId={threadId} step={step} />
-            <span className="faint">新增绿色虚线、删除红色划线、改动琥珀角标</span>
+            <span className="faint">新增节点与新依赖绿色虚线、删除红色划线、去掉的依赖红 ×、改动琥珀角标</span>
           </div>
         )}
       </div>

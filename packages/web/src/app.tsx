@@ -9,23 +9,47 @@ import { matchPath, navigate, useLocation } from './lib/router'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import './lib/theme'
 import { openCreateRequirement, openCreateSpace, openSteward, useStewardDock } from './lib/ui-store'
-import { AttentionPage } from './pages/attention'
-import { EvalPage } from './pages/eval'
 import { OverviewPage } from './pages/overview'
 import { NotFoundPage } from './pages/placeholder'
-import { RequirementPage } from './pages/requirement'
 import { RequirementsPage } from './pages/requirements'
-import { RunPage } from './pages/run'
-import { SettingsPage } from './pages/settings'
-import { SpacesPage } from './pages/spaces'
-import { WorkflowEditorPage } from './pages/workflow'
-import { WorkflowsListPage } from './pages/workflows-list'
 
 // 按需加载（docs/design/22 §3.5：首屏 JS 增量 ≤ 60KB）：管家整页、停靠面板、知识库页
-const StewardPage = lazy(() => import('./pages/steward').then((m) => ({ default: m.StewardPage })))
+// 总览与需求列表是最常见的首屏，随主包；其余页面按路由分包（画布、运行详情、评测、设置各自较重），首屏渲染后空闲时预取
+const PAGES = {
+  attention: () => import('./pages/attention'),
+  eval: () => import('./pages/eval'),
+  requirement: () => import('./pages/requirement'),
+  run: () => import('./pages/run'),
+  settings: () => import('./pages/settings'),
+  spaces: () => import('./pages/spaces'),
+  workflow: () => import('./pages/workflow'),
+  workflowsList: () => import('./pages/workflows-list'),
+  steward: () => import('./pages/steward'),
+  knowledge: () => import('./pages/knowledge'),
+  knowledgeDetail: () => import('./pages/knowledge/detail'),
+}
+const AttentionPage = lazy(() => PAGES.attention().then((m) => ({ default: m.AttentionPage })))
+const EvalPage = lazy(() => PAGES.eval().then((m) => ({ default: m.EvalPage })))
+const RequirementPage = lazy(() => PAGES.requirement().then((m) => ({ default: m.RequirementPage })))
+const RunPage = lazy(() => PAGES.run().then((m) => ({ default: m.RunPage })))
+const SettingsPage = lazy(() => PAGES.settings().then((m) => ({ default: m.SettingsPage })))
+const SpacesPage = lazy(() => PAGES.spaces().then((m) => ({ default: m.SpacesPage })))
+const WorkflowEditorPage = lazy(() => PAGES.workflow().then((m) => ({ default: m.WorkflowEditorPage })))
+const WorkflowsListPage = lazy(() => PAGES.workflowsList().then((m) => ({ default: m.WorkflowsListPage })))
+const StewardPage = lazy(() => PAGES.steward().then((m) => ({ default: m.StewardPage })))
 const StewardDock = lazy(() => import('./components/steward/dock').then((m) => ({ default: m.StewardDock })))
-const KnowledgeListPage = lazy(() => import('./pages/knowledge').then((m) => ({ default: m.KnowledgeListPage })))
-const KnowledgeDetailPage = lazy(() => import('./pages/knowledge/detail').then((m) => ({ default: m.KnowledgeDetailPage })))
+const KnowledgeListPage = lazy(() => PAGES.knowledge().then((m) => ({ default: m.KnowledgeListPage })))
+const KnowledgeDetailPage = lazy(() => PAGES.knowledgeDetail().then((m) => ({ default: m.KnowledgeDetailPage })))
+
+/** 首屏之后空闲时把各页面分包预取进缓存，切页时不再等下载。 */
+function usePrefetchPages() {
+  useEffect(() => {
+    const idle = window.requestIdleCallback ?? ((f: () => void) => window.setTimeout(f, 1200))
+    const cancel = window.cancelIdleCallback ?? window.clearTimeout
+    const id = idle(() => Object.values(PAGES).forEach((load) => void load().catch(() => undefined)))
+    return () => cancel(id)
+  }, [])
+}
 
 function Routes() {
   const { path, spaceId } = useLocation()
@@ -102,6 +126,7 @@ function useOpenParam() {
 function GlobalMounts() {
   useGlobalShortcuts()
   useOpenParam()
+  usePrefetchPages()
   return (
     <>
       <DockMount />

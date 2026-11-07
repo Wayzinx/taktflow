@@ -1,14 +1,12 @@
 import { readSource } from './source-reader.js'
-import { stat } from 'node:fs/promises'
-import { dirname, extname, relative } from 'node:path'
+import { extname } from 'node:path'
 import {
-  listFiles,
   parseFrontmatter,
   sha256,
   type KnowledgeBase,
   type KnowledgeKindContext,
 } from '@taktflow/core'
-import { safePath, repositoryPath } from '../store/files.js'
+import { collectDocumentSourcePaths } from './source-paths.js'
 export interface Document {
   ref: string
   title: string
@@ -16,11 +14,6 @@ export interface Document {
   path?: string
   hash: string
   aliases?: string[]
-}
-function manifestPath(kb: KnowledgeBase, ctx: KnowledgeKindContext, path: string): string {
-  if (kb.scope === 'shared') return relative(dirname(ctx.baseDir), path)
-  const projectRelative = relative(ctx.stores.projectDir, path)
-  return !projectRelative.startsWith('..') ? projectRelative : relative(ctx.baseDir, path)
 }
 export async function fetchText(
   url: string,
@@ -118,38 +111,13 @@ export async function documents(kb: KnowledgeBase, ctx: KnowledgeKindContext): P
       }
       continue
     }
-    let root: string
-    if (source.type === 'upload') root = await safePath(ctx.baseDir, 'content')
-    else if (source.type === 'path')
-      root = await safePath(ctx.stores.projectDir, source.path ?? '.')
-    else if (source.type === 'repo') {
-      const repo = ctx.stores.config.repos?.find((record) => record.id === source.repo)
-      if (!repo) throw new Error('仓库未绑定，请先在空间中绑定仓库')
-      root = await repositoryPath(ctx.stores, repo.id)
-    } else throw new Error('数据源类型不支持，请选择 upload、path、repo 或 url')
-    let paths: string[]
-    try {
-      const info = await stat(root)
-      paths = info.isFile()
-        ? ['']
-        : await listFiles(
-            root,
-            typeof source.glob === 'string'
-              ? [source.glob]
-              : (source.glob ?? ['**/*.md', '**/*.txt', '**/*.html', '**/*.json', '**/*.csv']),
-          )
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT' && source.type === 'upload') continue
-      throw error
-    }
-    for (const path of paths) {
-      const full = await safePath(root, path)
+    for (const { full, path, relative } of await collectDocumentSourcePaths({ ...kb, config: { sources: [source] } }, ctx)) {
       const raw = await readSource(full, ctx)
       const ref =
         source.type === 'upload'
-          ? path
-          : [source.repo ?? source.path, path].filter(Boolean).join('/')
-      result.push({ ...parseDocument(raw, ref || root), path: manifestPath(kb, ctx, full), hash: sha256(raw) })
+          ? relative
+          : [source.repo ?? source.path, relative].filter(Boolean).join('/')
+      result.push({ ...parseDocument(raw, ref || full), path, hash: sha256(raw) })
     }
   }
   return result

@@ -1,4 +1,4 @@
-import type { KnowledgeBase, KnowledgeEvalCase, KnowledgeIntent, KnowledgeMissDiagnosis } from '@taktflow/core'
+import type { KnowledgeBase, KnowledgeBaseSummary, KnowledgeEvalCase, KnowledgeIntent, KnowledgeMissDiagnosis } from '@taktflow/core'
 import {
   AlertTriangle,
   ArrowDownWideNarrow,
@@ -14,6 +14,7 @@ import {
   LoaderCircle,
   Network,
   PlugZap,
+  Rocket,
   SearchX,
   type LucideIcon,
 } from 'lucide-react'
@@ -36,6 +37,16 @@ export const KB_STATUS: Record<KnowledgeBase['status'], StatusMeta> = {
   ready: { label: '可用', tone: 'success', icon: CircleCheck },
   stale: { label: '已过期', tone: 'stale', icon: Clock },
   error: { label: '出错', tone: 'failed', icon: AlertTriangle },
+}
+
+/**
+ * 列表 / 详情 / 绑定里显示的状态：构建中优先；后端在"有没发布的候选版本"时也记为 stale，
+ * 来源没变（staleDocs 为 0）时显示"待发布"，不说"已过期"。
+ */
+export function kbStatusMeta(b: Pick<KnowledgeBaseSummary, 'status' | 'version' | 'candidateVersion' | 'staleDocs'>, running?: boolean): StatusMeta {
+  if (running) return KB_STATUS.building
+  if (b.status === 'stale' && !b.staleDocs && b.candidateVersion !== undefined && b.candidateVersion > b.version) return { label: '待发布', tone: 'waiting', icon: Rocket }
+  return KB_STATUS[b.status]
 }
 
 export const INTENTS: Array<{ id: KnowledgeIntent; label: string; hint: string }> = [

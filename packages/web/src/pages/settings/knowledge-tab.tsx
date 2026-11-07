@@ -5,7 +5,7 @@ import { useAsync, useSource } from '../../api'
 import { EmptyState, ErrorState, SkeletonRows, StatusBadge, toast, useFlashRows, useStagger } from '../../components/ui'
 import { Link } from '../../lib/router'
 import { KindGlyph } from '../knowledge/card'
-import { INTENTS, KB_STATUS, kindMeta } from '../knowledge/meta'
+import { INTENTS, kbStatusMeta, kindMeta } from '../knowledge/meta'
 import { MigrateCard } from '../knowledge/migrate-card'
 import '../knowledge/knowledge.css'
 
@@ -42,7 +42,7 @@ function BindingRow({ b, base, roles, first, last, onPatch, onMove, className, s
             {name}
           </Link>
           <span className="faint">{base ? kindMeta(base.kind).label : b.baseId}</span>
-          {base && <StatusBadge subtle meta={KB_STATUS[base.status]} />}
+          {base && <StatusBadge subtle meta={kbStatusMeta(base)} />}
           {base && !base.version && <span className="kb-tag" data-tone="waiting">未发布，运行时用不到</span>}
         </div>
         <div className="kb-binding-opts">

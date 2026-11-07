@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 import type { KnowledgeBaseDetail, KnowledgeBuild } from '@taktflow/core'
-import { AlertTriangle, CircleCheck, Clock, Link2, SearchX, Unplug } from 'lucide-react'
+import { AlertTriangle, CircleCheck, Clock, Link2, Rocket, SearchX, Unplug } from 'lucide-react'
 import { CountUp, EmptyState, SuggestionChips } from '../../components/ui'
 import { fmtRelative } from '../../lib/format'
 import { Link, setQuery } from '../../lib/router'
@@ -44,13 +44,16 @@ function Trend({ trend }: { trend: KnowledgeBaseDetail['usage']['trend'] }) {
   )
 }
 
-export function OverviewTab({ base, live, onBuild }: { base: KnowledgeBaseDetail; live?: KnowledgeBuild; onBuild: () => void }) {
+export function OverviewTab({ base, live, onBuild, onPublish }: { base: KnowledgeBaseDetail; live?: KnowledgeBuild; onBuild: () => void; onPublish: () => void }) {
   const u = base.usage7d
   const has = u.queries > 0
   const recall = base.lastEval?.recall10
   const items: ReactNode[] = []
   if (base.status === 'error') items.push(<Health key="err" icon={AlertTriangle} tone="failed">{base.error ?? '上次构建出错'}</Health>)
+  const pending = base.candidateVersion !== undefined && base.candidateVersion > base.version
+  if (pending) items.push(<Health key="cand" icon={Rocket} tone="waiting" action={<button type="button" className="btn btn-sm" onClick={onPublish}>去发布</button>}>候选 v{base.candidateVersion} 已构建、还没发布：{base.version ? `运行时仍在用 v${base.version}` : '运行时还没有可用版本'}。</Health>)
   if (base.staleDocs) items.push(<Health key="stale" icon={Clock} tone="stale" action={<button type="button" className="btn btn-sm" onClick={onBuild}>重新构建</button>}>{base.staleDocs} 篇文档在构建之后又变了，运行查到的可能是旧内容。</Health>)
+  else if (base.status === 'stale' && !pending) items.push(<Health key="config" icon={Clock} tone="stale" action={<button type="button" className="btn btn-sm" onClick={onBuild}>重新构建</button>}>配置或检索参数改过，现有索引还是按旧配置构建的。</Health>)
   if (has && u.emptyRate > 0.1) items.push(<Health key="empty" icon={SearchX} tone="waiting" action={<button type="button" className="btn btn-sm" onClick={() => setQuery({ tab: 'usage' })}>看失败查询</button>}>无结果率 {pct(u.emptyRate)}，偏高：可能缺文档或缺同义词。</Health>)
   if (recall !== undefined && recall < 0.8) items.push(<Health key="recall" icon={AlertTriangle} tone="waiting" action={<button type="button" className="btn btn-sm" onClick={() => setQuery({ tab: 'eval' })}>看评测</button>}>Recall@10 只有 {recall.toFixed(2)}，建议看逐用例诊断。</Health>)
   if (!base.bound) items.push(<Health key="bound" icon={Unplug} tone="skipped" action={<Link to="/settings?tab=knowledge" className="btn btn-sm">去绑定</Link>}>还没有绑定到本空间，运行时不会用到它。</Health>)

@@ -1,24 +1,14 @@
 import { useEffect } from 'react'
 import { Panel, ViewportPortal, useNodes, useReactFlow } from '@xyflow/react'
 import { Eye, MessagesSquare, Minus, PenLine, Plus, X } from 'lucide-react'
-import type { WorkflowEdit } from '@taktflow/core'
-import { literalOf } from '../../../api/workflow-edit'
 import { prefersReducedMotion } from '../../../lib/motion'
 import { openSteward, previewWorkflowProposal, type WorkflowPreview } from '../../../lib/ui-store'
-import { ghostEdits } from './ghost-edits'
+import { ghostEdits, layoutGhost, type Box } from './ghost-edits'
 import './ghost-overlay.css'
 
-interface Box {
-  x: number
-  y: number
-  w: number
-  h: number
-}
-
-const GAP = 56
-
 /**
- * workflow 提案的画布幽灵预览（docs/design/22 §1.5）：新增节点绿色虚线、删除节点红色划线、改动节点琥珀色角标。
+ * workflow 提案的画布幽灵预览（docs/design/22 §1.5）：新增节点绿色虚线框 + 新依赖绿色虚线、删除节点红色划线、
+ * 去掉的依赖红色虚线、改动节点琥珀色角标。摆位规则见 ghost-edits.ts layoutGhost。
  * 挂载：canvas/workflow-canvas.tsx 在 <ReactFlow> 内部渲染，由 WorkflowCanvasProps.ghost 传入（提案卡 previewWorkflowProposal() 写入）。
  * 位置取 React Flow 的绝对坐标（loop 内子节点也对），随画布平移缩放（ViewportPortal）。
  */
@@ -32,31 +22,8 @@ export function GhostOverlay({ preview }: { preview: WorkflowPreview }) {
     const p = n.internals.positionAbsolute
     return { x: p.x, y: p.y, w: n.measured.width ?? 220, h: n.measured.height ?? 64 }
   }
-
-  const added: Array<{ key: string; box: Box; from?: Box; title: string; kind: string }> = []
-  const removed: Array<{ id: string; box: Box }> = []
-  const changed = new Map<string, { box: Box; keys: string[] }>()
-  const touch = (id: string, key: string) => {
-    const box = boxOf(id)
-    if (!box) return
-    const c = changed.get(id) ?? { box, keys: [] }
-    if (!c.keys.includes(key)) c.keys.push(key)
-    changed.set(id, c)
-  }
-  edits.forEach((e: WorkflowEdit, i) => {
-    if (e.op === 'addNode') {
-      const anchor = (e.after && boxOf(e.after)) || (e.parent && boxOf(e.parent)) || undefined
-      const prev = added[added.length - 1]?.box
-      const base = prev ?? anchor
-      const box: Box = base ? { x: base.x + base.w + GAP, y: base.y, w: base.w, h: Math.max(56, base.h) } : { x: 0, y: -120, w: 220, h: 64 }
-      added.push({ key: `add-${i}`, box, from: base, title: literalOf<string>(e.props.title) ?? literalOf<string>(e.props.id) ?? '新节点', kind: e.kind })
-    } else if (e.op === 'removeNode') {
-      const box = boxOf(e.id)
-      if (box) removed.push({ id: e.id, box })
-    } else if (e.op === 'setProp') touch(e.id, e.key)
-    else if (e.op === 'setNeeds') touch(e.id, '依赖')
-    else if (e.op === 'moveNode') touch(e.id, '位置')
-  })
+  const needsOf = (id: string) => rf.getEdges().filter((e) => e.target === id && (e.data as { kind?: string } | undefined)?.kind === 'need').map((e) => e.source)
+  const { added, removed, changed, links } = layoutGhost(edits, boxOf, needsOf)
   const total = added.length + removed.length + changed.size
 
   // 打开预览时把涉及的节点带进视野（只在提案切换时做一次）
@@ -72,21 +39,29 @@ export function GhostOverlay({ preview }: { preview: WorkflowPreview }) {
   return (
     <>
       <ViewportPortal>
+        {links.length > 0 && (
+          <svg className="ghost-links" aria-hidden>
+            <defs>
+              <marker id="ghost-arrow-add" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0,0 L10,5 L0,10 z" />
+              </marker>
+            </defs>
+            {links.map((l) => (
+              <g key={l.key} data-tone={l.tone}>
+                <path d={l.path} markerEnd={l.tone === 'add' ? 'url(#ghost-arrow-add)' : undefined} />
+                {l.tone === 'del' && <path className="ghost-x" d={`M${l.mid.x - 5},${l.mid.y - 5} l10,10 m0,-10 l-10,10`} />}
+              </g>
+            ))}
+          </svg>
+        )}
         {added.map((a) => (
-          <div key={a.key}>
-            {a.from && (
-              <svg className="ghost-link" style={{ left: a.from.x + a.from.w, top: a.from.y + a.from.h / 2 - 6, width: a.box.x - (a.from.x + a.from.w), height: 12 }} aria-hidden>
-                <line x1="0" y1="6" x2="100%" y2="6" />
-              </svg>
-            )}
-            <div className="ghost-node ghost-add" style={{ left: a.box.x, top: a.box.y, width: a.box.w, height: a.box.h }}>
-              <span className="ghost-badge">
-                <Plus aria-hidden />
-                新增
-              </span>
-              <span className="ghost-title">{a.title}</span>
-              <span className="ghost-kind mono">{a.kind}</span>
-            </div>
+          <div key={a.key} className="ghost-node ghost-add" style={{ left: a.box.x, top: a.box.y, width: a.box.w, height: a.box.h }}>
+            <span className="ghost-badge">
+              <Plus aria-hidden />
+              新增
+            </span>
+            <span className="ghost-title">{a.title}</span>
+            <span className="ghost-kind mono">{a.kind}</span>
           </div>
         ))}
         {removed.map((r) => (

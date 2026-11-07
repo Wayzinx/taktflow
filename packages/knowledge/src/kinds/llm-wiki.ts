@@ -1,12 +1,13 @@
 import { readSource } from './source-reader.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { dirname, join, relative } from 'node:path'
+import { dirname, join } from 'node:path'
 import { mkdir, readFile } from 'node:fs/promises'
 import { listFiles, parseFrontmatter, sha256, type KnowledgeKind } from '@taktflow/core'
 import { safePath, repositoryPath } from '../store/files.js'
 import { bm25, loadIndex, makeIndex, saveIndex, splitChunks, trimHits } from './search.js'
 import { generateWiki, type WikiRuntime } from './wiki-run.js'
+import { collectMarkdownSourcePaths } from './source-paths.js'
 const execute = promisify(execFile)
 export function createWikiKind(runtime?: WikiRuntime): KnowledgeKind {
   return {
@@ -108,33 +109,28 @@ export function createWikiKind(runtime?: WikiRuntime): KnowledgeKind {
           await execute('git', ['-C', root, 'checkout', '--detach', 'HEAD'], { signal: ctx.signal })
         })
       }
-      const files = await listFiles(root, ['**/*.md'])
+      const files = await collectMarkdownSourcePaths(root, kb, ctx)
       const chunks = []
       const manifest = []
       const navigation = await readFile(await safePath(root, 'index.md'), 'utf8').catch(() => '')
       for (const file of files) {
         ctx.signal?.throwIfAborted()
-        const path = await safePath(root, file)
+        const path = file.full
         const raw = await readSource(path, ctx)
         const parsed = parseFrontmatter(raw)
-        const title = String(parsed.data.title ?? /^#\s+(.+)$/m.exec(parsed.body)?.[1] ?? file)
+        const title = String(parsed.data.title ?? /^#\s+(.+)$/m.exec(parsed.body)?.[1] ?? file.relative)
         const aliases = Array.isArray(parsed.data.aliases) ? parsed.data.aliases.map(String) : []
         for (const link of navigation.matchAll(/\[([^\]]+)\]\(([^)#]+)(?:#[^)]*)?\)/g))
-          if (link[2]?.replace(/^\.\//, '') === file) aliases.push(link[1]!)
-        const page = splitChunks(parsed.body, file, title)
+          if (link[2]?.replace(/^\.\//, '') === file.relative) aliases.push(link[1]!)
+        const page = splitChunks(parsed.body, file.relative, title)
         page.forEach((chunk, index2) => {
           const heading = chunk.title.split(' / ').at(-1)!
-          chunk.ref = `${file}#${heading
+          chunk.ref = `${file.relative}#${heading
             .toLowerCase()
             .replace(/[^\p{L}\p{N}]+/gu, '-')
             .replace(/^-|-$/g, '')}${index2 ? `-${index2}` : ''}`
         })
-        const projectRelative = relative(ctx.stores.projectDir, path)
-        const source = kb.scope === 'shared'
-          ? relative(dirname(ctx.baseDir), path)
-          : !projectRelative.startsWith('..')
-            ? projectRelative
-            : relative(ctx.baseDir, path)
+        const source = file.path
         chunks.push(...page.map((chunk2) => ({ ...chunk2, aliases, source })))
         manifest.push({ path: source, hash: sha256(raw) })
       }

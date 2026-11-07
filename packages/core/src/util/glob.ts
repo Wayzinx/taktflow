@@ -27,7 +27,8 @@ export function matchGlob(pattern: string, path: string): boolean {
 export async function listFiles(
   dir: string,
   patterns: string[],
-  options: { ignore?: string[] } = {},
+  /** limit：最多收集这么多个文件就停（用于只做计数的快速扫描）。 */
+  options: { ignore?: string[]; limit?: number } = {},
 ): Promise<string[]> {
   const ignore = (options.ignore ?? defaultIgnore).map((pattern) => {
     const trimmed = pattern.replace(/\/+$/, '')
@@ -37,6 +38,7 @@ export async function listFiles(
   const walk = async (relativeDir: string): Promise<void> => {
     const entries = await readdir(join(dir, relativeDir), { withFileTypes: true })
     for (const entry of entries) {
+      if (options.limit !== undefined && files.length >= options.limit) return
       const path = relativeDir ? `${relativeDir}/${entry.name}` : entry.name
       if (ignore.some((pattern) => matchGlob(pattern, path) ||
           (entry.isDirectory() && matchGlob(pattern, `${path}/`)))) continue

@@ -65,15 +65,35 @@
   font-size: var(--text-meta);
   color: var(--text-2);
 }
-.ghost-link {
+.ghost-links {
   position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
   overflow: visible;
   pointer-events: none;
+  animation: ghost-in var(--dur-item) var(--ease-out-soft) backwards;
 }
-.ghost-link line {
-  stroke: var(--st-success);
+.ghost-links path {
+  fill: none;
   stroke-width: 1.5;
   stroke-dasharray: 5 4;
+}
+.ghost-links [data-tone='add'] path {
+  stroke: var(--st-success);
+}
+.ghost-links [data-tone='del'] path {
+  stroke: var(--st-failed);
+}
+.ghost-links .ghost-x {
+  stroke-dasharray: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.ghost-links marker path {
+  fill: var(--st-success);
+  stroke: none;
 }
 
 .ghost-bar {

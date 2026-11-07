@@ -2,10 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, mkdir, writeFile, readFile, rename, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { performance } from 'node:perf_hooks'
 import {
   openProject,
   readKnowledgeQueries,
   migrateKnowledge,
+  sha256,
   type KnowledgeBuild,
   type KnowledgeKind,
 } from '@taktflow/core'
@@ -116,6 +118,112 @@ it('索引 manifest 使用相对路径，空间移动后不误判过期且能精
   await kb.update('docs', { retrieval: { topK: 3, budgetTokens: 2000 } }, by, '改检索参数')
   await writeFile(join(moved, 'knowledge/docs/content/doc-3.md'), '# 文档 3\n内容 3')
   expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 0 })
+})
+it('来源目录新增符合规则的文件会标记过期，删除后自动恢复', async () => {
+  const { kb, root } = await setup()
+  await mkdir(join(root, 'docs'), { recursive: true })
+  await writeFile(join(root, 'docs/a.md'), '# A\n内容')
+  await kb.create(
+    { id: 'docs', name: '规则', kind: 'rag', config: { sources: [{ type: 'path', path: 'docs' }] } },
+    by,
+    '新建',
+  )
+  expect((await built(kb, 'docs')).status).toBe('succeeded')
+  await kb.publish('docs', { by, reason: '发布' })
+
+  await writeFile(join(root, 'docs/b.md'), '# B\n新增')
+  expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 1 })
+
+  await rm(join(root, 'docs/b.md'))
+  expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
+})
+it('来源目录整个被删掉时详情接口照常返回，按 manifest 计过期', async () => {
+  const { kb, root } = await setup()
+  await mkdir(join(root, 'docs'), { recursive: true })
+  await writeFile(join(root, 'docs/a.md'), '# A\n内容')
+  await writeFile(join(root, 'docs/b.md'), '# B\n内容')
+  await kb.create(
+    { id: 'docs', name: '规则', kind: 'rag', config: { sources: [{ type: 'path', path: 'docs' }] } },
+    by,
+    '新建',
+  )
+  expect((await built(kb, 'docs')).status).toBe('succeeded')
+  await kb.publish('docs', { by, reason: '发布' })
+
+  await rm(join(root, 'docs'), { recursive: true })
+  expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 2 })
+})
+it('来源目录新增不符合 glob 的文件不算过期', async () => {
+  const { kb, root } = await setup()
+  await mkdir(join(root, 'docs'), { recursive: true })
+  await writeFile(join(root, 'docs/a.md'), '# A\n内容')
+  await kb.create(
+    {
+      id: 'docs',
+      name: '规则',
+      kind: 'rag',
+      config: { sources: [{ type: 'path', path: 'docs', glob: '**/*.md' }] },
+    },
+    by,
+    '新建',
+  )
+  expect((await built(kb, 'docs')).status).toBe('succeeded')
+  await kb.publish('docs', { by, reason: '发布' })
+
+  await writeFile(join(root, 'docs/ignored.png'), 'ignored')
+  expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
+})
+it('来源目录新增默认排除目录下的文件不算过期', async () => {
+  const { kb, root } = await setup()
+  await mkdir(join(root, 'docs'), { recursive: true })
+  await writeFile(join(root, 'docs/a.md'), '# A\n内容')
+  await kb.create(
+    { id: 'docs', name: '规则', kind: 'rag', config: { sources: [{ type: 'path', path: 'docs' }] } },
+    by,
+    '新建',
+  )
+  expect((await built(kb, 'docs')).status).toBe('succeeded')
+  await kb.publish('docs', { by, reason: '发布' })
+
+  await mkdir(join(root, 'docs/node_modules/pkg'), { recursive: true })
+  await writeFile(join(root, 'docs/node_modules/pkg/ignored.md'), '# 忽略')
+  expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
+})
+it('1000 文件目录 stale 检查保持轻量', async () => {
+  const { kb, root } = await setup()
+  await mkdir(join(root, 'docs'), { recursive: true })
+  const manifest = []
+  for (let index = 0; index < 1000; index++) {
+    const content = `# 文档 ${index}\n内容`
+    await writeFile(join(root, `docs/doc-${index}.md`), content)
+    manifest.push({ path: `docs/doc-${index}.md`, hash: sha256(content) })
+  }
+  const created = await kb.create(
+    { id: 'docs', name: '规则', kind: 'rag', config: { sources: [{ type: 'path', path: 'docs' }] } },
+    by,
+    '新建',
+  )
+  await mkdir(join(root, '.takt/knowledge/docs/v1/index'), { recursive: true })
+  await writeFile(
+    join(root, '.takt/knowledge/docs/v1/index/index.json'),
+    JSON.stringify({ chunks: [], terms: {}, lengths: [], manifest }),
+  )
+  await writeFile(
+    join(root, 'knowledge/docs/kb.json'),
+    JSON.stringify({
+      ...created,
+      status: 'ready',
+      version: 1,
+      stats: { docs: 1000, chunks: 0, bytes: 0 },
+      builtAt: new Date().toISOString(),
+      publishedAt: new Date().toISOString(),
+    }),
+  )
+
+  const started = performance.now()
+  expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
+  const elapsed = performance.now() - started
+  expect(elapsed).toBeLessThan(3000)
 })
 it('旧索引中的绝对路径失效后按当前空间根重定位', async () => {
   const parent = await mkdtemp(join(tmpdir(), 'takt-kb-legacy-'))

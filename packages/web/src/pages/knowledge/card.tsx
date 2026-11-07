@@ -4,7 +4,7 @@ import { useSource } from '../../api'
 import { CountUp, StatusBadge, vtName } from '../../components/ui'
 import { fmtRelative } from '../../lib/format'
 import { Link } from '../../lib/router'
-import { KB_STATUS, kindMeta, pct, scaleText } from './meta'
+import { kbStatusMeta, kindMeta, pct, scaleText } from './meta'
 
 /** 类型图标块：色系只染图标底，运行中套节拍呼吸外环。 */
 export function KindGlyph({ kind, size = 36, live }: { kind: string; size?: number; live?: boolean }) {
@@ -54,7 +54,7 @@ function recallTone(v: number): string {
 export function KnowledgeCard({ base, className, style, onBuildEnd }: { base: KnowledgeBaseSummary; className?: string; style?: CSSProperties; onBuildEnd?: () => void }) {
   const live = useLiveBuild(base.id, base.building?.buildId, onBuildEnd)
   const running = live ? live.status === 'running' : !!base.building
-  const status = running ? KB_STATUS.building : KB_STATUS[base.status]
+  const status = kbStatusMeta(base, running)
   const stage = live?.stages.find((s) => s.status === 'running') ?? live?.stages.find((s) => s.status === 'todo')
   const progress = live ? buildProgress(live) : base.building ? base.building.done / Math.max(1, base.building.total) : 0
   const meta = kindMeta(base.kind)
