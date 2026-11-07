@@ -5,13 +5,14 @@ import { EmptyState, SkeletonRows, StatusBadge } from '../../components/ui'
 import { durationBetween, fmtCost, fmtDate, fmtDuration, fmtRelative, fmtTokens, totalTokens } from '../../lib/format'
 import { navigate } from '../../lib/router'
 import { RUN_STATUS } from '../../lib/status'
+import { isEmbedded } from '../../lib/embed'
 
 export function RunsTab({ runs }: { runs?: RunSummary[] }) {
   if (!runs) return <div className="card"><SkeletonRows rows={3} /></div>
   if (runs.length === 0)
     return (
       <div className="card">
-        <EmptyState icon={GitBranch} title="还没有运行" hint={<>在项目目录执行 <span className="mono">takt run sdlc --req &lt;REQ&gt;</span> 开始第一次运行。</>} />
+        <EmptyState icon={GitBranch} title="还没有运行" hint={isEmbedded() ? '在会话里让 Lead 开始交付，例如“开始做吧”。' : <>在项目目录执行 <span className="mono">takt run sdlc --req &lt;REQ&gt;</span> 开始第一次运行。</>} />
       </div>
     )
   return (

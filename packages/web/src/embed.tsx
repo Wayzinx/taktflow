@@ -3,7 +3,7 @@ import { DataProvider, type DataSource } from './api'
 import { AppShell } from './components/layout'
 import { TaktLoader } from './components/takt'
 import { Toaster } from './components/ui'
-import { setEmbedded } from './lib/embed'
+import { setEmbedded, setPortalRoot } from './lib/embed'
 import { createMemoryRouter, setRouter } from './lib/router'
 import { setThemeHost, useIsDark, type ThemeHost } from './lib/theme'
 import { Routes } from './routes'
@@ -28,7 +28,7 @@ export interface TaktflowEmbedProps {
 function Root() {
   const dark = useIsDark()
   return (
-    <div className="takt-root" data-embedded="" data-theme={dark ? 'dark' : 'light'}>
+    <div className="takt-root" data-embedded="" data-theme={dark ? 'dark' : 'light'} ref={setPortalRoot}>
       <AppShell variant="embedded">
         <Routes />
       </AppShell>

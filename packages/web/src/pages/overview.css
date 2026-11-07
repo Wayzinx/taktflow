@@ -99,8 +99,47 @@
     max-height: none;
   }
 }
+/* 需求表：固定布局 + 明确列宽，标题列吃剩余宽度；按表格容器宽度逐级隐藏低优先级列，标题列不会被挤成 0 */
+.req-table-wrap {
+  container: reqtable / inline-size;
+  min-width: 0;
+}
 .req-table {
   table-layout: fixed;
+}
+.req-table .col-id { width: 150px; }
+.req-table .col-owner { width: 104px; }
+.req-table .col-stage { width: 220px; }
+.req-table.compact .col-stage { width: 240px; }
+.req-table .col-current { width: 164px; }
+.req-table .col-pending { width: 56px; }
+.req-table .col-tokens { width: 72px; }
+.req-table .col-cost { width: 72px; }
+.req-table .col-updated { width: 88px; }
+.req-table .col-id .req-id-cell,
+.req-table .req-id {
+  white-space: nowrap;
+}
+.req-table .req-meta {
+  white-space: nowrap;
+  overflow: hidden;
+}
+@container reqtable (max-width: 1180px) {
+  .req-table .col-owner,
+  .req-table .col-cost { display: none; }
+}
+@container reqtable (max-width: 1000px) {
+  .req-table .col-current,
+  .req-table .col-updated { display: none; }
+}
+@container reqtable (max-width: 760px) {
+  .req-table .col-tokens { display: none; }
+  .req-table .col-stage,
+  .req-table.compact .col-stage { width: 168px; }
+}
+@container reqtable (max-width: 560px) {
+  .req-table .col-id,
+  .req-table .col-stage { display: none; }
 }
 
 /* ---------------------------------------------------------------- 待办页 */
@@ -200,4 +239,9 @@
   margin-left: -4px;
   font-size: var(--text-meta);
   color: var(--text-2);
+}
+.req-meta .req-id-cell {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
 }

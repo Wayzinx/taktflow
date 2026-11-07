@@ -50,6 +50,8 @@ export interface AsyncState<T> {
   error?: Error
   loading: boolean
   reload: () => void
+  /** 用写操作的返回值直接替换数据（不重新请求）。 */
+  set: (data: T) => void
 }
 
 export function useAsync<T>(fn: (ds: DataSource) => Promise<T>, deps: unknown[]): AsyncState<T> {
@@ -72,5 +74,5 @@ export function useAsync<T>(fn: (ds: DataSource) => Promise<T>, deps: unknown[])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ds, v, tick, key])
   const fresh = state.key === key
-  return { data: fresh ? state.data : undefined, error: fresh ? state.error : undefined, loading: !fresh || state.loading, reload: () => setTick((t) => t + 1) }
+  return { data: fresh ? state.data : undefined, error: fresh ? state.error : undefined, loading: !fresh || state.loading, reload: () => setTick((t) => t + 1), set: (data: T) => setState({ key, data, loading: false }) }
 }

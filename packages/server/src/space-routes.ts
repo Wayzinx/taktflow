@@ -23,6 +23,16 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
   add('PATCH', '/api/space/repos/:repoId', write('space.repo.update'))
   add('POST', '/api/space/repos/:repoId/sync', write('space.repo.sync'))
   add('PUT', '/api/space/files', write('space.file.edit'))
+  // 可视化配置（docs/design/21）；删除用 POST …/delete（CORS 只放行了 GET/POST/PUT/PATCH）。
+  add('GET', '/api/space/settings', read('space.settings'))
+  add('GET', '/api/space/revisions', read('space.file.revisions'))
+  add('POST', '/api/space/revisions/rollback', write('space.file.rollback'))
+  add('PATCH', '/api/space/config', write('space.config.update'))
+  add('PUT', '/api/space/agents/:role', write('space.agent.save'))
+  add('POST', '/api/space/agents/:role/delete', write('space.agent.delete'))
+  add('PUT', '/api/space/skills/:name', write('space.skill.save'))
+  add('POST', '/api/space/skills/:name/delete', write('space.skill.delete'))
+  add('POST', '/api/space/upgrade', write('space.upgrade'))
   add('POST', '/api/requirements/:id/room/members', write('room.members'))
   add('POST', '/api/requirements/:id/chat', write('chat.send'))
   add('GET', '/api/requirements/:id/chat/stream', async ({ stores, params, request, response, url }) => {

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
+import { portalTarget } from '../../lib/embed'
 import { X } from 'lucide-react'
 import { usePresence } from '../../lib/motion'
 import './overlay.css'
@@ -111,6 +112,6 @@ export function Dialog({ open, onClose, title, description, children, footer, si
         {footer && <footer className="ov-foot">{footer}</footer>}
       </div>
     </div>,
-    document.body,
+    portalTarget(),
   )
 }

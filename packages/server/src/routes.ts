@@ -5,6 +5,7 @@ import type { CatalogCallbacks } from './catalog.js'
 import { m3Routes, type M3Callbacks } from './m3-routes.js'
 import { registerEvalRoutes } from './eval-routes.js'
 import { createRouter } from './router.js'
+import type { TemplateSource } from './api-settings.js'
 import { createApiCore, type ReadOp, type WriteOp, type WriteLease, type EventStream } from './api-core.js'
 import { streamEvents } from './stream.js'
 import { spaceRoutes, type LeadMention } from './space-routes.js'
@@ -21,7 +22,7 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks = {}, onLeadMention?: LeadMention, withWriteLease?: WriteLease) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & { templates?: TemplateSource } = {}, onLeadMention?: LeadMention, withWriteLease?: WriteLease) {
   const router = createRouter<Handler>()
   const add = router.add
   const core = createApiCore({ ...catalog, onAnswer, catalog, onLeadMention, withWriteLease })

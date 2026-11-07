@@ -18,3 +18,17 @@ export function setEmbedded(value: boolean): () => void {
 export function isEmbedded(): boolean {
   return embedded
 }
+
+/**
+ * 弹层（对话框、下拉菜单）挂到哪里。嵌入时样式都加了 `.takt-root` 前缀，
+ * 挂到 document.body 会丢样式和主题变量，所以挂到嵌入根节点里；独立页面挂 body。
+ */
+let portalRoot: HTMLElement | null = null
+
+export function setPortalRoot(element: HTMLElement | null): void {
+  portalRoot = element
+}
+
+export function portalTarget(): HTMLElement {
+  return portalRoot ?? document.body
+}

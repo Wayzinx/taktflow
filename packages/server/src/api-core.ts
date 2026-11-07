@@ -3,6 +3,7 @@ import type { WorkflowStore } from '@taktflow/workflow-source'
 import { workflowAccess } from './workflow-access.js'
 import { readSpace, writeSpace, type SpaceReadOp, type SpaceWriteOp, type LeadMention } from './api-space.js'
 import { readWorkflow, writeWorkflow, type WorkflowReadOp, type WorkflowWriteOp } from './api-workflow.js'
+import { readSettings, writeSettings, SETTINGS_WRITE_OPS, type SettingsReadOp, type SettingsWriteOp, type TemplateSource } from './api-settings.js'
 import { isUtf8 } from 'node:buffer'
 import {
   AttentionStaleError, buildRunGraph, createInsights, loadRunGraph, markArtifactEdited,
@@ -21,9 +22,9 @@ export { ApiError }
 export type ReadOp =
   | 'project' | 'requirements' | 'requirement' | 'artifacts' | 'artifact' | 'comments'
   | 'trace' | 'metrics' | 'runs' | 'run' | 'events' | 'node' | 'audit' | 'attention'
-  | 'harnesses' | 'models' | M3ReadOp | SpaceReadOp | WorkflowReadOp
+  | 'harnesses' | 'models' | M3ReadOp | SpaceReadOp | WorkflowReadOp | SettingsReadOp
 
-export type WriteOp = 'artifact.edit' | 'comment.add' | 'attention.answer' | M3WriteOp | SpaceWriteOp | WorkflowWriteOp
+export type WriteOp = 'artifact.edit' | 'comment.add' | 'attention.answer' | M3WriteOp | SpaceWriteOp | WorkflowWriteOp | SettingsWriteOp
 
 export interface ApiCore {
   chat(stores: ProjectStores, id: string, cursor: number | undefined, signal: AbortSignal): EventStream<RoomMessage>
@@ -42,6 +43,8 @@ export interface ApiCoreOptions extends M3Callbacks {
   onLeadMention?: LeadMention
   /** 单写者：所有写操作和答复后的 onAnswer 都在这里面执行；不传则直接执行。 */
   withWriteLease?: WriteLease
+  /** 新建流程与空间升级用的模板（docs/design/21）；不传时这两个操作返回 501。 */
+  templates?: TemplateSource
 }
 
 /** 事件流在历史读取完成前的就绪信号，HTTP SSE 用它保留"读失败返回 JSON 错误"的行为。 */
@@ -93,6 +96,8 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
         case 'eval.scorecards': case 'eval.cases': case 'eval.runs': case 'eval.run': case 'eval.output': case 'defects': case 'defect':
           return readM3(stores, op, params, actor, registry)
         case 'space': return readSpace(stores, op, params, () => getWorkflow(stores).list())
+        case 'space.settings': case 'space.file.revisions':
+          return readSettings({ stores, store: getWorkflow(stores), templates: options.templates }, op, params)
         case 'space.file': case 'reviews': case 'chat':
           return readSpace(stores, op, params)
         case 'room': {
@@ -195,7 +200,7 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
 
   async function dispatchWrite(stores: ProjectStores, op: WriteOp, params: Record<string, string | undefined>, body: unknown, actor: Actor): Promise<unknown> {
     if (!['command.run', 'route.preview'].includes(op)) {
-      const role = op === 'space.members' ? 'owner' : ['space.repo.add', 'space.repo.update', 'space.repo.sync', 'space.file.edit'].includes(op) ? 'maintainer' : 'member'
+      const role = op === 'space.members' ? 'owner' : ['space.repo.add', 'space.repo.update', 'space.repo.sync', 'space.file.edit', ...SETTINGS_WRITE_OPS].includes(op) ? 'maintainer' : 'member'
       try { requireRole(stores, actor, role, op) } catch (error) { throw new ApiError(403, errorMessage(error)) }
     }
     switch (op) {
@@ -211,6 +216,9 @@ export function createApiCore(options: ApiCoreOptions = {}): ApiCore {
         return writeSpace({ stores, params, input: await inputOf(body), author: actor }, op, onMessage)
       case 'workflow.edit': case 'workflow.source.replace': case 'workflow.layout': case 'workflow.rollback':
         return writeWorkflow(getWorkflow(stores), op, params, await inputOf(body), actor)
+      case 'space.config.update': case 'space.agent.save': case 'space.agent.delete': case 'space.skill.save': case 'space.skill.delete':
+      case 'space.file.rollback': case 'workflow.create': case 'workflow.meta': case 'workflow.delete': case 'space.upgrade':
+        return writeSettings({ stores, store: getWorkflow(stores), templates: options.templates }, op, params, await inputOf(body), actor)
       case 'artifact.edit': {
         await requirement(stores, params.id!)
         const path = artifactPath(params.path)

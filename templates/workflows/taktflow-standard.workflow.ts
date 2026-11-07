@@ -8,7 +8,7 @@ import { integrate } from './taktflow-standard.integration.js'
 import { codeWasFixed, converged, expandTask, freezeBaseline, qualityReport, repairPrompt, runCases, traceCoverage } from './taktflow-standard.hooks.js'
 
 export default defineWorkflow({
-  id: 'taktflow-standard', title: '作者版标准交付流水线', version: '0.3.0',
+  id: 'taktflow-standard', title: '标准交付流水线（完整）', version: '0.3.0',
   tiers: ['T2', 'T3'], useWhen: '多个模块或仓库需要设计、测试与跨职责评审的交付；共享路径按顺序实现，互不重叠才并行。',
   leadInstructions: '主动推进；必须询问时一次只问一个最高优先级问题，给推荐选项和影响。任何通过必须有证据。',
   dynamicRules: ['路径重叠时将研发任务串行', '预算耗尽时请求人工追加或停止'],

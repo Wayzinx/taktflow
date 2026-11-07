@@ -26,7 +26,7 @@ import type { WorkflowApi } from './mock-workflows'
 import type { DataSource } from './source'
 
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
-export type ProjectSource = Omit<DataSource, 'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi>
+export type ProjectSource = Omit<DataSource, 'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | 'host' | 'settings' | 'updateConfig' | 'saveRole' | 'deleteRole' | 'saveSkill' | 'deleteSkill' | 'fileRevisions' | 'rollbackFile' | 'createWorkflow' | 'updateWorkflowMeta' | 'deleteWorkflow' | 'upgradeSpace'>
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const LOADED = Date.now()

@@ -69,7 +69,7 @@ const repairInputs = [{ path: 'reports/verdicts/**', required: false }, { path: 
 
 export default defineWorkflow({
   id: 'sdlc',
-  title: '标准交付流水线',
+  title: '精简 SDLC',
   description: '需求理解 → 系分 → 测分 → 对齐冻结 → 研发测试 Loop → 影响面 → 质量报告',
   version: '0.2.0',
   stages: [

@@ -3,6 +3,7 @@ import type { Defect, DefectDetail } from '@taktflow/core'
 import { invalidate, useSource } from '../../api'
 import { Dialog, toast } from '../../components/ui'
 import { SEVERITY } from '../eval/labels'
+import { isEmbedded } from '../../lib/embed'
 
 const EMPTY = { title: '', description: '', severity: 'major' as Defect['severity'], acs: '', link: '', evidence: '' }
 
@@ -43,7 +44,7 @@ export function DefectForm({ open, requirementId, onClose, onCreated }: { open: 
       onClose={onClose}
       dismissible={!dirty}
       title="录入缺陷"
-      description="交付后发现的问题。也可以用 takt defect report 或命令 defect.report 录入。"
+      description={isEmbedded() ? '交付后发现的问题。也可以直接在会话里告诉 Lead。' : '交付后发现的问题。也可以用 takt defect report 或命令 defect.report 录入。'}
       footer={
         <>
           <button className="btn btn-sm" onClick={onClose}>

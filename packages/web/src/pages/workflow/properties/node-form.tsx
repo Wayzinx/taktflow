@@ -9,6 +9,7 @@ import { fieldsOf, HIDDEN_KEYS, type FieldSpec } from './schema'
 import { ChecklistEditor } from './checklist'
 import { ArbiterField, DutySelect, type ArbiterValue } from './owner-fields'
 import { ExhaustedField, NeedsField, PassField, RoutesField, siblingOptions, TargetField } from './special-fields'
+import { useSource } from '../../../api'
 
 export interface FormCtx {
   model: EditableWorkflow
@@ -84,7 +85,10 @@ function literalField(f: FieldSpec, v: unknown, fid: string, ctx: FormCtx, set: 
 }
 
 function FieldRow({ f, ctx }: { f: FieldSpec; ctx: FormCtx }) {
+  const host = useSource().host
   const { node, model, disabled, apply } = ctx
+  // 不管理成员的宿主（dsh 本机只有一个用户）不显示“负责人”职责派发。
+  if (f.type === 'duty' && host?.manageMembers === false) return null
   const fid = `wf-prop-${node.id}-${f.key}`
   const value = node.props[f.key]
   const commit = (next: EditableValue | null) => apply([{ op: 'setProp', id: node.id, key: f.key, value: next }], `修改 ${node.id}.${f.key}`)

@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
+import { portalTarget } from '../../lib/embed'
 import { Check, type LucideIcon } from 'lucide-react'
 import { usePresence } from '../../lib/motion'
 import './overlay.css'
@@ -29,11 +30,21 @@ interface Pos {
   flip: boolean
 }
 
-function place(a: DOMRect, el: HTMLElement | null, placement: Placement, offset: number, matchWidth: boolean): Pos {
+/** 弹层的定位区域：挂在 body 时是视口；嵌入时挂在嵌入根（size 容器，fixed 相对它定位）。 */
+function frame(): { x: number; y: number; w: number; h: number } {
+  const root = portalTarget()
+  if (root === document.body) return { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight }
+  const r = root.getBoundingClientRect()
+  return { x: r.left, y: r.top, w: r.width, h: r.height }
+}
+
+function place(anchorRect: DOMRect, el: HTMLElement | null, placement: Placement, offset: number, matchWidth: boolean): Pos {
+  const f = frame()
+  const a = { top: anchorRect.top - f.y, bottom: anchorRect.bottom - f.y, left: anchorRect.left - f.x, right: anchorRect.right - f.x, width: anchorRect.width }
   const w = el?.offsetWidth ?? 0
   const h = el?.offsetHeight ?? 0
-  const vw = window.innerWidth
-  const vh = window.innerHeight
+  const vw = f.w
+  const vh = f.h
   let top = placement.startsWith('top')
   // 放不下就翻到另一侧
   if (!top && a.bottom + offset + h > vh - 8 && a.top - offset - h > 8) top = true
@@ -103,7 +114,7 @@ export function Popover({ open, onClose, anchor, placement = 'bottom-start', off
     <div ref={ref} className={`ov-pop presence-pop${className ? ` ${className}` : ''}`} data-state={pos ? p.state : 'enter'} style={style} role={role} aria-label={ariaLabel}>
       {children}
     </div>,
-    document.body,
+    portalTarget(),
   )
 }
 

@@ -21,6 +21,7 @@ export { summarizeRun } from './insights/run.js'
 export { summarizeUsage } from './insights/usage.js'
 export { FsInsights, createInsights } from './insights/fs-insights.js'
 export { createEngine, type EngineOptions } from './engine/index.js'
+export { validateEnvironment } from './engine/environment-config.js'
 export { assertRunId, assertRequirementId, assertNodeId, assertArtifactPath } from './store/paths.js'
 export { withLock } from './store/locks.js'
 export {

@@ -53,6 +53,17 @@ import type {
   EvalRunRequest,
   NodeScorecard,
   Viewer,
+  HostCapabilities,
+  RoleSaveRequest,
+  SkillSaveRequest,
+  SpaceConfigPatch,
+  SpaceFileRevision,
+  SpaceRevisionKind,
+  SpaceRoleSettings,
+  SpaceSettings,
+  SpaceSkillSettings,
+  SpaceUpgradePlan,
+  WorkflowCreateRequest,
 } from '@taktflow/core'
 
 export type SpaceFileKind = SpaceFile['kind']
@@ -224,6 +235,26 @@ export interface DataSource {
   rollbackWorkflow(id: string, body: { rev: string; reason: string }): Promise<WorkflowDocument>
   /** workflow 文件被修改（人、Lead 或 Agent）时到达；包括自己的保存。 */
   subscribeWorkflow(id: string, onChange: (e: WorkflowChangedEvent) => void): () => void
+
+  // ---- 可视化配置（docs/design/21），作用于当前空间；写操作 reason 必填
+  /** 宿主能力：嵌入 dsh 时由插件提供；不提供时按独立 Web 处理（管理 harness / 模型 / 成员）。 */
+  readonly host?: HostCapabilities
+  settings(): Promise<SpaceSettings>
+  updateConfig(patch: SpaceConfigPatch, reason: string): Promise<SpaceSettings>
+  saveRole(role: string, body: RoleSaveRequest): Promise<SpaceRoleSettings>
+  /** 被流程节点使用时 409（detail.references 列出使用位置）。 */
+  deleteRole(role: string, reason: string): Promise<{ role: string; deleted: true }>
+  saveSkill(name: string, body: SkillSaveRequest): Promise<SpaceSkillSettings>
+  deleteSkill(name: string, reason: string): Promise<{ name: string; deleted: true }>
+  /** 角色 / 技能 / 配置文件的修订，新的在前；kind 为 config 时不需要 name。 */
+  fileRevisions(kind: SpaceRevisionKind, name?: string): Promise<SpaceFileRevision[]>
+  rollbackFile(kind: SpaceRevisionKind, name: string | undefined, rev: string, reason: string): Promise<{ kind: SpaceRevisionKind; name: string; rev: string }>
+  createWorkflow(body: WorkflowCreateRequest): Promise<{ id: string; file: string }>
+  /** 改标题和 / 或设为默认流程。 */
+  updateWorkflowMeta(id: string, body: { title?: string; default?: true; reason: string }): Promise<SpaceSettings>
+  deleteWorkflow(id: string, reason: string): Promise<{ id: string; deleted: true }>
+  /** 旧版本创建的空间补齐模板；dryRun 只返回变更清单。 */
+  upgradeSpace(dryRun: boolean, reason: string): Promise<SpaceUpgradePlan>
 
   // ---- 子 Agent 追溯（可选，dsh 插件提供；不提供时相关界面隐藏）
   agents?(runId: string, nodeId?: string): Promise<AgentTraceView[]>

@@ -1,4 +1,5 @@
 import type { WriteLease } from './api-core.js'
+import type { TemplateSource } from './api-settings.js'
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { openProject, type AttentionItem } from '@taktflow/core'
@@ -22,6 +23,8 @@ export interface ServerOptions extends CatalogCallbacks, M3Callbacks {
   host?: string
   webDir?: string
   onAnswer?: (item: AttentionItem) => void | Promise<void>
+  /** 新建流程与空间升级用的模板；CLI 传仓库 templates/ 目录。 */
+  templates?: TemplateSource
 }
 
 export interface RunningServer { url: string; close(): Promise<void> }
@@ -106,5 +109,7 @@ export { projectCommands, attachLessons, answerAttention, routingWorkflows } fro
 export type { M3Callbacks } from './m3-routes.js'
 
 export { createApiCore, ApiError } from './api-core.js'
+export { readTemplateDir, KNOWLEDGE_KINDS, SETTINGS_WRITE_OPS } from './api-settings.js'
+export type { TemplateSource, SpaceTemplates, TemplateFile, SettingsReadOp, SettingsWriteOp } from './api-settings.js'
 export type { ApiCore, ApiCoreOptions, ReadOp, WriteOp, WriteLease, EventStream } from './api-core.js'
 export { workflowAccess } from './workflow-access.js'

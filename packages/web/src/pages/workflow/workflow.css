@@ -13,7 +13,17 @@
     grid-template-columns: 188px minmax(0, 1fr) 300px;
   }
 }
-@media (max-width: 960px) {
+/* 窄时节点面板只留图标和名称，把宽度让给画布 */
+@media (max-width: 1100px) {
+  .wf-body {
+    grid-template-columns: 140px minmax(0, 1fr) 280px;
+  }
+  .wf-body .wf-palette-hint,
+  .wf-body .wf-palette-note {
+    display: none;
+  }
+}
+@media (max-width: 820px) {
   .wf-body {
     grid-template-columns: 1fr;
     grid-template-rows: auto 520px auto;

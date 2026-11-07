@@ -1,0 +1,403 @@
+/* 设置页表单公共件（settings-kit.tsx）。 */
+.sk-section {
+  padding: var(--sp-5) var(--sp-5) var(--sp-4);
+}
+.sk-section + .sk-section {
+  border-top: 1px solid var(--divider);
+}
+.sk-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.sk-section-text {
+  flex: 1;
+  min-width: 0;
+}
+.sk-section-title {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+.sk-section-hint {
+  margin: 4px 0 0;
+  max-width: 72ch;
+  font-size: var(--text-meta);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.sk-section-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex: none;
+}
+.sk-section-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--sp-4) var(--sp-5);
+}
+
+.sk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.sk-field.wide {
+  grid-column: 1 / -1;
+}
+.sk-field-hint {
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+
+/* 标签输入 */
+.sk-tags-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.sk-tags.input {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  height: auto;
+  padding: 4px 6px;
+  cursor: text;
+}
+.sk-tag {
+  gap: 2px;
+  padding-right: 2px;
+}
+.sk-tag-x {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.sk-tag-x:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.sk-tag-x svg {
+  width: 11px;
+  height: 11px;
+}
+.sk-tags-input {
+  flex: 1;
+  min-width: 120px;
+  height: 24px;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-ui);
+}
+.sk-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sk-preset.on {
+  opacity: 0.5;
+}
+
+/* 保存条：吸底，改动后高亮 */
+.sk-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-5);
+  border-top: 1px solid var(--divider);
+  background: var(--surface);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.sk-savebar.dirty {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.sk-reason {
+  width: min(360px, 40%);
+}
+.sk-saved {
+  font-size: var(--text-meta);
+}
+
+/* 修改记录 */
+.sk-revs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.sk-rev {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+}
+.sk-rev + .sk-rev {
+  border-top: 1px solid var(--divider);
+}
+.sk-rev-main {
+  flex: 1;
+  min-width: 0;
+}
+.sk-rev-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.sk-rev-now {
+  font-size: var(--text-label);
+}
+.sk-rev-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+
+/* 告诉 Lead */
+.sk-asklead {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 6px 6px 6px var(--sp-3);
+  margin-bottom: var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.sk-asklead:focus-within {
+  border-color: var(--accent);
+}
+.sk-asklead > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--accent-text);
+}
+.sk-asklead-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  border: none;
+  outline: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-ui);
+}
+
+/* 升级提示条 */
+.sk-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border-radius: var(--radius);
+  background: var(--st-waiting-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--st-waiting) 26%, transparent);
+}
+.sk-banner > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--st-waiting);
+}
+.sk-banner-text {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.sk-banner-text ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.sk-plan {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 360px;
+  overflow: auto;
+  font-size: var(--text-meta);
+}
+.sk-plan li {
+  display: flex;
+  gap: var(--sp-2);
+}
+.sk-plan .mono {
+  color: var(--text);
+}
+
+/* 列表 + 表单的双栏（角色、技能、知识源） */
+.sk-split {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+}
+.sk-list-card {
+  position: sticky;
+  top: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(var(--viewport-h) - var(--topbar-h) - var(--sp-8));
+}
+.sk-list-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+}
+.sk-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--sp-1) var(--sp-1);
+  overflow: auto;
+}
+.sk-item-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.sk-item-chips .chip {
+  font-size: var(--text-label);
+}
+.sk-form-card {
+  min-width: 0;
+}
+.sk-form-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-5);
+  border-bottom: 1px solid var(--divider);
+}
+.sk-form-title {
+  margin: 0;
+  font-size: var(--text-title, 15px);
+  font-weight: 600;
+}
+.sk-usage {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sk-advanced {
+  padding: 0 var(--sp-5) var(--sp-4);
+}
+.sk-advanced summary {
+  cursor: pointer;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  padding: var(--sp-2) 0;
+}
+.sk-instructions.textarea {
+  min-height: 220px;
+  font-family: var(--font-mono);
+  font-size: var(--text-ui);
+  line-height: 1.6;
+}
+.sk-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-2);
+}
+.sk-choice-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sk-choice-item:hover {
+  background: var(--surface-hover);
+}
+.sk-choice-item.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.sk-choice-title {
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.sk-choice-desc {
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.sk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.sk-kv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .sk-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sk-list-card {
+    position: static;
+    max-height: 280px;
+  }
+  .sk-reason {
+    width: auto;
+    flex: 1;
+  }
+}
+/* 可点选的标签（角色挂技能） */
+button.chip.sk-pick {
+  border: 1px solid var(--border);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+}
+button.chip.sk-pick:hover {
+  background: var(--surface-hover);
+}
+button.chip.sk-pick.on {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}

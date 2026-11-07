@@ -1327,6 +1327,8 @@ export interface TaktConfig {
     teardown?: string
     /** 支持 ${ENV_NAME} 宿主变量引用，日志脱敏。 */
     env?: Record<string, string>
+    /** 宿主扩展：受控自测执行的测试命令（dsh 插件读取）。 */
+    testCommand?: string
   }
   /** 项目空间：id 用于多空间 serve 的路由。 */
   space?: { id: string }
@@ -1350,6 +1352,10 @@ export interface TaktConfig {
   roles?: Record<string, HarnessSelector>
   /** 已注册的 workflow 文件（相对项目根目录）。 */
   workflows: string[]
+  /** 宿主扩展：自主程度（dsh 插件读取；独立运行时忽略）。 */
+  autonomy?: 'full' | 'checkpoints' | 'manual'
+  /** 宿主扩展：受控自测（dsh 插件读取）。 */
+  selftest?: { timeoutMs?: number; allowedCommands?: string[] }
   knowledge?: Array<{ id: string; kind: string; options?: Record<string, unknown> }>
   /** 上下文预算（token），超过即在账本里标红并触发策略。 */
   contextBudgetTokens?: number

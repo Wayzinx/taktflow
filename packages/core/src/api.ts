@@ -107,6 +107,7 @@ import type {
   RunBudget,
   SkillRecord,
   SpaceMember,
+  TaktConfig,
   WorkflowSnapshot,
   HarnessCapabilities,
   ProviderProtocol,
@@ -316,6 +317,136 @@ export interface SpaceFile {
   name: string
   path: string
   content: string
+}
+
+// ------------------------------------------------------------ 可视化配置（docs/design/21）
+
+/** 自主程度：full 全部交给 AI（交叉评审代替人工）；checkpoints 关键节点人审；manual 全部按流程等人。宿主扩展字段。 */
+export type Autonomy = 'full' | 'checkpoints' | 'manual'
+
+/** 设置页可编辑的配置子集；写入走 `space.config.update` 的白名单。 */
+export interface SpaceConfigSettings {
+  autonomy?: Autonomy
+  defaultWorkflow?: string
+  environment?: NonNullable<TaktConfig['environment']> & { testCommand?: string }
+  selftest?: { timeoutMs?: number; allowedCommands?: string[] }
+  budget?: RunBudget
+  knowledge: Array<{ id: string; kind: string; options?: Record<string, unknown> }>
+}
+
+export interface SpaceRoleSettings extends AgentProfile {
+  /** 相对空间根的文件路径。 */
+  file: string
+  /** 文件内容 sha256，保存时作为 baseHash 防止覆盖别人的修改。 */
+  hash: string
+  /** 哪些流程节点用到这个角色（按源码字面量统计，代码值里的引用统计不到）。 */
+  usedBy: Array<{ workflow: string; node: string }>
+}
+
+export interface SpaceSkillSettings {
+  name: string
+  description: string
+  body: string
+  file: string
+  hash: string
+  /** 哪些角色挂了这个技能。 */
+  usedBy: string[]
+}
+
+export interface KnowledgeKindInfo {
+  kind: string
+  label: string
+  description: string
+  options: Array<{ key: string; label: string; type: 'path' | 'paths'; placeholder?: string }>
+}
+
+export interface WorkflowTemplateInfo {
+  id: string
+  title: string
+  description: string
+}
+
+export interface SpaceSettings {
+  config: SpaceConfigSettings
+  roles: SpaceRoleSettings[]
+  skills: SpaceSkillSettings[]
+  knowledgeKinds: KnowledgeKindInfo[]
+  templates: WorkflowTemplateInfo[]
+  workflows: Array<{ id: string; title: string; file: string; default: boolean; registered: boolean }>
+  /** 旧版本创建的空间：问题清单非空时提示升级（`space.upgrade`）。 */
+  layout: { legacy: boolean; issues: string[] }
+}
+
+/** 角色 / 技能 / 配置文件的一次修订。 */
+export interface SpaceFileRevision {
+  rev: string
+  parent?: string
+  author: Actor
+  reason: string
+  summary: string
+  at: string
+}
+
+export type SpaceRevisionKind = 'agent' | 'skill' | 'config'
+
+export interface SpaceUpgradePlan {
+  legacy: boolean
+  changes: Array<{ kind: 'add-file' | 'register-workflow' | 'drop-workflow' | 'set-paths' | 'set-default'; target: string; detail: string }>
+  applied: boolean
+}
+
+/** `space.config.update` 的 patch：只含要改的字段；值为 null 表示删除该字段（回到默认）。 */
+export type SpaceConfigPatch = {
+  [K in keyof Omit<SpaceConfigSettings, 'knowledge'>]?: SpaceConfigSettings[K] | null
+} & { knowledge?: SpaceConfigSettings['knowledge'] | null }
+
+/** `space.agent.save`：表单字段（未出现的字段保持原样）。model 为 null / 空串表示跟随宿主默认。 */
+export interface RoleSaveRequest {
+  profile: {
+    title?: string
+    description?: string
+    skills?: string[]
+    writeScope?: string[]
+    readScope?: string[] | null
+    model?: string | null
+    allowBash?: boolean | null
+  }
+  instructions?: string
+  create?: boolean
+  /** 新建时从哪个角色复制（其余字段与正文沿用）。 */
+  copyFrom?: string
+  /** 编辑时读到的文件 hash；与当前不一致返回 409。 */
+  baseHash?: string
+  reason: string
+}
+
+export interface SkillSaveRequest {
+  description: string
+  body?: string
+  create?: boolean
+  baseHash?: string
+  reason: string
+}
+
+export interface WorkflowCreateRequest {
+  id: string
+  title?: string
+  from: { template: string } | { workflow: string }
+  reason: string
+}
+
+/** 宿主能力（docs/design/21）：嵌入 dsh 时由插件的数据源提供。 */
+export interface HostCapabilities {
+  kind: 'standalone' | 'dsh'
+  /** 是否在面板里管理 harness 与模型；dsh 为 false（用 App 的）。 */
+  manageRuntime: boolean
+  /** 是否管理成员与职责；dsh 为 false（本机只有一个用户）。 */
+  manageMembers: boolean
+  /** 角色可选的模型；不提供时角色表单只显示“跟随宿主”。 */
+  models?: () => Promise<Array<{ id: string; label: string }>>
+  /** 把一句话交给当前空间的 Lead；返回会话 id，便于打开。 */
+  askLead?: (text: string, context?: { page: string; target?: string }) => Promise<{ sessionId: string }>
+  openSession?: (sessionId: string) => void
 }
 
 // ------------------------------------------------------------ workflow 协同编辑

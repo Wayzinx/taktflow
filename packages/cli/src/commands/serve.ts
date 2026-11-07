@@ -1,9 +1,9 @@
 import { createWriteLeaseHook, type WriteLeaseHook } from '../lease.js'
 import { access } from 'node:fs/promises'
-import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
+import { discoverSpaces, createServer, readTemplateDir, type LeadMention, type ServerOptions } from '@taktflow/server'
 import type { AttentionItem, ProjectStores } from '@taktflow/core'
 import { createPrinter } from '../output.js'
-import { engineDependencies, loadRuntime, webDir, type ProjectContext } from '../project.js'
+import { engineDependencies, loadRuntime, templatesDir, webDir, type ProjectContext } from '../project.js'
 import { serializeRun } from '../resume-lock.js'
 import { ActiveRun, resumeOnce, runWithDrain } from './run.js'
 import { createRuntimeCatalog } from '../catalog.js'
@@ -175,6 +175,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
   }
   const serverOptions: ServerOptions = {
     withWriteLease,
+    templates: () => readTemplateDir(templatesDir),
     onLeadMention: options.onLeadMention,
     onSpaceLeadMention: options.onSpaceLeadMention ?? (options.onLeadMention
       ? (_, id, message) => options.onLeadMention!(id, message)

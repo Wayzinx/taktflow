@@ -5,6 +5,7 @@ import { createProjectMock, type ProjectSource } from './mock'
 import { createMockDb, type MockDb } from './mock-data'
 import { createMockSpaces, fakeHead, type MockSpace } from './mock-space'
 import { createMockWorkflows, type WorkflowApi } from './mock-workflows'
+import { createMockConfig } from './mock-config'
 import type { DataSource } from './source'
 
 const clone = <T,>(v: T): T => structuredClone(v)
@@ -150,8 +151,10 @@ export function createMockSource(): DataSource {
       }),
   }
 
+  const configApi = createMockConfig(current, () => withSpace((sp) => workflowsOf(sp).workflows()))
+
   // 所有需求 / 运行类接口按当前空间转发；方法在调用时取空间，切换空间不需要重建数据源
-  return new Proxy({ mock: true, ...spaceApi, ...workflowApi } as DataSource, {
+  return new Proxy({ mock: true, host: { kind: 'standalone', manageRuntime: true, manageMembers: true }, ...spaceApi, ...workflowApi, ...configApi } as DataSource, {
     get(target, key: string) {
       if (key in target) return target[key as keyof DataSource]
       const p = project() as unknown as Record<string, unknown>

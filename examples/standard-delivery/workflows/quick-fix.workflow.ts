@@ -2,7 +2,7 @@ import { agent, defineWorkflow, gate, review } from '@taktflow/core'
 import { runQuickTests } from './quick-fix.hooks.js'
 
 export default defineWorkflow({
-  id: 'quick-fix', title: '轻量改动交付', version: '1.0.0', tiers: ['T0', 'T1'],
+  id: 'quick-fix', title: '轻量改动', version: '1.0.0', tiers: ['T0', 'T1'],
   useWhen: '给定明确改动的 T0，或仅涉及一个模块、目录或仓库的 T1；保留独立代码评审和交付证据校验。',
   leadInstructions: '安全默认直接推进；只询问一个最重要的问题。先给结论，通过必须有证据。',
   stages: [{ id: 'change', title: '实现' }, { id: 'verify', title: '交付校验' }],

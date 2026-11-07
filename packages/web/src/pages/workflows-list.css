@@ -12,6 +12,23 @@
 .wf-cell-title {
   max-width: 360px;
 }
+.wf-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.wf-default {
+  font-size: var(--text-label);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.wf-table-wrap {
+  container: wftable / inline-size;
+}
+@container wftable (max-width: 760px) {
+  .wf-col-rev { display: none; }
+}
 .wf-title {
   display: block;
   font-weight: 500;
@@ -59,9 +76,6 @@
 .wf-table tbody tr:hover .wf-cell-go svg {
   color: var(--text);
   transform: translateX(2px);
-}
-.wf-page {
-  max-width: 1120px;
 }
 .wf-page-foot {
   margin: var(--sp-3) 0 0;

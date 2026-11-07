@@ -5,6 +5,7 @@ import { ApiError as HttpError } from './errors.js'
 import { integer, text } from './validation.js'
 import { atomicWrite, auditSpace, changeConfig, members, repoBinding, repoManager, spaceDetail, spaceFile } from './space.js'
 import { requirement } from './read-model.js'
+import { editSpaceFile } from './api-settings.js'
 
 export type LeadMention = (requirementId: string, message: RoomMessage) => void | Promise<void>
 export type SpaceReadOp = 'space' | 'space.file' | 'reviews' | 'room' | 'chat'
@@ -73,8 +74,7 @@ export async function writeSpace({ stores, params, input, author }: Context, op:
       const content = text(input.content, 'content', true)
       const reason = text(input.reason, 'reason')
       const file = await spaceFile(stores, params.kind ?? null, params.name ?? null)
-      await auditSpace(stores, author, reason, `编辑 ${file.path}`)
-      await atomicWrite(join(stores.projectDir, file.path), content)
+      await editSpaceFile(stores, file.kind, file.name, join(stores.projectDir, file.path), content, author, reason)
       return { ...file, content }
     }
     case 'room.members': {

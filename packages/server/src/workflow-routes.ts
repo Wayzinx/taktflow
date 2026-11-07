@@ -19,6 +19,9 @@ export function workflowRoutes(add: (method: string, path: string, handler: Hand
   add('PUT', '/api/workflows/:id/source', write('workflow.source.replace'))
   add('PUT', '/api/workflows/:id/layout', write('workflow.layout'))
   add('POST', '/api/workflows/:id/rollback', write('workflow.rollback'))
+  add('POST', '/api/workflows', write('workflow.create'))
+  add('PATCH', '/api/workflows/:id/meta', write('workflow.meta'))
+  add('POST', '/api/workflows/:id/delete', write('workflow.delete'))
   add('GET', '/api/workflows/:id/stream', async ({ stores, params, response }) => {
     await core.read(stores, 'workflow', { id: safeId(params.id!) })
     liveStream(response, connections, (send, fail) => {

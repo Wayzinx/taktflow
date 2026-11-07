@@ -211,6 +211,11 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
   function focusStage(instance: ReactFlowInstance<FlowNode>, animate: boolean) {
     const sel = selected ? detail.graph.nodes.find((n) => n.id === selected) : undefined
     const active = stages.find((s) => s.status === 'running' || s.status === 'waiting_human' || s.status === 'failed')
+    // 已结束且阶段不多的运行：直接看全貌；否则聚焦当前 / 选中的阶段（大流程全貌会缩到看不清）
+    if (!sel && !active && stages.length <= 6) {
+      void instance.fitView({ padding: { top: `${PANEL_CLEARANCE}px`, bottom: '24px', left: '24px', right: '24px' }, maxZoom: 1, minZoom: 0.3, duration: animate ? 400 : 0 })
+      return
+    }
     const loopStage = detail.graph.nodes.find((n) => n.kind === 'loop')?.stage
     const stageId = sel?.stage ?? active?.id ?? loopStage ?? stages[stages.length - 1]?.id
     const ids = stageId ? (layout.stageNodes.get(stageId) ?? []) : []

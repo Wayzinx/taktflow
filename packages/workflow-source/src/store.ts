@@ -191,6 +191,58 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
       throw new Error('workflow 持续被外部修改，请基于最新修订重试')
     })
   }
+  /**
+   * 新建流程文件 `<id>.workflow.ts`：源码里的 id 必须等于 id，校验通过才落盘并记第一个修订。
+   * extraFiles 是相对导入用到的辅助文件（如 hooks），目录里已有同名文件时不覆盖；校验失败会删掉本次新写的辅助文件。
+   */
+  async function create(id: string, request: { source: string; author: Actor; reason?: string; extraFiles?: ReadonlyArray<{ name: string; content: string }> }): Promise<WorkflowWriteResult> {
+    assertId(id)
+    return withLock(dir, async () => {
+      if ((await files()).some((item) => item.id === id)) throw new Error(`workflow 已存在：${id}`)
+      const file = join(dir, `${id}.workflow.ts`)
+      if (await readOptional(file) !== undefined) throw new Error(`workflow 文件已存在：${id}.workflow.ts`)
+      const parsed = parseWorkflowSource(request.source, file)
+      const diagnostics: WorkflowDiagnostic[] = [...parsed.diagnostics]
+      if ((parsed.model.meta.id || id) !== id) diagnostics.push({ severity: 'error', message: `源码里的 workflow id 必须是 ${id}` })
+      if (diagnostics.some((d) => d.severity === 'error')) return { error: 'validation', diagnostics }
+      await mkdir(dir, { recursive: true })
+      const written: string[] = []
+      for (const extra of request.extraFiles ?? []) {
+        if (!/^[A-Za-z0-9][\w.-]*\.ts$/.test(extra.name) || extra.name.endsWith('.workflow.ts')) throw new Error(`非法辅助文件名：${extra.name}`)
+        const target = join(dir, extra.name)
+        if (await readOptional(target) !== undefined) continue
+        await writeAtomic(target, extra.content)
+        written.push(target)
+      }
+      const temp = join(dir, `.workflow-validation-${randomUUID()}.mts`)
+      let validation
+      try {
+        await writeFile(temp, request.source, { flag: 'wx' })
+        validation = await validateWorkflowSource(temp)
+      } finally { await rm(temp, { force: true }) }
+      diagnostics.push(...validation.diagnostics)
+      if (diagnostics.some((d) => d.severity === 'error')) {
+        for (const target of written) await rm(target, { force: true })
+        return { error: 'validation', diagnostics }
+      }
+      await writeAtomic(file, request.source)
+      const saved = state(file, request.source, (await stat(file)).mtimeMs)
+      await record(saved, request.author, request.reason, '新建流程')
+      if (options.gitCommit) await commitWorkflow(file, request.author, request.reason ?? '新建流程')
+      return { id, file: relative(dirname(dir), file), source: request.source, rev: saved.rev, model: parsed.model, layout: { nodes: {} }, snapshot: validation.snapshot, diagnostics }
+    })
+  }
+  /** 删除流程文件与画布布局；修订历史保留（可从历史源码找回）。辅助文件可能被别的流程共用，不删。 */
+  async function remove(id: string): Promise<{ id: string; file: string; rev: string }> {
+    return withLock(dir, async () => {
+      const file = await locate(id)
+      await observe(file)
+      await rm(file.file)
+      await rm(join(dir, `${id}.layout.json`), { force: true })
+      watched.delete(file.file)
+      return { id, file: relative(dirname(dir), file.file), rev: file.rev }
+    })
+  }
   function watch(onChange: (event: WorkflowChangedEvent) => void, onError?: (error: unknown) => void): () => Promise<void> {
     listeners.add(onChange)
     if (onError) errorListeners.add(onError)
@@ -241,7 +293,7 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
     }
   }
   return {
-    list, get, revisions, revision, watch,
+    list, get, revisions, revision, watch, create, remove,
     edit: (id: string, request: WorkflowEditRequest & { author: Actor }) => save(id, request),
     replaceSource: (id: string, request: WorkflowSourceRequest & { author: Actor }) => save(id, request),
     rollback: async (id: string, rev: string, author: Actor, reason?: string) => {

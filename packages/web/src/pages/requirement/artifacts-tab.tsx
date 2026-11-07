@@ -8,6 +8,7 @@ import { Markdown } from '../../lib/markdown'
 import { actorName, fmtDate, fmtRelative } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
 import { ARTIFACT_KIND, ARTIFACT_KIND_ORDER } from '../../lib/status'
+import { isEmbedded } from '../../lib/embed'
 
 function fileIcon(r: ArtifactRecord) {
   if (r.mediaType.startsWith('image/')) return ImageIcon
@@ -105,10 +106,14 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
           icon={FolderOpen}
           title="公共存放区还是空的"
           hint={
-            <>
-              PRD、会议纪要、设计稿放进 <span className="mono">inputs/</span> 后，所有 Agent 都从这里取。命令行：
-              <span className="mono"> takt ws put {id} inputs/prd.md ./prd.md --kind input</span>
-            </>
+            isEmbedded() ? (
+              'PRD、会议纪要、设计稿发给 Lead（会话里贴文本或给文件路径），Lead 会放进这里，所有 Agent 都从这里取。'
+            ) : (
+              <>
+                PRD、会议纪要、设计稿放进 <span className="mono">inputs/</span> 后，所有 Agent 都从这里取。命令行：
+                <span className="mono"> takt ws put {id} inputs/prd.md ./prd.md --kind input</span>
+              </>
+            )
           }
         />
       </div>

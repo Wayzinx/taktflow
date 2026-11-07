@@ -8,7 +8,8 @@
   height: 100%;
   min-height: 0;
   overflow: hidden;
-  container-type: size;
+  /* 插件构建把只含宽度的 @media 改写成 @container takt，断点按面板宽度而不是窗口宽度 */
+  container: takt / size;
   --viewport-h: 100cqh;
   /* 不加载字体文件，跟随宿主的系统字体 */
   --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
