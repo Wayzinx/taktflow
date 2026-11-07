@@ -129,6 +129,13 @@ export function AgentTraceCard({ t, now = Date.now() }: { t: AgentTraceView; now
           <span className="mono">{t.preset.id}</span>
           <span className="faint"> · {t.preset.plugins.length} 个插件</span>
         </Fact>
+        {t.recipeKey && (
+          <Fact label="配方">
+            <button className="btn btn-ghost btn-sm mono" onClick={() => setQuery({ node: t.nodeId, dtab: 'recipe' })} title="在节点抽屉里查看配方">
+              {t.recipeKey.slice(0, 12)}
+            </button>
+          </Fact>
+        )}
         <Fact label="会话">
           <span className="mono truncate">{t.sessionId}</span>
         </Fact>

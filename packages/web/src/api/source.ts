@@ -122,6 +122,8 @@ export interface AgentTraceView {
   stopReason?: string
   finalText?: string
   error?: string
+  /** 对应的 M3 配方（node.recipe 的 recipeKey），可在节点抽屉“配方”页查看。 */
+  recipeKey?: string
 }
 
 export interface DataSource {
