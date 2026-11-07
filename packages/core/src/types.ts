@@ -52,6 +52,12 @@ export interface Requirement {
   owner?: string
   members?: string[]
   links: ExternalLink[]
+  /** 新建时写的背景、目标与验收标准（同时落盘为 inputs/prd.md）。 */
+  description?: string
+  /** 截止时间：管家据此判断 deadline 风险。 */
+  dueAt?: Timestamp
+  /** 归档时间：status 为 archived 时有值；恢复时清空并按运行记录重新推导状态。 */
+  archivedAt?: Timestamp
   createdAt: Timestamp
   updatedAt: Timestamp
 }
@@ -225,8 +231,8 @@ export interface AgentNodeDef extends BaseNodeDef {
   harness?: HarnessSelector
   /** 写权限白名单（glob，相对 projectDir）。节点结束后引擎做 diff 校验，越界即 guard.violation。 */
   writeScope?: string[]
-  /** 需要预先检索并注入的知识。 */
-  knowledge?: KnowledgeQuery[]
+  /** 知识：旧写法为预取查询数组（等价于 { prefetch, mode: 'prefetch' }）；新写法见 KnowledgeNodeSpec（docs/design/23）。 */
+  knowledge?: KnowledgeQuery[] | KnowledgeNodeSpec
   /** fresh：每次新会话（默认）；resume：续上一次同节点会话。 */
   session?: 'fresh' | 'resume'
   /** 让 agent 以 JSON 输出结构化结果。 */
@@ -741,7 +747,21 @@ export interface EventPayloads {
   'harness.usage': Usage
   'context.assembled': ContextSnapshot
   'context.compacted': CompactionRecord
-  'knowledge.query': { query: KnowledgeQuery; sources: string[]; hits: number }
+  /** queryId 之后的字段为 docs/design/23 新增：召回评测与线上监控用。 */
+  'knowledge.query': {
+    query: KnowledgeQuery
+    sources: string[]
+    hits: number
+    queryId?: string
+    bases?: Array<{ id: string; version: number }>
+    top?: Array<{ baseId?: string; ref: string; score: number; rank: number }>
+    latencyMs?: number
+    tokens?: number
+    /** prefetch：节点预取；tool：运行中 kb_query / takt kb query。 */
+    via?: 'prefetch' | 'tool'
+  }
+  /** 节点产物引用了某次查询命中的 ref（隐式相关性信号）。 */
+  'knowledge.used': { queryId: string; refs: string[]; artifact: ArtifactRef }
   'dag.expanded': Expansion
   'guard.violation': { rule: string; paths: string[]; action: 'reverted' | 'blocked' | 'flagged' }
   'review.round': { round: number; passed: boolean; verdicts: Array<{ reviewer: string; verdict: ReviewVerdict; score?: number; issues: number }> }
@@ -941,6 +961,10 @@ export interface ModelConfig {
   provider: string
   /** 厂商侧的模型 ID。 */
   id: string
+  /** chat（默认）或 embedding（知识库向量化用，走 openai 兼容 /embeddings）。 */
+  kind?: 'chat' | 'embedding'
+  /** embedding 模型的向量维度。 */
+  dimensions?: number
   contextWindow?: number
   /** 每百万 token 的价格（美元），用于成本统计。 */
   price?: { input: number; output: number; cachedInput?: number }
@@ -1044,6 +1068,18 @@ export interface KnowledgeQuery {
   /** 限定范围：模块路径、需求 ID、标签。 */
   scope?: string[]
   limit?: number
+  /** 限定知识库（KnowledgeBase.id）；不写时按空间绑定与 intent 路由。 */
+  bases?: string[]
+}
+
+/** 节点的知识声明（docs/design/23）。 */
+export interface KnowledgeNodeSpec {
+  /** 可用的知识库；不写即空间绑定的全部（再按 intent 过滤）。 */
+  bases?: string[]
+  /** 节点开始前检索并写进上下文账本。 */
+  prefetch?: KnowledgeQuery[]
+  /** prefetch：只预取；tool：只给 kb_query 工具；both：两者都有（默认 both）。 */
+  mode?: 'prefetch' | 'tool' | 'both'
 }
 
 export interface KnowledgeHit {
@@ -1056,6 +1092,13 @@ export interface KnowledgeHit {
   /** 证据等级与取证时间：过期或冲突的只当参考。 */
   evidenceLevel?: 'verified' | 'derived' | 'stale' | 'conflict'
   fetchedAt?: Timestamp
+  /** 来自哪个知识库的哪个版本（新模型的知识库才有）。 */
+  baseId?: string
+  version?: number
+  /** 合并后的名次（1 起）。 */
+  rank?: number
+  /** 分项得分：检索测试页展示，便于调参。 */
+  scores?: { bm25?: number; vector?: number; rerank?: number; rrf?: number }
 }
 
 export interface KnowledgeSource {
@@ -1309,7 +1352,7 @@ export interface LeadActionResult {
 // ============================================================ 项目配置
 
 export interface TaktConfig {
-  project: { name: string; description?: string }
+  project: { name: string; description?: string; color?: string }
   /** 项目空间：id 用于多空间 serve 的路由。 */
   space?: { id: string }
   members?: SpaceMember[]
@@ -1332,7 +1375,14 @@ export interface TaktConfig {
   roles?: Record<string, HarnessSelector>
   /** 已注册的 workflow 文件（相对项目根目录）。 */
   workflows: string[]
+  /** 旧版知识源登记（docs/design/08）。新知识库见 knowledge/<id>/kb.json 与 knowledgeBindings，旧条目可迁移。 */
   knowledge?: Array<{ id: string; kind: string; options?: Record<string, unknown> }>
+  /** 空间绑定的知识库（docs/design/23）。 */
+  knowledgeBindings?: KnowledgeBinding[]
+  /** 知识库默认值：嵌入模型（models 里 kind 为 embedding 的别名）、检索参数。 */
+  knowledgeDefaults?: { embeddingModel?: string; retrieval?: Partial<KnowledgeRetrieval> }
+  /** 管家在本空间的默认 harness（用户偏好可覆盖）。 */
+  steward?: { harness?: HarnessSelector }
   /** 上下文预算（token），超过即在账本里标红并触发策略。 */
   contextBudgetTokens?: number
   /** 插件：npm 包名或相对路径。 */
@@ -1493,3 +1543,158 @@ export interface EvalRun {
   comparison?: EvalComparison
 }
 
+
+// ============================================================ 知识库（docs/design/23）
+
+export type KnowledgeKindId = 'rag' | 'llm-wiki' | 'database' | 'api' | 'code' | 'history' | (string & {})
+
+export interface KnowledgeRetrieval {
+  topK: number
+  /** 低于此分（0–1 归一化后）的命中丢弃。 */
+  minScore?: number
+  /** 混合检索权重（rag）；没有嵌入模型时 vector 视为 0。 */
+  hybrid?: { bm25: number; vector: number }
+  /** rerank 模型别名；不写不 rerank。 */
+  rerank?: string
+  /** 一次查询写进上下文的 token 上限。 */
+  budgetTokens: number
+}
+
+export interface KnowledgeBase {
+  id: string
+  name: string
+  kind: KnowledgeKindId
+  /** 给路由器和人看：能回答什么、不能回答什么。 */
+  description: string
+  intents: KnowledgeIntent[]
+  /** space：在空间 knowledge/<id>/；shared：在 spaces 根目录 .shared/knowledge/<id>/，可被多个空间绑定。 */
+  scope: 'space' | 'shared'
+  /** 按 kind 的 configSchema 校验；密钥字段只存引用（${env:NAME} 或 secret:<name>）。 */
+  config: Record<string, unknown>
+  retrieval: KnowledgeRetrieval
+  status: 'draft' | 'building' | 'ready' | 'stale' | 'error'
+  /** 已发布版本；0 表示还没发布。运行时只用已发布版本。 */
+  version: number
+  /** 最近一次成功构建、尚未发布的版本。 */
+  candidateVersion?: number
+  builtAt?: Timestamp
+  publishedAt?: Timestamp
+  stats?: { docs: number; chunks: number; bytes: number; tables?: number; operations?: number; pages?: number }
+  /** status 为 error 时的原因。 */
+  error?: string
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  createdBy: Actor
+}
+
+export interface KnowledgeBinding {
+  baseId: string
+  scope: 'space' | 'shared'
+  enabled: boolean
+  /** 数字越小越优先（合并同分时）。 */
+  priority: number
+  /** 覆盖知识库自己的 intents。 */
+  intents?: KnowledgeIntent[]
+  /** 只允许这些角色使用；不写即全部。 */
+  roles?: string[]
+}
+
+export interface KnowledgeBuildStage {
+  id: 'parse' | 'chunk' | 'embed' | 'index' | 'snapshot' | 'generate' | (string & {})
+  title: string
+  done: number
+  total: number
+  status: 'todo' | 'running' | 'done' | 'failed' | 'skipped'
+}
+
+export interface KnowledgeBuild {
+  id: string
+  baseId: string
+  /** 本次构建产出的版本号。 */
+  version: number
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled'
+  startedAt: Timestamp
+  endedAt?: Timestamp
+  by: Actor
+  stages: KnowledgeBuildStage[]
+  /** 最近 200 行日志。 */
+  log: string[]
+  errors?: Array<{ ref: string; message: string }>
+  stats?: KnowledgeBase['stats']
+  /** llm-wiki 从代码仓库生成时，对应的 workflow 运行（可追溯、可评审）。 */
+  runId?: RunId
+}
+
+export type KnowledgeEvalSource = 'manual' | 'synthetic' | 'harvested' | 'defect'
+
+export interface KnowledgeEvalCase {
+  id: string
+  query: string
+  intent?: KnowledgeIntent
+  /** 分级相关性：3 完全相关，2 部分相关，1 沾边。 */
+  relevant: Array<{ ref: string; grade: 1 | 2 | 3 }>
+  /** 期望事实（数据库 / 接口：期望结果的关键值）。 */
+  answer?: string
+  source: KnowledgeEvalSource
+  /** 线上采集 / 合成的用例在人确认前为 candidate，不参与发布门槛。 */
+  status: 'active' | 'candidate' | 'retired'
+  createdAt: Timestamp
+  createdBy: Actor
+}
+
+export interface KnowledgeEvalMetrics {
+  n: number
+  recall5: number
+  recall10: number
+  precision5: number
+  mrr: number
+  ndcg10: number
+  /** top k 里至少一条相关的比例。 */
+  hitRate: number
+  emptyRate: number
+  latencyP50: number
+  latencyP95: number
+  tokensPerQuery?: number
+  /** database：SQL 执行成功率、结果正确率、守卫拦截次数。 */
+  sqlSuccess?: number
+  resultAccuracy?: number
+  blocked?: number
+  /** api：选对操作的比例、调用成功率。 */
+  opAccuracy?: number
+  callSuccess?: number
+}
+
+export type KnowledgeMissDiagnosis = 'ok' | 'no_doc' | 'not_retrieved' | 'low_rank'
+
+export interface KnowledgeEvalVariant {
+  id: string
+  label: string
+  /** 用哪个版本的索引；不写为候选版本（没有则已发布版本）。 */
+  version?: number
+  retrieval?: Partial<KnowledgeRetrieval>
+}
+
+export interface KnowledgeEvalRun {
+  id: string
+  baseId: string
+  setId: string
+  variants: KnowledgeEvalVariant[]
+  status: 'running' | 'done' | 'failed'
+  startedAt: Timestamp
+  endedAt?: Timestamp
+  by: Actor
+  metrics: Record<string, KnowledgeEvalMetrics>
+  perCase: Array<{ caseId: string; variant: string; firstRelevantRank?: number; found: string[]; missed: string[]; diagnosis: KnowledgeMissDiagnosis; latencyMs: number }>
+  /** 有两个变体时：第一个为基线。统计口径同 docs/design/21（成对胜负 + Wilson 区间）。 */
+  comparison?: {
+    baseline: string
+    candidate: string
+    wins: number
+    losses: number
+    ties: number
+    recall10Delta: number
+    interval?: [number, number]
+    verdict: 'better' | 'worse' | 'same' | 'inconclusive'
+  }
+  error?: string
+}

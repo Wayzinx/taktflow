@@ -17,6 +17,16 @@ import type {
   EventType,
   HarnessAdapter,
   AgentProfile,
+  KnowledgeBase,
+  KnowledgeBinding,
+  KnowledgeBuild,
+  KnowledgeEvalCase,
+  KnowledgeEvalRun,
+  KnowledgeEvalVariant,
+  KnowledgeHit,
+  KnowledgeIntent,
+  KnowledgeQuery,
+  KnowledgeRetrieval,
   KnowledgeSource,
   Lesson,
   NodeId,
@@ -185,6 +195,8 @@ export interface ProjectStores {
   chat: ChatStore
   /** 经验库（knowledge/lessons/*.md）；未启用时不传。 */
   lessons?: LessonStore
+  /** 知识库（docs/design/23）；未接入时不传，引擎退回旧知识源。 */
+  kb?: KnowledgeStore
 }
 
 /** 经验库存储：每条经验一个带 frontmatter 的 Markdown 文件，修改记 space-events。 */
@@ -250,4 +262,90 @@ export interface Engine {
 export interface Insights {
   traceGraph(requirementId: RequirementId): Promise<TraceGraph>
   metrics(requirementId: RequirementId): Promise<RequirementMetrics>
+}
+
+// ============================================================ 知识库（docs/design/23）
+
+/** 密钥：配置里只存引用（${env:NAME} 或 secret:<name>），明文在 ~/.takt/secrets.json（0600）或环境变量。 */
+export interface SecretResolver {
+  resolve(ref: string): Promise<string | undefined>
+  set(name: string, value: string): Promise<void>
+  /** 只返回名字，不返回明文。 */
+  list(): Promise<string[]>
+}
+
+export interface KnowledgeKindContext {
+  stores: ProjectStores
+  /** knowledge/<id>/（配置、上传文档、评测集）。 */
+  baseDir: string
+  /** .takt/knowledge/<id>/v<version>/（索引，可重建）。 */
+  indexDir: string
+  secrets: SecretResolver
+  /** 有嵌入模型时提供。 */
+  embed?: (texts: string[]) => Promise<number[][]>
+  signal?: AbortSignal
+}
+
+export interface KnowledgeBuildProgress {
+  stage: string
+  done: number
+  total: number
+  log?: string
+  error?: { ref: string; message: string }
+}
+
+/** 一种知识库类型（插件扩展点）。页面表单由 configSchema 生成，密钥字段标 format: 'secret'。 */
+export interface KnowledgeKind {
+  kind: string
+  title: string
+  /** 适合回答什么（新建向导的类型卡片）。 */
+  summary: string
+  example?: string
+  intents: KnowledgeIntent[]
+  configSchema: Record<string, unknown>
+  /** 不需要构建的类型（code / history / api 的实时调用）为 false。 */
+  needsBuild: boolean
+  /** 运行环境是否可用（例如缺数据库驱动）；不可用时向导里置灰并给原因。 */
+  available?(): Promise<{ ok: boolean; reason?: string }>
+  test(kb: KnowledgeBase, ctx: KnowledgeKindContext): Promise<{ ok: boolean; message: string; preview?: Array<{ title: string; ref: string; snippet: string }> }>
+  build?(kb: KnowledgeBase, ctx: KnowledgeKindContext, progress: (p: KnowledgeBuildProgress) => void): Promise<{ stats: NonNullable<KnowledgeBase['stats']> }>
+  query(kb: KnowledgeBase, q: KnowledgeQuery, ctx: KnowledgeKindContext, retrieval: KnowledgeRetrieval): Promise<KnowledgeHit[]>
+}
+
+/** 知识库存储与生命周期：配置在 knowledge/<id>/kb.json，构建产物在 .takt/knowledge/<id>/。写操作都记 space-events。 */
+export interface KnowledgeStore {
+  kinds(): KnowledgeKind[]
+  /** 本空间的知识库，加上已绑定的共享知识库。 */
+  list(): Promise<KnowledgeBase[]>
+  get(id: string): Promise<KnowledgeBase | undefined>
+  create(input: Pick<KnowledgeBase, 'name' | 'kind' | 'config'> & Partial<Pick<KnowledgeBase, 'id' | 'description' | 'intents' | 'scope' | 'retrieval'>>, by: Actor, reason: string): Promise<KnowledgeBase>
+  update(id: string, patch: Partial<Pick<KnowledgeBase, 'name' | 'description' | 'intents' | 'config' | 'retrieval'>>, by: Actor, reason: string): Promise<KnowledgeBase>
+  remove(id: string, by: Actor, reason: string): Promise<void>
+  test(id: string): Promise<{ ok: boolean; message: string; preview?: Array<{ title: string; ref: string; snippet: string }> }>
+  /** 写入上传的文档（rag / 空间内 wiki），路径相对 knowledge/<id>/content/。 */
+  upload(id: string, files: Array<{ path: string; content: Buffer | string }>, by: Actor): Promise<{ docs: number }>
+  docs(id: string): Promise<Array<{ path: string; bytes: number; updatedAt: string; indexed: boolean }>>
+  /** 后台构建，立即返回；进度用 getBuild 轮询或 onBuild 订阅。 */
+  build(id: string, by: Actor, reason: string): Promise<KnowledgeBuild>
+  getBuild(id: string, buildId: string): Promise<KnowledgeBuild | undefined>
+  builds(id: string, limit?: number): Promise<KnowledgeBuild[]>
+  cancelBuild(id: string, buildId: string, by: Actor): Promise<KnowledgeBuild>
+  onBuild(listener: (build: KnowledgeBuild) => void): () => void
+  /** 发布候选版本：先过评测门槛（docs/design/23）；force 需要 reason，进审计。 */
+  publish(id: string, input: { version?: number; by: Actor; reason: string; force?: boolean }): Promise<{ base: KnowledgeBase; gate: { pass: boolean; reasons: string[] } }>
+  /** 单库检索（检索测试页）：candidate 用候选版本。 */
+  query(id: string, q: KnowledgeQuery, opts?: { version?: 'candidate' | 'published'; retrieval?: Partial<KnowledgeRetrieval> }): Promise<{ hits: KnowledgeHit[]; latencyMs: number; tokens: number; intent: KnowledgeIntent }>
+  /** 运行时检索：按空间绑定 + intent + 角色路由多库，RRF 合并，按预算截断。 */
+  route(q: KnowledgeQuery, opts: { role?: string; bases?: string[] }): Promise<{ hits: KnowledgeHit[]; bases: Array<{ id: string; version: number }>; latencyMs: number; tokens: number }>
+  bindings(): Promise<KnowledgeBinding[]>
+  setBindings(bindings: KnowledgeBinding[], by: Actor, reason: string): Promise<KnowledgeBinding[]>
+  evalSets(id: string): Promise<Array<{ id: string; title: string; cases: KnowledgeEvalCase[] }>>
+  upsertCases(id: string, setId: string, cases: Array<Omit<KnowledgeEvalCase, 'id' | 'createdAt'> & { id?: string }>, by: Actor): Promise<KnowledgeEvalCase[]>
+  /** 合成用例（模型从文档块出题）；无模型时报错。产出 status=candidate。 */
+  synthesizeCases(id: string, setId: string, count: number, by: Actor): Promise<KnowledgeEvalCase[]>
+  /** 从 knowledge.query + knowledge.used 采集候选用例。 */
+  harvestCases(id: string, setId: string, by: Actor): Promise<KnowledgeEvalCase[]>
+  runEval(id: string, input: { setId: string; variants: KnowledgeEvalVariant[]; by: Actor }): Promise<KnowledgeEvalRun>
+  getEvalRun(id: string, runId: string): Promise<KnowledgeEvalRun | undefined>
+  evalRuns(id: string): Promise<KnowledgeEvalRun[]>
 }

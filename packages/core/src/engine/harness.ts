@@ -55,7 +55,8 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const skills = `技能清单：${profile.skills.join(', ') || '（无）'}`
     add('skill', '技能清单', skills)
     const summaries: string[] = []
-    for (const query of node.knowledge ?? []) {
+    const prefetch = Array.isArray(node.knowledge) ? node.knowledge : node.knowledge?.mode === 'tool' ? [] : node.knowledge?.prefetch ?? []
+    for (const query of prefetch) {
       const { hits, sources } = await createKnowledgeRouter(knowledge).query(query)
       await host.emit('knowledge.query', { query, sources, hits: hits.length }, node.id)
       for (const hit of hits) { add('knowledge', hit.title, hit.snippet, hit.ref); summaries.push(`${hit.ref}: ${hit.snippet}`) }

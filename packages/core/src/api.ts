@@ -71,6 +71,74 @@
  * | POST | /api/requirements/:id/defects/:defectId/attribute | 无请求体 → DefectDetail（预检 + 归因 Agent，后台执行） |
  * | POST | /api/requirements/:id/defects/:defectId/confirm   | 请求体 DefectConfirmRequest → DefectDetail |
  *
+ * —— 需求与空间增删改（docs/design/22）——
+ * | GET  | /api/server                                    | ServerInfo（是否多空间、管家是否已配置模型） |
+ * | POST | /api/requirements                              | 请求体 RequirementCreateRequest → RequirementCreateResponse |
+ * | PATCH| /api/requirements/:id                          | 请求体 RequirementUpdateRequest → RequirementSummary |
+ * | POST | /api/requirements/:id/archive                  | 请求体 { reason } → RequirementSummary（有运行中的运行时 409） |
+ * | POST | /api/requirements/:id/restore                  | 请求体 { reason } → RequirementSummary |
+ * | DELETE| /api/requirements/:id                         | 请求体 { reason } → 204（只允许没有任何运行记录的需求，否则 409） |
+ * | GET  | /api/spaces?archived=1                         | SpaceSummary[]（archived=1 时只返回已归档的） |
+ * | POST | /api/spaces                                    | 请求体 SpaceCreateRequest → SpaceSummary（单空间模式 409；id / 名称重复 409） |
+ * | PATCH| /api/spaces/:id                                | 请求体 SpaceUpdateRequest → SpaceSummary |
+ * | POST | /api/spaces/:id/archive                        | 请求体 { reason } → SpaceSummary（有运行中的需求时 409） |
+ * | POST | /api/spaces/:id/restore                        | 请求体 { reason } → SpaceSummary |
+ * | DELETE| /api/spaces/:id                               | 请求体 { confirm: <id>, reason } → 204（只允许已归档的空间） |
+ * | POST | /api/workflows/:id/convert                     | 请求体 { dryRun?, reason? } → WorkflowConvertResult（把不可编辑写法改写为 defineWorkflow） |
+ *
+ * —— 管家（docs/design/22）；按 x-takt-user 区分用户，数据在 <spaces 根>/.steward/<userId>/ ——
+ * | GET  | /api/steward/threads                           | StewardThread[] |
+ * | POST | /api/steward/threads                           | 请求体 StewardPostRequest → { thread, message }（新会话 + 第一条消息） |
+ * | GET  | /api/steward/threads/:id                       | { thread, messages: StewardMessage[], proposals: Proposal[] } |
+ * | POST | /api/steward/threads/:id/messages              | 请求体 StewardPostRequest → StewardMessage（用户消息；管家回复走 stream） |
+ * | GET  | /api/steward/threads/:id/stream                | text/event-stream，data 为 StewardStreamEvent |
+ * | POST | /api/steward/messages/:id/feedback             | 请求体 { rating, reason? } → StewardMessage |
+ * | GET  | /api/steward/proposals?status=                 | Proposal[] |
+ * | POST | /api/steward/proposals/:id/approve             | 请求体 ProposalDecisionRequest → Proposal（hash 不一致或基线变了 409，状态 stale） |
+ * | POST | /api/steward/proposals/:id/reject              | 请求体 { reason? } → Proposal |
+ * | POST | /api/steward/proposals/:id/undo                | 请求体 { reason? } → Proposal |
+ * | GET  | /api/steward/risks?space=&state=               | Risk[] |
+ * | POST | /api/steward/risks/:key/state                  | 请求体 RiskStateRequest → Risk（key 需 encodeURIComponent） |
+ * | GET  | /api/steward/digest?since=                     | Digest（since 缺省为上次查看） |
+ * | GET  | /api/steward/feed                              | StewardFeedItem[]（"动态"：汇报、风险变化、提案结果） |
+ * | GET  | /api/steward/prefs                             | StewardPrefs |
+ * | PUT  | /api/steward/prefs                             | 请求体 StewardPrefs → StewardPrefs |
+ * | GET  | /api/steward/profile                           | { content }（记忆 profile.md） |
+ * | PUT  | /api/steward/profile                           | 请求体 { content } → { content } |
+ * | GET  | /api/steward/suggestions?page=&space=&id=      | string[]（页内"让管家……"建议，最多 3 条） |
+ * | GET  | /api/steward/metrics                           | ProductMetric[]（产品健康：每个功能的效率与迭代信号） |
+ * | POST | /api/steward/events                            | 请求体 ProductEvent → 204（页面上报的交互事件：对话框打开 / 提交、建议点击、汇报打开；只存本机） |
+ * | GET  | /api/steward/stream                            | text/event-stream，data 为 StewardFeedItem（全局动态与未读数） |
+ *
+ * —— 知识库（docs/design/23）；空间内，可加 /api/s/:spaceId 前缀 ——
+ * | GET  | /api/knowledge/kinds                           | KnowledgeKindInfo[] |
+ * | GET  | /api/knowledge/bases                           | KnowledgeBaseSummary[] |
+ * | POST | /api/knowledge/bases                           | 请求体 KnowledgeCreateRequest → KnowledgeBaseSummary |
+ * | GET  | /api/knowledge/bases/:id                       | KnowledgeBaseDetail |
+ * | PATCH| /api/knowledge/bases/:id                       | 请求体 KnowledgeUpdateRequest → KnowledgeBaseSummary |
+ * | DELETE| /api/knowledge/bases/:id                      | 请求体 { reason } → 204 |
+ * | POST | /api/knowledge/bases/:id/test                  | 无请求体 → KnowledgeTestResult |
+ * | POST | /api/knowledge/bases/:id/upload                | 请求体 KnowledgeUploadRequest → { docs } |
+ * | GET  | /api/knowledge/bases/:id/docs                  | KnowledgeDoc[] |
+ * | POST | /api/knowledge/bases/:id/builds                | 请求体 { reason } → KnowledgeBuild（后台执行） |
+ * | GET  | /api/knowledge/bases/:id/builds/:buildId       | KnowledgeBuild |
+ * | GET  | /api/knowledge/bases/:id/builds/:buildId/stream | text/event-stream，data 为 KnowledgeBuild |
+ * | POST | /api/knowledge/bases/:id/builds/:buildId/cancel | 无请求体 → KnowledgeBuild |
+ * | POST | /api/knowledge/bases/:id/query                 | 请求体 KnowledgeQueryRequest → KnowledgeQueryResponse |
+ * | POST | /api/knowledge/bases/:id/publish               | 请求体 KnowledgePublishRequest → KnowledgePublishResponse（门槛未过且未 force 时 409，响应体同样是 KnowledgePublishResponse） |
+ * | GET  | /api/knowledge/bases/:id/evals                 | KnowledgeEvalSet[] |
+ * | PUT  | /api/knowledge/bases/:id/evals/:setId/cases    | 请求体 { cases } → KnowledgeEvalCase[]（新增或按 id 更新） |
+ * | POST | /api/knowledge/bases/:id/evals/:setId/synthesize | 请求体 { count } → KnowledgeEvalCase[] |
+ * | POST | /api/knowledge/bases/:id/evals/:setId/harvest  | 无请求体 → KnowledgeEvalCase[] |
+ * | GET  | /api/knowledge/bases/:id/eval-runs             | KnowledgeEvalRun[] |
+ * | POST | /api/knowledge/bases/:id/eval-runs             | 请求体 KnowledgeEvalRunRequest → KnowledgeEvalRun（后台执行，轮询） |
+ * | GET  | /api/knowledge/bases/:id/eval-runs/:runId      | KnowledgeEvalRun |
+ * | GET  | /api/knowledge/bindings                        | KnowledgeBinding[] |
+ * | PUT  | /api/knowledge/bindings                        | 请求体 { bindings, reason } → KnowledgeBinding[] |
+ * | GET  | /api/knowledge/secrets                         | string[]（只返回名字） |
+ * | PUT  | /api/knowledge/secrets/:name                   | 请求体 { value } → { name }（只写不读） |
+ * | POST | /api/knowledge/migrate                         | 请求体 { dryRun? } → KnowledgeMigration（旧 takt.config.json knowledge 条目 → kb.json） |
+ *
  * 任务卡片（RoomMessage kind=task）是只追加的：同一 taskRunId 每次状态变化追加一条，前端按 taskRunId 只显示最新一条。
  * 群聊 SSE 除 RoomMessage 外还会发 `event: lead`，data 为 LeadPresence。
  *
@@ -87,7 +155,21 @@ import type {
   EvalRun,
   EvalTarget,
   EvalVariant,
+  ExternalLink,
   FailureRecord,
+  KnowledgeBase,
+  KnowledgeBinding,
+  KnowledgeBuild,
+  KnowledgeEvalCase,
+  KnowledgeEvalRun,
+  KnowledgeEvalVariant,
+  KnowledgeHit,
+  KnowledgeIntent,
+  KnowledgeRetrieval,
+  RequirementId,
+  RunId,
+  NodeId,
+  Timestamp,
   HarnessSelector,
   NodeRecipe,
   VerdictCategory,
@@ -300,6 +382,15 @@ export interface SpaceSummary {
   description?: string
   requirements: number
   active: number
+  /** 空间色（切换器方块、空间卡片）。 */
+  color?: string
+  /** 已归档（只在 ?archived=1 的列表里出现）。 */
+  archived?: boolean
+  archivedAt?: string
+  /** 未处理风险数（管家风险引擎）。 */
+  risks?: number
+  pendingAttention?: number
+  lastActivityAt?: string
 }
 
 export interface SpaceDetail extends SpaceSummary {
@@ -635,3 +726,439 @@ export interface DefectConfirmRequest {
 
 export type { Defect, DefectAttribution, EvalCase, EvalRun, NodeRecipe }
 
+
+// ------------------------------------------------------------ 需求与空间增删改（docs/design/22）
+
+export interface ServerInfo {
+  version: string
+  /** 以 --spaces 启动时为 true，才能新建空间。 */
+  multiSpace: boolean
+  /** 单空间模式下切到多空间的建议启动命令（页面说明用）。 */
+  multiSpaceHint?: string
+  steward: { configured: boolean; harness?: string; model?: string; reason?: string }
+  /** 可用的空间起点模板。 */
+  spaceTemplates: Array<{ id: 'blank' | 'standard' | 'quick'; title: string; description: string }>
+}
+
+export interface RequirementCreateRequest {
+  title: string
+  /** 背景、目标、验收标准；写入 inputs/prd.md。 */
+  description?: string
+  id?: RequirementId
+  owner?: string
+  members?: string[]
+  links?: ExternalLink[]
+  dueAt?: string
+  /** 不填按路由（RouteDecision）选流程。 */
+  workflowId?: string
+  /** 创建后立即启动（默认 true）。 */
+  start?: boolean
+  repos?: string[]
+  budget?: RunBudget
+  /** 附件写入 inputs/<name>；文本用 utf8，二进制用 base64。 */
+  attachments?: Array<{ name: string; content: string; encoding?: 'utf8' | 'base64' }>
+  reason?: string
+}
+
+export interface RequirementCreateResponse {
+  requirement: RequirementSummary
+  route?: RouteDecision
+  /** start 为 true 且启动成功时。 */
+  runId?: RunId
+  /** 启动失败时的原因（需求已创建）。 */
+  startError?: string
+}
+
+export interface RequirementUpdateRequest {
+  title?: string
+  description?: string
+  owner?: string
+  members?: string[]
+  links?: ExternalLink[]
+  /** null 清除。 */
+  dueAt?: string | null
+  reason: string
+}
+
+export type SpaceTemplate = 'blank' | 'standard' | 'quick' | { copyFrom: string; parts: Array<'agents' | 'skills' | 'workflows' | 'knowledge' | 'models' | 'members'> }
+
+export interface SpaceCreateRequest {
+  /** 目录名，^[a-z0-9][a-z0-9-]{1,39}$。 */
+  id: string
+  name: string
+  description?: string
+  color?: string
+  template: SpaceTemplate
+  repos?: Array<{ id?: string; path?: string; url?: string; defaultBranch?: string }>
+  members?: SpaceMember[]
+  reason?: string
+}
+
+export interface SpaceUpdateRequest {
+  name?: string
+  description?: string
+  color?: string
+  reason: string
+}
+
+export interface WorkflowConvertResult {
+  ok: boolean
+  /** ok 为 false 时：确定性改写做不了的原因（可交给管家出提案）。 */
+  reason?: string
+  source?: string
+  diff?: string
+  /** dryRun 为 false 且成功时：写入后的文档。 */
+  document?: WorkflowDocument
+}
+
+// ------------------------------------------------------------ 管家（docs/design/22）
+
+export type StewardContextRef = {
+  type: 'space' | 'requirement' | 'run' | 'node' | 'workflow' | 'knowledge' | 'file'
+  spaceId?: string
+  id: string
+  /** node 所在的运行 / workflow。 */
+  parent?: string
+  label?: string
+}
+
+export interface StewardThread {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+  context?: StewardContextRef[]
+  lastMessage?: string
+  /** 有待决定的提案数。 */
+  pendingProposals?: number
+}
+
+export interface StewardToolCall {
+  id: string
+  tool: string
+  input: Record<string, unknown>
+  ok?: boolean
+  /** 一句话：查了什么、返回几条。 */
+  summary?: string
+  ms?: number
+  /** 原始结果（截断到 20KB）。 */
+  output?: unknown
+}
+
+export interface StewardCitation {
+  /** 正文里用 [n] 引用，n 为数组下标 + 1。 */
+  label: string
+  /** 站内路由，例如 /s/shop/requirements/REQ-002?tab=runs#node=test。 */
+  href: string
+  kind?: StewardContextRef['type'] | 'event' | 'attention' | 'risk'
+}
+
+export interface StewardDelegation {
+  spaceId: string
+  requirementId: RequirementId
+  /** 群聊里管家发出的那条消息。 */
+  messageId: string
+  status: 'sent' | 'answered' | 'failed'
+  reply?: string
+  at: string
+}
+
+export interface StewardMessage {
+  id: string
+  threadId: string
+  role: 'user' | 'steward' | 'system'
+  at: string
+  author?: Actor
+  /** markdown；引用写成 [1] [2]。 */
+  text: string
+  /** 思考摘要（默认折叠）。 */
+  thinking?: string
+  tools?: StewardToolCall[]
+  citations?: StewardCitation[]
+  proposalIds?: string[]
+  suggestions?: string[]
+  delegations?: StewardDelegation[]
+  context?: StewardContextRef[]
+  feedback?: { rating: 'up' | 'down'; reason?: 'wrong' | 'missed' | 'verbose' | 'bad_action' | (string & {}); at: string }
+  status?: 'streaming' | 'done' | 'error'
+  error?: string
+  /** 未配置模型时的规则回复。 */
+  offline?: boolean
+}
+
+export interface StewardPostRequest {
+  text: string
+  context?: StewardContextRef[]
+  /** 附件（文本）：作为消息上下文，不落盘。 */
+  attachments?: Array<{ name: string; content: string }>
+}
+
+export type StewardStreamEvent =
+  | { type: 'message'; message: StewardMessage }
+  | { type: 'delta'; messageId: string; text: string }
+  | { type: 'thinking'; messageId: string; text: string }
+  | { type: 'tool'; messageId: string; tool: StewardToolCall }
+  | { type: 'proposal'; proposal: Proposal }
+  | { type: 'delegation'; messageId: string; delegation: StewardDelegation }
+  | { type: 'done'; messageId: string }
+  | { type: 'error'; messageId: string; error: string }
+
+export type ProposalStep =
+  | { kind: 'command'; spaceId?: string; commandId: string; input: Record<string, unknown>; title?: string }
+  | { kind: 'workflow'; spaceId?: string; workflowId: string; baseRev: string; edits: WorkflowEdit[]; title?: string }
+  /** 只限空间内文件（角色档案、技能、知识库配置、wiki 页等），经带审计的写入口落盘。 */
+  | { kind: 'file'; spaceId?: string; path: string; baseHash?: string; content: string; title?: string }
+
+export interface Proposal {
+  id: string
+  threadId: string
+  title: string
+  summary: string
+  risk: 'low' | 'medium' | 'high'
+  steps: ProposalStep[]
+  /** steps 规范化 JSON 的 sha256；批准时必须带上。 */
+  hash: string
+  status: 'pending' | 'applied' | 'rejected' | 'failed' | 'reverted' | 'stale'
+  createdAt: string
+  createdBy: Actor
+  decidedBy?: Actor
+  decidedAt?: string
+  reason?: string
+  /** 人在批准前改过内容。 */
+  edited?: boolean
+  /** 低风险自动执行（信任档位 auto-low）。 */
+  auto?: boolean
+  /** 每步执行结果。 */
+  results?: Array<{ ok: boolean; message: string; result?: unknown }>
+  /** 可撤销的截止时间；过期或目标被他人改过后不可撤销。 */
+  undoUntil?: string
+  /** 预览：workflow 步骤的统一 diff、文件 diff、命令的人话摘要（与 steps 一一对应）。 */
+  previews?: Array<{ kind: 'diff' | 'form' | 'text'; title: string; body: string }>
+  error?: string
+}
+
+export interface ProposalDecisionRequest {
+  hash: string
+  reason?: string
+  /** 人在批准前修改过的步骤（整体替换；服务端重算 hash 并标 edited）。 */
+  steps?: ProposalStep[]
+}
+
+export type RiskKind = 'waiting-human' | 'budget' | 'stalled' | 'repeat-failure' | 'review-stuck' | 'gate-failed' | 'deadline' | 'defect-escape' | 'regression' | 'knowledge'
+
+export interface RiskAction {
+  label: string
+  /** 直接执行的命令（仍走提案）。 */
+  commandId?: string
+  input?: Record<string, unknown>
+  /** 跳转。 */
+  href?: string
+  /** 交给管家："帮我……"。 */
+  ask?: string
+}
+
+export interface Risk {
+  /** `<kind>:<space>/<requirement>/<subject>`，用来去重。 */
+  key: string
+  kind: RiskKind
+  level: 'medium' | 'high'
+  spaceId: string
+  requirementId?: RequirementId
+  runId?: RunId
+  nodeId?: NodeId
+  title: string
+  detail: string
+  evidence: Array<{ label: string; href: string }>
+  firstSeenAt: string
+  lastSeenAt: string
+  actions: RiskAction[]
+  state: 'open' | 'snoozed' | 'ignored' | 'resolved'
+  snoozedUntil?: string
+  /** 最近一次提醒时的级别（升级才再提醒）。 */
+  notifiedLevel?: 'medium' | 'high'
+}
+
+export interface RiskStateRequest {
+  state: 'open' | 'snoozed' | 'ignored'
+  until?: string
+  reason?: string
+}
+
+export interface Digest {
+  id: string
+  at: string
+  since?: string
+  /** 两句话摘要；未配置模型时由规则生成。 */
+  summary: string
+  attention: Array<{ spaceId: string; requirementId: RequirementId; requirementTitle: string; requestId: string; ask: string; since: string; href: string }>
+  risks: Risk[]
+  progress: Array<{ spaceId: string; requirementId: RequirementId; title: string; kind: 'created' | 'started' | 'stage' | 'delivered' | 'failed' | 'blocked'; from?: string; to?: string; at: string; href: string }>
+  metrics?: Array<{ spaceId: string; label: string; value: string; delta?: string }>
+}
+
+export type StewardFeedItem =
+  | { type: 'digest'; at: string; digest: Digest }
+  | { type: 'risk'; at: string; risk: Risk; change: 'new' | 'escalated' | 'resolved' }
+  | { type: 'proposal'; at: string; proposal: Proposal }
+  | { type: 'delegation'; at: string; threadId: string; delegation: StewardDelegation }
+  | { type: 'unread'; at: string; count: number }
+
+export interface StewardPrefs {
+  /** confirm：每次确认（默认）；auto-low：低风险且可撤销的提案自动执行。 */
+  trust: 'confirm' | 'auto-low'
+  /** 定时汇报，'HH:MM'，工作日。 */
+  digestTimes: string[]
+  quietHours?: { from: string; to: string }
+  watchedSpaces?: string[]
+  mutedSpaces?: string[]
+  /** 新建需求未指定空间时建在这里。 */
+  defaultSpace?: string
+  harness?: HarnessSelector
+  browserNotifications?: boolean
+}
+
+/** 页面上报的交互事件，只记录在本机 .steward/<user>/metrics.jsonl，用于 ProductMetric 统计。 */
+export interface ProductEvent {
+  type: 'dialog.open' | 'dialog.submit' | 'dialog.cancel' | 'suggestion.click' | 'digest.open' | 'digest.click' | 'risk.action' | 'palette.ask'
+  /** 例如 requirement.create、space.create、knowledge.create。 */
+  feature: string
+  spaceId?: string
+  /** dialog.submit：从打开到提交的毫秒数。 */
+  ms?: number
+  detail?: Record<string, string | number | boolean>
+}
+
+export interface ProductMetric {
+  feature: 'requirement.create' | 'steward.answer' | 'steward.proposal' | 'steward.digest' | 'workflow.edit' | 'space.create' | 'knowledge' | (string & {})
+  metric: string
+  value: number
+  unit?: '%' | 'ms' | 's' | 'count' | (string & {})
+  /** 统计窗口，例如 7d。 */
+  window: string
+  /** 最近 7 个点（按天）。 */
+  trend?: number[]
+  /** 迭代信号：这个数说明该改什么。 */
+  hint?: string
+}
+
+// ------------------------------------------------------------ 知识库（docs/design/23）
+
+export interface KnowledgeKindInfo {
+  kind: string
+  title: string
+  summary: string
+  example?: string
+  intents: KnowledgeIntent[]
+  configSchema: Record<string, unknown>
+  needsBuild: boolean
+  available: boolean
+  reason?: string
+}
+
+export interface KnowledgeBaseSummary extends KnowledgeBase {
+  /** 本空间是否已绑定。 */
+  bound: boolean
+  usage7d: { queries: number; hitRate: number; citedRate: number; emptyRate: number }
+  lastEval?: { runId: string; recall10: number; at: string }
+  /** 构建之后源又变了的文档数。 */
+  staleDocs?: number
+  building?: { buildId: string; stage: string; done: number; total: number }
+}
+
+export interface KnowledgeDoc {
+  path: string
+  bytes: number
+  updatedAt: string
+  indexed: boolean
+}
+
+export interface KnowledgeEvalSet {
+  id: string
+  title: string
+  cases: KnowledgeEvalCase[]
+}
+
+export interface KnowledgeBaseDetail extends KnowledgeBaseSummary {
+  bindings: Array<KnowledgeBinding & { spaceId: string }>
+  builds: KnowledgeBuild[]
+  evalSets: Array<{ id: string; title: string; total: number; bySource: Partial<Record<KnowledgeEvalCase['source'], number>>; candidates: number }>
+  usage: {
+    byNode: Array<{ workflowId: string; nodeId: string; queries: number; citedRate: number }>
+    recent: Array<{ at: string; requirementId?: RequirementId; runId?: RunId; nodeId?: NodeId; query: string; hits: number; cited: boolean; latencyMs: number; via?: 'prefetch' | 'tool' }>
+    trend: Array<{ date: string; queries: number; hitRate: number; emptyRate: number; citedRate: number }>
+  }
+}
+
+export interface KnowledgeCreateRequest {
+  id?: string
+  name: string
+  kind: string
+  description?: string
+  intents?: KnowledgeIntent[]
+  scope?: 'space' | 'shared'
+  config: Record<string, unknown>
+  retrieval?: Partial<KnowledgeRetrieval>
+  /** 创建后立即绑定到当前空间（默认 true）。 */
+  bind?: boolean
+  reason?: string
+}
+
+export interface KnowledgeUpdateRequest {
+  name?: string
+  description?: string
+  intents?: KnowledgeIntent[]
+  config?: Record<string, unknown>
+  retrieval?: Partial<KnowledgeRetrieval>
+  reason: string
+}
+
+export interface KnowledgeTestResult {
+  ok: boolean
+  message: string
+  preview?: Array<{ title: string; ref: string; snippet: string }>
+}
+
+export interface KnowledgeUploadRequest {
+  files: Array<{ path: string; content: string; encoding?: 'utf8' | 'base64' }>
+}
+
+export interface KnowledgeQueryRequest {
+  text: string
+  intent?: KnowledgeIntent
+  topK?: number
+  version?: 'candidate' | 'published'
+  retrieval?: Partial<KnowledgeRetrieval>
+}
+
+export interface KnowledgeQueryResponse {
+  hits: Array<KnowledgeHit & { content?: string }>
+  latencyMs: number
+  tokens: number
+  intent: KnowledgeIntent
+  /** database / api：实际执行的 SQL 或调用（检索测试页展示）。 */
+  executed?: { kind: 'sql' | 'http'; text: string; blocked?: string }
+}
+
+export interface KnowledgePublishRequest {
+  version?: number
+  reason: string
+  force?: boolean
+}
+
+export interface KnowledgePublishResponse {
+  base: KnowledgeBaseSummary
+  gate: { pass: boolean; reasons: string[]; evalRunId?: string }
+}
+
+export interface KnowledgeEvalRunRequest {
+  setId: string
+  variants: KnowledgeEvalVariant[]
+}
+
+export interface KnowledgeMigration {
+  /** 每个旧条目的迁移结果。 */
+  items: Array<{ id: string; kind: string; to?: string; ok: boolean; message: string }>
+  applied: boolean
+}
+
+export type { KnowledgeBase, KnowledgeBinding, KnowledgeBuild, KnowledgeEvalCase, KnowledgeEvalRun }

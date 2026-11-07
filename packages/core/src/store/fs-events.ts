@@ -19,7 +19,7 @@ const EVENT_TYPE_TABLE: Record<EventType, true> = {
   'guard.violation': true, log: true, 'review.round': true, 'review.response': true, 'review.exhausted': true,
   'review.arbitrated': true, 'review.disposition': true, 'rework.started': true, 'worktree.created': true, 'worktree.bootstrapped': true,
   'task.dispatched': true, 'node.checks': true, 'retry.suppressed': true, 'budget.warning': true, 'budget.exhausted': true,
-  'route.decided': true, 'node.recipe': true, 'lesson.recalled': true, 'lesson.learned': true, 'lesson.updated': true,
+  'route.decided': true, 'node.recipe': true, 'lesson.recalled': true, 'lesson.learned': true, 'lesson.updated': true, 'knowledge.used': true,
 }
 const EVENT_TYPES = new Set(Object.keys(EVENT_TYPE_TABLE))
 
