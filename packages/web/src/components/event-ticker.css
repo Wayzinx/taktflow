@@ -75,7 +75,10 @@
   border-right: 1px solid var(--divider);
 }
 .ticker-item.fresh {
-  animation: ticker-in 160ms var(--ease) both;
+  /* 新事件：从左侧轻推入场，同时底色闪一下（1.2s 淡出），一眼看出哪条是刚来的 */
+  animation:
+    ticker-in var(--dur-item) var(--ease-out-soft) both,
+    flash-row var(--dur-flash) var(--ease-out-soft) both;
 }
 @keyframes ticker-in {
   from {
@@ -104,6 +107,17 @@ button.ticker-hit {
 button.ticker-hit:hover {
   background: var(--surface-hover);
   color: var(--text);
+}
+button.ticker-hit:active {
+  background: var(--surface-active);
+}
+/* 运行中：标签前一个按 --takt 呼吸的小点（.live-ring） */
+.ticker-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-running);
+  --live-color: var(--st-running);
 }
 button.ticker-hit:focus-visible {
   outline: 2px solid var(--accent-ring);
@@ -143,6 +157,6 @@ button.ticker-hit:focus-visible {
 
 @media (prefers-reduced-motion: reduce) {
   .ticker-item.fresh {
-    animation: none;
+    animation: fade-only-in var(--dur-item) linear both;
   }
 }

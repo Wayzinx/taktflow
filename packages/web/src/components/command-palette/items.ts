@@ -1,5 +1,7 @@
 import { useMemo } from 'react'
-import { BookOpen, FileText, Inbox, LayoutDashboard, ListTodo, Monitor, Moon, Play, Settings, Sun, Workflow, type LucideIcon } from 'lucide-react'
+import { BookOpen, Boxes, FileText, Inbox, LayoutDashboard, ListTodo, Monitor, Moon, Play, Plus, Settings, Sparkles, Sun, Workflow, type LucideIcon } from 'lucide-react'
+import { isMac } from '../../lib/shortcuts'
+import { askSteward, openCreateRequirement, openCreateSpace, openSteward } from '../../lib/ui-store'
 import type { CommandInfo, RequirementSummary, RunSummary } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { fmtRelative } from '../../lib/format'
@@ -9,8 +11,8 @@ import { setTheme } from '../../lib/theme'
 import { RISK } from '../ui/reason-dialog'
 import { commandScope, SCOPE_KEY } from './schema'
 
-export type Group = '页面' | '查询' | '命令' | '需求' | '运行' | '操作'
-const GROUP_ORDER: Group[] = ['页面', '查询', '命令', '需求', '运行', '操作']
+export type Group = '页面' | '查询' | '命令' | '需求' | '运行' | '操作' | '管家'
+const GROUP_ORDER: Group[] = ['页面', '查询', '命令', '需求', '运行', '操作', '管家']
 
 export interface Item {
   id: string
@@ -59,7 +61,9 @@ const PAGES: Array<[string, string, LucideIcon, string]> = [
   ['/', '总览', LayoutDashboard, 'overview home zonglan'],
   ['/requirements', '需求列表', ListTodo, 'requirements xuqiu'],
   ['/attention', '待办', Inbox, 'attention todo daiban'],
-  ['/settings?tab=knowledge', '知识源', BookOpen, 'knowledge zhishi'],
+  ['/knowledge', '知识库', BookOpen, 'knowledge zhishi kb rag wiki'],
+  ['/steward', '管家', Sparkles, 'steward guanjia assistant agent'],
+  ['/spaces', '全部空间', Boxes, 'spaces kongjian'],
   ['/workflows', 'Workflow', Workflow, 'workflows pipeline liushuixian bianji'],
   ['/settings', '空间设置', Settings, 'settings space members repos models harness shezhi'],
   ['/settings?tab=lessons', '经验库', BookOpen, 'lessons jingyan 经验'],
@@ -122,6 +126,10 @@ export function usePaletteData(active: boolean): PaletteData {
       })
     }
     out.push(
+      { id: 'create:requirement', group: '操作', label: '新建需求', hint: 'C', icon: Plus, keywords: 'new requirement create xinjian xuqiu 新建 需求', run: () => openCreateRequirement() },
+      { id: 'create:space', group: '操作', label: '新建空间', icon: Boxes, keywords: 'new space create xinjian kongjian 新建 空间', run: () => openCreateSpace() },
+      { id: 'create:knowledge', group: '操作', label: '新建知识库', icon: BookOpen, keywords: 'new knowledge create kb 新建 知识库', run: () => navigate('/knowledge?new=1') },
+      { id: 'steward:open', group: '操作', label: '打开管家面板', hint: isMac ? '⌘J' : 'Ctrl J', icon: Sparkles, keywords: 'steward guanjia 管家 面板 dock', run: () => openSteward() },
       { id: 'theme:light', group: '操作', label: '切换到浅色主题', icon: Sun, keywords: 'theme light 浅色 主题', run: () => setTheme('light') },
       { id: 'theme:dark', group: '操作', label: '切换到深色主题', icon: Moon, keywords: 'theme dark 深色 主题', run: () => setTheme('dark') },
       { id: 'theme:system', group: '操作', label: '主题跟随系统', icon: Monitor, keywords: 'theme system 系统 主题', run: () => setTheme('system') },
@@ -139,6 +147,17 @@ export function usePaletteData(active: boolean): PaletteData {
  * 分组按组内最佳得分排序（组标题不重复），组内按得分；无输入时能带入上下文的命令排在各自组的最前。
  */
 export function filterItems(items: Item[], q: string): Item[] {
+  return withAsk(rankItems(items, q), q)
+}
+
+/** ⌘K 兜底（docs/design/22 §1.2）：有输入时最后一项是"问管家：…"，匹配不到任何命令时它就是唯一一项。 */
+function withAsk(list: Item[], q: string): Item[] {
+  const text = q.trim()
+  if (!text) return list
+  return [...list, { id: 'ask:steward', group: '管家', label: `问管家：${text}`, icon: Sparkles, keywords: text, run: () => askSteward(text) }]
+}
+
+function rankItems(items: Item[], q: string): Item[] {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean)
   const scored: Array<[Item, number]> = []
   if (!words.length) {

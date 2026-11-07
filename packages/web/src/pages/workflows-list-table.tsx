@@ -1,12 +1,14 @@
 import type { WorkflowSummary } from '@taktflow/core'
 import { ChevronRight, Lock, PencilRuler, Workflow } from 'lucide-react'
-import { EmptyState, SkeletonRows } from '../components/ui'
+import { EmptyState, SkeletonRows, useFlashRows, useStagger } from '../components/ui'
 import { fmtDate, fmtRelative } from '../lib/format'
 import { Link, navigate } from '../lib/router'
 import './workflows-list.css'
 
 /** workflow 列表：/workflows 页面和空间设置的 Workflow Tab 共用。整行可点，标题是真正的链接（键盘、新标签页）。 */
 export function WorkflowTable({ workflows }: { workflows?: WorkflowSummary[] }) {
+  const st = useStagger(workflows?.length ?? 0)
+  const flash = useFlashRows((workflows ?? []).map((w) => w.id))
   if (!workflows) return <SkeletonRows rows={3} />
   if (workflows.length === 0) {
     return (
@@ -14,13 +16,8 @@ export function WorkflowTable({ workflows }: { workflows?: WorkflowSummary[] }) 
         compact
         icon={Workflow}
         title="这个空间还没有 workflow"
-        hint={
-          <>
-            在 <span className="mono">workflows/&lt;名字&gt;.workflow.ts</span> 写好定义，再登记到{' '}
-            <span className="mono">takt.config.json</span> 的 <span className="mono">workflows</span>；或者运行{' '}
-            <span className="mono">takt init</span> 生成标准交付流水线。
-          </>
-        }
+        body="流水线决定需求怎么交付。告诉管家你们的流程，它会生成一条可以在画布上改的 workflow。"
+        stewardAsk="帮我建一条标准交付流水线：需求 → 设计 → 研发 → 测试 → 交付"
       />
     )
   }
@@ -40,8 +37,8 @@ export function WorkflowTable({ workflows }: { workflows?: WorkflowSummary[] }) 
           </tr>
         </thead>
         <tbody>
-          {sorted.map((w) => (
-            <tr key={w.id} className="clickable" onClick={(e) => !(e.target as HTMLElement).closest('a') && navigate(`/workflows/${encodeURIComponent(w.id)}`)}>
+          {sorted.map((w, i) => (
+            <tr key={w.id} className={`clickable ${st(i).className ?? ''} ${flash(w.id)}`} style={st(i).style} onClick={(e) => !(e.target as HTMLElement).closest('a') && navigate(`/workflows/${encodeURIComponent(w.id)}`)}>
               <td className="wf-cell-title">
                 <Link to={`/workflows/${encodeURIComponent(w.id)}`} className="wf-title">
                   {w.title}
@@ -57,7 +54,7 @@ export function WorkflowTable({ workflows }: { workflows?: WorkflowSummary[] }) 
                     可视化编辑
                   </span>
                 ) : (
-                  <span className="wf-mode readonly" title="定义里有画布无法还原的代码结构，只能看图或改源码">
+                  <span className="wf-mode readonly" title="定义里有画布无法还原的代码结构；打开后可以一键转换成可编辑格式，转换不了就让管家来改">
                     <Lock aria-hidden />
                     只读
                   </span>

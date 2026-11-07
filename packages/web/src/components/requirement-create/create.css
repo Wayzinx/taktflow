@@ -1,0 +1,208 @@
+/* 新建需求对话框（B 组）。只用 tokens.css 的刻度；动效都有 reduced-motion 兜底。 */
+.rc-dialog .ov-body {
+  padding-bottom: var(--sp-3);
+}
+.rc-body {
+  display: grid;
+  gap: var(--sp-3);
+}
+
+/* ---------------------------------------------------------------- 标题 */
+.rc-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.rc-title {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 2px;
+  border: none;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: border-color var(--dur-focus) var(--ease);
+}
+.rc-title::placeholder {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.rc-title:hover {
+  border-bottom-color: var(--border);
+}
+.rc-title:focus {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+.rc-link-btn {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  margin-left: var(--sp-2);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: color var(--dur-fast) var(--ease);
+}
+.rc-link-btn:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+.rc-link-btn:active {
+  opacity: 0.7;
+}
+
+/* ---------------------------------------------------------------- 文本框与附件 */
+.rc-editor {
+  position: relative;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border);
+  transition: box-shadow var(--dur-focus) var(--ease), background var(--dur) var(--ease);
+}
+.rc-editor:focus-within {
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-soft);
+}
+.rc-textarea {
+  display: block;
+  width: 100%;
+  min-height: 200px;
+  max-height: 44vh;
+  padding: var(--sp-3) var(--sp-4);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: 1.65;
+  resize: vertical;
+}
+.rc-textarea:focus {
+  outline: none;
+}
+.rc-textarea::placeholder {
+  color: var(--text-3);
+}
+.rc-editor-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  padding: var(--sp-1) var(--sp-2) var(--sp-2);
+  border-top: 1px solid var(--divider);
+}
+.rc-att-name {
+  max-width: 180px;
+}
+.rc-editor-hint {
+  margin-left: auto;
+  font-size: var(--text-meta);
+}
+.rc-drop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--sp-2);
+  border-radius: inherit;
+  border: 1.5px dashed var(--accent);
+  background: color-mix(in oklch, var(--surface) 86%, transparent);
+  color: var(--accent-text);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-pop) var(--ease-out-soft);
+}
+.rc-drop svg {
+  width: 20px;
+  height: 20px;
+}
+.rc-drop[data-on] {
+  opacity: 1;
+}
+
+/* ---------------------------------------------------------------- 管家补全验收标准 */
+.rc-ac-trigger {
+  justify-self: start;
+  color: var(--text-2);
+}
+.rc-ac {
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  padding: var(--sp-2) var(--sp-3) var(--sp-3);
+  animation: rc-rise var(--dur-pop) var(--ease-out-soft);
+}
+.rc-ac-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 28px;
+  font-size: var(--text-ui);
+  color: var(--text-2);
+}
+.rc-ac-head > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.rc-ac-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rc-ac-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 36px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  font-size: var(--text-ui);
+  animation: rc-rise var(--dur-item) var(--ease-out-soft) both;
+  transition: background var(--dur) var(--ease), opacity var(--dur) var(--ease);
+}
+.rc-ac-item.pending:hover {
+  background: var(--surface-hover);
+}
+.rc-ac-item.rejected {
+  opacity: 0.5;
+}
+.rc-ac-item.rejected .rc-ac-text {
+  text-decoration: line-through;
+}
+.rc-ac-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.5;
+}
+.rc-ac-actions {
+  display: inline-flex;
+  gap: var(--sp-1);
+  flex: none;
+}
+.rc-ac-state {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rc-ac-item.accepted .rc-ac-state {
+  color: var(--st-success);
+}
+@keyframes rc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}

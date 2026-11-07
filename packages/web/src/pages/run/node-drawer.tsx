@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { Bot, ClipboardCheck, FileInput, Fingerprint, Layers, ListChecks, ListTree, Scale, ScrollText, ShieldCheck, X } from 'lucide-react'
+import { Bot, ClipboardCheck, FileInput, Fingerprint, Layers, ListChecks, ListTree, Scale, ScrollText, ShieldCheck, Sparkles, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
-import { ErrorState, KindIcon, Skeleton, StatusBadge, Tabs, type TabDef } from '../../components/ui'
+import { ErrorState, KindIcon, Skeleton, StatusBadge, TabPanel, Tabs, type TabDef } from '../../components/ui'
+import { askSteward } from '../../lib/ui-store'
 import { setQuery, useLocation } from '../../lib/router'
 import { NODE_STATUS } from '../../lib/status'
 import { nodeLabel } from './node-label'
@@ -90,6 +91,8 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
     <aside className={`drawer${closing ? ' closing' : ''}`} style={{ width } as CSSProperties} aria-label="节点详情" inert={closing || undefined}>
       <div className="drawer-resize" onMouseDown={startResize} title="拖动调整宽度" />
       <div className="drawer-head">
+        {/* 换节点时标题与摘要交叉淡化（150ms），不是硬切 */}
+        <TabPanel key={nodeId} className="drawer-node-swap">
         <div className="drawer-title-row">
           {kind && <KindIcon kind={kind} size={28} />}
           <div style={{ minWidth: 0, flex: 1 }}>
@@ -101,11 +104,20 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             </div>
           </div>
           {status && <StatusBadge meta={NODE_STATUS[status]} />}
+          <button
+            className="btn btn-ghost btn-icon btn-sm"
+            onClick={() => askSteward(status === 'failed' || status === 'blocked' ? `${title ?? nodeId} 为什么${status === 'failed' ? '失败' : '卡住'}了？该怎么处理？` : `${title ?? nodeId} 现在怎么样了？`, [{ type: 'node', id: nodeId, parent: runId, label: title ?? nodeId }, { type: 'run', id: runId, label: runId }])}
+            aria-label="问管家这个节点"
+            title="问管家这个节点"
+          >
+            <Sparkles />
+          </button>
           <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setQuery({ node: undefined, dtab: undefined })} aria-label="关闭" title="关闭（Esc）">
             <X />
           </button>
         </div>
         <NodeBrief d={d} graphNode={graphNode} runId={runId} requirementId={requirementId} title={title ?? nodeId} liveTick={liveTick} />
+        </TabPanel>
         <Tabs size="sm" tabs={tabs} value={tab} onChange={(t) => setQuery({ dtab: t === 'overview' ? undefined : t })} />
       </div>
       <div className="drawer-body">
@@ -119,7 +131,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             <Skeleton h={90} style={{ marginTop: 8 }} />
           </div>
         ) : (
-          <div className="drawer-pane fade-in" key={tab}>
+          <TabPanel className="drawer-pane" key={`${nodeId}/${tab}`}>
             {tab === 'overview' && <OverviewTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'completion' && <CompletionTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'io' && <IoTab d={d} requirementId={requirementId} />}
@@ -130,7 +142,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             {tab === 'review' && <ReviewTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'prompt' && <PromptTab d={d} />}
             {tab === 'recipe' && <RecipeSection recipe={d.recipe} />}
-          </div>
+          </TabPanel>
         )}
       </div>
     </aside>

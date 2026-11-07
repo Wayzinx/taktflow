@@ -6,7 +6,7 @@ import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { StageBar } from '../../components/stage-bar'
-import { ErrorState, Skeleton, StatusBadge } from '../../components/ui'
+import { CountUp, ErrorState, Skeleton, StatusBadge, SuggestionChips, useStewardSuggestions } from '../../components/ui'
 import { fmtCost, fmtDate, fmtDuration, fmtTokens, totalTokens } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
 import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
@@ -19,6 +19,8 @@ import { NodeDrawer } from './node-drawer'
 import { RunCounters } from './run-counters'
 import './run.css'
 import './run-motion.css'
+
+/** 整数读数：过渡中途也按整数显示（CountUp 默认格式会在中途露出小数）。 */
 
 /** 图例和右上角工具条大约占 52px，fitView 时顶部至少留这么多，泳道列头才不会被盖住。 */
 const PANEL_CLEARANCE = 60
@@ -75,6 +77,8 @@ export function RunPage({ runId }: { runId: string }) {
   const ds = useSource()
   const { query } = useLocation()
   const selected = query.get('node') ?? undefined
+  const stageFocus = query.get('stage') ?? undefined
+  const suggestions = useStewardSuggestions('run', runId)
   const q = useAsync((s) => s.run(runId), [runId])
   const audit = useAsync((s) => s.audit(runId), [runId])
   const [liveTick, setLiveTick] = useState(0)
@@ -113,7 +117,7 @@ export function RunPage({ runId }: { runId: string }) {
   useCrumbs(
     [
       { label: '需求', to: '/requirements' },
-      { label: <span className="mono">{d?.run.requirementId ?? '…'}</span>, to: d ? `/req/${d.run.requirementId}?tab=runs` : undefined },
+      { label: d ? <span className="mono">{d.run.requirementId}</span> : <Skeleton w={56} h={10} />, to: d ? `/req/${d.run.requirementId}?tab=runs` : undefined },
       { label: <span className="mono">{runId}</span> },
     ],
     [runId, d?.run.requirementId],
@@ -156,7 +160,7 @@ export function RunPage({ runId }: { runId: string }) {
               <span>
                 <label>节点</label>
                 <span className="mono num">
-                  {counts.done}/{counts.total}
+                  <CountUp value={counts.done} />/{counts.total}
                   {counts.failed > 0 && <b style={{ color: 'var(--st-failed)' }}> · {counts.failed} 失败</b>}
                 </span>
               </span>
@@ -169,7 +173,7 @@ export function RunPage({ runId }: { runId: string }) {
                 <span className="mono num">{fmtCost(counts.usage?.costUsd)}</span>
               </span>
               {audit.data && (
-                <span className={`audit-pill${audit.data.ok ? '' : ' broken'}`} title="events.jsonl 哈希链校验（takt audit verify）">
+                <span className={`audit-pill${audit.data.ok ? '' : ' broken'}`} title="事件日志的哈希链校验：完整表示运行记录没有被改动过">
                   <Fingerprint />
                   {audit.data.ok ? '哈希链完整' : `断链 #${audit.data.brokenAt}`}
                 </span>
@@ -177,10 +181,13 @@ export function RunPage({ runId }: { runId: string }) {
             </div>
           )}
         </div>
-        <div className="run-stage-row">{d ? <StageBar stages={stages} variant="full" empty="这个流程没有划分阶段" /> : <Skeleton h={26} />}</div>
+        <div className="run-stage-row">
+          {d ? <StageBar stages={stages} variant="full" empty="这个流程没有划分阶段" onStage={(id) => setQuery({ stage: id === stageFocus ? undefined : id })} activeId={stageFocus} /> : <Skeleton h={26} />}
+        </div>
+        {d && suggestions.length > 0 && <SuggestionChips className="run-suggest" items={suggestions} context={[{ type: 'run', id: runId, label: runId }]} />}
       </header>
       <div className="run-body">
-        {d ? <RunCanvas detail={d} selected={selected} /> : <div className="run-canvas-skeleton"><Skeleton w="100%" h={9999} r={0} /></div>}
+        {d ? <RunCanvas detail={d} selected={selected} stageFocus={stageFocus} /> : <div className="run-canvas-skeleton"><Skeleton w="100%" h={9999} r={0} /></div>}
         {d && drawer.id && d.run.nodes[drawer.id] && (
           <NodeDrawer closing={drawer.closing} runId={runId} requirementId={d.run.requirementId} nodeId={drawer.id} graphNode={d.graph.nodes.find((n) => n.id === drawer.id)} expansions={d.run.expansions} liveTick={liveTick} />
         )}
@@ -190,7 +197,7 @@ export function RunPage({ runId }: { runId: string }) {
   )
 }
 
-function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string }) {
+function RunCanvas({ detail, selected, stageFocus }: { detail: RunDetail; selected?: string; stageFocus?: string }) {
   const dark = useIsDark()
   const stages = useMemo(() => detail.stages ?? [], [detail])
   const layout = useMemo(() => layoutRun(detail.graph, detail.workflow.stages, stages, detail.run.expansions, selected), [detail, stages, selected])
@@ -198,11 +205,11 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
   const rf = useRef<ReactFlowInstance<FlowNode> | null>(null)
   const drawerOpen = Boolean(selected)
 
-  function focusStage(instance: ReactFlowInstance<FlowNode>, animate: boolean) {
+  function focusStage(instance: ReactFlowInstance<FlowNode>, animate: boolean, pick?: string) {
     const sel = selected ? detail.graph.nodes.find((n) => n.id === selected) : undefined
     const active = stages.find((s) => s.status === 'running' || s.status === 'waiting_human' || s.status === 'failed')
     const loopStage = detail.graph.nodes.find((n) => n.kind === 'loop')?.stage
-    const stageId = sel?.stage ?? active?.id ?? loopStage ?? stages[stages.length - 1]?.id
+    const stageId = pick ?? sel?.stage ?? active?.id ?? loopStage ?? stages[stages.length - 1]?.id
     const ids = stageId ? (layout.stageNodes.get(stageId) ?? []) : []
     void instance.fitView({
       nodes: [...ids, `__lane__/${stageId}`].map((id) => ({ id })),
@@ -212,6 +219,13 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
       duration: animate ? 400 : 0,
     })
   }
+
+  // 阶段条点了某个阶段：画布平移缩放到该泳道（400ms，与 fitView 其他入口同速）
+  const focusRef = useRef(focusStage)
+  focusRef.current = focusStage
+  useEffect(() => {
+    if (stageFocus && rf.current) focusRef.current(rf.current, true, stageFocus)
+  }, [stageFocus])
 
   return (
     <div className="run-canvas">
@@ -223,7 +237,7 @@ function RunCanvas({ detail, selected }: { detail: RunDetail; selected?: string 
         colorMode={dark ? 'dark' : 'light'}
         onInit={(i) => {
           rf.current = i
-          focusStage(i, false)
+          focusStage(i, false, stageFocus)
         }}
         onNodeClick={(_, n) => {
           if (n.type === 'lane') return
@@ -296,7 +310,7 @@ function RunFootnote({ detail }: { detail: RunDetail }) {
   return (
     <div className="run-footnote">
       <span>
-        workflow 即代码 · 画布只读结构，结构改动走代码评审 · 快照 <span className="mono">runs/{detail.run.runId}/workflow.json</span>
+        画布展示这次运行用的流程快照；要改流程去 Workflow 编辑器
       </span>
       {exp && (
         <span>

@@ -3,11 +3,14 @@ import { Boxes, Cpu, KeyRound, Route, ServerOff } from 'lucide-react'
 import type { HarnessInfo, ModelInfo } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { StatCard, StatStrip } from '../../components/stat-card'
-import { EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows } from '../../components/ui'
+import { CountUp, EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows, useStagger } from '../../components/ui'
+import { StewardEditButton, StewardEditNote } from './ask-steward'
 import { CAPABILITIES } from '../../lib/capabilities'
 import { HarnessCard } from './harness-card'
 import { ModelsTable } from './models-table'
 import './models.css'
+
+/** 整数读数：过渡中途也按整数显示（CountUp 默认格式会在中途露出小数）。 */
 
 type Filter = 'all' | 'available' | 'unavailable'
 
@@ -39,20 +42,20 @@ function Stats({ harnesses, models }: { harnesses?: HarnessInfo[]; models?: Mode
         tone={down.length ? 'var(--st-failed)' : undefined}
         value={
           <>
-            {available.length}
+            <CountUp value={available.length} />
             <span className="stat-unit">/ {harnesses.length}</span>
           </>
         }
         foot={down.length ? <>不可用：{down.map((h) => h.id).join(' · ')}</> : '全部可用'}
       />
-      <StatCard label="模型" icon={<Boxes />} value={models.length} foot={<><b>{providers.size}</b> 个 provider · <b>{protocols.size}</b> 种协议</>} />
+      <StatCard label="模型" icon={<Boxes />} value={<CountUp value={models.length} />} foot={<><b>{providers.size}</b> 个 provider · <b>{protocols.size}</b> 种协议</>} />
       <StatCard
         label="密钥已配置"
         icon={<KeyRound />}
         tone={missingKeys.length ? 'var(--st-waiting)' : undefined}
         value={
           <>
-            {models.length - missingKeys.length}
+            <CountUp value={models.length - missingKeys.length} />
             <span className="stat-unit">/ {models.length}</span>
           </>
         }
@@ -61,7 +64,7 @@ function Stats({ harnesses, models }: { harnesses?: HarnessInfo[]; models?: Mode
       <StatCard
         label="角色路由"
         icon={<Route />}
-        value={bound.reduce((s, h) => s + h.roles.length, 0)}
+        value={<CountUp value={bound.reduce((s, h) => s + h.roles.length, 0)} />}
         foot={bound.length ? bound.map((h) => `${h.id} ${h.roles.length}`).join(' · ') : '还没有角色指定默认 harness'}
       />
     </StatStrip>
@@ -109,6 +112,7 @@ export function RuntimeTab() {
   const hs = hq.data
   const shown = hs?.filter((h) => filter === 'all' || (filter === 'available' ? h.available : !h.available)) ?? []
   const downCount = hs?.filter((h) => !h.available).length ?? 0
+  const st = useStagger(shown.length)
 
   return (
     <>
@@ -124,8 +128,10 @@ export function RuntimeTab() {
             options={[
               { value: 'all', label: '全部' },
               { value: 'available', label: '可用' },
-              { value: 'unavailable', label: downCount ? `不可用 ${downCount}` : '不可用' },
+              { value: 'unavailable', label: '不可用', count: downCount || undefined },
             ]}
+            size="sm"
+            ariaLabel="按可用性筛选"
           />
         </div>
         <CapLegend />
@@ -137,12 +143,21 @@ export function RuntimeTab() {
           <HarnessSkeleton />
         ) : shown.length === 0 ? (
           <div className="card">
-            <EmptyState compact icon={ServerOff} title={filter === 'unavailable' ? '所有 harness 都可用' : '没有符合条件的 harness'} hint="在 takt.config.json 的 harnesses 里声明 CLI 适配，或通过插件注册。" />
+            <EmptyState
+              compact
+              icon={ServerOff}
+              title={filter === 'unavailable' ? '所有 harness 都可用' : '没有符合条件的 harness'}
+              body={filter === 'unavailable' ? '每个 harness 都能正常调起。' : '接入一个新的 Agent CLI（Claude Code、Codex 等）后会出现在这里。'}
+              action={filter !== 'all' ? <button type="button" className="btn btn-sm" onClick={() => setFilter('all')}>看全部</button> : undefined}
+              stewardAsk={filter === 'all' ? '帮我接入一个新的 harness：' : undefined}
+            />
           </div>
         ) : (
           <div className="harness-grid">
-            {shown.map((h) => (
-              <HarnessCard key={h.id} h={h} />
+            {shown.map((h, i) => (
+              <div key={h.id} {...st(i)}>
+                <HarnessCard h={h} />
+              </div>
             ))}
           </div>
         )}
@@ -154,18 +169,20 @@ export function RuntimeTab() {
             <span className="card-title">模型</span>
             {mq.data && <span className="faint num">{mq.data.length}</span>}
             <span className="spacer" />
-            <span className="faint models-note">别名在角色和节点的 model 字段里引用；价格用于成本统计</span>
+            <span className="faint models-note">别名在角色和节点里引用；价格用于成本统计</span>
+            <StewardEditButton ask="帮我调整模型配置：" ghost />
           </div>
           {mq.error && !mq.data ? (
             <ErrorState error={mq.error} onRetry={mq.reload} />
           ) : !mq.data ? (
             <SkeletonRows rows={6} />
           ) : mq.data.length === 0 ? (
-            <EmptyState compact icon={Boxes} title="还没有配置模型" hint={<>在 takt.config.json 的 <span className="mono">providers</span> 和 <span className="mono">models</span> 里声明；密钥只写环境变量名（apiKeyEnv）。</>} />
+            <EmptyState compact icon={Boxes} title="还没有配置模型" body="加一个模型后，角色和节点就能按别名引用它；密钥只记环境变量名，不保存明文。" stewardAsk="帮我加一个模型：provider 是 " />
           ) : (
             <ModelsTable models={mq.data} />
           )}
         </div>
+        <StewardEditNote what="Harness 和模型" ask="帮我改一下运行环境：" />
       </section>
     </>
   )

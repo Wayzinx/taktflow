@@ -29,6 +29,7 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
   const showIteration = n.iteration !== undefined && !data.hideIteration
   return (
     <div
+      data-steward-anchor={n.id}
       className={`dag-node st-${n.status} tone-${meta.tone}${data.selected ? ' selected' : ''}`}
       style={{ '--tone': toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}
       title={`${data.label.title}\n${n.id} · ${meta.label}`}

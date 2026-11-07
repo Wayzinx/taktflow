@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { CornerDownLeft, Search } from 'lucide-react'
 import type { CommandInfo } from '@taktflow/core'
 import { usePresence } from '../lib/motion'
-import { TaktLoader } from './takt'
+import { SkeletonRows } from './ui'
 import { trapKeys, useRestoreFocus } from './ui/dialog'
 import { RISK } from './ui/reason-dialog'
 import { CommandForm } from './command-palette/command-form'
@@ -133,7 +133,9 @@ function PaletteDialog({ presence, direct }: { presence: string; direct?: Palett
       {step.kind === 'form' ? (
         <CommandForm key={step.cmd.id} cmd={step.cmd} given={step.input} data={data} onBack={back} onDone={close} backLabel={step.direct ? '关闭' : '返回列表'} />
       ) : waitingDirect ? (
-        <TaktLoader compact label="正在读取命令" />
+        <div className="cmdk-loading" aria-busy="true" style={{ padding: 16 }}>
+          <SkeletonRows rows={4} />
+        </div>
       ) : (
         <div className="cmdk-step" onKeyDown={onListKey}>
           <div className="cmdk-input-row">
@@ -180,7 +182,9 @@ function PaletteDialog({ presence, direct }: { presence: string; direct?: Palett
                 </div>
               )
             })}
-            {!results.length && (data.loading ? <TaktLoader compact label="正在读取需求、运行与命令" /> : <div className="cmdk-empty">没有匹配“{q}”的需求、运行、页面或命令</div>)}
+            {!results.length && (data.loading ? <div className="cmdk-loading" aria-busy="true" style={{ padding: 12 }}>
+                <SkeletonRows rows={4} />
+              </div> : <div className="cmdk-empty">没有匹配“{q}”的需求、运行、页面或命令</div>)}
           </div>
           <div className="cmdk-foot">
             <span>

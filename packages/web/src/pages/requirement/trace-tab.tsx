@@ -246,7 +246,7 @@ export function TraceTab({ id }: { id: string }) {
           </span>
         )}
       </div>
-      {cov.length ? <AcCards m={q.data.metrics} /> : <div className="card"><EmptyState compact icon={Target} title="还没有验收标准" hint="spec 里的 AC-<n> 会自动出现在这里。" /></div>}
+      {cov.length ? <AcCards m={q.data.metrics} /> : <div className="card"><EmptyState compact icon={Target} title="还没有验收标准" body="spec 里的 AC-<n> 会自动出现在这里。" /></div>}
 
       <div className="section-head" style={{ marginTop: 24 }}>
         <Network />
@@ -264,7 +264,7 @@ export function TraceTab({ id }: { id: string }) {
       </div>
       <div className="card trace-canvas" ref={canvasRef} style={canvasH ? { height: canvasH } : undefined}>
         {flow.nodes.length === 0 ? (
-          <EmptyState icon={Network} title="追溯图为空" hint="产物里出现的 REQ- / AC- / TC- 编号会自动连成追溯图。" />
+          <EmptyState icon={Network} title="追溯图为空" body="产物里出现的 REQ- / AC- / TC- 编号会自动连成追溯图。" />
         ) : (
           <ReactFlow
             nodes={view.nodes}

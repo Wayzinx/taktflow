@@ -2,8 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { History, X } from 'lucide-react'
 import type { WorkflowRevision } from '@taktflow/core'
 import { useAsync } from '../../../api'
-import { TaktLoader } from '../../../components/takt'
-import { Avatar, EmptyState, ErrorState, Segmented } from '../../../components/ui'
+import { Avatar, EmptyState, ErrorState, Segmented, SkeletonRows, SkeletonText } from '../../../components/ui'
 import { actorName, fmtDate, fmtRelative } from '../../../lib/format'
 import type { WorkflowDocState } from '../state'
 import { DiffStat, DiffView } from './diff-view'
@@ -61,9 +60,11 @@ export function RevisionsDrawer({ wf, workflowId, open, onClose }: { wf: Workflo
         {list.error && !revs ? (
           <ErrorState error={list.error} onRetry={list.reload} />
         ) : !revs ? (
-          <TaktLoader label="正在读取修订历史" />
+          <div style={{ padding: 16 }} aria-busy="true">
+            <SkeletonRows rows={6} />
+          </div>
         ) : revs.length === 0 ? (
-          <EmptyState icon={History} title="还没有修订" hint="保存一次之后这里会出现第一条修订。" />
+          <EmptyState icon={History} title="还没有修订" body="保存一次之后这里会出现第一条修订。" />
         ) : (
           <div className="wfc-drawer-body">
             <ol className="wfc-rev-list" aria-label="修订">
@@ -139,7 +140,9 @@ function RevisionDetail({ wf, workflowId, rev, isHead, compare, setCompare }: { 
       {detail.error ? (
         <ErrorState error={detail.error} onRetry={detail.reload} />
       ) : !detail.data ? (
-        <TaktLoader compact label="正在读取差异" />
+        <div style={{ padding: 12 }} aria-busy="true">
+          <SkeletonText lines={8} />
+        </div>
       ) : (
         <DiffView rows={rows} label="修订差异" empty={mode === 'current' ? '与当前版本相同' : rev.parent ? '与上一修订相同' : '这是第一条修订，没有可比较的父修订'} />
       )}

@@ -11,6 +11,7 @@ import { serialize } from './stale.js'
 import { stream } from './stream.js'
 import { spaceRoutes, type LeadMention } from './space-routes.js'
 import { workflowRoutes } from './workflow-routes.js'
+import { crudRoutes } from './crud-routes.js'
 import { workflowStore } from './space.js'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 
@@ -30,6 +31,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   const add = router.add
   const { execute } = commandExecutor(catalog)
   const workflows = new Map<string, WorkflowStore>()
+  crudRoutes(add, catalog)
   spaceRoutes(add, connections, onLeadMention, catalog)
   m3Routes(add, catalog)
   registerEvalRoutes(add, catalog.resolveRuntime ?? (() => { throw new HttpError(501, '未接入评测运行时') }), catalog)
@@ -39,7 +41,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     return store
   })
   add('GET', '/api/project', ({ stores }) => overview(stores))
-  add('GET', '/api/requirements', ({ stores }) => summaries(stores))
+  add('GET', '/api/requirements', ({ stores, url }) => summaries(stores, url.searchParams.get('archived') === '1'))
   add('GET', '/api/requirements/:id', async ({ stores, params }) => {
     const item = await requirement(stores, params.id!)
     const [info, artifacts, runs] = await Promise.all([summary(stores, item), stores.workspaces.listArtifacts(item.id), stores.runs.list({ requirementId: item.id })])

@@ -1,5 +1,5 @@
 import { useRef, useState, type KeyboardEvent } from 'react'
-import { Eye } from 'lucide-react'
+import { Eye, LoaderCircle } from 'lucide-react'
 import type { RouteDecision, Tier } from '@taktflow/core'
 import { useSource } from '../api'
 import type { PresenceState } from '../lib/motion'
@@ -99,9 +99,9 @@ export function RouteChange({ state, current, requirementId, onClose }: { state:
         <button className="btn btn-sm btn-ghost" onClick={onClose}>
           取消
         </button>
-        <button className="btn btn-sm btn-primary" disabled={!reason.trim() || busy} onClick={() => void run()}>
-          <Eye />
-          {busy ? '正在预览…' : `预览 ${tier}`}
+        <button className="btn btn-sm btn-primary" disabled={!reason.trim() || busy} aria-busy={busy} onClick={() => void run()}>
+          {busy ? <LoaderCircle className="spin" aria-hidden /> : <Eye />}
+          {`预览 ${tier}`}
         </button>
       </div>
       {preview && (

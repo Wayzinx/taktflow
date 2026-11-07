@@ -22,7 +22,7 @@ export function ReviewsTab({ id }: { id: string }) {
   if (!list.length)
     return (
       <div className="card">
-        <EmptyState icon={ClipboardCheck} title="还没有评审" hint="workflow 里的 review 节点开始评审后，每个节点的轮次、结论和未解决问题会汇总在这里。" />
+        <EmptyState icon={ClipboardCheck} title="还没有评审" body="workflow 里的 review 节点开始评审后，每个节点的轮次、结论和未解决问题会汇总在这里。" />
       </div>
     )
   const open = list.reduce((n, r) => n + openOf(r), 0)

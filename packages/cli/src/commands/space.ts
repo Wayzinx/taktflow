@@ -1,3 +1,5 @@
+import type { CrudCliOptions } from './req.js'
+import { archiveSpace, createSpace, deleteSpace, restoreSpace, convertWorkflow } from '@taktflow/server'
 import { cliActor } from '../actor.js'
 import { cp, lstat, mkdir, readFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
@@ -10,14 +12,32 @@ import { createPrinter } from '../output.js'
 
 export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
+  const extra = options as typeof options & CrudCliOptions
   const [sub, ...rest] = args
   const printer = createPrinter(options.json)
   let result: unknown
   if (command === 'space') {
-    if (sub !== 'ls') throw new UsageError('space 子命令：ls')
-    expectPositionals('space ls', rest, 0, 1)
-    const spaces = await discoverSpaces(options.spaces ?? rest[0] ?? options.project ?? process.cwd())
-    result = await Promise.all(spaces.map(spaceSummary))
+    if (sub === 'ls') {
+      expectPositionals('space ls', rest, 0, 1)
+      const spaces = await discoverSpaces(options.spaces ?? rest[0] ?? options.project ?? process.cwd())
+      result = await Promise.all(spaces.map(spaceSummary))
+    } else {
+      expectPositionals(`space ${sub}`, rest, 1)
+      if (!options.spaces) throw new UsageError('空间管理需要 --spaces <根目录>')
+      const deps = { spacesDir: resolve(options.spaces) }, reason = options.reason ?? `CLI space ${sub}`
+      const author: Actor = { type: 'human', id: process.env.TAKT_USER ?? process.env.USER ?? 'cli' }
+      if (sub === 'new') {
+        if (!options.name) throw new UsageError('space new 需要 --name <名称>')
+        const parts = (extra.parts ?? '').split(',').filter(Boolean) as Array<'agents' | 'skills' | 'workflows' | 'knowledge' | 'models' | 'members'>
+        result = await createSpace(deps, { id: rest[0]!, name: options.name, color: extra.color,
+          template: extra.from ? { copyFrom: extra.from, parts } : (extra.template ?? 'blank') as 'blank' | 'standard' | 'quick', reason }, author)
+      } else if (sub === 'archive') result = await archiveSpace(deps, rest[0]!, author, reason)
+      else if (sub === 'restore') result = await restoreSpace(deps, rest[0]!, author, reason)
+      else if (sub === 'rm') {
+        if (!extra.confirm) throw new UsageError('彻底删除需 --confirm <完整归档ID>')
+        result = await deleteSpace(deps, rest[0]!, extra.confirm, author, reason)
+      } else throw new UsageError('space 子命令：ls | new | archive | restore | rm')
+    }
   } else {
     const stores = await openStores(options.project)
     const author = cliActor(stores)
@@ -74,6 +94,7 @@ export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
     } else if (command === 'workflow') {
       const store = workflowStore(stores)
       if (sub === 'ls') { expectPositionals('workflow ls', rest, 0); result = await store.list() }
+      else if (sub === 'convert') { expectPositionals('workflow convert', rest, 1); result = await convertWorkflow(stores, rest[0]!, { dryRun: extra.dryRun, reason }, author) }
       else if (sub === 'show' || sub === 'lint') {
         expectPositionals(`workflow ${sub}`, rest, 1)
         const document = await store.get(rest[0]!)
@@ -101,4 +122,68 @@ export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
   }
   printer.data(result)
   return 0
+}
+
+/** 多空间服务按需加载运行时，新增或恢复空间无需重启服务。 */
+export async function runSpaceServer(options: import('./serve.js').ServeOptions): Promise<void> {
+  if (options.project) throw new Error('--project 与 --spaces 不能同时指定')
+  const { createServer } = await import('@taktflow/server')
+  const { engineDependencies, webDir } = await import('../project.js')
+  const { createProjectLead, watchLeadEvents } = await import('../lead.js')
+  const { createRuntimeCatalog } = await import('../catalog.js')
+  const { validateRuntime } = await import('../runtime-validation.js')
+  const { resumeAfterAnswer } = await import('./serve.js')
+  const { access } = await import('node:fs/promises')
+  const listeners = new Map<string, Set<(presence: import('@taktflow/core').LeadPresence) => void>>()
+  const runtimes = new Map<string, Promise<{ context: Awaited<ReturnType<typeof loadRuntime>>; lead: Awaited<ReturnType<typeof createProjectLead>>; stop: () => Promise<void> }>>()
+  const ensure = (dir: string) => {
+    let pending = runtimes.get(dir)
+    if (!pending) {
+      pending = (async () => {
+        const context = await loadRuntime(dir)
+        validateRuntime(context)
+        const lead = await createProjectLead(context, (id, presence) => { for (const send of listeners.get(`${dir}:${id}`) ?? []) send(presence) })
+        const entry = { context, lead, stop: await watchLeadEvents(context, lead) }
+        ready.set(dir, entry)
+        return entry
+      })()
+      runtimes.set(dir, pending)
+      void pending.catch(() => { if (runtimes.get(dir) === pending) runtimes.delete(dir) })
+    }
+    return pending
+  }
+  const ready = new Map<string, Awaited<ReturnType<typeof ensure>>>()
+  const printer = createPrinter(options.json)
+  let server: Awaited<ReturnType<typeof createServer>> | undefined
+  try {
+    for (const stores of await discoverSpaces(options.spaces!)) await ensure(stores.projectDir)
+    server = await createServer({ spacesDir: options.spaces, port: options.port, host: options.host,
+      webDir: await access(webDir).then(() => webDir, () => undefined),
+      ...createRuntimeCatalog(),
+      getCommands: async (stores) => { const entry = await ensure(stores.projectDir); entry.context.stores.config = stores.config; return entry.lead.commands },
+      resolveRuntime: async (stores) => { const entry = await ensure(stores.projectDir); return engineDependencies({ ...entry.context, stores }) },
+      onSpaceLeadMention: options.onSpaceLeadMention ?? (async (dir, id, message) => {
+        if (options.onLeadMention) await options.onLeadMention(id, message)
+        else await (await ensure(dir)).lead.onMessage(id, message)
+      }),
+      onSpaceAnswer: async (dir, item) => { const entry = await ensure(dir); if (!await entry.lead.onAttention(item)) await resumeAfterAnswer(entry.context, item) },
+      getLeadPresence: (dir, id) => ready.get(dir)?.lead.getPresence(id) ?? { state: 'idle', since: new Date().toISOString() },
+      subscribeLead: (dir, id, send) => {
+        const key = `${dir}:${id}`, bucket = listeners.get(key) ?? new Set()
+        bucket.add(send); listeners.set(key, bucket)
+        void ensure(dir).then((entry) => send(entry.lead.getPresence(id))).catch(() => {})
+        return () => { bucket.delete(send); if (!bucket.size) listeners.delete(key) }
+      },
+    })
+    if (options.json) printer.data({ url: server.url, spacesDir: options.spaces })
+    else printer.text(`${printer.colors.green('✔')} takt 已启动：${server.url}  ${options.spaces}`)
+    await new Promise<void>((done) => {
+      const stop = () => { process.off('SIGINT', stop); process.off('SIGTERM', stop); done() }
+      process.on('SIGINT', stop); process.on('SIGTERM', stop)
+    })
+  } finally {
+    await server?.close()
+    const settled = await Promise.allSettled(runtimes.values())
+    for (const entry of settled) if (entry.status === 'fulfilled') await entry.value.stop()
+  }
 }

@@ -68,3 +68,49 @@
   display: grid;
   gap: var(--sp-3);
 }
+
+/* 可点的读数格（M4）：整格是按钮；hover 提一点底色，选中时底部一道墨色细线。 */
+button.stat-cell {
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+.stat-click {
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-press) var(--ease);
+}
+.stat-click:hover {
+  background: var(--surface-hover);
+}
+.stat-click:active {
+  background: var(--surface-active);
+}
+.stat-click::after {
+  content: '';
+  position: absolute;
+  left: var(--sp-5);
+  right: var(--sp-5);
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--stat-tone, var(--ink));
+  transform: scaleX(0.4);
+  transform-origin: left;
+  opacity: 0;
+  transition:
+    opacity var(--dur-tab) var(--ease-out-soft),
+    transform var(--dur-tab) var(--ease-out-soft);
+}
+.stat-click.on::after {
+  transform: scaleX(1);
+  opacity: 1;
+}
+.stat-click:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent-ring);
+}

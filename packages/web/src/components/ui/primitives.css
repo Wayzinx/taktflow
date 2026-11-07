@@ -1,0 +1,298 @@
+/* M4 原语：页头、建议胶囊、骨架、空 / 错误状态、键帽、标签。toast / 抽屉 / 分段 / Tab 见 feedback.css。 */
+@import './feedback.css';
+
+/* ---------------------------------------------------------------- 页头 */
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+}
+.page-header-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  color: var(--text-2);
+}
+.page-header-icon svg {
+  width: 18px;
+  height: 18px;
+}
+.page-header-main {
+  flex: 1;
+  min-width: 0;
+}
+.page-eyebrow {
+  margin-bottom: var(--sp-1);
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.page-title {
+  font-size: var(--text-headline);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.3;
+}
+.page-sub {
+  margin-top: var(--sp-1);
+  font-size: var(--text-ui);
+  color: var(--text-2);
+  line-height: 1.55;
+  max-width: 72ch;
+}
+.page-actions {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  flex: none;
+  padding-top: 2px;
+}
+
+/* ---------------------------------------------------------------- 管家建议胶囊：低调的描边胶囊，hover 才显出节拍橙 */
+.suggest-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  height: 26px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--text-meta);
+  cursor: pointer;
+  transition:
+    color var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.suggest-chip svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--text-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+.suggest-chip:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.suggest-chip:hover svg {
+  color: var(--accent-text);
+}
+
+/* ---------------------------------------------------------------- 骨架容器 */
+.sk-rows {
+  display: grid;
+  padding: var(--sp-4);
+}
+.sk-row {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: center;
+}
+.sk-text {
+  display: grid;
+  gap: 8px;
+}
+.sk-card {
+  display: grid;
+  gap: var(--sp-4);
+  align-content: start;
+  padding: var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+}
+.sk-grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+/* ---------------------------------------------------------------- 空状态 / 错误状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--sp-12) var(--sp-6);
+  color: var(--text-2);
+  animation: fade-only-in var(--dur-item) var(--ease-out-soft) both;
+}
+.empty-state.compact {
+  padding: var(--sp-6) var(--sp-4);
+}
+.empty-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-3);
+  color: var(--text-2);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+}
+.empty-state.compact .empty-icon {
+  width: 32px;
+  height: 32px;
+  margin-bottom: var(--sp-2);
+}
+.empty-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.empty-state.compact .empty-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.empty-title {
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-hint {
+  margin-top: var(--sp-1);
+  max-width: 420px;
+  font-size: var(--text-ui);
+  color: var(--text-2);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.empty-action {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+.empty-ask svg {
+  color: var(--accent-text);
+}
+.empty-ruler {
+  margin-top: var(--sp-6);
+  opacity: 0.7;
+}
+.error-state .empty-icon {
+  color: var(--st-failed);
+}
+.error-detail {
+  display: inline-block;
+  margin-top: var(--sp-1);
+  color: var(--text-3);
+  word-break: break-word;
+}
+
+/* ---------------------------------------------------------------- 键帽 */
+.ui-kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--text-label);
+  line-height: 1;
+  white-space: nowrap;
+}
+.ui-kbd.on-dark {
+  border-color: var(--rail-border);
+  background: oklch(1 0 0 / 0.05);
+  color: var(--rail-text-3);
+}
+
+/* ---------------------------------------------------------------- 标签（可移除） */
+.ui-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ui-chip {
+  --chip-fg: var(--text-2);
+  --chip-bg: var(--surface-hover);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 260px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: var(--chip-bg);
+  color: var(--chip-fg);
+  font-size: var(--text-meta);
+  transition:
+    opacity 120ms var(--ease),
+    transform 120ms var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.ui-chip.clickable {
+  cursor: pointer;
+}
+.ui-chip.clickable:hover {
+  background: var(--surface-active);
+}
+.ui-chip.leaving {
+  opacity: 0;
+  transform: scale(0.985);
+}
+.ui-chip-icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.ui-chip-x {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.ui-chip-x:hover {
+  opacity: 1;
+  background: var(--border);
+}
+.ui-chip-x svg {
+  width: 11px;
+  height: 11px;
+}
+.ui-chip-add {
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  cursor: pointer;
+}
+.ui-chip-add:hover {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-chip.leaving {
+    transform: none;
+  }
+}

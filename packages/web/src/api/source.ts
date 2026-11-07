@@ -54,6 +54,9 @@ import type {
   NodeScorecard,
   Viewer,
 } from '@taktflow/core'
+import type { CrudSource, KnowledgeSource, StewardSource } from './source-m4'
+
+export type { CrudSource, KnowledgeSource, StewardSource, StewardThreadDetail } from './source-m4'
 
 export type SpaceFileKind = SpaceFile['kind']
 
@@ -93,7 +96,7 @@ export interface EvalOutputSnapshot {
 }
 
 /** Web 用到的全部数据接口：真实 HTTP 客户端和演示数据实现同一份。 */
-export interface DataSource {
+export interface DataSource extends CrudSource, StewardSource, KnowledgeSource {
   readonly mock: boolean
   /** 当前用户（GET /me）：请求头 x-takt-user 指定，缺省为空间第一个 owner。 */
   me(): Promise<Viewer>
@@ -120,7 +123,8 @@ export interface DataSource {
   subscribe(runId: string, onEvent: (e: EventEnvelope) => void): () => void
 
   // ---- 项目空间（docs/design/14）。除 spaces() 外都作用于当前 URL 的空间（/s/:spaceId）。
-  spaces(): Promise<SpaceSummary[]>
+  /** archived 为 true 时只返回已归档的空间（全局接口，不加空间前缀）。 */
+  spaces(opts?: { archived?: boolean }): Promise<SpaceSummary[]>
   space(): Promise<SpaceDetail>
   /** 空间写操作都要原因（服务端校验非空，写进审计）：成员走 body `{ members, reason }`，仓库放在 body.reason。 */
   setMembers(members: SpaceMember[], reason: string): Promise<SpaceDetail>

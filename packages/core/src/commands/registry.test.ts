@@ -19,7 +19,7 @@ async function setup() {
 }
 it('提供完整命令目录，返回副本不能篡改权限与 schema', async () => {
   const { registry } = await setup()
-  expect(registry.list()).toHaveLength(13)
+  expect(registry.list()).toHaveLength(20)
   const cancel = registry.list().find((command) => command.id === 'run.cancel')!
   expect(cancel).toMatchObject({ risk: 'dangerous', minRole: 'maintainer' })
   cancel.minRole = 'viewer'; cancel.input.required = []
@@ -43,7 +43,7 @@ it.each([
 it('查询和创建复用存储，不绕过审计', async () => {
   const { registry } = await setup()
   const created = await registry.run('requirement.create', { title: '新需求' }, owner)
-  const req = created.result as { id: string }
+  const req = (created.result as { requirement: { id: string } }).requirement
   expect(await registry.run('requirement.status', { requirementId: req.id }, { actor: { type: 'human', id: 'bob' } })).toMatchObject({ ok: true, result: { title: '新需求' } })
   expect(await registry.run('run.status', { runId: 'none' }, owner)).toMatchObject({ ok: true })
   expect(await registry.run('attention.list', {}, owner)).toMatchObject({ ok: true, result: [] })

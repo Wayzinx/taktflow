@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePresence } from '../lib/motion'
-import { BookOpen, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, Search, Settings, Sun, Workflow, X } from 'lucide-react'
+import { BookOpen, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sparkles, Sun, Workflow, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
+import { SHORTCUTS, shortcutLabel } from '../lib/shortcuts'
+import { openCreateRequirement, setStewardUnread, toggleSidebar, toggleSteward, useSidebarCollapsed, useStewardDock, useStewardUnread } from '../lib/ui-store'
+import { PageHeader } from './ui/page-header'
+import { PageTransition } from './ui/page-transition'
 import { REQ_STATUS } from '../lib/status'
 import { useTheme, type ThemePref } from '../lib/theme'
 import { CommandPalette, setPaletteOpen } from './command-palette'
@@ -50,6 +54,50 @@ function Logo() {
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
+const tip = (label: string, combo: string) => `${label}（${shortcutLabel(combo)}）`
+
+/** 管家未读数：首屏取 /steward/feed 里最近的 unread，之后跟 /steward/stream。 */
+function useStewardUnreadSync() {
+  const ds = useSource()
+  useEffect(() => {
+    let alive = true
+    void ds
+      .stewardFeed()
+      .then((items) => {
+        const last = items.find((i) => i.type === 'unread')
+        if (alive && last && last.type === 'unread') setStewardUnread(last.count)
+      })
+      .catch(() => undefined)
+    const off = ds.subscribeStewardFeed((item) => {
+      if (item.type === 'unread') setStewardUnread(item.count)
+    })
+    return () => {
+      alive = false
+      off()
+    }
+  }, [ds])
+}
+
+/** 导轨顶部：空间切换器右侧的三个图标按钮（管家 ⌘J / 搜索 ⌘K / 收起 ⌘B）。 */
+function RailTools({ collapsed }: { collapsed: boolean }) {
+  const unread = useStewardUnread()
+  const dock = useStewardDock()
+  const Collapse = collapsed ? PanelLeftOpen : PanelLeftClose
+  return (
+    <div className="sb-tools">
+      <button type="button" className={`sb-tool${dock.open ? ' on' : ''}`} onClick={toggleSteward} title={tip('管家', SHORTCUTS.steward)} aria-label={`管家${unread ? `，${unread} 条未读` : ''}`} aria-pressed={dock.open}>
+        <Sparkles aria-hidden />
+        {unread > 0 && <span className="sb-tool-dot num">{unread > 9 ? '9+' : unread}</span>}
+      </button>
+      <button type="button" className="sb-tool" onClick={() => setPaletteOpen(true)} title={tip('搜索或跳转', SHORTCUTS.palette)} aria-label="搜索或跳转">
+        <Search aria-hidden />
+      </button>
+      <button type="button" className="sb-tool sb-tool-collapse" onClick={toggleSidebar} title={tip(collapsed ? '展开侧栏' : '收起侧栏', SHORTCUTS.sidebar)} aria-label={collapsed ? '展开侧栏' : '收起侧栏'}>
+        <Collapse aria-hidden />
+      </button>
+    </div>
+  )
+}
 
 function ThemeSwitch() {
   const [pref, setPref] = useTheme()
@@ -70,42 +118,45 @@ function ThemeSwitch() {
 }
 
 function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { path, query } = useLocation()
-  const onKnowledge = path === '/settings' && query.get('tab') === 'knowledge'
+  const { path } = useLocation()
+  const collapsed = useSidebarCollapsed()
   const project = useAsync((ds) => ds.project(), [])
   const pending = project.data?.attention.length ?? 0
   const items = [
     { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
-    { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements },
+    { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements, create: true },
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
-    { to: '/settings?tab=knowledge', label: '知识源', icon: BookOpen, active: onKnowledge },
+    { to: '/knowledge', label: '知识库', icon: BookOpen, active: path.startsWith('/knowledge') },
     { to: '/workflows', label: 'Workflow', icon: Workflow, active: path.startsWith('/workflows') },
     { to: '/eval', label: '评测', icon: FlaskConical, active: path === '/eval' },
-    { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') && !onKnowledge },
+    { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []
   return (
-    <aside className={`sidebar${open ? ' open' : ''}`} aria-label="主导航">
+    <aside className={`sidebar${open ? ' open' : ''}${collapsed ? ' collapsed' : ''}`} aria-label="主导航">
       <div className="sb-brand">
         <Logo />
         <SpaceSwitcher fallbackName={project.data?.name} />
+        <RailTools collapsed={collapsed} />
         <button className="sb-close btn-icon" onClick={onClose} aria-label="收起导航">
           <X aria-hidden />
         </button>
       </div>
-      <button className="sb-search" onClick={() => setPaletteOpen(true)}>
-        <Search aria-hidden />
-        <span>搜索或跳转</span>
-        <span className="sb-kbd mono">{isMac ? '⌘' : 'Ctrl'} K</span>
-      </button>
       <nav className="sb-nav">
-        {items.map(({ to, label, icon: Icon, active, badge, count }) => (
-          <Link key={to} to={to} className={`sb-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined}>
-            <Icon aria-hidden />
-            <span>{label}</span>
-            {badge ? <span className="sb-badge num" aria-label={`${badge} 项待办`}>{badge}</span> : null}
-            {count !== undefined && !badge ? <span className="sb-count num">{count}</span> : null}
-          </Link>
+        {items.map(({ to, label, icon: Icon, active, badge, count, create }) => (
+          <div key={to} className={`sb-row${create ? ' has-create' : ''}`}>
+            <Link to={to} className={`sb-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined} title={collapsed ? label : undefined}>
+              <Icon aria-hidden />
+              <span className="sb-label">{label}</span>
+              {badge ? <span className="sb-badge num" aria-label={`${badge} 项待办`}>{badge}</span> : null}
+              {count !== undefined && !badge ? <span className="sb-count num">{count}</span> : null}
+            </Link>
+            {create && (
+              <button type="button" className="sb-create" onClick={() => openCreateRequirement()} title={tip('新建需求', SHORTCUTS.createRequirement)} aria-label="新建需求">
+                <Plus aria-hidden />
+              </button>
+            )}
+          </div>
         ))}
       </nav>
       {recent.length > 0 && (
@@ -122,7 +173,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       )}
       <div className="sb-foot">
         <ThemeSwitch />
-        <span className="sb-version mono">v0.1.0</span>
+        <span className="sb-version mono">taktflow v0.1.0</span>
       </div>
     </aside>
   )
@@ -161,7 +212,7 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         </span>
       )}
       {project.data && <TaktBeat count={running} />}
-      <button className="btn btn-sm topbar-search" onClick={() => setPaletteOpen(true)} aria-label="打开命令面板">
+      <button className="btn btn-sm topbar-search" onClick={() => setPaletteOpen(true)} aria-label="打开命令面板" title={tip("搜索或跳转", SHORTCUTS.palette)}>
         <Search aria-hidden />
         <span className="kbd">{isMac ? '⌘K' : 'Ctrl K'}</span>
       </button>
@@ -173,6 +224,9 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false)
   const { path, spaceId } = useLocation()
+  const collapsed = useSidebarCollapsed()
+  const dockOpen = useStewardDock().open
+  useStewardUnreadSync()
   useEffect(() => setNavOpen(false), [path])
   // 切换空间：所有查询按新空间重新拉取
   const lastSpace = useRef(spaceId)
@@ -182,14 +236,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     invalidate()
   }, [spaceId])
   return (
-    <div className="shell">
+    <div className={`shell${collapsed ? ' rail-collapsed' : ''}`} data-dock={dockOpen ? 'open' : undefined}>
       <a className="skip-link" href="#main">跳到正文</a>
       <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
       <NavScrim open={navOpen} onClose={() => setNavOpen(false)} />
       <div className="shell-main">
         <Topbar onMenu={() => setNavOpen(true)} />
         <main className="shell-content" id="main">
-          {children}
+          <PageTransition routeKey={`${spaceId ?? ''}${path}`}>{children}</PageTransition>
         </main>
       </div>
       <CommandPalette />
@@ -197,18 +251,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   )
 }
 
-export function PageHeader({ title, sub, actions, icon }: { title: ReactNode; sub?: ReactNode; actions?: ReactNode; icon?: ReactNode }) {
-  return (
-    <div className="page-header">
-      {icon}
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <h1 className="page-title">{title}</h1>
-        {sub && <div className="page-sub">{sub}</div>}
-      </div>
-      {actions && <div className="page-actions">{actions}</div>}
-    </div>
-  )
-}
+/** 统一页头已移到 components/ui/page-header（M4）；这里保留旧的导入路径。 */
+export { PageHeader }
 
 /** 窄屏导轨的遮罩：与导轨同进同出（usePresence 保留退出帧）。 */
 function NavScrim({ open, onClose }: { open: boolean; onClose: () => void }) {

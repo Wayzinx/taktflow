@@ -159,7 +159,7 @@ export function workflowSeeds(): Record<string, WorkflowSeed> {
       source: HOTFIX_SOURCE,
       ageMin: 9 * 24 * 60,
       runs: 0,
-      diagnostics: [{ severity: 'warning', message: 'nodes 不是纯数组字面量（第 11 行用 steps.map(...) 生成节点），不满足可视化编辑的受限子集，画布只读。改成逐个列出节点后即可在画布上编辑。', line: 11, column: 5 }],
+      diagnostics: [{ severity: 'warning', message: 'nodes 不是纯数组字面量（第 11 行用 steps.map(...) 生成节点），不满足可视化编辑的受限子集，画布只读。', line: 11, column: 5 }],
       model: {
         meta: { id: 'hotfix', title: lit('线上热修'), version: lit('0.1.0') },
         stages: lit([{ id: 'fix', title: '修复' }, { id: 'release', title: '发布' }]),
@@ -172,3 +172,18 @@ export function workflowSeeds(): Record<string, WorkflowSeed> {
     },
   }
 }
+
+/**
+ * 兜底转换（POST /workflows/:id/convert）之后的模型：把 hotfix 里 steps.map(...) 生成的节点逐个展开成字面量，
+ * 其余不变，满足受限子集后画布可编辑。其他 workflow 没有可转换的写法，返回 undefined。
+ */
+export function convertedModel(id: string, model: EditableWorkflow): EditableWorkflow | undefined {
+  if (id !== 'hotfix') return undefined
+  const steps = [
+    n('agent', { id: 'locate', title: '定位问题', stage: 'fix', role: 'dev' }),
+    n('agent', { id: 'patch', title: '修复并补测试', stage: 'fix', role: 'dev', needs: ['locate'] }),
+  ]
+  const rest = model.nodes.map((x) => (x.id === 'review-hotfix' ? { ...x, props: { ...x.props, needs: lit(['patch']) } } : x))
+  return { ...structuredClone(model), nodes: [...steps, ...structuredClone(rest)], editable: true }
+}
+

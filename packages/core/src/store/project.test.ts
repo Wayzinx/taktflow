@@ -128,8 +128,10 @@ describe('project / profiles', () => {
       'lead',
       'pm',
       'reviewer',
+      'steward',
       'test-designer',
       'verifier',
+      'wiki-writer',
     ])
     expect(profiles.dev?.harness).toEqual({ harness: 'codex', effort: 'high', fallback: [{ harness: 'claude-code' }] })
     expect(profiles.dev?.writeScope).toContain('src/**')

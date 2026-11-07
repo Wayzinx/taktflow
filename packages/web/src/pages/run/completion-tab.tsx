@@ -40,7 +40,7 @@ export function CompletionTab({ d, runId, requirementId }: { d: NodeDetail; runI
   const failures = d.failures ?? []
 
   if (all.length === 0 && failures.length === 0 && suppressed.length === 0) {
-    return <EmptyState compact icon={ListChecks} title="这个节点没有完成标准" hint="在 workflow 里给节点加 completion，引擎会要求结果逐条自检并附证据。" />
+    return <EmptyState compact icon={ListChecks} title="这个节点没有完成标准" body="给节点设完成标准后，结果要逐条自检并附证据；可以让管家帮你加。" />
   }
 
   return (

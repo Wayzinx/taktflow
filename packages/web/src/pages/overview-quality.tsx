@@ -1,6 +1,9 @@
 import { ShieldCheck } from 'lucide-react'
 import type { ProjectOverview, QualityMetrics, RequirementSummary } from '@taktflow/core'
 import { StatCard } from '../components/stat-card'
+import { CountUp } from '../components/ui'
+
+/** 整数读数：过渡中途也按整数显示（CountUp 默认格式会在中途露出小数）。 */
 
 type Source = keyof QualityMetrics['interceptedBy']
 
@@ -35,9 +38,9 @@ export function QualityStat({ totals, requirements }: { totals: ProjectOverview[
       icon={<ShieldCheck />}
       value={
         <>
-          {verified}
+          <CountUp value={verified} from0 />
           <span className="stat-unit">
-            / <b className="stat-unit-strong">{intercepted}</b> 拦截
+            / <b className="stat-unit-strong"><CountUp value={intercepted} from0 /></b> 拦截
           </span>
         </>
       }

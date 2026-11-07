@@ -62,10 +62,10 @@ typography:
     fontSize: "max(11px, 0.93em)"
     fontWeight: 400
 rounded:
-  xs: "3px"
-  sm: "5px"
-  md: "7px"
-  lg: "10px"
+  xs: "4px"
+  sm: "6px"
+  md: "10px"
+  lg: "14px"
   pill: "999px"
 spacing:
   "1": "4px"
@@ -76,6 +76,8 @@ spacing:
   "6": "24px"
   "8": "32px"
   "10": "40px"
+  "12": "48px"
+  "16": "64px"
 components:
   button-primary:
     backgroundColor: "{colors.ink}"
@@ -101,6 +103,14 @@ components:
     backgroundColor: "{colors.surface}"
     rounded: "{rounded.lg}"
     width: "640px"
+  drawer:
+    backgroundColor: "{colors.surface}"
+    rounded: "0"
+    width: "440px"
+  toast:
+    backgroundColor: "{colors.surface}"
+    rounded: "{rounded.lg}"
+    width: "440px"
 ---
 
 # Design System: taktflow 控制台
@@ -174,9 +184,9 @@ taktflow 的控制台像一间精密仪器的控制室：深石墨的控制导�
 
 ## Layout
 
-- 外壳：左侧 232px 控制导轨（品牌、命令面板入口、主导航、最近需求、主题切换）+ 右侧工作区；顶栏 52px 吸顶，含面包屑、数据来源标记、节拍指示、⌘K 按钮。
+- 外壳：左侧 248px 控制导轨（品牌、空间切换器 + 管家 / 搜索 / 收起三个图标按钮、主导航、最近需求、主题切换；⌘B 收为 60px 图标导轨）+ 右侧工作区；顶栏 52px 吸顶，含面包屑、数据来源标记、节拍指示、⌘K 按钮。
 - 工作区内边距 24px / 32px；窄于 900px 时导轨收为抽屉（汉堡按钮打开、点遮罩或路由变化关闭），面包屑只留当前页。
-- 间距以 4px 为基线：4 / 8 / 12 / 16 / 20 / 24 / 32 / 40（`--sp-*`）。同组元素 8px，组与组 16–24px，区块之间 24–32px。
+- 间距：布局一律按 **8px 网格**（8 / 16 / 24 / 32 / 48 / 64，`--sp-2/4/6/8/12/16`）；4 / 12 / 20 只用于控件内部微调。同组元素 8px，组与组 16–24px，区块之间 24–32px。少套框，多用间距与色调分组。
 - 表格行高 44px，导航行高 32px，命令面板行高 38px。
 
 ## Elevation & Depth
@@ -188,21 +198,32 @@ taktflow 的控制台像一间精密仪器的控制室：深石墨的控制导�
 - **md**（`0 6px 18px -6px …, 0 2px 5px -2px …, 0 0 0 1px var(--border)`）：悬浮卡片、下拉。
 - **lg**（`0 28px 60px -16px …, 0 10px 20px -10px …, 0 0 0 1px var(--border-strong)`）：命令面板、抽屉、窄屏导轨。
 
+### 三层表面（M4）
+| 层 | 底色 | 阴影 token | 用途 |
+|---|---|---|---|
+| 页面底 | `--bg` | 无 | 工作区背景 |
+| 卡片 | `--surface` / `--surface-raised` | `--elev-1` | 卡片、表格容器、空状态图标 |
+| 浮层 | `--surface-overlay` | `--elev-2`（下拉、菜单、气泡）/ `--elev-3`（对话框、抽屉、停靠面板、⌘K、toast） | 浮在内容之上的一切 |
+
+浅色主题靠细阴影区分层次；深色主题阴影几乎看不见，所以**浮层更亮（`--surface-overlay`）+ 描边更实（`--border-strong`）**。三个 `--elev-*` 都自带 1px 描边与顶部内高光，不要再叠 `border`。
+
 ### Named Rules
-**The Flat At Rest Rule.** 静止的表面只用 sm；只有浮在内容之上的东西（面板、抽屉、菜单）用 lg。
+**The Flat At Rest Rule.** 静止的表面只用 elev-1；只有浮在内容之上的东西用 elev-2 / elev-3。
 
 ## Shapes
 
-精密件的小半径：标签 3px、按钮与输入 5px、卡片 7px、浮层 10px、计数角标用胶囊。描边 1px，深浅主题都用半透明暖灰。不使用单侧粗色条；"当前位置"用 2–3px 的节拍刻度表达，只出现在导航与命令面板的选中行。
+圆角刻度 **6 / 10 / 14**（`--r-sm` / `--r-md` / `--r-lg`；旧名 `--radius-sm` / `--radius` / `--radius-lg` 指向它们）：按钮、输入、标签、菜单项 6px，卡片与面板 10px，浮层（对话框、抽屉、⌘K、toast）14px；角标与行内代码 4px（`--radius-xs`），计数角标用胶囊。字号刻度 **12 / 13 / 14 / 16 / 20 / 28**（11px 只给分组标题与角标）。描边 1px，深浅主题都用半透明暖灰。不使用单侧粗色条；"当前位置"用 2–3px 的节拍刻度表达，只出现在导航与命令面板的选中行。
 
 ## Components
 
 ### Buttons
 - **Shape:** 5px 圆角，高 30px（小号 26px）。
 - **Primary:** 墨色底、反白文字、内高光；hover 变浅一级。
-- **Default:** 纸面底 + strong 描边；hover 换 `--surface-hover`；按下下沉 0.5px。
+- **Default:** 纸面底 + strong 描边；hover 换 `--surface-hover`。
+- **Press:** 所有按钮按下 `scale(.98)`，80ms（`--dur-press`）；非 `.btn` 的可点元素加 `.pressable`。
 - **Ghost:** 无底无边，hover 才出现底色。
-- **Focus:** 2px 节拍橙焦点环，偏移 2px。
+- **Focus:** 2px 节拍橙焦点环，偏移 2px，120ms 淡入（`--dur-focus`）。
+- **强调色**（takt-orange）只用于两处：主动作的焦点 / 选中记号，以及实时状态（运行中、思考中、流式光标、未读角标）。
 
 ### Navigation（控制导轨）
 - 导轨深石墨；条目 13px/500，图标 16px、描边 1.75。
@@ -261,7 +282,7 @@ taktflow 的控制台像一间精密仪器的控制室：深石墨的控制导�
 
 ### 节律
 - 运行中的状态点、节拍指示按 `takt-beat` 跳：拍头放大 1.35 倍，然后回落——像节拍器，不是呼吸灯。
-- 运行中的标题用 `.shimmer-text`（两拍扫一次的节拍橙窄高光）；跳转定位用 `.jump-highlight`（2.4s 淡出）。
+- 运行中的标题用 `.shimmer-text`（两拍扫一次的窄亮带：文字保持实色，用遮罩让其余部分半透明，不用渐变文字）；跳转定位用 `.jump-highlight`（2.4s 淡出）。
 
 ### 不加动画的地方
 - 拖拽本体严格跟手，不加缓动；流式文本、虚拟列表行、频繁更新的计数不加入场动画。
@@ -269,6 +290,24 @@ taktflow 的控制台像一间精密仪器的控制室：深石墨的控制导�
 
 ### 减少动态效果
 - `prefers-reduced-motion: reduce`：无限动画（脉动、闪烁、扫光、传送带）**静止且仍可见**——每个无限动画在自己的 CSS 文件里写兜底（`motion:audit` 检查）；进出场只保留透明度，去掉位移与缩放；过渡瞬时完成；信息不依赖动效。
+
+### M4 体验基线（docs/dev/m4-web.md；原语在 `components/ui/`，用法见 `packages/web/OWNERSHIP.md`）
+| 场景 | 规格 | 实现 |
+|---|---|---|
+| 页头 | 标题 + 一句说明 + 右侧主动作 + 说明下方最多 3 个管家建议胶囊 | `<PageHeader title description actions suggestions />` |
+| 加载 | 骨架贴近真实布局，超过 120ms 才淡入，扫光；禁止"…""加载中"文字 | `<Skeleton>` / `SkeletonRows` / `SkeletonText` / `SkeletonCard` / `SkeletonGrid`；`ux:audit` 检查 |
+| 空 / 错误 | 一句话 + 一个主动作 + "让管家帮我"；错误说明原因 + 重试，403 说明找谁 | `<EmptyState icon title body action stewardAsk />`、`<ErrorState error onRetry />` |
+| 成功 | 底部居中升起，5s 消失（悬停暂停），最多 3 条，能撤销就带撤销 | `toast(msg, { undo, tone })` + `<Toaster>` |
+| 路由切换 | 旧页淡出 120ms；新页淡入 + 上移 6px，200ms，`--ease-out-soft`；共享元素用 `view-transition-name` | View Transitions（`lib/router`）+ `<PageTransition>`、`vtName()` |
+| Tab | 指示器 transform 平移，内容淡入 150ms | `<Tabs>` + `<TabPanel key={tab}>` |
+| 列表首屏 | 每项间隔 24ms、最多 10 项、单项 160ms；之后的更新不入场 | `useStagger(n)` |
+| 新行 | 底色闪一下，1.2s 淡出 | `useFlashRows(keys)` → `.flash-row` |
+| 数字 | 旧值 → 新值 400ms，等宽数字；首屏从 0 只给总览 | `<CountUp value from0 />` |
+| 运行中 / 思考中 / 流式 / 展开 | 节拍呼吸外环 / 扫光 / 光标闪烁 / `grid-template-rows: 0fr → 1fr` | `.live-ring` / `.shimmer-text` / `.stream-caret` / `.expand[data-open]` |
+| 抽屉 / 停靠面板 | 右侧 `translateX(16px)` + 淡入 220ms，退出 160ms；停靠面板在 ≥1280px 时把工作区让出 440px（宽度变化不做过渡），窄屏浮在页面上 | `<Drawer>`（`mode` 取 `modal` 或 `dock`）；`.shell[data-dock='open']` |
+| 快捷键 | ⌘J 管家、⌘K 命令面板、C 新建需求（不在输入框时）、⌘B 收起侧栏；写进按钮 tooltip | `lib/shortcuts`、`<Kbd combo />`、`withShortcut()` |
+
+新增时长 token：`--dur-route-out` 120 / `--dur-route-in` 200 / `--dur-tab` 150 / `--dur-item` 160 / `--stagger-step` 24 / `--dur-count` 400 / `--dur-flash` 1200 / `--dur-dock` 220 / `--dur-focus` 120 / `--skeleton-delay` 120（ms）；曲线 `--ease-out-soft: cubic-bezier(.2,.8,.2,1)`。reduced-motion 下这些都只保留透明度（`styles/motion.css` 用 `!important` 压过全局兜底），无限动画静止但可见。
 
 ## Iconography
 
@@ -279,7 +318,7 @@ lucide-react，线性图标；导航 16px / 描边 1.75，正文与按钮 14px�
 ### Do:
 - **Do** 从 `tokens.css` 取所有颜色、字号、间距、圆角、阴影、时长；新增 token 先加到那里。
 - **Do** 让"运行中"的一切跟随 `--takt` 同一拍。
-- **Do** 给每个加载状态写清楚在等什么（"正在读取需求与运行"）。
+- **Do** 异步区域四种状态齐全：骨架（形状贴近真实布局）、空（一句话 + 一个主动作 + 让管家帮我）、错误（原因 + 重试）、成功（toast，能撤销就带撤销）。整页首屏的 `TaktLoader` 仍可写清在等什么。
 - **Do** 在深色主题里用 `light-dark()` 的第二个值，而不是单独写一套选择器。
 
 ### Don't:
@@ -288,3 +327,4 @@ lucide-react，线性图标；导航 16px / 描边 1.75，正文与按钮 14px�
 - **Don't** 做单侧粗色条卡片；需要分类就用徽章、图标或细描边着色。
 - **Don't** 让任何承载信息的文字小于 11px。
 - **Don't** 加没有状态含义的循环动画。
+- **Don't** 在页面文案里教用户改 `takt.config.json` 或跑 `takt …` 命令——给按钮，或"让管家帮我"（`ux:audit` 警告）。

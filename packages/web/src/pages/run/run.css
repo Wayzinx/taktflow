@@ -13,7 +13,7 @@
   }
 }
 
-.shell-content:has(> .run-page) {
+.shell-content:has(> .page-view > .run-page) {
   padding: 0;
 }
 .run-page {
@@ -482,4 +482,9 @@ body.resizing,
 body.resizing * {
   cursor: col-resize !important;
   user-select: none !important;
+}
+
+/* M4：运行页的管家建议，放在阶段条下面 */
+.run-suggest {
+  margin-top: var(--sp-3);
 }

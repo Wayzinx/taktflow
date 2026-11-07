@@ -192,7 +192,7 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
         <EmptyState
           icon={Bug}
           title="还没有录入缺陷"
-          hint="交付后发现的问题录到这里：预检 + 归因 Agent 找出在哪引入、哪里漏检，人确认后变成回归评测用例。"
+          body="交付后发现的问题录到这里：预检 + 归因 Agent 找出在哪引入、哪里漏检，人确认后变成回归评测用例。"
           action={
             <button className="btn btn-sm btn-primary" onClick={() => setFormOpen(true)}>
               <Plus />

@@ -6,7 +6,7 @@ export function NotFoundPage() {
   useCrumbs([{ label: '未找到' }], [])
   return (
     <div className="card" style={{ maxWidth: 640, margin: '40px auto' }}>
-      <EmptyState icon={Compass} title="页面不存在" hint="链接可能已失效。" />
+      <EmptyState icon={Compass} title="页面不存在" body="链接可能已失效。" />
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { ArrowUpRight, GitBranch, ListChecks } from 'lucide-react'
 import type { RoomMessage, Usage } from '@taktflow/core'
 import { useAsync } from '../../../api'
-import { KindIcon, StatusBadge } from '../../../components/ui'
+import { KindIcon, SkeletonRows, StatusBadge } from '../../../components/ui'
 import { TaktRuler } from '../../../components/takt'
 import { fmtCost, fmtTokens } from '../../../lib/format'
 import { Link } from '../../../lib/router'
@@ -54,7 +54,11 @@ export function TaskCard({ m, pulse, onRoles }: { m: RoomMessage; pulse: number;
         {d && <StatusBadge meta={RUN_STATUS[d.run.status]} />}
       </header>
       {running && <TaktRuler ticks={24} running className="chat-task-ruler" />}
-      {!d && !run.error && <p className="chat-task-empty faint">正在读取任务运行…</p>}
+      {!d && !run.error && (
+        <div className="chat-task-empty">
+          <SkeletonRows rows={2} />
+        </div>
+      )}
       {run.error && !d && <p className="chat-task-empty faint">{run.error.message}</p>}
       {d && (
         <ol className="chat-task-nodes">

@@ -2,6 +2,7 @@ import type { CommandInfo, CommandRunResponse } from '../api.js'
 import type { SpaceMember } from '../types.js'
 import { validateSchema } from '../engine/schema.js'
 import type { CommandContext, CommandDeps, CommandInputs, CommandRegistry, CommandSpec } from './contracts.js'
+import { createRequirementFull, crudCommandSpecs, requirementCreateReason } from './crud-commands.js'
 import { commandSchemas } from './schema.js'
 export type * from './contracts.js'
 
@@ -21,7 +22,7 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
     define('run.status', '运行状态', 'read', async (input) => stores.runs.get(input.runId as string)),
     define('attention.list', '待办列表', 'read', async (input) => stores.attention.list(input)),
     define('lessons.list', '经验列表', 'read', async (input) => stores.lessons?.list(input) ?? []),
-    define('requirement.create', '创建需求', 'write', async (input) => stores.workspaces.createRequirement(input as { title: string })),
+    define('requirement.create', '创建需求', 'write', async (input, context) => createRequirementFull(deps, input as unknown as import('../api.js').RequirementCreateRequest, context)),
     define('route.preview', '路由预览', 'read', invoke('route')),
     define('run.start', '启动运行', 'write', invoke('startRun')),
     define('run.resume', '继续运行', 'write', invoke('resumeRun')),
@@ -30,6 +31,7 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
     define('task.dispatch', '派发任务', 'write', invoke('dispatchTask')),
     define('review.dispose', '处置评审问题', 'write', invoke('disposeReview')),
     define('lesson.status', '修改经验状态', 'write', invoke('setLessonStatus'), 'maintainer'),
+    ...crudCommandSpecs(deps),
     ...(deps.extensions ?? []),
   ]
   const commands = new Map(specs.map((spec) => [spec.id, spec]))
@@ -43,6 +45,7 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
         if (!spec) throw new Error(`命令不存在：${id}`)
         validateSchema(input, spec.input)
         requireRole(stores, context.actor, spec.minRole ?? 'member', id)
+        if (id === 'requirement.create') context = { ...context, reason: requirementCreateReason(input as unknown as import('../api.js').RequirementCreateRequest, context.reason) }
         if (spec.risk !== 'read' && !context.reason?.trim()) throw new Error('写操作必须说明原因')
         if (['attention.answer', 'review.dispose'].includes(id) && context.actor.type !== 'human') throw new Error('必须由人显式处理')
         await deps.audit({ id, input, ...context, phase: 'requested' })

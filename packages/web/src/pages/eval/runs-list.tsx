@@ -1,6 +1,6 @@
 import type { EvalRun } from '@taktflow/core'
 import { ChevronRight, FlaskConical } from 'lucide-react'
-import { EmptyState, SkeletonRows, StatusBadge } from '../../components/ui'
+import { EmptyState, SkeletonRows, StatusBadge, useFlashRows, useStagger } from '../../components/ui'
 import { actorName, durationBetween, fmtDuration, fmtRelative } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { Check, LoaderCircle, X } from 'lucide-react'
@@ -21,6 +21,8 @@ export function VerdictBadge({ v }: { v?: EvalRun['comparison'] }) {
 }
 
 export function RunsList({ runs, onNew }: { runs?: EvalRun[]; onNew: () => void }) {
+  const stg = useStagger(runs?.length ?? 0)
+  const flash = useFlashRows((runs ?? []).map((r) => r.id))
   if (!runs) return <SkeletonRows rows={3} />
   if (runs.length === 0)
     return (
@@ -28,7 +30,8 @@ export function RunsList({ runs, onNew }: { runs?: EvalRun[]; onNew: () => void 
         compact
         icon={FlaskConical}
         title="还没有评测运行"
-        hint="选一个节点或技能、勾选用例、填一个变体（技能目录 / prompt / 模型），在冻结输入上回放并与基线配对比较。"
+        body="选一个节点或技能、勾选用例、填一个变体（技能 / prompt / 模型），在冻结输入上回放并与基线配对比较。"
+        stewardAsk="帮我评测一下最近改过的技能是不是变好了"
         action={
           <button className="btn btn-sm btn-primary" onClick={onNew}>
             新建评测
@@ -54,12 +57,12 @@ export function RunsList({ runs, onNew }: { runs?: EvalRun[]; onNew: () => void 
           </tr>
         </thead>
         <tbody>
-          {runs.map((r) => {
+          {runs.map((r, i) => {
             const c = r.comparison
             const ms = durationBetween(r.startedAt, r.endedAt)
             const st = RUN_STATE[r.status]
             return (
-              <tr key={r.id}>
+              <tr key={r.id} className={`${stg(i).className ?? ''} ${flash(r.id)}`} style={stg(i).style}>
                 <td>
                   <Link to={`/eval?tab=runs&run=${r.id}`} className="mono ev-run-id">
                     {r.id}

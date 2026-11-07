@@ -1,7 +1,10 @@
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { openProject, type AttentionItem } from '@taktflow/core'
-import { discoverSpaces, spaceId, spaceSummary } from './space.js'
+import { createRouter } from './router.js'
+import { serverCrudRoutes } from './crud-routes.js'
+import type { Handler } from './routes.js'
+import { attachCrudServices, discoverSpaces, spaceId } from './space.js'
 import type { LeadMention } from './space-routes.js'
 import type { CatalogCallbacks } from './catalog.js'
 import { authorize, validateWriteRequest, fail, HttpError, json } from './http.js'
@@ -26,27 +29,47 @@ export interface RunningServer { url: string; close(): Promise<void> }
 
 export async function createServer(options: ServerOptions): Promise<RunningServer> {
   if (options.spacesDir && options.projectDir) throw new Error('projectDir 与 spacesDir 不能同时指定')
-  const spaces = options.spacesDir ? await discoverSpaces(options.spacesDir) : [await openProject(options.projectDir ?? process.cwd())]
-  const stores = spaces[0]!
+  let spaces = options.spacesDir ? await discoverSpaces(options.spacesDir) : [await openProject(options.projectDir ?? process.cwd())]
   const byId = new Map(spaces.map((space) => [spaceId(space), space]))
   const connections = new Set<() => void>()
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, options,
     options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
+  const refresh = async () => {
+    spaces = options.spacesDir ? await discoverSpaces(options.spacesDir) : spaces
+    byId.clear()
+    for (const space of spaces) {
+      byId.set(spaceId(space), space)
+      if (!routers.has(spaceId(space))) routers.set(spaceId(space), routes(connections,
+        options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, options,
+        options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention))
+    }
+    for (const id of routers.keys()) if (!byId.has(id)) routers.delete(id)
+  }
+  const admin = createRouter<Handler>()
+  serverCrudRoutes(admin.add, { spacesDir: options.spacesDir, projectDir: options.projectDir, onChange: refresh })
   let closing = false
   const server = httpServer((request, response) => {
     void (async () => {
       response.setHeader('vary', 'Origin')
       if (request.headers.origin === 'http://localhost:5173') {
         response.setHeader('access-control-allow-origin', 'http://localhost:5173')
-        response.setHeader('access-control-allow-methods', 'GET, HEAD, POST, PUT, PATCH, OPTIONS')
+        response.setHeader('access-control-allow-methods', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS')
         response.setHeader('access-control-allow-headers', 'Content-Type, X-Takt-User, X-Takt-Reason, Last-Event-ID')
       }
       if (closing) throw new HttpError(500, '服务正在关闭')
       if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return }
       let url: URL
       try { url = new URL(request.url ?? '/', 'http://localhost') } catch { throw new HttpError(400, 'URL 不合法') }
-      let selected = stores
+      if (options.spacesDir && url.pathname.startsWith('/api/')) await refresh()
+      const adminRoute = admin.match(request.method ?? 'GET', url.pathname)
+      if (adminRoute) {
+        validateWriteRequest(request)
+        const result = await adminRoute.handler({ stores: spaces[0]!, request, response, url, params: adminRoute.params })
+        if (result !== STREAMING) json(response, result)
+        return
+      }
+      let selected = spaces[0]
       const prefix = /^\/api\/s\/([^/]+)(?=\/|$)/.exec(url.pathname)
       if (prefix) {
         let id: string
@@ -56,16 +79,13 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         selected = found
         url.pathname = '/api' + url.pathname.slice(prefix[0].length)
       }
-      if (url.pathname === '/api/spaces' && request.method === 'GET') {
-        json(response, await Promise.all(spaces.map(async (space) => spaceSummary(await openProject(space.projectDir)))))
-        return
-      }
-      const matched = routers.get(spaceId(selected))!.match(request.method ?? 'GET', url.pathname)
+      const matched = selected && routers.get(spaceId(selected))?.match(request.method ?? 'GET', url.pathname)
       if (matched) {
         validateWriteRequest(request)
         // openProject 的 config 是快照，按请求重新打开，CLI 修改配置和文件后即可读到。
-        const fresh = await openProject(selected.projectDir)
+        const fresh = await openProject(selected!.projectDir)
         attachLessons(fresh)
+        attachCrudServices(fresh)
         if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname)) authorize(request, fresh)
         const result = await matched.handler({ stores: fresh, request, response, url, params: matched.params })
         if (result !== STREAMING) json(response, result)
@@ -100,5 +120,10 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
 export { discoverSpaces, spaceId, spaceSummary, spaceDetail, workflowStore, repoManager, auditSpace, changeConfig, members, repoBinding, spaceFile, atomicWrite } from './space.js'
 export type { LeadMention } from './space-routes.js'
 
-export { projectCommands, attachLessons, answerAttention, routingWorkflows } from './commands.js'
+export { projectCommands, attachCrudServices, patchConfig } from './space.js'
+export { attachLessons, answerAttention, routingWorkflows } from './commands.js'
 export type { M3Callbacks } from './m3-routes.js'
+
+export * from './space-admin.js'
+export { deleteRequirement } from './crud-routes.js'
+export { convertWorkflow } from './workflow-routes.js'

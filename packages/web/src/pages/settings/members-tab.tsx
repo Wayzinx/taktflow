@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Plus, Trash2, Users } from 'lucide-react'
 import type { SpaceDetail, SpaceMember } from '@taktflow/core'
 import { useSource } from '../../api'
-import { Avatar, EmptyState, ReasonDialog, SkeletonRows, toast } from '../../components/ui'
+import { Avatar, EmptyState, ReasonDialog, SkeletonRows, toast, useFlashRows, useStagger } from '../../components/ui'
 import { COMMON_DUTIES, DutiesEditor } from './duties-editor'
 
 const ROLES: Array<{ id: SpaceMember['role']; label: string; can: string }> = [
@@ -22,6 +22,8 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
   const base = JSON.stringify(space?.members ?? [])
   useEffect(() => setDraft(space?.members ?? []), [base])
   const dirty = JSON.stringify(draft) !== base
+  const st = useStagger(draft.length)
+  const flash = useFlashRows(draft.map((m) => m.id))
 
   if (!space) return <div className="card"><SkeletonRows rows={5} /></div>
 
@@ -41,8 +43,16 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
   async function save(reason: string) {
     setBusy(true)
     try {
+      const before = space!.members
       await ds.setMembers(draft, reason)
-      toast('成员已更新', { body: '已写回 takt.config.json 的 members。' })
+      toast('成员已更新', {
+        body: '已保存并记入空间审计。',
+        tone: 'success',
+        undo: async () => {
+          await ds.setMembers(before, `撤销：${reason}`)
+          onSaved()
+        },
+      })
       onSaved()
     } finally {
       setBusy(false)
@@ -57,11 +67,11 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
           <span className="faint num">{draft.length}</span>
         </div>
         {draft.length === 0 ? (
-          <EmptyState compact icon={Users} title="还没有成员" hint="至少需要一位 owner。" />
+          <EmptyState compact icon={Users} title="还没有成员" body="在下面输入成员 id 添加，至少需要一位 owner。" stewardAsk="帮我把团队成员加进这个空间：" />
         ) : (
           <ul className="member-list">
             {draft.map((m, i) => (
-              <li key={m.id} className="member-row">
+              <li key={m.id} className={`member-row ${st(i).className ?? ''} ${flash(m.id)}`} style={st(i).style}>
                 <Avatar name={m.name} size={28} />
                 <div className="member-text">
                   <span className="member-name">{m.name}</span>
@@ -126,7 +136,7 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
             </button>
           </div>
         )}
-        <ReasonDialog open={asking} onClose={() => setAsking(false)} title="保存成员变更" description="写回 takt.config.json 的 members，并记入空间审计。" confirmLabel="保存成员" onSubmit={save} />
+        <ReasonDialog open={asking} onClose={() => setAsking(false)} title="保存成员变更" description="保存后立即生效，并记入空间审计。" confirmLabel="保存成员" onSubmit={save} />
       </div>
       <aside className="space-aside">
         <div className="section-label">角色与权限</div>
@@ -153,9 +163,6 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
             </div>
           ))}
         </dl>
-        <p className="faint space-aside-note">
-          命令行：<span className="mono">takt member add &lt;id&gt; --role member</span>
-        </p>
       </aside>
     </div>
   )

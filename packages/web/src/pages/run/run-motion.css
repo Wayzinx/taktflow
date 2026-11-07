@@ -137,10 +137,10 @@
 /* ---------- 运行中节点的标题：节拍橙扫光（与 styles/motion.css 的 .shimmer-text 同一道光） ---------- */
 .dag-node.st-running .dag-title {
   --shimmer-base: var(--text);
-  background: linear-gradient(100deg, var(--shimmer-base) 42%, color-mix(in oklch, var(--accent-text) 70%, var(--shimmer-base)) 50%, var(--shimmer-base) 58%) 0 0 / 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  --shimmer-mask: linear-gradient(100deg, rgb(0 0 0 / 0.5) 40%, #000 50%, rgb(0 0 0 / 0.5) 60%) 0 0 / 300% 100%;
+  color: var(--shimmer-base);
+  -webkit-mask: var(--shimmer-mask);
+  mask: var(--shimmer-mask);
   animation: shimmer-text calc(var(--takt) * 2) linear infinite;
 }
 
@@ -165,7 +165,8 @@
   }
   .dag-node.st-running .dag-title {
     animation: none !important;
-    background: none;
+    -webkit-mask: none;
+    mask: none;
     color: var(--shimmer-base);
   }
   /* 位置不动，只保留淡入淡出，开关抽屉仍有可感知的反馈 */

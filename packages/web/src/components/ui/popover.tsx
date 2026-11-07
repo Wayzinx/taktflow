@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { Check, type LucideIcon } from 'lucide-react'
 import { usePresence } from '../../lib/motion'
 import './overlay.css'
 
@@ -107,85 +106,4 @@ export function Popover({ open, onClose, anchor, placement = 'bottom-start', off
   )
 }
 
-// ---------------------------------------------------------------- 下拉菜单
-
-export interface MenuItem {
-  id: string
-  label: ReactNode
-  icon?: LucideIcon
-  hint?: ReactNode
-  /** 单选菜单里的当前项 */
-  checked?: boolean
-  danger?: boolean
-  disabled?: boolean
-  onSelect: () => void
-}
-
-/** 下拉菜单：↑↓ 选择、↵ 执行、Esc 关闭并把焦点还给触发按钮。 */
-export function Menu({ open, onClose, anchor, items, placement = 'bottom-start', ariaLabel }: { open: boolean; onClose: () => void; anchor: RefObject<HTMLElement | null>; items: MenuItem[]; placement?: Placement; ariaLabel?: string }) {
-  const [sel, setSel] = useState(-1)
-  const list = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!open) return
-    setSel(Math.max(0, items.findIndex((i) => i.checked && !i.disabled)))
-    const t = setTimeout(() => list.current?.focus({ preventScroll: true }))
-    return () => clearTimeout(t)
-    // 只在打开时定位初始选中项
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-
-  const pick = (it: MenuItem | undefined) => {
-    if (!it || it.disabled) return
-    onClose()
-    anchor.current?.focus?.()
-    it.onSelect()
-  }
-  const move = (d: 1 | -1) => {
-    if (!items.length) return
-    let i = sel
-    for (let n = 0; n < items.length; n++) {
-      i = (i + d + items.length) % items.length
-      if (!items[i]!.disabled) break
-    }
-    setSel(i)
-  }
-
-  return (
-    <Popover open={open} onClose={onClose} anchor={anchor} placement={placement} className="ov-menu" role="menu" ariaLabel={ariaLabel}>
-      <div
-        ref={list}
-        tabIndex={-1}
-        className="ov-menu-list"
-        aria-activedescendant={sel >= 0 ? `ov-mi-${sel}` : undefined}
-        onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') move(1)
-          else if (e.key === 'ArrowUp') move(-1)
-          else if (e.key === 'Enter' || e.key === ' ') pick(items[sel])
-          else return
-          e.preventDefault()
-        }}
-      >
-        {items.map((it, i) => {
-          const Icon = it.icon
-          return (
-            <div
-              key={it.id}
-              id={`ov-mi-${i}`}
-              role={it.checked === undefined ? 'menuitem' : 'menuitemradio'}
-              aria-checked={it.checked}
-              aria-disabled={it.disabled || undefined}
-              className={`ov-mi${i === sel ? ' on' : ''}${it.danger ? ' danger' : ''}${it.disabled ? ' disabled' : ''}`}
-              onMouseMove={() => i !== sel && !it.disabled && setSel(i)}
-              onClick={() => pick(it)}
-            >
-              {Icon ? <Icon className="ov-mi-icon" aria-hidden /> : it.checked !== undefined ? <span className="ov-mi-icon" /> : null}
-              <span className="ov-mi-label truncate">{it.label}</span>
-              {it.hint && <span className="ov-mi-hint">{it.hint}</span>}
-              {it.checked && <Check className="ov-mi-check" aria-hidden />}
-            </div>
-          )
-        })}
-      </div>
-    </Popover>
-  )
-}
+// 下拉菜单见 ./menu.tsx（Menu / MenuItem）

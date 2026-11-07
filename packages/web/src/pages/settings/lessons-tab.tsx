@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Lightbulb } from 'lucide-react'
 import type { Lesson, SpaceDetail } from '@taktflow/core'
 import { useAsync } from '../../api'
-import { EmptyState, ErrorState, Segmented, SkeletonRows } from '../../components/ui'
+import { EmptyState, ErrorState, Segmented, SkeletonRows, TabPanel, useStagger } from '../../components/ui'
 import { LessonDetail } from './lesson-detail'
 import { LESSON_ORDER, LESSON_STATUS, type LessonStatus } from './lesson-meta'
 import { LessonRatio, TriggerChips } from './lesson-parts'
@@ -19,6 +19,7 @@ export function LessonsTab({ space }: { space?: SpaceDetail }) {
   const [filter, setFilter] = useState<Filter>('all')
   const [picked, setPicked] = useState<string>()
   const [local, setLocal] = useState<Record<string, Lesson>>({})
+  const st = useStagger(q.data?.length ?? 0)
 
   if (q.error && !q.data) return <div className="card"><ErrorState error={q.error} onRetry={q.reload} /></div>
   if (!q.data) return <div className="card"><SkeletonRows rows={5} /></div>
@@ -31,7 +32,7 @@ export function LessonsTab({ space }: { space?: SpaceDetail }) {
   if (all.length === 0)
     return (
       <div className="card">
-        <EmptyState icon={Lightbulb} title="经验库是空的" hint="判决、评审打回和群里人明确写下的做法会沉淀成经验；试用通过后才会稳定召回。" />
+        <EmptyState icon={Lightbulb} title="经验库是空的" body="判决、评审打回和群里明确写下的做法会自动沉淀成经验，试用通过后才会稳定召回。" stewardAsk="把我们团队的这条做法记成经验：" />
       </div>
     )
 
@@ -46,21 +47,23 @@ export function LessonsTab({ space }: { space?: SpaceDetail }) {
             value={filter}
             onChange={setFilter}
             options={[
-              { value: 'all', label: '全部' },
-              ...LESSON_ORDER.map((s) => ({ value: s, label: `${LESSON_STATUS[s].label} ${count(s)}` })),
+              { value: 'all', label: '全部', count: all.length },
+              ...LESSON_ORDER.map((s) => ({ value: s, label: LESSON_STATUS[s].label, count: count(s) })),
             ]}
+            size="sm"
+            ariaLabel="按状态筛选"
           />
         </div>
         {list.length === 0 ? (
-          <EmptyState compact icon={Lightbulb} title={`没有${filter === 'all' ? '' : LESSON_STATUS[filter].label}的经验`} />
+          <EmptyState compact icon={Lightbulb} title={`没有${filter === 'all' ? '' : LESSON_STATUS[filter].label}的经验`} body="换个状态看看。" action={<button type="button" className="btn btn-sm" onClick={() => setFilter('all')}>看全部</button>} />
         ) : (
           <ul className="lesson-list" aria-label="经验列表">
-            {list.map((l) => {
+            {list.map((l, i) => {
               const meta = LESSON_STATUS[l.status]
               const Icon = meta.icon
               const on = l.id === current?.id
               return (
-                <li key={l.id}>
+                <li key={l.id} {...st(i)}>
                   <button className={`lesson-row${on ? ' is-on' : ''}${l.status === 'retired' ? ' is-retired' : ''}`} aria-current={on ? 'true' : undefined} onClick={() => setPicked(l.id)}>
                     <span className={`lesson-status tone-${meta.tone}`} title={`${meta.label}：${meta.hint}`}>
                       <Icon aria-hidden />
@@ -86,7 +89,11 @@ export function LessonsTab({ space }: { space?: SpaceDetail }) {
         )}
         <p className="lessons-note faint">经验只在命中触发条件时注入 prompt（每条 ≤ 600 token）；不会改门禁，也不会改 workflow。</p>
       </div>
-      {current && <LessonDetail key={current.id} lesson={current} onChanged={(l) => setLocal((m) => ({ ...m, [l.id]: l }))} />}
+      {current && (
+        <TabPanel key={current.id}>
+          <LessonDetail lesson={current} onChanged={(l) => setLocal((m) => ({ ...m, [l.id]: l }))} />
+        </TabPanel>
+      )}
     </div>
   )
 }

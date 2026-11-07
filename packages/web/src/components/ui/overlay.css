@@ -17,9 +17,9 @@
   width: min(520px, 100%);
   max-height: min(680px, 80vh);
   overflow: hidden;
-  border-radius: var(--radius-lg);
-  background: var(--surface);
-  box-shadow: var(--shadow-lg);
+  border-radius: var(--r-lg);
+  background: var(--surface-overlay);
+  box-shadow: var(--elev-3);
   outline: none;
 }
 .ov-dialog.ov-sm {
@@ -118,9 +118,9 @@
   position: fixed;
   z-index: 120;
   max-width: min(360px, calc(100vw - 16px));
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: var(--shadow-md);
+  border-radius: var(--r-md);
+  background: var(--surface-overlay);
+  box-shadow: var(--elev-2);
 }
 .ov-menu-list {
   display: grid;

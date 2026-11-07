@@ -13,6 +13,22 @@
     grid-template-columns: 188px minmax(0, 1fr) 300px;
   }
 }
+/* 管家停靠面板打开（宽屏让出 440px）：收起节点面板，画布保持可用，好看清幽灵预览 */
+@media (min-width: 1280px) {
+  .shell[data-dock='open'] .wf-body {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+  .shell[data-dock='open'] .wf-body > :first-child {
+    display: none;
+  }
+  /* 没选节点时属性面板只显示 workflow 级信息，也让给画布 */
+  .shell[data-dock='open'] .wf-body:not([data-selected]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .shell[data-dock='open'] .wf-body:not([data-selected]) > :last-child {
+    display: none;
+  }
+}
 @media (max-width: 960px) {
   .wf-body {
     grid-template-columns: 1fr;

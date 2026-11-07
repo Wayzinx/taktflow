@@ -80,3 +80,29 @@ export async function sandboxCall(host: HarnessHost, cwd: string, harness: strin
 export function cwdGuard(host: HarnessHost, cwd: string): WriteGuard {
   return cwd === host.deps.stores.projectDir ? host.guard : new WriteGuard(cwd)
 }
+
+
+// harness 已完成且输出仍在工作区，先记录引用；产物版本由后续 collectOutputs 冻结。
+export async function recordKnowledgeUsage(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext): Promise<void> {
+  const { readKnowledgeQueries, appendKnowledgeQuery } = await import('../knowledge/support.js')
+  const { readFile } = await import('node:fs/promises')
+  const { join } = await import('node:path')
+  const { listFiles } = await import('../util/glob.js')
+  const { assertNoSymlinks } = await import('../store/fs-utils.js')
+  const stores = host.deps.stores
+  const ledger = await readKnowledgeQueries(stores)
+  const queries = ledger.filter(q => q.type !== 'used' && q.runId === ctx.runId && q.nodeId === node.id)
+  if (!queries.length || !node.outputs?.length) return
+  const files = await listFiles(ctx.workspaceDir, node.outputs.map(o => o.path))
+  for (const path of files) {
+    const file = join(ctx.workspaceDir, path)
+    await assertNoSymlinks(ctx.workspaceDir, file)
+    const content = await readFile(file, 'utf8')
+    for (const query of queries) {
+      const refs = query.top.filter(h => content.includes(h.ref)).map(h => h.ref)
+      if (!refs.length) continue
+      await host.emit('knowledge.used', { queryId: query.queryId, refs, artifact: { workspace: ctx.requirementId, path } }, node.id)
+      await appendKnowledgeQuery(stores, { ...query, type: 'used', at: new Date().toISOString(), refs })
+    }
+  }
+}

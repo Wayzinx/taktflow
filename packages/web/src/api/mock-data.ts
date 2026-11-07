@@ -84,7 +84,7 @@ const SDLC: TplNode[] = [
     inputs: ['inputs/**', 'decisions/**?'], outputs: [{ path: 'spec/clarify.md', kind: 'clarification' }],
     prompt: '读 inputs/ 下的 PRD、会议纪要和设计稿，列出所有会影响实现或验收的待确认问题（每条写清楚为什么要问、可选答案）。信息足够就写"无待确认问题"。',
   },
-  { id: 'answer-clarify', kind: 'human', title: '回答澄清问题', stage: 'understand', needs: ['clarify'], form: 'answer', ask: '请在 spec/clarify.md 里逐条回答，或在这里写下统一答复。' },
+  { id: 'answer-clarify', kind: 'human', title: '回答澄清问题', stage: 'understand', needs: ['clarify'], form: 'answer', ask: '逐条回答，或写一段统一答复。' },
   {
     id: 'spec', kind: 'agent', title: '编写 spec', stage: 'understand', needs: ['answer-clarify'], role: 'pm',
     inputs: ['inputs/**', 'spec/clarify.md', 'decisions/**?'], outputs: [{ path: 'spec/spec.md', kind: 'spec' }],
@@ -1136,7 +1136,7 @@ export function createMockDb(): MockDb {
     form: 'choice', choices: ['打回重做系分', '放行', '转人工补充后重跑'], createdAt: iso(m4(49.5)),
   })
   const pendingQuestions = attention.find((a) => a.requirementId === 'REQ-005' && !a.answeredAt)
-  if (pendingQuestions) pendingQuestions.ask = '3 个待确认问题：① 高亮是否区分大小写？② 多个关键词是否分别着色？③ 拼音 / 同义词命中是否高亮？可在 spec/clarify.md 里逐条回答，或在这里统一答复。'
+  if (pendingQuestions) pendingQuestions.ask = '3 个待确认问题：① 高亮是否区分大小写？② 多个关键词是否分别着色？③ 拼音 / 同义词命中是否高亮？可以逐条回答，也可以写一段统一答复。'
 
   // ---------------------------------------------------------------- 评论
   const comments: ArtifactComment[] = [

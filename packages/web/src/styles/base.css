@@ -48,6 +48,15 @@ button {
   outline: 2px solid var(--accent-ring);
   outline-offset: 2px;
 }
+/* 焦点环淡入（体验基线 6）；:where 不加权重，自带动画的元素不受影响 */
+@keyframes focus-ring-in {
+  from {
+    outline-color: transparent;
+  }
+}
+:where(button, a, input, textarea, select, [tabindex], [role='tab'], [role='option'], [role='menuitem']):focus-visible {
+  animation: focus-ring-in var(--dur-focus) var(--ease-out-soft);
+}
 
 h1,
 h2,
@@ -105,14 +114,27 @@ p {
   cursor: pointer;
   white-space: nowrap;
   box-shadow: var(--shadow-xs);
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-press) var(--ease-out-soft);
 }
 .btn:hover {
   background: var(--surface-hover);
 }
+/* 按压：scale(.98) 80ms（体验基线 6）；.pressable 给非 .btn 的可点元素用 */
 .btn:active {
   background: var(--surface-active);
-  transform: translateY(0.5px);
+}
+.btn:active:not(:disabled),
+.pressable:active {
+  /* motion-audit: ok 体验基线 6 规定按压 scale(.98)、80ms */
+  transform: scale(0.98);
+}
+.pressable {
+  transition: transform var(--dur-press) var(--ease-out-soft);
 }
 .btn:disabled {
   opacity: 0.5;
@@ -381,6 +403,10 @@ a.chip:hover {
   .spin,
   .skeleton {
     animation: none;
+  }
+  .btn:active:not(:disabled),
+  .pressable:active {
+    transform: none;
   }
   *,
   *::before,

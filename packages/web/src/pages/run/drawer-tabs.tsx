@@ -254,7 +254,7 @@ export function IoTab({ d, requirementId }: { d: NodeDetail; requirementId: stri
             ))}
           </div>
         ) : (
-          <EmptyState compact icon={FileText} title="没有产物" hint="脚本或修复类节点可能直接改代码，改动见 Trace。" />
+          <EmptyState compact icon={FileText} title="没有产物" body="脚本或修复类节点可能直接改代码，改动见 Trace。" />
         )}
       </div>
     </div>
@@ -527,7 +527,7 @@ export function JudgeTab({ d, runId, requirementId }: { d: NodeDetail; runId: st
   if (!verdictEvents.length)
     return (
       <div className="dpad">
-        <EmptyState compact icon={Check} title="没有判决" hint="上游执行节点没有失败用例时，判决节点直接成功、不调用模型。" />
+        <EmptyState compact icon={Check} title="没有判决" body="上游执行节点没有失败用例时，判决节点直接成功、不调用模型。" />
       </div>
     )
   return (

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, Check, Pencil, CircleDashed, FolderSymlink, GitBranch, GitFork, LoaderCircle, Plus, RefreshCw, SquareTerminal, X } from 'lucide-react'
 import type { SpaceDetail } from '@taktflow/core'
 import { useSource } from '../../api'
-import { EmptyState, ReasonDialog, SkeletonRows, StatusBadge, toast } from '../../components/ui'
+import { EmptyState, ReasonDialog, SkeletonRows, StatusBadge, toast, useFlashRows, useStagger, type StaggerProps } from '../../components/ui'
 import type { StatusMeta } from '../../lib/status'
 import { RepoSetupEdit } from './repo-setup-edit'
 
@@ -17,7 +17,7 @@ const REPO_STATUS: Record<Repo['status'], StatusMeta> = {
 
 const PURPOSE: Record<string, string> = { app: '应用', library: '库', test: '测试', docs: '文档' }
 
-function RepoRow({ repo, onChanged }: { repo: Repo; onChanged: () => void }) {
+function RepoRow({ repo, onChanged, stagger, flash }: { repo: Repo; onChanged: () => void; stagger?: StaggerProps; flash?: string }) {
   const ds = useSource()
   const [syncing, setSyncing] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -39,7 +39,7 @@ function RepoRow({ repo, onChanged }: { repo: Repo; onChanged: () => void }) {
   }
 
   return (
-    <li className="repo-row">
+    <li className={`repo-row ${stagger?.className ?? ''} ${flash ?? ''}`} style={stagger?.style}>
       <span className="repo-icon" aria-hidden>
         <GitFork />
       </span>
@@ -194,16 +194,18 @@ function AddRepo({ onDone }: { onDone: () => void }) {
         绑定
       </button>
       <p className="faint repo-add-hint">
-        id 用小写字母、数字和短横线。镜像放在 <span className="mono">.takt/repos/{f.id || '<id>'}</span>，每个写代码的任务从镜像开自己的 worktree；引导命令在 worktree 建好后执行，失败则节点 blocked；共享目录从主检出软链进来，免得每个 worktree 重装依赖。
+        id 用小写字母、数字和短横线。每个写代码的任务会从这个仓库开自己的工作区；引导命令在工作区建好后执行，失败时节点会停下来等人；共享目录在工作区之间复用，免得每次重装依赖。
       </p>
     </form>
-    <ReasonDialog open={asking} onClose={() => setAsking(false)} title={`绑定仓库 ${f.id}`} description="写回 takt.config.json 的 repos，并记入空间审计。" confirmLabel="绑定" onSubmit={submit} />
+    <ReasonDialog open={asking} onClose={() => setAsking(false)} title={`绑定仓库 ${f.id}`} description="绑定后立即生效，并记入空间审计。" confirmLabel="绑定" onSubmit={submit} />
     </>
   )
 }
 
 export function ReposTab({ space, onChanged }: { space?: SpaceDetail; onChanged: () => void }) {
   const [adding, setAdding] = useState(false)
+  const st = useStagger(space?.repos.length ?? 0)
+  const flash = useFlashRows((space?.repos ?? []).map((r) => r.id))
   if (!space) return <div className="card"><SkeletonRows rows={4} /></div>
   const ready = space.repos.filter((r) => r.status === 'ready').length
   return (
@@ -219,20 +221,29 @@ export function ReposTab({ space, onChanged }: { space?: SpaceDetail; onChanged:
           绑定代码仓库
         </button>
       </div>
-      {adding && (
-        <AddRepo
-          onDone={() => {
-            setAdding(false)
-            onChanged()
-          }}
-        />
-      )}
+      <div className="expand" data-open={adding ? 'true' : 'false'}>
+        <div inert={!adding}>
+          <AddRepo
+            onDone={() => {
+              setAdding(false)
+              onChanged()
+            }}
+          />
+        </div>
+      </div>
       {space.repos.length === 0 ? (
-        <EmptyState compact icon={GitFork} title="还没有绑定代码仓库" hint="一个空间可以绑定多个仓库（前端、后端、测试…），任务按仓库开 worktree，互不冲突。" />
+        <EmptyState
+          compact
+          icon={GitFork}
+          title="还没有绑定代码仓库"
+          body="一个空间可以绑定多个仓库（前端、后端、测试），任务按仓库各开工作区，互不冲突。"
+          action={!adding ? <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding(true)}><Plus />绑定代码仓库</button> : undefined}
+          stewardAsk="帮我把这个仓库绑定到空间："
+        />
       ) : (
         <ul className="repo-list">
-          {space.repos.map((r) => (
-            <RepoRow key={r.id} repo={r} onChanged={onChanged} />
+          {space.repos.map((r, i) => (
+            <RepoRow key={r.id} repo={r} onChanged={onChanged} stagger={st(i)} flash={flash(r.id)} />
           ))}
         </ul>
       )}

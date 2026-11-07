@@ -67,7 +67,7 @@ export function EventTicker({ runId, live, liveTick, onLocate }: { runId: string
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget) && setPaused(false)}
     >
       <span className="ticker-label" title={live ? '运行中，新事件实时出现；悬停暂停' : '运行已结束，显示最后的事件'}>
-        {paused ? <Pause aria-hidden /> : <Radio aria-hidden />}
+        {paused ? <Pause aria-hidden /> : live ? <span className="ticker-live-dot live-ring" aria-hidden /> : <Radio aria-hidden />}
         {paused ? '已暂停' : live ? '实时' : '最近事件'}
         {pending > 0 && <b className="mono num">+{pending}</b>}
       </span>

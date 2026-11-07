@@ -1,0 +1,402 @@
+/* 新建空间三步对话框（B 组）；/spaces 的编辑对话框复用 .sc-colors。 */
+.sc-dialog .ov-body {
+  min-height: 360px;
+}
+.sc-body {
+  display: grid;
+  gap: var(--sp-4);
+}
+.sc-foot-left {
+  margin-right: auto;
+  font-size: var(--text-meta);
+}
+
+/* ---------------------------------------------------------------- 步骤条 */
+.sc-steps {
+  display: flex;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sc-step-dot {
+  flex: 1;
+  position: relative;
+}
+.sc-step-dot::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -6px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--divider);
+}
+.sc-step-dot.on::after,
+.sc-step-dot.done::after {
+  background: var(--ink);
+}
+.sc-step-dot button {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: left;
+}
+.sc-step-dot.on button {
+  color: var(--text);
+  font-weight: 500;
+}
+.sc-step-dot.done button {
+  color: var(--text-2);
+  cursor: pointer;
+}
+.sc-step-dot.done button:hover {
+  color: var(--text);
+}
+.sc-step-dot button:disabled {
+  opacity: 1;
+}
+.sc-step-num {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: var(--text-meta);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.sc-step-dot.on .sc-step-num,
+.sc-step-dot.done .sc-step-num {
+  background: var(--ink);
+  color: var(--text-inverse);
+  box-shadow: none;
+}
+.sc-step-num svg {
+  width: 12px;
+  height: 12px;
+}
+
+.sc-step {
+  display: grid;
+  gap: var(--sp-4);
+  padding-top: var(--sp-2);
+}
+
+/* ---------------------------------------------------------------- 第 1 步 */
+.sc-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+.sc-preview .space-mark {
+  border-radius: var(--r-md);
+  transition: background var(--dur) var(--ease);
+}
+.sc-preview-text {
+  display: grid;
+  min-width: 0;
+  font-size: var(--text-body);
+}
+.sc-preview-text .mono {
+  font-size: var(--text-meta);
+}
+.sc-invalid,
+.sc-invalid:focus {
+  border-color: var(--st-failed);
+}
+.sc-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-meta);
+  animation: sc-fade var(--dur-pop) var(--ease-out-soft);
+}
+.sc-msg svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.sc-msg.good {
+  color: var(--st-success);
+}
+.sc-msg.bad {
+  color: var(--st-failed);
+}
+.sc-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.sc-swatch {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-sm);
+  color: var(--text-inverse);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.08);
+  transition: transform var(--dur-press) var(--ease-out-soft), box-shadow var(--dur-fast) var(--ease);
+}
+.sc-swatch:hover {
+  box-shadow: inset 0 0 0 1px oklch(0 0 0 / 0.08), 0 0 0 2px var(--surface), 0 0 0 4px var(--border-strong);
+}
+.sc-swatch[aria-checked='true'] {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text-2);
+}
+.sc-swatch:active {
+  /* motion-audit: ok 体验基线 6 规定按压 scale(.98)、80ms */
+  transform: scale(0.98);
+}
+.sc-swatch svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------------------------------------------------------------- 第 2 步 */
+.sc-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.sc-card {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: var(--sp-3);
+  row-gap: 2px;
+  padding: var(--sp-3);
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), transform var(--dur-press) var(--ease-out-soft);
+}
+.sc-card:hover {
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+.sc-card.on {
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+.sc-card-icon {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--surface-active);
+  color: var(--text-2);
+}
+.sc-card.on .sc-card-icon {
+  background: var(--ink);
+  color: var(--text-inverse);
+}
+.sc-card-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.sc-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.sc-card-tag {
+  font-size: var(--text-label);
+  font-weight: 500;
+  color: var(--text-3);
+}
+.sc-card-desc {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  line-height: 1.5;
+}
+.sc-copy {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-1) 2px var(--sp-1);
+}
+.sc-src-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-1);
+}
+.sc-src,
+.sc-part {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 36px;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-sm);
+  font-size: var(--text-ui);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.sc-src:hover,
+.sc-part:hover {
+  background: var(--surface-hover);
+}
+.sc-src.on {
+  background: var(--surface-2);
+}
+.sc-src .mono {
+  margin-left: auto;
+  font-size: var(--text-meta);
+}
+.sc-src input,
+.sc-part input {
+  accent-color: var(--ink);
+  margin: 0;
+}
+.sc-parts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-1);
+}
+.sc-part > span {
+  display: grid;
+  line-height: 1.35;
+}
+.sc-part-hint {
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+
+/* ---------------------------------------------------------------- 第 3 步 */
+.sc-section {
+  display: grid;
+  gap: var(--sp-2);
+}
+.sc-section-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.sc-section-head svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.sc-section-head .ov-field-hint {
+  font-size: var(--text-meta);
+  font-weight: 400;
+}
+.sc-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.sc-branch {
+  flex: 0 0 120px;
+}
+.sc-role {
+  flex: 0 0 96px;
+}
+.sc-me {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  font-size: var(--text-ui);
+}
+.sc-role-fixed {
+  margin-left: auto;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.sc-add {
+  justify-self: start;
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- 单空间模式 */
+.sc-single {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0 var(--sp-4);
+}
+.sc-single-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.sc-single-icon svg {
+  width: 20px;
+  height: 20px;
+}
+.sc-single-text {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--text-body);
+}
+.sc-single-text p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.sc-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  font-size: var(--text-ui);
+}
+.sc-hint code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.sc-single-ask {
+  justify-self: start;
+}
+@keyframes sc-fade {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sc-swatch:active,
+  .sc-card:active {
+    transform: none;
+  }
+}
+@media (max-width: 640px) {
+  .sc-cards,
+  .sc-src-list,
+  .sc-parts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -52,6 +52,7 @@
   min-width: 0;
 }
 .req-title {
+  min-width: 0;
   font-weight: 500;
   font-size: var(--text-ui);
   color: var(--text);
@@ -200,4 +201,222 @@
   margin-left: -4px;
   font-size: var(--text-meta);
   color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- M4：风险标记（需求行） */
+.risk-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  height: 20px;
+  padding: 0 5px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.risk-mark svg {
+  width: 12px;
+  height: 12px;
+  stroke-width: 2.2;
+}
+.risk-mark.high {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.risk-mark:hover {
+  background: color-mix(in oklab, currentColor 18%, transparent);
+}
+.req-table tr.clickable:focus-visible {
+  outline: none;
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+
+/* ---------------------------------------------------------------- M4："自上次以来"横幅 */
+.since-banner {
+  margin-bottom: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  box-shadow: var(--elev-1);
+  animation: since-in var(--dur-enter) var(--ease-out-soft) both;
+}
+@keyframes since-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.since-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.since-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  color: var(--text-2);
+}
+.since-icon svg {
+  width: 16px;
+  height: 16px;
+}
+.since-main {
+  flex: 1;
+  min-width: 0;
+}
+.since-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.since-when {
+  font-size: var(--text-meta);
+  font-weight: 400;
+  color: var(--text-3);
+}
+.since-summary {
+  margin: 2px 0 0;
+  font-size: var(--text-body);
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.since-counts {
+  display: flex;
+  gap: var(--sp-2);
+  flex: none;
+}
+.since-count {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.since-count b {
+  color: var(--text);
+}
+.since-count.waiting b {
+  color: var(--st-waiting);
+}
+.since-count.risk b {
+  color: var(--st-failed);
+}
+.since-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+}
+.since-chevron {
+  transition: transform var(--dur) var(--ease-out-soft);
+}
+.since-chevron.up {
+  transform: rotate(180deg);
+}
+.since-body {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-6);
+  padding: var(--sp-4) 0 var(--sp-2) 44px;
+}
+.since-col {
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  min-width: 0;
+}
+.since-col-title {
+  display: flex;
+  gap: 6px;
+  margin-bottom: var(--sp-1);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.since-item {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin: 0 -8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: var(--text-body);
+  text-decoration: none;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.since-item:hover {
+  background: var(--surface-hover);
+}
+.since-item:active {
+  background: var(--surface-active);
+}
+.since-id {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.since-meta {
+  flex: none;
+  margin-left: auto;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.since-level {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--r-sm);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+}
+.since-level.high {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.since-empty {
+  font-size: var(--text-body);
+  padding: 6px 0;
+}
+.since-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+@media (max-width: 1180px) {
+  .since-counts {
+    display: none;
+  }
+  .since-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-4);
+    padding-left: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .since-banner {
+    animation-name: fade-only-in;
+  }
+  .since-chevron {
+    transition: none;
+  }
 }

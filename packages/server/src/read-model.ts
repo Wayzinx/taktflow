@@ -34,8 +34,8 @@ export async function summary(stores: ProjectStores, item: Requirement): Promise
   return { ...item, ...derived, stages: latest && snapshot ? stageProgress(snapshot, latest, records) : [], latestRunId: latest?.runId, pendingAttention: attention.length, usage: metrics.usage, quality: metrics.quality, tier: latest?.route?.tier, current: latest && graph ? currentNode(latest, graph) : undefined }
 }
 
-export async function summaries(stores: ProjectStores): Promise<RequirementSummary[]> {
-  return Promise.all((await stores.workspaces.listRequirements()).map((item) => summary(stores, item)))
+export async function summaries(stores: ProjectStores, archived = false): Promise<RequirementSummary[]> {
+  return Promise.all((await stores.workspaces.listRequirements()).filter((item) => archived || item.status !== 'archived').map((item) => summary(stores, item)))
 }
 
 export async function overview(stores: ProjectStores): Promise<ProjectOverview> {
@@ -46,7 +46,7 @@ export async function overview(stores: ProjectStores): Promise<ProjectOverview> 
     for (const key of Object.keys(sum.interceptedBy) as Array<keyof typeof sum.interceptedBy>) sum.interceptedBy[key] += item.quality?.interceptedBy[key] ?? 0
     return sum
   }, { verified: 0, intercepted: 0, interceptedBy: { gate: 0, review: 0, judge: 0, completion: 0, fingerprint: 0 } })
-  return { ...stores.config.project, requirements, attention: await withAttentionStaleness(stores, attention), totals: { requirements: requirements.length, active: requirements.filter((r) => r.status === 'active').length, delivered: requirements.filter((r) => r.status === 'delivered').length, blocked: requirements.filter((r) => r.status === 'blocked').length, runs: runs.length, usage, ...quality } }
+  return { ...stores.config.project, requirements, attention: await withAttentionStaleness(stores, attention.filter((item) => requirements.some((req) => req.id === item.requirementId))), totals: { requirements: requirements.length, active: requirements.filter((r) => r.status === 'active').length, delivered: requirements.filter((r) => r.status === 'delivered').length, blocked: requirements.filter((r) => r.status === 'blocked').length, runs: runs.length, usage, ...quality } }
 }
 
 function definitions(nodes: SnapshotNode[], prefix = ''): Map<string, SnapshotNode> {

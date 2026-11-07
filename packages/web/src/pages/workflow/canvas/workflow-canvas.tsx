@@ -14,6 +14,8 @@ import { buildFlow, type EditorEdge, type EditorNode } from './build-flow'
 import { edgeTypes } from './canvas-edges'
 import { nodeTypes } from './canvas-nodes'
 import { canConnect, laneIndexAt, NH, NW, type Pos } from './graph'
+import { GhostOverlay } from './ghost-overlay'
+import type { WorkflowPreview } from '../../../lib/ui-store'
 import './canvas.css'
 
 export interface WorkflowCanvasProps {
@@ -22,6 +24,8 @@ export interface WorkflowCanvasProps {
   onSelect: (nodeId: string | undefined) => void
   /** 需要高亮的节点（远端变更、诊断）。 */
   highlight?: string[]
+  /** 管家 workflow 提案的幽灵预览（A 组 ghost-overlay.tsx；骨架预留）。 */
+  ghost?: WorkflowPreview
 }
 
 /** React Flow 画布：阶段泳道、节点卡片、连线即依赖（setNeeds）、拖动（wf.saveLayout）、loop / planner 分组。只读时禁用交互。 */
@@ -33,7 +37,7 @@ export function WorkflowCanvas(props: WorkflowCanvasProps) {
   )
 }
 
-function Canvas({ wf, selected, onSelect, highlight }: WorkflowCanvasProps) {
+function Canvas({ wf, selected, onSelect, highlight, ghost }: WorkflowCanvasProps) {
   const dark = useIsDark()
   const rf = useReactFlow<EditorNode, EditorEdge>()
   const [dropLane, setDropLane] = useState<number>()
@@ -208,6 +212,7 @@ function Canvas({ wf, selected, onSelect, highlight }: WorkflowCanvasProps) {
             <span className="wf-canvas-hint">拖连接点到另一节点 = 添加依赖 · 选中后 Delete 删除</span>
           )}
         </Panel>
+        {ghost && <GhostOverlay preview={ghost} />}
       </ReactFlow>
       {wizard && <ReviewWizard wf={wf} placement={wizard} onClose={() => setWizard(undefined)} onDone={onSelect} />}
     </div>

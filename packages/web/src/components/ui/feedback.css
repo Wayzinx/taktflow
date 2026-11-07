@@ -1,0 +1,304 @@
+/* M4 原语：toast、抽屉 / 停靠面板、分段选择、菜单分组、Tab 指示器。 */
+
+/* ---------------------------------------------------------------- toast：底部居中升起，最多 3 条 */
+.toaster {
+  position: fixed;
+  left: 50%;
+  bottom: var(--sp-6);
+  z-index: 130;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  width: min(440px, calc(100vw - 32px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+@keyframes toast-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+}
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 8px 10px 12px;
+  border-radius: var(--r-lg);
+  background: var(--surface-overlay);
+  box-shadow: var(--elev-3);
+  pointer-events: auto;
+  animation: toast-rise var(--dur-enter) var(--ease-out-soft) both;
+  transition:
+    opacity var(--dur-exit) var(--ease),
+    transform var(--dur-exit) var(--ease);
+}
+.toast[data-state='exit'] {
+  opacity: 0;
+  transform: translateY(6px) scale(0.985);
+  pointer-events: none;
+}
+.toast-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklch, var(--tone) 14%, transparent);
+  color: var(--tone);
+}
+.toast-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.4;
+}
+.toast-text {
+  flex: 1;
+  min-width: 0;
+}
+.toast-title {
+  font-weight: 600;
+  font-size: var(--text-ui);
+  line-height: 1.45;
+}
+.toast-body {
+  margin-top: 2px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  line-height: 1.5;
+}
+.toast-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--surface-hover);
+  color: var(--text);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), transform var(--dur-press) var(--ease-out-soft);
+}
+.toast-btn:hover {
+  background: var(--surface-active);
+}
+.toast-btn:active {
+  transform: scale(0.98); /* motion-audit: ok 体验基线 6 按压 */
+}
+.toast-btn svg {
+  width: 13px;
+  height: 13px;
+}
+.toast-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.toast-close:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.toast-close svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* ---------------------------------------------------------------- 抽屉 / 停靠面板：右侧，translateX(16px) + 淡入 220ms */
+.ui-drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 105;
+  background: var(--scrim);
+}
+.ui-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 106;
+  display: flex;
+  flex-direction: column;
+  width: min(var(--drawer-w, 440px), 100vw);
+  background: var(--surface-overlay);
+  box-shadow: var(--elev-3);
+  outline: none;
+  transition:
+    opacity var(--dur-dock) var(--ease-out-soft),
+    transform var(--dur-dock) var(--ease-out-soft);
+}
+.ui-drawer-dock {
+  z-index: 90;
+  border-left: 1px solid var(--border);
+}
+.ui-drawer[data-state='enter'],
+.ui-drawer[data-state='exit'] {
+  opacity: 0;
+  transform: translateX(16px);
+}
+.ui-drawer[data-state='exit'] {
+  transition-duration: 160ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1);
+  pointer-events: none;
+}
+.ui-drawer-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-3) var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--divider);
+}
+.ui-drawer-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.ui-drawer-title {
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.ui-drawer-desc {
+  margin-top: 2px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.ui-drawer-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.ui-drawer-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--divider);
+}
+
+/* ---------------------------------------------------------------- 分段选择：选中块平移（transform），不动画 width */
+.segmented {
+  position: relative;
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border-radius: var(--r-sm);
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.segmented-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  border-radius: 5px;
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  /* 只平移（宽度由 JS 直接设定、不过渡）：scaleX 会把阴影描边一起拉宽 */
+  transform: translateX(var(--seg-x));
+  transition: transform var(--dur-tab) var(--ease-out-soft);
+}
+.segmented button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--text-meta);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--dur-fast) var(--ease);
+}
+.segmented button svg {
+  width: 13px;
+  height: 13px;
+}
+.segmented button:hover:not(:disabled) {
+  color: var(--text);
+}
+.segmented button.on {
+  color: var(--text);
+}
+.segmented button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.segmented-count {
+  color: var(--text-3);
+  font-size: var(--text-label);
+}
+.segmented-sm button {
+  height: 22px;
+  padding: 0 8px;
+}
+
+/* ---------------------------------------------------------------- 菜单分组 */
+.ov-mi-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--divider);
+}
+.ov-mi-section {
+  padding: 8px 10px 4px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+
+/* ---------------------------------------------------------------- Tab：单个指示器平移 + 缩放（transform），内容交叉淡化见 .tab-panel */
+.tabs {
+  position: relative;
+}
+.tabs-indicator {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent);
+  transform-origin: left center;
+  transform: translateX(var(--tab-x)) scaleX(var(--tab-s));
+  transition: transform var(--dur-tab) var(--ease-out-soft);
+}
+.tabs.has-indicator .tab.active::after {
+  background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast[data-state='exit'],
+  .ui-drawer[data-state='enter'],
+  .ui-drawer[data-state='exit'] {
+    transform: none;
+  }
+  .toast {
+    animation-name: fade-only-in !important;
+    animation-duration: var(--dur-item) !important;
+  }
+  .segmented-thumb,
+  .tabs-indicator {
+    transition: none;
+  }
+}

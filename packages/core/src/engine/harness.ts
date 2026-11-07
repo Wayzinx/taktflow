@@ -1,4 +1,8 @@
 import { recordRecipe } from './recipe.js'
+import { randomUUID } from 'node:crypto'
+import { knowledgeQueryContext } from '../knowledge/support.js'
+import { writeFileAtomic } from '../store/fs-utils.js'
+import { recordKnowledgeUsage } from './execution.js'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
@@ -55,12 +59,32 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const skills = `技能清单：${profile.skills.join(', ') || '（无）'}`
     add('skill', '技能清单', skills)
     const summaries: string[] = []
+    const spec = Array.isArray(node.knowledge) ? { prefetch: node.knowledge, mode: 'prefetch' as const } : node.knowledge
     const prefetch = Array.isArray(node.knowledge) ? node.knowledge : node.knowledge?.mode === 'tool' ? [] : node.knowledge?.prefetch ?? []
     for (const query of prefetch) {
-      const { hits, sources } = await createKnowledgeRouter(knowledge).query(query)
-      await host.emit('knowledge.query', { query, sources, hits: hits.length }, node.id)
-      for (const hit of hits) { add('knowledge', hit.title, hit.snippet, hit.ref); summaries.push(`${hit.ref}: ${hit.snippet}`) }
+      if (stores.kb) {
+        const queryId = randomUUID()
+        const result = await host.guard.system(['.takt/knowledge/queries.jsonl', '.takt/space-events.jsonl*'], () => knowledgeQueryContext.run({ queryId, runId: ctx.runId, nodeId: node.id, requirementId: ctx.requirementId, workflowId: host.state.workflowId, role: node.role, via: 'prefetch' }, () => stores.kb!.route(query, { role: node.role, bases: spec?.bases })))
+        const file = join(runDir(stores.taktDir, ctx.runId), 'context/knowledge', `${queryId}.md`)
+        await assertNoSymlinks(stores.taktDir, file)
+        await writeFileAtomic(file, result.hits.map(hit => `## ${hit.title}\n${hit.ref}\n${hit.snippet}`).join('\n\n'))
+        await host.emit('knowledge.query', { query, sources: result.bases.map(b => b.id), hits: result.hits.length, queryId, bases: result.bases, top: result.hits.map((h, i) => ({ baseId: h.baseId, ref: h.ref, score: h.score ?? 0, rank: i + 1 })), latencyMs: result.latencyMs, tokens: result.tokens, via: 'prefetch' }, node.id)
+        add('knowledge', query.text, result.hits.map(h => h.snippet).join('\n'), file)
+        summaries.push(`知识检索结果：${file}\n${result.hits.map(h => `${h.ref}: ${h.snippet}`).join('\n')}`)
+      } else {
+        const { hits, sources } = await createKnowledgeRouter(knowledge).query(query)
+        await host.emit('knowledge.query', { query, sources, hits: hits.length }, node.id)
+        for (const hit of hits) { add('knowledge', hit.title, hit.snippet, hit.ref); summaries.push(`${hit.ref}: ${hit.snippet}`) }
+      }
     }
+    let knowledgeTools = ''
+    if (stores.kb && spec && spec.mode !== 'prefetch') {
+      const bindings = await stores.kb.bindings()
+      const bases = (await stores.kb.list()).filter(kb => kb.version && (!spec.bases || spec.bases.includes(kb.id)) && bindings.some(b => b.baseId === kb.id && b.enabled && (!b.roles || b.roles.includes(node.role))))
+      knowledgeTools = `知识库：\n${bases.map(kb => `${kb.id} — ${kb.name}：${kb.description}；intents=${kb.intents.join(',')}`).join('\n')}\n按需查询：takt kb query "<问题>" --base <id> --project "${stores.projectDir}"`
+      add('knowledge', '可用知识库', knowledgeTools)
+    }
+
     const recalled = host.deps.lessons && await host.deps.lessons.recall({ runId: ctx.runId, nodeId: node.id, role: node.role,
       paths: [...(node.writeScope ?? profile.writeScope), ...(node.inputs ?? []).map((input) => input.path)], feedback: [ctx.feedback, ns.error].filter(Boolean).join('\n') || undefined })
     if (node.kind === 'agent' && host.setLessonRecall) host.setLessonRecall(node.id, recalled)
@@ -81,7 +105,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     await host.emit('context.assembled', context, node.id)
     const prompt = [skills, ...summaries, lessonText, ...artifacts,
       `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
-      task, schema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(schema)}` : '', completion,
+      task, knowledgeTools, schema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(schema)}` : '', completion,
     ].filter(Boolean).join('\n\n')
     const priorOutputs = ns.outputs.length || node.session !== 'resume' ? ns.outputs
       : ((await stores.events.read(host.state.runId, { nodeId: node.id, types: ['node.finished'] })).at(-1)?.data as EventPayloads['node.finished'] | undefined)?.outputs ?? []
@@ -109,7 +133,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       const transcript = join(runDir(stores.taktDir, host.state.runId), 'transcripts', `${node.id}.jsonl`)
       await assertNoSymlinks(stores.taktDir, transcript)
       await mkdir(dirname(transcript), { recursive: true })
-      const env: Record<string, string> = { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript }
+      const env: Record<string, string> = { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_NODE_ID: node.id, TAKT_KB_BASES: JSON.stringify(spec?.bases ?? []), TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript }
       if (provider?.apiKeyEnv && process.env[provider.apiKeyEnv]) env[provider.apiKeyEnv] = process.env[provider.apiKeyEnv]!
       const sandbox = await sandboxCall(host, cwd, harness.id, ctx, env, node.timeoutMs, directories)
       let finishGuard: () => Promise<{ paths: string[]; action: 'flagged'; ambiguous: boolean }>
@@ -174,7 +198,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           signal: node.timeoutMs ? AbortSignal.any([host.signal, AbortSignal.timeout(node.timeoutMs)]) : host.signal,
         }
         await recordRecipe(host, node, cwd, { ...selector, harness: harness.id, model }, recalled && !recalled.holdout ? recalled.lessons.map((lesson) => lesson.id) : [], task)
-        result = await harness.run(request, onEvent)
+        result = stores.kb ? await host.guard.system(['.takt/knowledge/queries.jsonl'], () => harness.run(request, onEvent)) : await harness.run(request, onEvent)
       } catch (error) { failure = error }
       finally { try { await sandbox.dispose() } catch (error) { failure ??= error } }
       await eventChain
@@ -221,6 +245,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         if (data === undefined) parseResult(result.finalText, schema)
         validateSchema(data, schema)
       }
+      if (stores.kb) await host.guard.system(['.takt/knowledge/queries.jsonl'], () => recordKnowledgeUsage(host, node, ctx))
       return { data, actor }
     }
     throw new Error(previous || '没有可用 harness')

@@ -1,0 +1,257 @@
+/* /spaces 页（B 组） */
+.sp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-4);
+}
+.sp-card {
+  position: relative;
+  display: grid;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+  box-shadow: var(--elev-1);
+  transition: box-shadow var(--dur) var(--ease), transform var(--dur-press) var(--ease-out-soft);
+}
+.sp-card::before {
+  /* 顶部一条空间色细线：颜色认空间，不抢强调色 */
+  content: '';
+  position: absolute;
+  inset: 0 var(--sp-4) auto;
+  height: 2px;
+  border-radius: 0 0 2px 2px;
+  background: var(--sp-color, var(--border-strong));
+  opacity: 0.85;
+}
+.sp-card:hover {
+  box-shadow: var(--elev-2);
+}
+.sp-card:active {
+  /* motion-audit: ok 体验基线 6：可点元素按压 scale(.98) */
+  transform: scale(0.98);
+}
+.sp-card:has(.sp-card-more:active, .sp-card-more[aria-expanded='true']):active {
+  transform: none;
+}
+.sp-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.sp-card-head .space-mark {
+  border-radius: var(--r-sm);
+}
+.sp-card-name {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+.sp-card-name .mono {
+  font-size: var(--text-meta);
+}
+.sp-card-link {
+  color: var(--text);
+  font-size: var(--text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+/* 整张卡可点：链接的伪元素铺满卡片，菜单按钮浮在上面 */
+.sp-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r-md);
+}
+.sp-card-link:focus-visible {
+  outline: none;
+}
+.sp-card-link:focus-visible::after {
+  box-shadow: 0 0 0 2px var(--accent-ring);
+}
+.sp-card-more {
+  position: relative;
+  z-index: 1;
+}
+.sp-current {
+  flex: none;
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-active);
+  color: var(--text-2);
+  font-size: var(--text-label);
+  line-height: 20px;
+}
+.sp-card-desc {
+  display: -webkit-box;
+  margin: 0;
+  min-height: calc(2 * 1.5em);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--text-ui);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.sp-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-3) 0 0;
+  border-top: 1px solid var(--divider);
+}
+.sp-stat {
+  display: grid;
+  gap: 2px;
+}
+.sp-stat dt {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.sp-stat dd {
+  margin: 0;
+  font-size: var(--text-headline);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+.sp-stat.tone-running dd {
+  color: var(--st-running);
+}
+.sp-stat.tone-waiting dd {
+  color: var(--st-waiting);
+}
+.sp-stat.tone-failed dd {
+  color: var(--st-failed);
+}
+.sp-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-meta);
+}
+.sp-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-3);
+  transition: color var(--dur-fast) var(--ease);
+}
+.sp-enter svg {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--dur) var(--ease-out-soft);
+}
+.sp-card:hover .sp-enter {
+  color: var(--text);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sp-card:hover .sp-enter svg {
+    transform: translateX(2px);
+  }
+}
+
+/* ---------------------------------------------------------------- 已归档 */
+.sp-archived {
+  margin-top: var(--sp-8);
+}
+.sp-archived-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: var(--sp-2) 0;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: color var(--dur-fast) var(--ease);
+}
+.sp-archived-toggle:hover {
+  color: var(--text);
+}
+.sp-chevron {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur) var(--ease-out-soft);
+}
+.sp-archived-toggle[aria-expanded='true'] .sp-chevron {
+  transform: rotate(90deg);
+}
+.sp-archived-hint {
+  margin-left: var(--sp-2);
+  font-size: var(--text-meta);
+  font-weight: 400;
+}
+.sp-archived-list {
+  display: grid;
+  gap: 1px;
+  margin: var(--sp-2) 0 0;
+  padding: var(--sp-1);
+  list-style: none;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+}
+.sp-archived-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 48px;
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--r-sm);
+  transition: background var(--dur-fast) var(--ease);
+}
+.sp-archived-row:hover {
+  background: var(--surface-hover);
+}
+.sp-archived-row .space-mark {
+  filter: grayscale(0.6);
+  opacity: 0.8;
+}
+.sp-archived-name {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.sp-archived-name .mono {
+  font-size: var(--text-meta);
+}
+.sp-archived-at {
+  font-size: var(--text-meta);
+}
+.sp-danger {
+  color: var(--st-failed);
+}
+.sp-danger:hover {
+  background: var(--st-failed-soft);
+}
+.sp-msg-bad {
+  font-size: var(--text-meta);
+  color: var(--st-failed);
+}
+.sp-confirm-id {
+  color: var(--text);
+  font-weight: 600;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sp-card:active {
+    transform: none;
+  }
+  .sp-chevron,
+  .sp-enter svg {
+    transition: none;
+  }
+}

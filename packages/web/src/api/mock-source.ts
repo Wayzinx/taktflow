@@ -1,11 +1,15 @@
-import type { SpaceDetail, SpaceSummary } from '@taktflow/core'
+import type { SpaceDetail } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
 import { actingUser } from '../lib/acting-user'
 import { createProjectMock, type ProjectSource } from './mock'
 import { createMockDb, type MockDb } from './mock-data'
 import { createMockSpaces, fakeHead, type MockSpace } from './mock-space'
 import { createMockWorkflows, type WorkflowApi } from './mock-workflows'
+import { archivedSpaces, createMockSpaceCrud, extraSpaces, MOCK_SERVER_INFO } from './mock-crud'
+import { createMockKnowledge } from './mock-knowledge'
+import { createMockSteward } from './mock-steward'
 import type { DataSource } from './source'
+import type { CrudSource, KnowledgeSource } from './source-m4'
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const delay = <T,>(v: T, ms = 90): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
@@ -24,9 +28,13 @@ function emptyDb(space: SpaceDetail): MockDb {
  * 不带前缀时是第一个空间（默认空间）。
  */
 export function createMockSource(): DataSource {
-  const spaces = createMockSpaces()
+  const spaces = [...createMockSpaces(), ...extraSpaces()]
+  const archived = archivedSpaces()
   const projects = new Map<string, ProjectSource>()
   const flows = new Map<string, WorkflowApi>()
+  const knowledge = new Map<string, KnowledgeSource>()
+  const crud = createMockSpaceCrud(spaces, archived, () => undefined)
+  const steward = createMockSteward()
 
   function current(): MockSpace | undefined {
     const id = currentSpaceId()
@@ -65,6 +73,7 @@ export function createMockSource(): DataSource {
     workflowRevisions: wf('workflowRevisions'),
     workflowRevision: wf('workflowRevision'),
     rollbackWorkflow: wf('rollbackWorkflow'),
+    convertWorkflow: wf('convertWorkflow'),
     subscribeWorkflow: (id, on) => {
       const sp = current()
       return sp ? workflowsOf(sp).subscribeWorkflow(id, on) : () => {}
@@ -76,7 +85,33 @@ export function createMockSource(): DataSource {
     if (!sp) return fail(`空间 ${currentSpaceId()} 不存在`)
     return Promise.resolve(fn(sp))
   }
-  const summary = (d: SpaceDetail): SpaceSummary => ({ id: d.id, name: d.name, description: d.description, requirements: d.requirements, active: d.active })
+  // 知识库：每个空间一份，按调用时的空间转发（只有带种子数据的空间有内容）
+  const kb = new Proxy({} as KnowledgeSource, {
+    get(_t, key: string) {
+      return (...args: unknown[]) => {
+        const sp = current()
+        if (!sp) return fail(`空间 ${currentSpaceId()} 不存在`)
+        let k = knowledge.get(sp.detail.id)
+        if (!k) knowledge.set(sp.detail.id, (k = createMockKnowledge(sp.seeded)))
+        return (k[key as keyof KnowledgeSource] as (...a: unknown[]) => unknown)(...args)
+      }
+    },
+  })
+  const crudApi: CrudSource = {
+    serverInfo: () => delay(MOCK_SERVER_INFO, 50),
+    createSpace: crud.createSpace,
+    updateSpace: crud.updateSpace,
+    archiveSpace: crud.archiveSpace,
+    restoreSpace: crud.restoreSpace,
+    deleteSpace: crud.deleteSpace,
+    convertWorkflow: workflowApi.convertWorkflow,
+    // 需求增删改在单空间的 ProjectSource 里（mock.ts → mock-crud.ts），由下面的 Proxy 转发
+    createRequirement: (body) => project().createRequirement(body),
+    updateRequirement: (id, body) => project().updateRequirement(id, body),
+    archiveRequirement: (id, reason) => project().archiveRequirement(id, reason),
+    restoreRequirement: (id, reason) => project().restoreRequirement(id, reason),
+    deleteRequirement: (id, reason) => project().deleteRequirement(id, reason),
+  }
 
   const spaceApi: Pick<DataSource, 'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
     // 与服务端 viewer() 一致：x-takt-user（这里是界面上选的身份），缺省为第一个 owner
@@ -87,7 +122,7 @@ export function createMockSource(): DataSource {
         const member = members.find((m) => m.id === id)
         return delay({ id, name: member?.name ?? id, member }, 40)
       }),
-    spaces: () => delay(spaces.map((s) => summary(s.detail)), 60),
+    spaces: (opts) => delay(crud.list(opts?.archived), 60),
     // 空间详情里的 workflow 列表以 workflow 存储为准（编辑后 rev / 更新时间会变）
     space: () => withSpace(async (sp) => ({ ...(await delay(sp.detail)), workflows: await workflowsOf(sp).workflows() })),
     setMembers: (members, reason) =>
@@ -151,9 +186,11 @@ export function createMockSource(): DataSource {
   }
 
   // 所有需求 / 运行类接口按当前空间转发；方法在调用时取空间，切换空间不需要重建数据源
-  return new Proxy({ mock: true, ...spaceApi, ...workflowApi } as DataSource, {
+  const globals = { mock: true, ...spaceApi, ...workflowApi, ...crudApi, ...steward }
+  return new Proxy(globals as DataSource, {
     get(target, key: string) {
       if (key in target) return target[key as keyof DataSource]
+      if (key.startsWith('knowledge') || /Knowledge/.test(key)) return kb[key as keyof KnowledgeSource]
       const p = project() as unknown as Record<string, unknown>
       const v = p[key]
       return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(p) : v

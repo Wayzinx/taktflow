@@ -46,7 +46,7 @@ export function ActivityTab({ id, runs }: { id: string; runs?: RunSummary[] }) {
         />
       </div>
       {events.length === 0 ? (
-        <EmptyState compact icon={Activity} title="没有事件" hint="运行产生的每一条事件都记在只追加的哈希链日志里。" />
+        <EmptyState compact icon={Activity} title="没有事件" body="运行产生的每一条事件都记在只追加的哈希链日志里。" />
       ) : (
         <div style={{ padding: '10px 16px 14px' }}>
           <EventTimeline events={events.slice(0, limit)} showNode showRun={runs.length > 1} showDate />

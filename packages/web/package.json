@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "motion:audit": "node scripts/motion-audit.mjs"
+    "motion:audit": "node scripts/motion-audit.mjs",
+    "ux:audit": "node scripts/ux-audit.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

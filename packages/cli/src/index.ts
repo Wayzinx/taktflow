@@ -7,14 +7,14 @@ import { registerEvalCommands, type EvalCliRegister } from './commands/eval.js'
 import { registerDefectCommands } from './commands/defect.js'
 import { runM3Command } from './commands/m3.js'
 import { runInit } from './commands/init.js'
-import { runReqList, runReqNew } from './commands/req.js'
+import { runReqList, runReqNew, runReqEdit, runReqCreateCommand, type CrudCliOptions } from './commands/req.js'
 import { runWsGet, runWsList, runWsLog, runWsPut } from './commands/ws.js'
 import { runWorkflow, resumeWorkflow } from './commands/run.js'
 import { runAnswer } from './commands/answer.js'
 import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
 import { runKbQuery } from './commands/kb.js'
-import { runSpaceCommand } from './commands/space.js'
+import { runSpaceCommand, runSpaceServer } from './commands/space.js'
 import { runServe } from './commands/serve.js'
 import { runCatalog, runDoctor } from './commands/catalog.js'
 
@@ -28,12 +28,12 @@ registerDefectCommands(register)
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   let cli: ParsedCli
   try {
-    cli = parseCliArgs(argv)
+    cli = parseCrudArgs(argv)
   } catch (error) {
     return fail(error, argv.includes('--json'))
   }
   if (cli.options.help || cli.command === undefined) {
-    process.stdout.write(`${HELP}\n`)
+    process.stdout.write(`${HELP}\n\n需求增删改：req new <title> [--desc <text> | --desc-file <file>] [--workflow <id>] [--start] [--due <date>]\n  req edit <REQ> [--title <text>] [--desc <text>] [--due <date|null>] [--owner <id>]\n  req archive|restore|rm <REQ>\n空间管理：space new <id> --name <名称> --spaces <根> [--template blank|standard|quick] [--from <空间> --parts a,b] [--color <颜色>]\n  space archive|restore|rm <id> --spaces <根> [--confirm <归档ID>]\n流程转换：workflow convert <id> [--dry-run]\n`)
     return cli.command === undefined && !cli.options.help ? 1 : 0
   }
   try {
@@ -43,13 +43,35 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   }
 }
 
+function parseCrudArgs(argv: string[]): ParsedCli {
+  const extra: CrudCliOptions = {}, rest: string[] = []
+  const strings = { 'desc-file': 'descFile', due: 'due', owner: 'owner', template: 'template', from: 'from', parts: 'parts', color: 'color', confirm: 'confirm' } as const
+  for (let index = 0; index < argv.length; index++) {
+    const arg = argv[index]!
+    if (arg === '--') { rest.push(...argv.slice(index)); break }
+    const match = /^--([^=]+)(?:=(.*))?$/.exec(arg)
+    if (match && Object.hasOwn(strings, match[1]!)) {
+      const key = strings[match[1] as keyof typeof strings]
+      const value = match[2] ?? argv[++index]
+      if (value === undefined || value.startsWith('--')) throw new UsageError(`${arg} 需要参数`)
+      extra[key] = value
+    } else if (arg === '--start') extra.start = true
+    else if (arg === '--dry-run') extra.dryRun = true
+    else rest.push(arg)
+  }
+  const cli = parseCliArgs(rest)
+  Object.assign(cli.options, extra)
+  return cli
+}
+
 async function dispatch(cli: ParsedCli): Promise<number> {
   const { command, positionals: args, options } = cli
   const handler = command && registered.get(command)
   if (handler) return handler(cli)
   switch (command) {
-    case 'route':
     case 'cmd':
+      return args[0] === 'requirement.create' ? runReqCreateCommand(cli) : runM3Command(cli)
+    case 'route':
     case 'lessons':
     case 'review':
       return runM3Command(cli)
@@ -85,7 +107,7 @@ async function dispatch(cli: ParsedCli): Promise<number> {
         await runReqList(options.project, options.json)
         return 0
       }
-      throw new UsageError('req 子命令：new | ls')
+      return runReqEdit(cli)
     }
     case 'ws': {
       const sub = args[0]
@@ -148,7 +170,7 @@ async function dispatch(cli: ParsedCli): Promise<number> {
       expectPositionals('serve', args, 0, 0)
       const port = options.port === undefined ? undefined : parsePositiveInt(options.port, '--port')
       if (port !== undefined && port > 65535) throw new UsageError('--port 必须在 1–65535 之间')
-      await runServe({ project: options.project, spaces: options.spaces, port, host: options.host, json: options.json })
+      await (options.spaces ? runSpaceServer : runServe)({ project: options.project, spaces: options.spaces, port, host: options.host, json: options.json })
       return 0
     }
     default:

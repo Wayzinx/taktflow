@@ -1,0 +1,77 @@
+/* workflow 编辑兜底横幅与转换预览（A 组）。 */
+@keyframes wf-fallback-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.wf-fallback {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--st-waiting-soft);
+  color: var(--text);
+  font-size: var(--text-ui);
+  animation: wf-fallback-in var(--dur-item) var(--ease-out-soft) backwards;
+}
+.wf-fallback[data-tone='failed'] {
+  background: var(--st-failed-soft);
+}
+.wf-fallback-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--st-waiting);
+}
+.wf-fallback[data-tone='failed'] .wf-fallback-icon {
+  color: var(--st-failed);
+}
+.wf-fallback-icon svg {
+  width: 15px;
+  height: 15px;
+}
+.wf-fallback-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.wf-fallback-text > span {
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+.wf-fallback-diff {
+  display: grid;
+  gap: var(--sp-2);
+}
+.wf-fallback-file {
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wf-fallback {
+    animation-name: fade-only-in;
+  }
+}
+
+/* 问管家按钮上的待决定提案数 */
+.wf-ask-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+  font-size: 11px;
+  font-weight: 600;
+}

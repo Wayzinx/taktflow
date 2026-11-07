@@ -3,7 +3,8 @@ import { FileText, Save, Sparkles, UserRoundCog } from 'lucide-react'
 import type { SpaceDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import type { SpaceFileKind } from '../../api/source'
-import { EmptyState, ErrorState, SkeletonRows, toast } from '../../components/ui'
+import { EmptyState, ErrorState, SkeletonRows, toast, useStagger } from '../../components/ui'
+import { StewardEditButton } from './ask-steward'
 import { setQuery, useLocation } from '../../lib/router'
 import './space-files.css'
 
@@ -100,6 +101,7 @@ function Editor({ kind, name, onDirty }: { kind: SpaceFileKind; name: string; on
 export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDetail }) {
   const { query } = useLocation()
   const [dirty, setDirty] = useState(false)
+  const st = useStagger(space ? entries(kind, space).length : 0)
   if (!space) return <div className="card"><SkeletonRows rows={6} /></div>
   const list = entries(kind, space)
   const isSkill = kind === 'skill'
@@ -109,13 +111,8 @@ export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDe
         <EmptyState
           icon={isSkill ? Sparkles : UserRoundCog}
           title={isSkill ? '还没有技能' : '还没有角色'}
-          hint={
-            isSkill ? (
-              <>技能是团队沉淀的做事方法，运行前同步进每个 harness 的技能目录。用 <span className="mono">takt skill add &lt;目录&gt;</span> 导入，或在 <span className="mono">skills/&lt;名字&gt;/SKILL.md</span> 新建。</>
-            ) : (
-              <>角色决定节点由谁来做：说明、默认 harness 与写权限。在 <span className="mono">agents/&lt;角色&gt;.md</span> 新建后刷新。</>
-            )
-          }
+          body={isSkill ? '技能是团队沉淀的做事方法，运行前会同步给每个 Agent。说说你们怎么做事，管家帮你写成技能。' : '角色决定节点由谁来做：职责说明、默认模型和写权限。'}
+          action={<StewardEditButton ask={isSkill ? '帮我新建一个技能，内容是：' : '帮我新建一个角色，负责：'} label={isSkill ? '让管家写一个技能' : '让管家建一个角色'} size="md" />}
         />
       </div>
     )
@@ -124,8 +121,8 @@ export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDe
   return (
     <div className="files-layout">
       <ul className="card file-list" aria-label={isSkill ? '技能列表' : '角色列表'}>
-        {list.map((e) => (
-          <li key={e.name}>
+        {list.map((e, i) => (
+          <li key={e.name} {...st(i)}>
             <button className={`file-item${e.name === selected.name ? ' on' : ''}`} aria-current={e.name === selected.name ? 'true' : undefined} onClick={() => {
                 if (e.name === selected.name) return
                 if (dirty && !window.confirm(`${selected.title} 有未保存的修改，切换后会丢失。继续？`)) return
@@ -147,6 +144,9 @@ export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDe
             </button>
           </li>
         ))}
+        <li className="file-list-foot">
+          <StewardEditButton ask={isSkill ? '帮我新建一个技能，内容是：' : '帮我新建一个角色，负责：'} label={isSkill ? '让管家新建技能' : '让管家新建角色'} ghost />
+        </li>
       </ul>
       <div className="card">
         <Editor key={selected.name} kind={kind} name={selected.name} onDirty={setDirty} />

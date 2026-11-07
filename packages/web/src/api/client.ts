@@ -1,6 +1,7 @@
 import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
 import { actingUserHeader } from '../lib/acting-user'
+import { createM4Http } from './client-m4'
 import { WorkflowConflictError, type DataSource, type EvalOutputSnapshot } from './source'
 
 /** 调用方已带 reason（以后协议补上字段时）就用它，否则用按操作生成的说明。 */
@@ -14,6 +15,8 @@ export class ApiRequestError extends Error {
     readonly status: number,
     message: string,
     readonly detail?: unknown,
+    /** 原始响应体（例如知识库发布 409 的 KnowledgePublishResponse）。 */
+    readonly body?: unknown,
   ) {
     super(message)
   }
@@ -21,7 +24,10 @@ export class ApiRequestError extends Error {
 
 const enc = encodeURIComponent
 
-function qs(params: Record<string, string | number | boolean | undefined>): string {
+/** 全局接口：管家、空间列表与增删改、服务信息，不加 /s/:spaceId 前缀（docs/design/22）。 */
+const GLOBAL_PATH = /^\/(steward|spaces|server)(\/|\?|$)/
+
+export function qs(params: Record<string, string | number | boolean | undefined>): string {
   const p = new URLSearchParams()
   for (const [k, v] of Object.entries(params)) if (v !== undefined) p.set(k, String(v))
   const s = p.toString()
@@ -30,10 +36,10 @@ function qs(params: Record<string, string | number | boolean | undefined>): stri
 
 /** 基于 fetch 的类型化客户端，路由与 packages/core/src/api.ts 顶部的接口表一一对应。 */
 export function createHttpSource(base = '/api'): DataSource {
-  // 多空间：当前 URL 带 /s/:spaceId 时所有接口加同样的前缀；/spaces 列表本身不加
+  // 多空间：当前 URL 带 /s/:spaceId 时空间内接口加同样的前缀；全局接口（GLOBAL_PATH）不加
   const scoped = (path: string) => {
     const sid = currentSpaceId()
-    return sid && path !== '/spaces' ? `${base}/s/${enc(sid)}${path}` : base + path
+    return sid && !GLOBAL_PATH.test(path) ? `${base}/s/${enc(sid)}${path}` : base + path
   }
   async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
     const res = await fetch(scoped(path), {
@@ -46,7 +52,7 @@ export function createHttpSource(base = '/api'): DataSource {
     if (res.status === 409 && (data as WorkflowConflict | undefined)?.error === 'conflict') throw new WorkflowConflictError(data as WorkflowConflict)
     if (!res.ok) {
       const err = data as ApiError | undefined
-      throw new ApiRequestError(res.status, err?.error ?? `${method} ${path} → ${res.status}`, err?.detail)
+      throw new ApiRequestError(res.status, err?.error ?? `${method} ${path} → ${res.status}`, err?.detail, data)
     }
     return data as T
   }
@@ -75,7 +81,7 @@ export function createHttpSource(base = '/api'): DataSource {
     harnesses: () => get('/harnesses'),
     models: () => get('/models'),
     subscribe: (runId, onEvent) => stream(scoped(`/runs/${enc(runId)}/stream`), onEvent),
-    spaces: () => get('/spaces'),
+    spaces: (opts) => get(`/spaces${qs({ archived: opts?.archived ? 1 : undefined })}`),
     space: () => get('/space'),
     // 服务端成员接口接受数组 + x-takt-reason 头，或 { members, reason }；用 body 形式，避免非 ASCII 原因放进请求头
     setMembers: (members, reason) => req('PUT', '/space/members', { members, reason }),
@@ -123,11 +129,12 @@ export function createHttpSource(base = '/api'): DataSource {
     workflowRevision: (id, rev) => get(`/workflows/${enc(id)}/revisions/${enc(rev)}`),
     rollbackWorkflow: (id, body) => req('POST', `/workflows/${enc(id)}/rollback`, body),
     subscribeWorkflow: (id, onChange) => stream(scoped(`/workflows/${enc(id)}/stream`), onChange),
+    ...createM4Http({ req, get, url: scoped, stream }),
   }
 }
 
 /** SSE：默认事件（无 event: 行）交给 on；named 里的具名事件（如群聊的 `event: lead`）分别处理。 */
-function stream<T>(url: string, on: (v: T) => void, named?: Record<string, (data: unknown) => void>): () => void {
+export function stream<T>(url: string, on: (v: T) => void, named?: Record<string, (data: unknown) => void>): () => void {
   const es = new EventSource(url)
   const parse = (raw: unknown, fn: (v: never) => void) => {
     try {

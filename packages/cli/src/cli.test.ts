@@ -84,7 +84,7 @@ it('init 在无 package.json 的外部项目中可用；坏 workflow 不阻断 s
   expect(written.code, written.stderr).toBe(0)
   expect((await cli(dir, ['ws', 'get', 'REQ-001', 'inputs/raw.bin'])).stdout).toEqual(bytes)
   expect((await json(dir, ['ws', 'get', 'REQ-001', 'inputs/raw.bin', '--version', '1'])).content).toBe(bytes.toString('base64'))
-  expect(await json(dir, ['ws', 'ls', 'REQ-001'])).toHaveLength(1)
+  expect(await json(dir, ['ws', 'ls', 'REQ-001'])).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'inputs/prd.md', kind: 'input' }), expect.objectContaining({ path: 'inputs/raw.bin' })]))
   const history = await json(dir, ['ws', 'log', 'REQ-001', 'inputs/raw.bin'])
   expect(history[0]).toMatchObject({ author: { type: 'human', id: 'Target Project User' }, reason: '原始输入' })
   expect(await json(dir, ['status'])).toHaveLength(1)

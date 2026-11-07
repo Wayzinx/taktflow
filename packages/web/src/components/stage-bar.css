@@ -28,6 +28,11 @@
   border-radius: 1.5px;
   background: var(--seg);
   overflow: hidden;
+  /* 阶段推进时格子换色有衔接，不是突变 */
+  transition:
+    background-color var(--dur) var(--ease),
+    opacity var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
 }
 .belt-seg.st-todo {
   background: transparent;
@@ -114,7 +119,10 @@
   background: var(--tone);
   transform: scaleX(clamp(0, var(--p, 0), 1));
   transform-origin: left center;
-  transition: transform 180ms var(--ease);
+  /* 进度推进与数字过渡同速（--dur-count），阶段完成时补满不跳 */
+  transition:
+    transform var(--dur-count) var(--ease-out-soft),
+    background-color var(--dur) var(--ease);
 }
 .stage-cell.st-done .stage-cell-bar > span {
   transform: scaleX(1);
@@ -161,4 +169,43 @@
   font-size: var(--text-label);
   color: var(--text-3);
   font-family: var(--font-mono);
+}
+
+/* 可点的阶段格（运行页：点阶段 → 画布定位到该泳道） */
+button.stage-cell {
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 4px 6px 6px;
+  margin: -4px 0 -6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.stage-click {
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    transform var(--dur-press) var(--ease);
+}
+.stage-click:hover {
+  background: var(--surface-hover);
+}
+.stage-click:active {
+  background: var(--surface-active);
+}
+.stage-click.on {
+  background: var(--surface-2);
+}
+.stage-cell-icon,
+.stage-cell-title {
+  transition:
+    color var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-cell-bar > span,
+  .belt-seg {
+    transition: none;
+  }
 }

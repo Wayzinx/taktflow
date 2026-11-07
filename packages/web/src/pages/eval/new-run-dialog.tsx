@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download } from 'lucide-react'
+import { Download, LoaderCircle } from 'lucide-react'
 import type { EvalTarget, EvalVariant, HarnessInfo, HarnessSelector } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { Dialog, SkeletonRows, toast } from '../../components/ui'
@@ -108,8 +108,9 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
           <button className="btn btn-sm" onClick={onClose}>
             取消
           </button>
-          <button className="btn btn-sm btn-primary" disabled={!ok} onClick={submit}>
-            {busy ? '正在提交…' : `开始评测（${selected.size} 条用例 × 2 个版本）`}
+          <button className="btn btn-sm btn-primary" disabled={!ok} aria-busy={busy} onClick={submit}>
+            {busy && <LoaderCircle className="spin" aria-hidden />}
+            {`开始评测（${selected.size} 条用例 × 2 个版本）`}
           </button>
         </>
       }
@@ -117,8 +118,8 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
       <div className="ev-form">
         <label className="ev-field">
           <span className="ev-label">被测目标</span>
-          <select className="select input" value={target} onChange={(e) => setTarget(e.target.value)}>
-            {!targets.data && <option value={target}>{target || '加载中…'}</option>}
+          <select className="select input" value={target} disabled={!targets.data} onChange={(e) => setTarget(e.target.value)}>
+            {!targets.data && <option value={target}>{target || '读取被测目标'}</option>}
             {targets.data?.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}

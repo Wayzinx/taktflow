@@ -33,7 +33,7 @@ it('M3 命令、路由、经验、当前用户和仓库设置经过校验并持�
   expect((await request(server, '/api/me')).data).toMatchObject({ id: 'alice', member: { duties: ['qa'] } })
   expect((await request(server, '/api/me', 'GET', undefined, 'bob')).data.member.role).toBe('viewer')
   expect((await request(server, '/api/commands')).data.map((item: { id: string }) => item.id)).toContain('run.start')
-  expect((await request(server, '/api/commands/requirement.create', 'POST', { input: { title: '无原因' } })).data.ok).toBe(false)
+  expect((await request(server, '/api/commands/requirement.create', 'POST', { input: { title: '无原因', start: false } })).data.ok).toBe(true)
   expect((await request(server, '/api/commands/requirement.create', 'POST', { input: { title: '禁止' }, reason: '测试权限' }, 'bob')).data.ok).toBe(false)
   expect((await request(server, '/api/commands/requirement.create', 'POST', { input: { title: '合法需求' }, reason: '接入验证' })).data.ok).toBe(true)
   expect((await request(server, `/api/requirements/${req.id}/route`, 'POST', {})).data).toMatchObject({ tier: 'T1', workflowId: 'quick', gates: ['确认'] })

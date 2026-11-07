@@ -1,3 +1,4 @@
+import { LoaderCircle } from 'lucide-react'
 import { useState } from 'react'
 import type { Defect, DefectDetail } from '@taktflow/core'
 import { invalidate, useSource } from '../../api'
@@ -49,8 +50,9 @@ export function DefectForm({ open, requirementId, onClose, onCreated }: { open: 
           <button className="btn btn-sm" onClick={onClose}>
             取消
           </button>
-          <button className="btn btn-sm btn-primary" disabled={!ok} onClick={submit}>
-            {busy ? '正在录入…' : '录入'}
+          <button className="btn btn-sm btn-primary" disabled={!ok} aria-busy={busy} onClick={submit}>
+            {busy && <LoaderCircle className="spin" aria-hidden />}
+            录入
           </button>
         </>
       }

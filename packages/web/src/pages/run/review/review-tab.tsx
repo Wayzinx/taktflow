@@ -46,7 +46,7 @@ export function ReviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: s
     return (
       <div className="dpad rv">
         {review && <FacetTags facets={review.facets} />}
-        <EmptyState compact icon={ClipboardCheck} title="评审尚未出结论" hint={review ? `修订 1 · 最多 ${review.config.maxRounds} 轮；评审者给出结论后显示在这里` : `${requirementId} · ${runId}`} />
+        <EmptyState compact icon={ClipboardCheck} title="评审尚未出结论" body={review ? `修订 1 · 最多 ${review.config.maxRounds} 轮；评审者给出结论后显示在这里` : `${requirementId} · ${runId}`} />
       </div>
     )
 

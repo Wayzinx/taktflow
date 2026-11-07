@@ -1,8 +1,8 @@
 import { BarChart3, FlaskConical, Plus, TrendingDown } from 'lucide-react'
 import type { NodeScorecard } from '@taktflow/core'
 import { useAsync, type ScorecardBy } from '../../api'
-import { PageHeader, useCrumbs } from '../../components/layout'
-import { ErrorState, Segmented, Tabs } from '../../components/ui'
+import { useCrumbs } from '../../components/layout'
+import { ErrorState, PageHeader, Segmented, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
 import { NewRunDialog } from './new-run-dialog'
 import { RunDetail } from './run-detail'
@@ -29,7 +29,7 @@ function Scorecards() {
   return (
     <>
       <div className="ev-toolbar">
-        <Segmented options={BY} value={by} onChange={(v) => setQuery({ by: v === 'node' ? undefined : v, card: undefined, node: undefined })} />
+        <Segmented options={BY} value={by} size="sm" ariaLabel="成绩单维度" onChange={(v) => setQuery({ by: v === 'node' ? undefined : v, card: undefined, node: undefined })} />
         <span className="faint ev-toolbar-hint">从事件与产物直接计算，零 token；缺陷只有人确认归因后才计入逃逸与检出率。</span>
         <span style={{ flex: 1 }} />
         {regressed.length > 0 && (
@@ -63,11 +63,6 @@ function Runs() {
     <>
       <div className="ev-toolbar">
         <span className="faint ev-toolbar-hint">每条用例在沙箱里用冻结输入回放被测节点；判分模型必须不同于被测模型。</span>
-        <span style={{ flex: 1 }} />
-        <button className="btn btn-sm btn-primary" onClick={() => setQuery({ new: '1' })}>
-          <Plus />
-          新建评测
-        </button>
       </div>
       <div className="card">{q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : <RunsList runs={q.data} onNew={() => setQuery({ new: '1' })} />}</div>
       {dialog}
@@ -79,10 +74,26 @@ function Runs() {
 export function EvalPage() {
   const { query } = useLocation()
   const tab = query.get('tab') === 'runs' ? 'runs' : 'scorecards'
+  const suggestions = useStewardSuggestions('eval')
+  const regressed = useAsync((ds) => ds.scorecards('node').then((cs) => cs.filter((c) => c.regression?.suspected).length).catch(() => 0), [])
   useCrumbs([{ label: '评测', to: tab === 'runs' && query.get('run') ? '/eval?tab=runs' : undefined }, ...(query.get('run') ? [{ label: <span className="mono">{query.get('run')}</span> }] : [])], [tab, query.get('run')])
   return (
-    <div className="page ev-page fade-in">
-      <PageHeader title="评测" sub="节点、配方与技能的成绩单；改了技能或 prompt，用回放评测和基线配对比较，看清是不是真的变好。" />
+    <div className="page ev-page">
+      <PageHeader
+        title="评测"
+        description={
+          regressed.data
+            ? `${regressed.data} 个节点疑似退化。改了技能或 prompt，用回放评测和基线配对比较，看清是不是真的变好。`
+            : '节点、配方与技能的成绩单；改了技能或 prompt，用回放评测和基线配对比较，看清是不是真的变好。'
+        }
+        suggestions={suggestions}
+        actions={
+          <button className="btn btn-primary" onClick={() => setQuery({ tab: 'runs', run: undefined, new: '1' })}>
+            <Plus />
+            新建评测
+          </button>
+        }
+      />
       <Tabs
         value={tab}
         onChange={(t) => setQuery({ tab: t === 'scorecards' ? undefined : t, run: undefined, card: undefined, node: undefined, by: undefined, new: undefined })}
@@ -91,7 +102,9 @@ export function EvalPage() {
           { id: 'runs', label: '评测运行', icon: FlaskConical },
         ]}
       />
-      <div className="ev-body">{tab === 'runs' ? <Runs /> : <Scorecards />}</div>
+      <TabPanel key={tab} className="ev-body">
+        {tab === 'runs' ? <Runs /> : <Scorecards />}
+      </TabPanel>
     </div>
   )
 }

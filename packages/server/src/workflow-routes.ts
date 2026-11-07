@@ -1,7 +1,9 @@
 import type { WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from '@taktflow/core'
+import { convertWorkflowSource, sourceDiff } from '@taktflow/workflow-source'
+import { requireRole, type Actor, type ProjectStores, type WorkflowConvertResult } from '@taktflow/core'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 import { actor, body, HttpError, json, safeId, text } from './http.js'
-import { workflowStore } from './space.js'
+import { auditSpace, workflowStore } from './space.js'
 import { STREAMING, type Handler } from './routes.js'
 import { liveStream } from './live-stream.js'
 
@@ -14,6 +16,11 @@ export function workflowRoutes(register: (method: string, path: string, handler:
       if (/非法|不合法|必须|不能|无效/.test(message) || error instanceof TypeError) throw new HttpError(400, message)
       throw error
     }
+  })
+  add('POST', '/api/workflows/:id/convert', async ({ stores, params, request }) => {
+    const input = await body(request)
+    if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') throw new HttpError(400, 'dryRun 必须是布尔值')
+    return convertWorkflow(stores, safeId(params.id!), { dryRun: input.dryRun as boolean | undefined, baseRev: input.baseRev as string | undefined, reason: input.reason as string | undefined }, actor(request, stores), getStore(stores))
   })
   add('GET', '/api/workflows', async ({ stores }) => {
     const runs = await stores.runs.list()
@@ -71,4 +78,19 @@ export function workflowRoutes(register: (method: string, path: string, handler:
     })
     return STREAMING
   })
+}
+
+export async function convertWorkflow(stores: ProjectStores, id: string, input: { dryRun?: boolean; baseRev?: string; reason?: string }, author: Actor, store = workflowStore(stores)): Promise<WorkflowConvertResult> {
+  try { requireRole(stores, author, 'maintainer', 'workflow.convert') }
+  catch (error) { throw new HttpError(403, error instanceof Error ? error.message : String(error)) }
+  const current = await store.get(id, { record: !input.dryRun })
+  const converted = convertWorkflowSource(current.source)
+  if (!converted.ok) return converted
+  const source = converted.source!, diff = await sourceDiff(current.source, source)
+  if (input.dryRun) return { ok: true, source, diff }
+  const reason = text(input.reason, 'reason')
+  const result = await store.replaceSource(id, { source, baseRev: input.baseRev ?? current.rev, author, reason })
+  if ('error' in result) throw new HttpError(result.error === 'conflict' ? 409 : 400, JSON.stringify(result))
+  await auditSpace(stores, author, reason, `workflow.convert ${id}`)
+  return { ok: true, source, diff, document: result }
 }

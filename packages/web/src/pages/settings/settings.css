@@ -351,3 +351,33 @@
   font-size: var(--text-label);
 }
 
+
+/* ---------------------------------------------------------------- M4："让管家帮我改" */
+.steward-edit-note {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  font-size: var(--text-body);
+  color: var(--text-2);
+}
+.steward-edit-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.steward-edit-text {
+  flex: 1;
+  min-width: 0;
+}
+.harness-grid > div {
+  display: grid;
+}
+.file-list-foot {
+  padding: var(--sp-2);
+  border-top: 1px solid var(--divider);
+}

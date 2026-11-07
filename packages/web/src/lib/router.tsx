@@ -1,4 +1,5 @@
 import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react'
+import { flushSync } from 'react-dom'
 import { splitSpace, spacePath } from './space'
 
 /**
@@ -8,7 +9,28 @@ import { splitSpace, spacePath } from './space'
 
 const listeners = new Set<() => void>()
 const notify = () => listeners.forEach((l) => l())
-window.addEventListener('popstate', notify)
+
+/**
+ * 路由转场（M4 体验基线 3）：路径变化时用 View Transitions 包住渲染（flushSync 保证回调里 DOM 已更新），
+ * 样式见 styles/motion.css 的 ::view-transition-*(page)。不支持的浏览器由 <PageTransition> 播入场动画。
+ */
+type StartVT = (cb: () => void) => unknown
+export function viewTransitionsEnabled(): boolean {
+  return typeof document !== 'undefined' && typeof (document as unknown as { startViewTransition?: StartVT }).startViewTransition === 'function'
+}
+let lastPath = location.pathname
+function notifyRoute() {
+  const changed = location.pathname !== lastPath
+  lastPath = location.pathname
+  if (changed && viewTransitionsEnabled() && !document.hidden) {
+    const start = (document as unknown as { startViewTransition: StartVT }).startViewTransition.bind(document)
+    start(() => flushSync(notify))
+    return
+  }
+  notify()
+}
+// reduced-motion 下仍然走 View Transitions：motion.css 把它改成纯淡入淡出
+window.addEventListener('popstate', notifyRoute)
 
 const STICKY = ['mock', 'theme']
 
@@ -32,7 +54,7 @@ export function navigate(to: string, opts: { replace?: boolean } = {}) {
   const target = withSticky(to)
   if (target === location.pathname + location.search) return
   history[opts.replace ? 'replaceState' : 'pushState'](null, '', target)
-  notify()
+  notifyRoute()
   if (!opts.replace) window.scrollTo({ top: 0 })
 }
 
@@ -46,6 +68,7 @@ export function setQuery(patch: Record<string, string | undefined>, opts: { repl
   const qs = params.toString()
   const target = location.pathname + (qs ? `?${qs}` : '')
   history[opts.replace === false ? 'pushState' : 'replaceState'](null, '', target)
+  lastPath = location.pathname
   notify()
 }
 

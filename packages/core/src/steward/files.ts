@@ -1,0 +1,35 @@
+import { open } from 'node:fs/promises'
+import { resolve } from 'node:path'
+import { assertNoSymlinks, isEnoent } from '../store/fs-utils.js'
+import { StewardError } from './contracts.js'
+
+export async function stewardFile(root: string, file: string, write = false): Promise<string> {
+  if (!file || file.includes('\\') || file.startsWith('/') || file.split('/').some((p) => p === '..' || p === '.' || p === '.takt') || /\.secret/i.test(file)) {
+    throw new StewardError(400, '文件路径不允许，请选择空间内的非敏感文件')
+  }
+  if (write && !/^(?:agents\/.+|skills\/.+|knowledge\/.+\.(?:md|json)|workflows\/[^/]+\.layout\.json)$/.test(file)) {
+    throw new StewardError(400, '文件不可写，请选择角色、技能、知识文档或 workflow 布局')
+  }
+  const target = resolve(root, file)
+  await assertNoSymlinks(root, target)
+  return target
+}
+export async function readStewardFile(root: string, file: string): Promise<string | undefined> {
+  const target = await stewardFile(root, file)
+  let handle
+  try { handle = await open(target, 'r') } catch (error) { if (isEnoent(error)) return undefined; throw error }
+  try {
+    const info = await handle.stat()
+    if (!info.isFile() || info.size > 65536) throw new StewardError(400, '只支持读取不超过 64KB 的普通文本文件，请缩小文件')
+    const buffer = Buffer.alloc(65537)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    if (bytesRead > 65536) throw new StewardError(400, '文件超过 64KB，请缩小文件')
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } finally { await handle.close() }
+}
+export function redactSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSecrets)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, /secret|password|token|api.?key|authorization|credential|connection.?string|dsn/i.test(key) ? '***' : redactSecrets(child)]))
+  if (typeof value === 'string' && /(?:secret:|\$\{env:|:\/\/[^/\s]+:[^/\s]+@)/.test(value)) return '***'
+  return value
+}

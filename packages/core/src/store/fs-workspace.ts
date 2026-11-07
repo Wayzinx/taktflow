@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir } from 'node:fs/promises'
+import { mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import type { ChatStore, WorkspaceStore } from '../interfaces.js'
 import type { ArtifactComment, ArtifactRecord, ArtifactRef, ArtifactVersion, Requirement } from '../types.js'
@@ -9,6 +9,8 @@ import { nextRequirementId } from '../util/ids.js'
 import { extractTraceIds } from '../util/trace-ids.js'
 import { appendLine, assertNoSymlinks, fileExists, isEnoent, readFileIfExists, readJsonFile, readJsonLines, toJsonText, writeFileAtomic } from './fs-utils.js'
 import { FsChatStore } from './fs-chat.js'
+import { withFileLock } from './file-lock.js'
+import type { AttentionItem } from '../interfaces.js'
 import { withLock } from './locks.js'
 import {
   assertArtifactPath,
@@ -19,7 +21,7 @@ import {
 
 type WriteArtifactInput = Parameters<WorkspaceStore['writeArtifact']>[0]
 type AddCommentInput = Parameters<WorkspaceStore['addComment']>[1]
-type CreateRequirementInput = Parameters<WorkspaceStore['createRequirement']>[0]
+type CreateRequirementInput = Parameters<WorkspaceStore['createRequirement']>[0] & Pick<Requirement, 'description' | 'members' | 'dueAt'>
 
 /** 存放区根目录下的元数据文件：不参与产物扫描，也不允许写成产物。 */
 const META_FILES = new Set(['requirement.json', 'manifest.json', 'comments.jsonl'])
@@ -106,7 +108,7 @@ export class FsWorkspaceStore implements WorkspaceStore {
         createdAt: now,
         updatedAt: now,
       }
-      if (input.owner !== undefined) requirement.owner = input.owner
+      for (const key of ['owner', 'description', 'members', 'dueAt'] as const) if (input[key] !== undefined) Object.assign(requirement, { [key]: input[key] })
       await mkdir(this.dir(id), { recursive: true })
       await writeFileAtomic(file, toJsonText(requirement))
       if (!(await fileExists(this.metadata(id, 'manifest.json')))) {
@@ -140,6 +142,21 @@ export class FsWorkspaceStore implements WorkspaceStore {
       await writeFileAtomic(file, toJsonText(next))
       return next
     })
+  }
+
+  async deleteRequirement(id: string): Promise<void> {
+    const dir = this.dir(id)
+    await assertNoSymlinks(this.root, dir)
+    const chatDir = path.join(this.taktDir, 'chat', assertRequirementId(id))
+    await assertNoSymlinks(this.taktDir, chatDir)
+    const attention = path.join(this.taktDir, 'attention.jsonl')
+    await assertNoSymlinks(this.taktDir, attention)
+    await withFileLock(attention, async () => {
+      const items = await readJsonLines<AttentionItem>(attention)
+      await writeFileAtomic(attention, items.filter((item) => item.requirementId !== id).map((item) => JSON.stringify(item) + '\n').join(''))
+    })
+    await rm(chatDir, { recursive: true, force: true })
+    await rm(dir, { recursive: true, force: true })
   }
 
   dir(id: string): string {

@@ -54,7 +54,7 @@ export function RepoSetupEdit({ repo, onDone }: { repo: Repo; onDone: (changed: 
         取消
       </button>
     </form>
-    <ReasonDialog open={asking} onClose={() => setAsking(false)} title={`修改 ${repo.id} 的 worktree 引导`} description="写回 takt.config.json，并记入空间审计。" confirmLabel="保存" onSubmit={save} />
+    <ReasonDialog open={asking} onClose={() => setAsking(false)} title={`修改 ${repo.id} 的 worktree 引导`} description="保存后对新开的工作区生效，并记入空间审计。" confirmLabel="保存" onSubmit={save} />
     </>
   )
 }

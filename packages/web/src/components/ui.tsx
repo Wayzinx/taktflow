@@ -1,10 +1,8 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
-import { AlertTriangle, type LucideIcon } from 'lucide-react'
-import { TaktRuler } from './takt'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import type { NodeKind } from '@taktflow/core'
 import { NODE_KIND, toneSoftVar, toneVar, type StatusMeta, type Tone } from '../lib/status'
 import { initials } from '../lib/format'
-import { prefersReducedMotion } from '../lib/motion'
 import './ui.css'
 
 export function StatusBadge({ meta, subtle }: { meta: StatusMeta; subtle?: boolean }) {
@@ -53,54 +51,6 @@ export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number 
   )
 }
 
-export function Skeleton({ w = '100%', h = 12, r, style }: { w?: number | string; h?: number; r?: number; style?: CSSProperties }) {
-  return <span className="skeleton" style={{ display: 'block', width: w, height: h, borderRadius: r, ...style }} />
-}
-
-export function SkeletonRows({ rows = 5, gap = 14 }: { rows?: number; gap?: number }) {
-  return (
-    <div style={{ display: 'grid', gap, padding: 16 }}>
-      {Array.from({ length: rows }, (_, i) => (
-        <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <Skeleton w={22} h={22} r={6} />
-          <Skeleton w={`${38 + ((i * 17) % 40)}%`} h={11} />
-          <span style={{ flex: 1 }} />
-          <Skeleton w={56} h={11} />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-export function EmptyState({ icon: Icon, title, hint, action, compact }: { icon: LucideIcon; title: string; hint?: ReactNode; action?: ReactNode; compact?: boolean }) {
-  return (
-    <div className={`empty-state${compact ? ' compact' : ''}`}>
-      <span className="empty-icon">
-        <Icon strokeWidth={1.6} />
-      </span>
-      <div className="empty-title">{title}</div>
-      {hint && <div className="empty-hint">{hint}</div>}
-      {action && <div className="empty-action">{action}</div>}
-      {!compact && <TaktRuler ticks={9} className="empty-ruler" />}
-    </div>
-  )
-}
-
-export function ErrorState({ error, onRetry }: { error: Error; onRetry?: () => void }) {
-  return (
-    <EmptyState
-      icon={AlertTriangle}
-      title="加载失败"
-      hint={<span className="mono">{error.message}</span>}
-      action={onRetry && (
-        <button className="btn btn-sm" onClick={onRetry}>
-          重试
-        </button>
-      )}
-    />
-  )
-}
-
 export interface TabDef {
   id: string
   label: string
@@ -109,9 +59,22 @@ export interface TabDef {
   hidden?: boolean
 }
 
+/**
+ * Tab 条：一个指示器按 transform 平移 / 缩放到当前 Tab（150ms）；内容用 <TabPanel key={tab}> 交叉淡化。
+ *   <Tabs tabs={…} value={tab} onChange={setTab} />  <TabPanel key={tab}>…</TabPanel>
+ */
 export function Tabs({ tabs, value, onChange, size }: { tabs: TabDef[]; value: string; onChange: (id: string) => void; size?: 'sm' }) {
+  const root = useRef<HTMLDivElement>(null)
+  const [ind, setInd] = useState<{ x: number; w: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = root.current?.querySelector<HTMLElement>('.tab.active')
+    if (!el) return setInd(null)
+    // 与原来的 ::after 一致：左右各内缩 10px
+    const next = { x: el.offsetLeft + 10, w: Math.max(0, el.offsetWidth - 20) }
+    setInd((t) => (t && t.x === next.x && t.w === next.w ? t : next))
+  })
   return (
-    <div className={`tabs${size === 'sm' ? ' tabs-sm' : ''}`} role="tablist">
+    <div ref={root} className={`tabs${size === 'sm' ? ' tabs-sm' : ''}${ind ? ' has-indicator' : ''}`} role="tablist">
       {tabs
         .filter((t) => !t.hidden)
         .map((t) => {
@@ -124,18 +87,16 @@ export function Tabs({ tabs, value, onChange, size }: { tabs: TabDef[]; value: s
             </button>
           )
         })}
+      {ind && <span className="tabs-indicator" aria-hidden style={{ '--tab-x': `${ind.x}px`, '--tab-s': ind.w } as CSSProperties} />}
     </div>
   )
 }
 
-export function Segmented<T extends string>({ options, value, onChange }: { options: Array<{ value: T; label: string }>; value: T; onChange: (v: T) => void }) {
+/** Tab 内容：换 key 时 150ms 淡入（交叉淡化的"入"半段；旧内容立即卸载，避免两份布局叠加跳动）。 */
+export function TabPanel({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className="segmented">
-      {options.map((o) => (
-        <button key={o.value} className={o.value === value ? 'on' : undefined} onClick={() => onChange(o.value)}>
-          {o.label}
-        </button>
-      ))}
+    <div role="tabpanel" className={`tab-panel${className ? ` ${className}` : ''}`}>
+      {children}
     </div>
   )
 }
@@ -150,62 +111,24 @@ export function Meter({ value, tone = 'success', height = 6 }: { value: number; 
   )
 }
 
-// ---------------------------------------------------------------- toast
-
-interface ToastItem {
-  id: number
-  title: string
-  body?: ReactNode
-  tone?: Tone
-  leaving?: boolean
-}
-let toastId = 0
-const toastSubs = new Set<(t: ToastItem) => void>()
-export function toast(title: string, opts: { body?: ReactNode; tone?: Tone } = {}) {
-  const t = { id: ++toastId, title, ...opts }
-  toastSubs.forEach((f) => f(t))
-}
-
-const TOAST_MS = 6000
-const TOAST_EXIT_MS = 150
-
-/** 右下角通知：进场 150ms 上浮淡入；6s 后先播 150ms 退出再移除；悬停时不消失。 */
-export function Toaster() {
-  const [items, setItems] = useState<ToastItem[]>([])
-  const [hover, setHover] = useState(false)
-  useEffect(() => {
-    const add = (t: ToastItem) => setItems((s) => [...s, t])
-    toastSubs.add(add)
-    return () => {
-      toastSubs.delete(add)
-    }
-  }, [])
-  useEffect(() => {
-    if (hover) return
-    const timers = items.map((t) =>
-      t.leaving
-        ? setTimeout(() => setItems((s) => s.filter((x) => x.id !== t.id)), prefersReducedMotion() ? 0 : TOAST_EXIT_MS)
-        : setTimeout(() => setItems((s) => s.map((x) => (x.id === t.id ? { ...x, leaving: true } : x))), TOAST_MS),
-    )
-    return () => timers.forEach(clearTimeout)
-  }, [items, hover])
-  return (
-    <div className="toaster" role="status" aria-live="polite" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      {items.map((t) => (
-        <div key={t.id} className="toast" data-state={t.leaving ? 'exit' : 'open'} style={{ '--tone': toneVar(t.tone ?? 'success') } as CSSProperties}>
-          <span className="toast-bar" />
-          <div>
-            <div className="toast-title">{t.title}</div>
-            {t.body && <div className="toast-body">{t.body}</div>}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ---------------------------------------------------------------- 弹层原语（components/ui/）
 
 export { Dialog, trapKeys, useRestoreFocus, type DialogProps } from './ui/dialog'
-export { Popover, Menu, type MenuItem, type Placement, type PopoverProps } from './ui/popover'
+export { Popover, type Placement, type PopoverProps } from './ui/popover'
+export { Menu, type MenuItem } from './ui/menu'
+
+// ---------------------------------------------------------------- M4 原语（docs/dev/m4-web.md；用法见 packages/web/OWNERSHIP.md）
+
+export { PageHeader, SuggestionChips, useStewardSuggestions, type PageHeaderProps } from './ui/page-header'
+export { Skeleton, SkeletonCard, SkeletonGrid, SkeletonRows, SkeletonText } from './ui/skeleton'
+export { EmptyState, ErrorState, type EmptyStateProps, type ErrorStateProps } from './ui/empty-state'
+export { Toaster, dismissToast, toast, type ToastOptions } from './ui/toast'
+export { CountUp } from './ui/count-up'
+export { useStagger, type StaggerProps } from './ui/stagger'
+export { useFlashOnChange, useFlashRows } from './ui/flash-row'
+export { Segmented, type SegmentedOption } from './ui/segmented'
+export { Chip, Chips, type ChipItem } from './ui/chips'
+export { Kbd, withShortcut } from './ui/kbd'
+export { Drawer, type DrawerProps } from './ui/drawer'
+export { PageTransition, vtName } from './ui/page-transition'
 export { ReasonDialog, ReasonField, RiskTag, RISK, reasonOk, type Risk } from './ui/reason-dialog'

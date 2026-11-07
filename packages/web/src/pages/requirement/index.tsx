@@ -1,19 +1,19 @@
-import { Activity, ArrowUpRight, Bug, ChartNoAxesColumn, ClipboardCheck, FolderOpen, GitBranch, MessagesSquare, Network, Play } from 'lucide-react'
+import { Activity, Bug, ChartNoAxesColumn, ClipboardCheck, FolderOpen, GitBranch, MessagesSquare, Network } from 'lucide-react'
 import { useAsync } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { BudgetBar } from '../../components/budget-bar'
 import { StageBar } from '../../components/stage-bar'
 import type { RequirementDetail, RunDetail } from '@taktflow/core'
 import { TierGlyph, TIER_LABEL } from '../../components/tier-glyph'
-import { Avatar, AvatarStack, ErrorState, Skeleton, StatusBadge, StatusDot, Tabs } from '../../components/ui'
-import { fmtCost, fmtRelative, fmtTokens, totalTokens } from '../../lib/format'
-import { Link, setQuery, useLocation } from '../../lib/router'
-import { NODE_STATUS, REQ_STATUS, RUN_STATUS } from '../../lib/status'
+import { ErrorState, Skeleton, StatusDot, SuggestionChips, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
+import { Link, navigate, setQuery, useLocation } from '../../lib/router'
+import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
 import { ActivityTab } from './activity-tab'
 import { ArtifactsTab } from './artifacts-tab'
 import { ChatTab } from './chat-tab'
 import { Decisions } from './decisions'
 import { DefectsTab } from './defects-tab'
+import { RequirementHeader } from './header'
 import { MetricsTab } from './metrics-tab'
 import { ReviewsTab } from './reviews-tab'
 import { RunsTab } from './runs-tab'
@@ -67,20 +67,21 @@ function StatusLine({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
     return (
       <div className="req-summary">
         <StatusDot tone="pending" />
-        还没有运行，在群聊里告诉 Lead 开始
+        还没有运行
+        <span className="req-summary-sub">
+          <Link to={`/req/${r.id}?tab=chat`}>去群聊让 Lead 开始</Link>
+        </span>
       </div>
     )
   const st = run ? RUN_STATUS[run.run.status] : undefined
   return (
     <div className="req-summary">
       {st && <StatusDot tone={st.tone} />}
-      最近一次运行{st ? st.label : '加载中'}
+      最近一次运行{st ? st.label : <Skeleton w={48} h={12} style={{ marginLeft: 4 }} />}
       {sub}
     </div>
   )
 }
-
-const LINK_LABEL: Record<string, string> = { meego: 'Meego', feishu: '飞书', github: 'GitHub', jira: 'Jira' }
 
 export function RequirementPage({ id }: { id: string }) {
   const { query } = useLocation()
@@ -90,56 +91,27 @@ export function RequirementPage({ id }: { id: string }) {
   // 最近一次流水线运行：预算条与"需要你决策"用它的 budget
   const latest = useAsync((ds) => (r?.latestRunId ? ds.run(r.latestRunId) : Promise.resolve(undefined)), [r?.latestRunId])
   useCrumbs([{ label: '需求', to: '/requirements' }, { label: <span className="mono">{id}</span> }], [id])
+  const suggestions = useStewardSuggestions('requirement', id)
 
   if (q.error && !r) return <ErrorState error={q.error} onRetry={q.reload} />
 
   return (
-    <div className="page req-page fade-in">
+    <div className="page req-page">
       <header className="req-header">
-        <div className="req-header-top">
-          <span className="req-id-chip mono">{id}</span>
-          {r ? <StatusBadge meta={REQ_STATUS[r.status]} /> : <Skeleton w={56} h={20} r={10} />}
-          {r?.links.map((l) => (
-            <a key={l.url} className="chip" href={l.url} target="_blank" rel="noreferrer">
-              <ArrowUpRight />
-              {LINK_LABEL[l.type] ?? l.type}
-              {l.title && <span className="faint">· {l.title}</span>}
-            </a>
-          ))}
-          <span style={{ flex: 1 }} />
-          {r?.members && <AvatarStack names={r.members} />}
-          {r?.latestRunId && (
-            <Link to={`/run/${r.latestRunId}`} className="btn btn-sm">
-              <Play />
-              最近运行
-            </Link>
-          )}
-        </div>
-        <h1 className="req-h1">{r ? r.title : <Skeleton w={320} h={24} />}</h1>
-        {r ? <StatusLine r={r} run={latest.data} /> : <Skeleton w={280} h={14} style={{ marginTop: 10 }} />}
-        <div className="req-facts">
+        <RequirementHeader id={id} detail={r} status={r ? <StatusLine r={r} run={latest.data} /> : <Skeleton w={280} h={14} style={{ marginTop: 10 }} />} onChanged={q.reload} />
+        {suggestions.length > 0 && <SuggestionChips className="req-suggest" items={suggestions} context={[{ type: 'requirement', id, label: id }]} />}
+        <div className="card req-stage-card">
           {r ? (
-            <>
-              {r.owner && (
-                <span className="req-fact">
-                  <Avatar name={r.owner} size={16} />
-                  {r.owner}
-                </span>
-              )}
-              <span className="req-fact">创建于 {fmtRelative(r.createdAt)}</span>
-              <span className="req-fact">更新于 {fmtRelative(r.updatedAt)}</span>
-              <span className="req-fact">
-                <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens · <span className="mono">{fmtCost(r.usage.costUsd)}</span>
-              </span>
-              <span className="req-fact">
-                公共存放区 <span className="mono">.takt/workspaces/{id}/</span>
-              </span>
-            </>
+            <StageBar
+              stages={r.stages}
+              variant="full"
+              empty={r.latestRunId ? '最近的运行没有划分阶段' : '尚未运行'}
+              onStage={r.latestRunId ? (sid) => navigate(`/run/${r.latestRunId}?stage=${encodeURIComponent(sid)}`) : undefined}
+            />
           ) : (
-            <Skeleton w={420} h={12} />
+            <Skeleton h={28} />
           )}
         </div>
-        <div className="card req-stage-card">{r ? <StageBar stages={r.stages} variant="full" empty={r.latestRunId ? '最近的运行没有划分阶段' : '尚未运行'} /> : <Skeleton h={28} />}</div>
         <Decisions requirementId={id} detail={r} run={latest.data} budget={latest.data?.budget} />
         <BudgetBar budget={latest.data?.budget} runId={r?.latestRunId} />
       </header>
@@ -158,16 +130,16 @@ export function RequirementPage({ id }: { id: string }) {
           { id: 'activity', label: '动态', icon: Activity },
         ]}
       />
-      <div className="req-tab-body">
+      <TabPanel key={tab} className="req-tab-body">
         {tab === 'artifacts' && <ArtifactsTab id={id} detail={r} run={latest.data} />}
         {tab === 'chat' && <ChatTab id={id} detail={r} />}
         {tab === 'reviews' && <ReviewsTab id={id} />}
-        {tab === 'runs' && <RunsTab runs={r?.runs} />}
+        {tab === 'runs' && <RunsTab runs={r?.runs} reqId={id} />}
         {tab === 'trace' && <TraceTab id={id} />}
         {tab === 'metrics' && <MetricsTab id={id} quality={r?.quality} />}
         {tab === 'defects' && <DefectsTab id={id} detail={r} />}
         {tab === 'activity' && <ActivityTab id={id} runs={r?.runs} />}
-      </div>
+      </TabPanel>
     </div>
   )
 }

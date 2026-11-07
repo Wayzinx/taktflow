@@ -1,0 +1,212 @@
+/* 需求页头的就地编辑（B 组）。布局沿用 requirement.css 的 .req-header-top / .req-h1 / .req-facts。 */
+.rh-inline {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  max-width: 100%;
+  margin: -2px -6px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: text;
+  transition: background var(--dur-fast) var(--ease);
+}
+.rh-inline:hover {
+  background: var(--surface-hover);
+}
+.rh-inline:active {
+  background: var(--surface-active);
+}
+.rh-pencil {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.rh-inline:hover .rh-pencil,
+.rh-inline:focus-visible .rh-pencil {
+  opacity: 1;
+}
+.rh-title .rh-pencil {
+  align-self: center;
+}
+.rh-edit-input {
+  width: 100%;
+  margin: -2px -6px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-soft);
+  color: var(--text);
+  font: inherit;
+  letter-spacing: inherit;
+  line-height: inherit;
+  transition: opacity var(--dur) var(--ease);
+}
+.rh-edit-input:focus {
+  outline: none;
+}
+.rh-edit-input.busy,
+.rh-edit-area:disabled {
+  opacity: 0.6;
+}
+.rh-edit-wrap {
+  display: grid;
+  gap: 4px;
+}
+.rh-edit-area {
+  font-size: var(--text-body);
+}
+.rh-edit-hint {
+  font-size: var(--text-meta);
+}
+
+/* ---------------------------------------------------------------- 描述 */
+.rh-desc {
+  position: relative;
+  margin-top: var(--sp-2);
+  max-width: 820px;
+  font-size: var(--text-body);
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.rh-desc .rh-inline {
+  display: block;
+  width: calc(100% + 12px);
+  cursor: text;
+}
+.rh-desc .rh-inline.empty {
+  display: inline-flex;
+  width: auto;
+  font-size: var(--text-ui);
+}
+.rh-desc .rh-pencil {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+.rh-desc-text {
+  white-space: pre-wrap;
+}
+.rh-desc.clamped .rh-desc-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rh-more {
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+  border-radius: var(--r-sm);
+  transition: color var(--dur-fast) var(--ease);
+}
+.rh-more:hover {
+  color: var(--text);
+}
+
+/* ---------------------------------------------------------------- 事实行里可点的项 */
+.rh-fact-btn {
+  height: 24px;
+  margin: 0 -6px;
+  padding: 0 6px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.rh-fact-btn:hover,
+.rh-fact-btn[aria-expanded='true'] {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.rh-fact-btn svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.req-header-top .rh-fact-btn {
+  margin: 0;
+  height: 22px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rh-overdue {
+  color: var(--st-failed);
+}
+.rh-person {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.rh-person:hover {
+  background: var(--surface-hover);
+}
+.rh-person.on {
+  background: var(--surface-2);
+  font-weight: 500;
+}
+.rh-person .faint {
+  margin-left: auto;
+  font-size: var(--text-meta);
+}
+
+/* ---------------------------------------------------------------- 归档横幅 */
+.rh-archived {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--st-skipped-soft);
+  color: var(--text-2);
+  font-size: var(--text-ui);
+  animation: rh-fade var(--dur-pop) var(--ease-out-soft);
+}
+.rh-archived svg {
+  width: 14px;
+  height: 14px;
+}
+.rh-archived .btn {
+  margin-left: auto;
+}
+.rh-confirm-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 500;
+}
+@keyframes rh-fade {
+  from {
+    opacity: 0;
+  }
+}

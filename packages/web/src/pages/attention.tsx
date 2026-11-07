@@ -3,8 +3,8 @@ import { History, Inbox, UserRound } from 'lucide-react'
 import type { AttentionItem, SpaceMember } from '@taktflow/core'
 import { useAsync } from '../api'
 import { AttentionCard } from '../components/attention-card'
-import { PageHeader, useCrumbs } from '../components/layout'
-import { EmptyState, ErrorState, Segmented, SkeletonRows, StatusBadge } from '../components/ui'
+import { useCrumbs } from '../components/layout'
+import { EmptyState, ErrorState, PageHeader, Segmented, Skeleton, SkeletonRows, StatusBadge, useFlashRows, useStagger, useStewardSuggestions } from '../components/ui'
 import { Link } from '../lib/router'
 import { actingUser, setActingUser } from '../lib/acting-user'
 import { REQ_STATUS } from '../lib/status'
@@ -51,6 +51,11 @@ export function AttentionPage() {
     return { items, reqs, members, viewer }
   }, [])
   useCrumbs([{ label: '待办' }], [])
+  const suggestions = useStewardSuggestions('attention')
+  const allIds = (q.data?.items ?? []).map((a) => a.requestId)
+  const flash = useFlashRows(allIds)
+  const groupCount = q.data ? new Set((q.data.items ?? []).map((a) => a.requirementId)).size : 0
+  const st = useStagger(groupCount)
   if (q.error && !q.data) return <ErrorState error={q.error} onRetry={q.reload} />
 
   const setScope = (s: Scope) => (setScopeState(s), writePref(SCOPE_KEY, s))
@@ -68,16 +73,25 @@ export function AttentionPage() {
   const groups = q.data ? q.data.reqs.map((r) => ({ r, items: items.filter((a) => a.requirementId === r.id) })).filter((g) => g.items.length) : []
 
   return (
-    <div className="page attention-page fade-in">
+    <div className="page attention-page">
       <PageHeader
         title="待办"
-        sub="所有等人处理的事项：审批、回答澄清问题、门禁裁决、判决交人、重复失败与预算。处理结果写入审计日志，运行随后自动继续。"
+        description={
+          !q.data ? (
+            <Skeleton w={280} h={12} style={{ marginTop: 6 }} />
+          ) : pendingCount ? (
+            `${pendingCount} 项等人处理${staleCount ? `，其中 ${staleCount} 项审批对象已更新` : ''}。处理完运行会自动继续。`
+          ) : (
+            '审批、澄清问题、门禁裁决都在这里；现在没有等你的事。'
+          )
+        }
+        suggestions={suggestions}
         actions={
           <Segmented<View>
             value={view}
             onChange={setView}
             options={[
-              { value: 'pending', label: `待处理 ${pendingCount}` },
+              { value: 'pending', label: '待处理', count: pendingCount },
               { value: 'done', label: '已处理' },
             ]}
           />
@@ -89,7 +103,7 @@ export function AttentionPage() {
           onChange={setScope}
           options={[
             { value: 'all', label: '全部' },
-            { value: 'mine', label: `派给我 ${mineCount}` },
+            { value: 'mine', label: '派给我', count: mineCount },
           ]}
         />
         {members.length > 0 && (
@@ -123,14 +137,15 @@ export function AttentionPage() {
           <EmptyState
             icon={Inbox}
             title={scope === 'mine' ? (view === 'pending' ? `没有派给 ${me?.name ?? '你'} 的待办` : `${me?.name ?? '你'} 名下还没有处理过的事项`) : view === 'pending' ? '全部处理完了' : '还没有处理过的事项'}
-            hint={scope === 'mine' ? '按节点职责派发：节点的负责职责与空间成员的职责标签匹配时派给此人。' : view === 'pending' ? '新的审批和问题会出现在这里，也会在左侧导航显示数量。' : undefined}
-            action={scope === 'mine' ? <button className="btn btn-sm" onClick={() => setScope('all')}>看全部待办</button> : undefined}
+            body={scope === 'mine' ? '按节点职责派发：节点的负责职责与你的职责标签匹配时才会派给你。' : view === 'pending' ? '新的审批和问题会出现在这里，左侧导航也会显示数量。' : '处理过的审批和回答会留在这里备查。'}
+            action={scope === 'mine' ? <button className="btn btn-sm" onClick={() => setScope('all')}>看全部待办</button> : view === 'done' ? <button className="btn btn-sm" onClick={() => setView('pending')}>回到待处理</button> : undefined}
+            stewardAsk={view === 'pending' ? '最近有哪些需求可能需要我拍板？' : undefined}
           />
         </div>
       ) : (
         <div className="att-groups">
-          {groups.map(({ r, items }) => (
-            <section key={r.id} className="card">
+          {groups.map(({ r, items }, i) => (
+            <section key={r.id} className={`card ${st(i).className ?? ''}`} style={st(i).style}>
               <div className="card-head att-group-head">
                 <Link to={`/req/${r.id}`} className="mono req-id">
                   {r.id}
@@ -143,7 +158,9 @@ export function AttentionPage() {
                 <span className="faint num att-group-count">{items.length} 项</span>
               </div>
               {items.map((a) => (
-                <AttentionCard key={a.requestId} item={a} />
+                <div key={a.requestId} className={flash(a.requestId)}>
+                  <AttentionCard item={a} />
+                </div>
               ))}
             </section>
           ))}

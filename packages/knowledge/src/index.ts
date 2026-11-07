@@ -31,3 +31,7 @@ export function createDefaultSources(options: {
   }
   return sources
 }
+export { createKnowledgeStore, inferKnowledgeIntent, type KnowledgeStoreOptions } from './store/index.js'
+export { createSecretResolver } from './store/secrets.js'
+export * from './kinds/index.js'
+export { KnowledgeBlockedError, guardSql, maskRow } from './kinds/database.js'

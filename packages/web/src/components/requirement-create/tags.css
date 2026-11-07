@@ -1,0 +1,349 @@
+/* 新建需求：标签行与标签浮层、立即启动开关（B 组）。 */
+.rc-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.rc-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-2);
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.rc-tag.set {
+  border-style: solid;
+  border-color: var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+.rc-tag:hover,
+.rc-tag.open {
+  border-color: var(--border-strong);
+  background: var(--surface-hover);
+}
+.rc-tag-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  max-width: 280px;
+  padding: 0 var(--sp-2);
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+  border-radius: inherit;
+}
+.rc-tag-btn > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.rc-tag-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.rc-tag-x {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 3px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.rc-tag-x:hover {
+  background: var(--surface-active);
+  color: var(--text);
+}
+.rc-tag-x svg {
+  width: 12px;
+  height: 12px;
+}
+.rc-route-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  animation: rc-fade var(--dur-pop) var(--ease-out-soft);
+}
+.rc-route-mode {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rc-people {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---------------------------------------------------------------- 浮层 */
+.rc-pop-inner {
+  display: grid;
+  gap: var(--sp-2);
+  max-width: 100%;
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  padding: var(--sp-3);
+}
+.rc-pop-title {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.rc-pop-sub {
+  margin-top: var(--sp-1);
+  font-size: var(--text-label);
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.rc-pop-empty,
+.rc-pop-foot {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  line-height: 1.5;
+}
+.rc-pop-error {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--st-failed);
+}
+.rc-pop-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.rc-inline-icon {
+  width: 12px;
+  height: 12px;
+  vertical-align: -1px;
+  margin-right: 4px;
+}
+.rc-form {
+  display: grid;
+  gap: var(--sp-3);
+}
+.rc-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.rc-grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.rc-inline {
+  display: flex;
+  gap: var(--sp-2);
+}
+.rc-clear {
+  justify-self: start;
+}
+.rc-check-list {
+  display: grid;
+  gap: 1px;
+}
+.rc-check {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  font-size: var(--text-ui);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.rc-check:hover {
+  background: var(--surface-hover);
+}
+.rc-check input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+.rc-check-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.rc-check-hint {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rc-person {
+  display: flex;
+  align-items: center;
+}
+.rc-owner-btn {
+  flex: none;
+  height: 22px;
+  padding: 0 var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  background: none;
+  color: var(--text-3);
+  font: inherit;
+  font-size: var(--text-meta);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.rc-owner-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.rc-owner-btn.on {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.rc-links {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rc-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.rc-link a {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+.rc-link a:hover {
+  color: var(--text);
+}
+.rc-link-type {
+  flex: none;
+  font-size: var(--text-meta);
+  font-weight: 500;
+}
+.rc-route-card {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  transition: opacity var(--dur) var(--ease);
+}
+.rc-route-card.dim {
+  opacity: 0.6;
+}
+.rc-route-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+}
+.rc-route-glyph {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  color: var(--text);
+}
+.rc-route-reason {
+  margin: 0;
+  font-size: var(--text-ui);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- 页脚：草稿状态、立即启动开关 */
+.rc-foot-left {
+  display: inline-flex;
+  align-items: center;
+  margin-right: auto;
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rc-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-right: var(--sp-2);
+  font-size: var(--text-ui);
+  color: var(--text-2);
+  cursor: pointer;
+  user-select: none;
+}
+.rc-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.rc-switch-track {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-active);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  transition: background var(--dur-press) var(--ease);
+}
+.rc-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  transition: transform var(--dur-pop) var(--ease-out-soft);
+}
+.rc-switch input:checked + .rc-switch-track {
+  background: var(--ink);
+  box-shadow: none;
+}
+.rc-switch input:checked + .rc-switch-track .rc-switch-thumb {
+  transform: translateX(12px);
+}
+.rc-switch input:focus-visible + .rc-switch-track {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+@keyframes rc-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rc-ac,
+  .rc-ac-item {
+    animation-name: rc-fade;
+  }
+  .rc-switch-thumb {
+    transition: none;
+  }
+}

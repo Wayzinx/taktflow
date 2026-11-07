@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCheck, MessageSquareText, ScrollText, TriangleAlert } from 'lucide-react'
+import { CheckCheck, LoaderCircle, MessageSquareText, ScrollText, TriangleAlert } from 'lucide-react'
 import type { GraphNode, NodeDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { toast } from '../../components/ui'
@@ -75,9 +75,9 @@ export function NodeBrief({ d, graphNode, runId, requirementId, title, liveTick 
                 审批对象已更新
               </span>
             )}
-            <button type="button" className="btn btn-sm btn-primary" onClick={approve} disabled={busy} title={pending.ask}>
-              <CheckCheck />
-              {busy ? '提交中…' : '确认通过'}
+            <button type="button" className="btn btn-sm btn-primary" onClick={approve} disabled={busy} aria-busy={busy} title={pending.ask}>
+              {busy ? <LoaderCircle className="spin" aria-hidden /> : <CheckCheck />}
+              确认通过
             </button>
           </>
         )}

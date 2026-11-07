@@ -998,3 +998,8 @@
 .run-sub .tier-glyph {
   flex: none;
 }
+
+/* M4：需求页的管家建议（页头之下、阶段条之上） */
+.req-suggest {
+  margin: var(--sp-2) 0 var(--sp-3);
+}

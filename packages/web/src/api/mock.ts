@@ -23,10 +23,15 @@ import { addUsage, ZERO, type MockDb, type MockRun } from './mock-data'
 import { createMockReviews } from './mock-reviews'
 import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
 import type { WorkflowApi } from './mock-workflows'
+import { createMockRequirementCrud } from './mock-crud'
 import type { DataSource } from './source'
+import type { KnowledgeSource, StewardSource } from './source-m4'
 
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
-export type ProjectSource = Omit<DataSource, 'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi>
+export type ProjectSource = Omit<
+  DataSource,
+  'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | keyof StewardSource | keyof KnowledgeSource | 'serverInfo' | 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace' | 'convertWorkflow'
+>
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const LOADED = Date.now()
@@ -135,6 +140,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
 
   return {
     mock: true,
+    ...createMockRequirementCrud(db, summary, (id) => runsOf(id).length > 0),
     project() {
       const requirements = db.requirements.map((r) => summary(r.id))
       return delay({

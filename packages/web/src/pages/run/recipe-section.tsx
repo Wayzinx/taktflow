@@ -10,7 +10,7 @@ import './recipe-section.css'
  * 链到该节点的成绩单。
  */
 export function RecipeSection({ recipe }: { recipe?: NodeRecipe }) {
-  if (!recipe) return <EmptyState compact icon={Fingerprint} title="这次执行没有配方记录" hint="只有 agent / review / judge / planner 节点和 rubric 门禁会记 node.recipe。" />
+  if (!recipe) return <EmptyState compact icon={Fingerprint} title="这次执行没有配方记录" body="只有 agent / review / judge / planner 节点和 rubric 门禁会记 node.recipe。" />
   // 服务端成绩单以 workflowId + 完整 nodeId 为 key（planner 展开的任务也有自己的成绩单），与 scorecard-table cardKey 一致
   const card = `${recipe.workflowId}/${recipe.nodeId}`
   return (

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, BarChart3, TrendingDown } from 'lucide-react'
 import type { NodeScorecard, VerdictCategory } from '@taktflow/core'
-import { EmptyState, SkeletonRows } from '../../components/ui'
+import { EmptyState, SkeletonRows, useStagger } from '../../components/ui'
 import { fmtCost, fmtTokens, totalTokens } from '../../lib/format'
 import { VERDICT, VERDICT_ORDER } from '../../lib/status'
 import { cardKey, cardTitle, pct } from './labels'
@@ -40,8 +40,9 @@ export function RegressionTag({ c, compact }: { c: NodeScorecard; compact?: bool
 
 export function ScorecardTable({ cards, by, onOpen }: { cards?: NodeScorecard[]; by: NodeScorecard['key']['by']; onOpen: (key: string) => void }) {
   const [sort, setSort] = useState<{ k: SortKey; desc: boolean }>({ k: 'none', desc: true })
+  const stg = useStagger(cards?.length ?? 0)
   if (!cards) return <SkeletonRows rows={8} />
-  if (cards.length === 0) return <EmptyState compact icon={BarChart3} title="还没有成绩单" hint="节点执行过、记下配方之后，这里会按节点 / 配方 / 技能聚合出指标。" />
+  if (cards.length === 0) return <EmptyState compact icon={BarChart3} title="还没有成绩单" body="需求跑过几次之后，这里会按节点、配方和技能聚合出指标。" stewardAsk="怎样才能尽快看到节点成绩单？" />
   const rows = sort.k === 'none' ? cards : [...cards].sort((a, b) => (sortValue(a, sort.k) - sortValue(b, sort.k)) * (sort.desc ? -1 : 1))
   const Th = ({ k, children, title }: { k: SortKey; children: string; title?: string }) => (
     <th className="r" aria-sort={sort.k === k ? (sort.desc ? 'descending' : 'ascending') : undefined} title={title}>
@@ -72,12 +73,12 @@ export function ScorecardTable({ cards, by, onOpen }: { cards?: NodeScorecard[];
           </tr>
         </thead>
         <tbody>
-          {rows.map((c) => {
+          {rows.map((c, i) => {
             const k = cardKey(c)
             const name = cardTitle(c)
             const low = c.detection?.rate !== undefined && c.detection.rate < 0.7
             return (
-              <tr key={k} className="clickable" onClick={() => onOpen(k)}>
+              <tr key={k} className={`clickable ${stg(i).className ?? ''}`} style={stg(i).style} onClick={() => onOpen(k)}>
                 <td className="sc-name">
                   <button className="sc-name-btn" onClick={(e) => (e.stopPropagation(), onOpen(k))}>
                     <span className="truncate" title={c.label}>{name.title}</span>

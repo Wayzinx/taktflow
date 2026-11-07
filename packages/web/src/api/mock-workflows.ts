@@ -5,11 +5,11 @@
  */
 import type { Actor, EditableWorkflow, WorkflowChangedEvent, WorkflowDiagnostic, WorkflowDocument, WorkflowEdit, WorkflowLayout, WorkflowRevision, WorkflowSummary } from '@taktflow/core'
 import { conflictText, hashSource, printWorkflow, snapshotOf, unifiedDiff, validateWorkflow } from './mock-workflow-print'
-import { workflowSeeds, type WorkflowSeed } from './mock-workflow-seed'
+import { convertedModel, workflowSeeds, type WorkflowSeed } from './mock-workflow-seed'
 import { WorkflowConflictError, type DataSource } from './source'
 import { allNodes, applyWorkflowEdits, findNode, literalOf, summarizeEdits, touchedNodes } from './workflow-edit'
 
-export type WorkflowApi = Pick<DataSource, 'workflows' | 'workflow' | 'editWorkflow' | 'replaceWorkflowSource' | 'saveWorkflowLayout' | 'workflowRevisions' | 'workflowRevision' | 'rollbackWorkflow' | 'subscribeWorkflow'>
+export type WorkflowApi = Pick<DataSource, 'workflows' | 'workflow' | 'editWorkflow' | 'replaceWorkflowSource' | 'saveWorkflowLayout' | 'workflowRevisions' | 'workflowRevision' | 'rollbackWorkflow' | 'subscribeWorkflow' | 'convertWorkflow'>
 
 const MIN = 60_000
 const ago = (min: number) => new Date(Date.now() - min * MIN).toISOString()
@@ -144,7 +144,25 @@ export function createMockWorkflows(seeded: boolean): WorkflowApi {
     commit(e, applyWorkflowEdits(e.model, edits), LEAD, '群聊里 lin 要求：涉及导出和鉴权的需求，系分评审要有安全视角', summarizeEdits(edits))
   }
 
+  /** 兜底转换：dryRun 只给 diff；dryRun:false 写入新修订，模型变为可编辑。URL 带 ?mockConvert=fail 时模拟转换不了。 */
+  function convert(e: Entry, dryRun: boolean, reason?: string) {
+    if (e.model.editable) return { ok: false, reason: '已经是可编辑写法，不需要转换' }
+    const next = convertedModel(e.id, e.model)
+    if (!next || new URLSearchParams(location.search).get('mockConvert') === 'fail') return { ok: false, reason: '文件里用了动态 import 与运行时拼接的节点列表，确定性改写做不了；可以交给管家出一份文件提案' }
+    const r = render(e.seed, next)
+    const diff = unifiedDiff(e.source, r.source, e.seed.file)
+    if (dryRun) return { ok: true, source: r.source, diff }
+    e.diagnostics = r.diagnostics
+    e.layout = autoLayout(next)
+    commit(e, next, ME, reason ?? '转换为可编辑格式', '把 steps.map(...) 展开成逐个列出的节点')
+    return { ok: true, source: e.source, diff, document: doc(e) }
+  }
+
   return {
+    convertWorkflow: (id, body) => {
+      const e = get(id)
+      return e ? delay(convert(e, body.dryRun !== false, body.reason), 380) : fail(`workflow ${id} 不存在`)
+    },
     workflows: () => delay([...entries.values()].map(summary)),
     workflow: (id) => {
       const e = get(id)

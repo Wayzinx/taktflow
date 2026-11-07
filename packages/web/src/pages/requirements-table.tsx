@@ -1,23 +1,29 @@
 import type { RequirementSummary } from '@taktflow/core'
-import { Avatar, StatusBadge } from '../components/ui'
+import { Avatar, StatusBadge, useFlashRows, useStagger, vtName } from '../components/ui'
 import { StageBar } from '../components/stage-bar'
 import { TierGlyph, TIER_LABEL } from '../components/tier-glyph'
 import { fmtCost, fmtRelative, fmtTokens, totalTokens } from '../lib/format'
 import { navigate } from '../lib/router'
 import { REQ_STATUS } from '../lib/status'
 import { CurrentNodeCell } from './requirements-current'
+import { RiskMark, type RiskIndex } from './requirements-risk'
 
-/** 需求表：总览（紧凑）和需求列表页（完整）共用。 */
-export function RequirementsTable({ rows, full }: { rows: RequirementSummary[]; full?: boolean }) {
+/**
+ * 需求表：总览（紧凑）和需求列表页（完整）共用。
+ * 首屏逐行入场（useStagger），之后新出现的需求闪一下（useFlashRows）；标题带共享元素过渡名，点进详情时标题平移到页头。
+ */
+export function RequirementsTable({ rows, full, risks }: { rows: RequirementSummary[]; full?: boolean; risks?: RiskIndex }) {
+  const st = useStagger(rows.length)
+  const flash = useFlashRows(rows.map((r) => r.id))
   return (
     <table className="table req-table">
       <thead>
         <tr>
-          <th style={{ width: 92 }}>ID</th>
+          <th style={{ width: 84 }}>ID</th>
           <th>需求</th>
-          {full && <th style={{ width: 104 }}>负责人</th>}
-          <th style={{ width: full ? 232 : 270 }}>阶段</th>
-          {full && <th style={{ width: 164 }}>当前节点</th>}
+          {full && <th style={{ width: 92 }}>负责人</th>}
+          <th style={{ width: full ? 188 : 250 }}>阶段</th>
+          {full && <th style={{ width: 148 }}>当前节点</th>}
           <th className="r" style={{ width: 56 }}>
             待办
           </th>
@@ -30,15 +36,23 @@ export function RequirementsTable({ rows, full }: { rows: RequirementSummary[]; 
             </th>
           )}
           {full && (
-            <th className="r" style={{ width: 96 }}>
+            <th className="r" style={{ width: 84 }}>
               更新
             </th>
           )}
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
-          <tr key={r.id} className="clickable" onClick={() => navigate(`/req/${r.id}`)}>
+        {rows.map((r, i) => (
+          <tr
+            key={r.id}
+            data-steward-anchor={r.id}
+            className={`clickable ${st(i).className ?? ''} ${flash(r.id)}`}
+            style={st(i).style}
+            tabIndex={0}
+            onClick={() => navigate(`/req/${r.id}`)}
+            onKeyDown={(e) => e.key === 'Enter' && navigate(`/req/${r.id}`)}
+          >
             <td>
               <span className="req-id-cell">
                 <span className="mono req-id">{r.id}</span>
@@ -52,8 +66,11 @@ export function RequirementsTable({ rows, full }: { rows: RequirementSummary[]; 
             </td>
             <td>
               <div className="req-title-cell">
-                <span className="req-title truncate">{r.title}</span>
+                <span className="req-title truncate" style={{ viewTransitionName: vtName('req', r.id) }}>
+                  {r.title}
+                </span>
                 <StatusBadge meta={REQ_STATUS[r.status]} />
+                <RiskMark risks={risks?.get(r.id)} reqId={r.id} />
               </div>
               {!full && (
                 <div className="req-meta">

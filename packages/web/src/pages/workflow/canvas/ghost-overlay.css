@@ -1,0 +1,126 @@
+/* workflow 提案的画布幽灵预览（A 组）：新增绿色虚线、删除红色划线、改动琥珀角标。 */
+@keyframes ghost-in {
+  from {
+    opacity: 0;
+  }
+}
+.ghost-node {
+  position: absolute;
+  border-radius: var(--r-md);
+  pointer-events: none;
+  animation: ghost-in var(--dur-item) var(--ease-out-soft) backwards;
+}
+.ghost-add {
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1.5px dashed var(--st-success);
+  background: color-mix(in oklch, var(--st-success-soft) 70%, transparent);
+  color: var(--text);
+}
+.ghost-del {
+  border: 1.5px solid var(--st-failed);
+  background:
+    linear-gradient(to top right, transparent calc(50% - 1px), var(--st-failed) calc(50% - 1px), var(--st-failed) calc(50% + 1px), transparent calc(50% + 1px)),
+    color-mix(in oklch, var(--st-failed-soft) 60%, transparent);
+}
+.ghost-mod {
+  border: 1.5px solid var(--st-waiting);
+}
+.ghost-badge {
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-overlay);
+  box-shadow: var(--elev-1);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.ghost-badge svg {
+  width: 11px;
+  height: 11px;
+}
+.ghost-add .ghost-badge {
+  color: var(--st-success);
+}
+.ghost-del .ghost-badge {
+  color: var(--st-failed);
+}
+.ghost-mod .ghost-badge {
+  color: var(--st-waiting);
+}
+.ghost-title {
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.ghost-kind {
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.ghost-link {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+.ghost-link line {
+  stroke: var(--st-success);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.ghost-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: min(720px, 100%);
+  pointer-events: auto;
+  padding: 6px 6px 6px 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-overlay);
+  box-shadow: var(--elev-2);
+  font-size: var(--text-ui);
+  animation: ghost-in var(--dur-item) var(--ease-out-soft) backwards;
+}
+.ghost-bar > svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: var(--text-2);
+}
+.ghost-bar-title {
+  min-width: 0;
+  font-weight: 500;
+}
+.ghost-legend {
+  display: inline-flex;
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+  white-space: nowrap;
+}
+.ghost-legend [data-k='add'] {
+  color: var(--st-success);
+}
+.ghost-legend [data-k='mod'] {
+  color: var(--st-waiting);
+}
+.ghost-legend [data-k='del'] {
+  color: var(--st-failed);
+}
+
+/* 画布窄（停靠面板打开）时，提示条不超出画布：面板撑满两侧再居中，标题截断 */
+.react-flow__panel.top.center.ghost-panel {
+  left: 12px;
+  right: 12px;
+  transform: none;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}

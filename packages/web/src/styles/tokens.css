@@ -33,30 +33,49 @@
   --sp-6: 24px;
   --sp-8: 32px;
   --sp-10: 40px;
+  --sp-12: 48px;
+  --sp-16: 64px;
+  /* M4：布局一律按 8px 网格（8 / 16 / 24 / 32 / 48）；4 / 12 只用于控件内部的微调 */
 
-  /* ---------------------------------------------------------------- 圆角：精密件，小半径 */
-  --radius-xs: 3px;
-  --radius-sm: 5px;
-  --radius: 7px;
-  --radius-lg: 10px;
+  /* ---------------------------------------------------------------- 圆角：M4 刻度 6 / 10 / 14（docs/dev/m4-web.md 体验基线 8） */
+  --r-sm: 6px; /* 按钮、输入、标签、菜单项 */
+  --r-md: 10px; /* 卡片、表格容器、面板 */
+  --r-lg: 14px; /* 浮层：对话框、抽屉、⌘K、toast */
+  --radius-xs: 4px; /* 角标、行内代码 */
+  --radius-sm: var(--r-sm);
+  --radius: var(--r-md);
+  --radius-lg: var(--r-lg);
   --radius-pill: 999px;
 
   /* ---------------------------------------------------------------- 动效 */
   --ease: cubic-bezier(0.22, 1, 0.36, 1); /* 默认：快出、稳停 */
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-out-soft: cubic-bezier(0.2, 0.8, 0.2, 1); /* M4：路由转场、列表入场、停靠面板、计数 */
   --ease-spring: linear(0, 0.18 7%, 0.6 18%, 0.9 28%, 1.03 38%, 1.05 46%, 1.02 58%, 0.995 72%, 1);
   --dur-fast: 110ms;
   --dur: 160ms;
   --dur-slow: 320ms;
   /* 动效规范（docs/dev/m3-web.md）：直接反馈 80–120；弹层与列表 120–180；大弹窗进 180–220、出 120–180 */
-  --dur-press: 100ms; /* 按下、勾选、切换这类直接反馈 */
+  --dur-press: 80ms; /* 按下（scale .98）、勾选、切换这类直接反馈 */
   --dur-pop: 150ms; /* 下拉、气泡、菜单进入；列表项 */
   --dur-pop-exit: 120ms;
   --dur-enter: 200ms; /* 对话框、⌘K 进入 */
   --dur-exit: 150ms; /* 对话框、⌘K 退出 */
   --takt: 1200ms; /* 一拍：所有"运行中"的节律都按它走 */
+  /* M4 体验基线（docs/design/22 §3.2） */
+  --dur-route-out: 120ms; /* 路由切换：旧页淡出 */
+  --dur-route-in: 200ms; /* 新页淡入 + 上移 6px */
+  --dur-tab: 150ms; /* Tab 指示器平移、内容交叉淡化 */
+  --dur-item: 160ms; /* 列表单项入场 */
+  --stagger-step: 24ms; /* 列表逐项间隔（最多 10 项） */
+  --dur-count: 400ms; /* CountUp */
+  --dur-flash: 1200ms; /* 新行底色闪烁后淡出 */
+  --dur-dock: 220ms; /* 停靠面板从右侧滑入 */
+  --dur-focus: 120ms; /* 焦点环淡入 */
+  --skeleton-delay: 120ms; /* 加载超过它才显示骨架 */
 
-  --sidebar-w: 232px;
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 60px;
   --topbar-h: 52px;
 
   /* ---------------------------------------------------------------- 中性色：暖石墨 */
@@ -126,6 +145,16 @@
   --shadow-sm: inset 0 1px 0 var(--edge-light), 0 1px 2px var(--shadow-color), 0 0 0 1px var(--border);
   --shadow-md: 0 6px 18px -6px var(--shadow-color), 0 2px 5px -2px var(--shadow-color), 0 0 0 1px var(--border);
   --shadow-lg: 0 28px 60px -16px light-dark(oklch(0.25 0.01 70 / 0.22), oklch(0 0 0 / 0.65)), 0 10px 20px -10px var(--shadow-color), 0 0 0 1px var(--border-strong);
+
+  /* ---------------------------------------------------------------- M4 三层表面：页面底（--bg）→ 卡片（--surface）→ 浮层（--surface-overlay）
+   * 浅色靠细阴影区分；深色靠亮度 + 描边（阴影在深底上几乎看不见，所以浮层更亮、描边更实）。 */
+  --surface-raised: light-dark(oklch(0.995 0.002 80), oklch(0.228 0.007 75));
+  --surface-overlay: light-dark(oklch(0.998 0.002 80), oklch(0.245 0.007 75));
+  --elev-1: inset 0 1px 0 var(--edge-light), 0 1px 2px light-dark(oklch(0.25 0.01 70 / 0.06), oklch(0 0 0 / 0.22)), 0 0 0 1px var(--border);
+  --elev-2: inset 0 1px 0 var(--edge-light), 0 8px 20px -8px light-dark(oklch(0.25 0.01 70 / 0.14), oklch(0 0 0 / 0.5)), 0 2px 4px -2px light-dark(oklch(0.25 0.01 70 / 0.08), oklch(0 0 0 / 0.3)), 0 0 0 1px var(--border-strong);
+  --elev-3: inset 0 1px 0 var(--edge-light), 0 28px 56px -16px light-dark(oklch(0.25 0.01 70 / 0.24), oklch(0 0 0 / 0.62)), 0 10px 20px -10px light-dark(oklch(0.25 0.01 70 / 0.1), oklch(0 0 0 / 0.4)), 0 0 0 1px var(--border-strong);
+  /* 新行闪烁 / 刚变化的值：节拍橙的极淡底（实时状态才用强调色） */
+  --flash: light-dark(oklch(0.62 0.17 47 / 0.12), oklch(0.72 0.155 52 / 0.16));
 
   /* ---------------------------------------------------------------- 代码高亮与画布 */
   --code-key: light-dark(oklch(0.5 0.13 270), oklch(0.76 0.1 270));

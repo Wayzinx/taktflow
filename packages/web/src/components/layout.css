@@ -52,8 +52,74 @@
 .sb-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: var(--sp-1) var(--sp-1) var(--sp-4);
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0 var(--sp-4) var(--sp-1);
+}
+.sb-brand .logo {
+  width: 22px;
+  height: 22px;
+  flex: none;
+}
+.sb-brand .space-switcher {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- 导轨顶部的三个图标按钮：管家 / 搜索 / 收起 */
+.sb-tools {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  flex: none;
+}
+.sb-tool {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--rail-text-3);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.sb-tool svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+}
+.sb-tool:hover {
+  background: var(--rail-hover);
+  color: var(--rail-text);
+}
+.sb-tool:active {
+  transform: scale(0.98); /* motion-audit: ok 体验基线 6 按压 */
+}
+.sb-tool.on {
+  background: var(--rail-active);
+  color: var(--accent);
+}
+/* 未读角标：节拍橙小胶囊，压在图标右上角 */
+.sb-tool-dot {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: oklch(0.18 0.01 50);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--rail);
 }
 .sb-brand-text {
   flex: 1;
@@ -87,43 +153,45 @@
   height: 16px;
 }
 
-.sb-search {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  height: 32px;
-  margin-bottom: var(--sp-4);
-  padding: 0 var(--sp-2) 0 10px;
-  border: 1px solid var(--rail-border);
-  border-radius: var(--radius);
-  background: oklch(1 0 0 / 0.035);
-  color: var(--rail-text-3);
-  font-size: var(--text-ui);
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease), color var(--dur) var(--ease);
-}
-.sb-search:hover {
-  background: oklch(1 0 0 / 0.06);
-  border-color: oklch(0.95 0.01 80 / 0.16);
-  color: var(--rail-text-2);
-}
-.sb-search > svg {
-  width: 14px;
-  height: 14px;
-  flex: none;
-}
-.sb-search > span:nth-child(2) {
-  flex: 1;
-}
-.sb-kbd {
-  font-size: var(--text-label);
-  color: var(--rail-text-3);
-}
-
 .sb-nav {
   display: grid;
   gap: 2px;
+}
+.sb-row {
+  position: relative;
+}
+.sb-row.has-create .sb-item {
+  padding-right: 36px;
+}
+/* "需求"右侧的 +：新建需求（C） */
+.sb-create {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--rail-text-3);
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    color var(--dur-fast) var(--ease),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.sb-create svg {
+  width: 15px;
+  height: 15px;
+}
+.sb-create:hover {
+  background: oklch(1 0 0 / 0.08);
+  color: var(--rail-text);
+}
+.sb-create:active {
+  transform: scale(0.98); /* motion-audit: ok 体验基线 6 按压 */
 }
 .sb-item {
   position: relative;
@@ -279,28 +347,59 @@
 .shell-content.flush {
   padding: 0;
 }
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  gap: 14px;
-  margin-bottom: var(--sp-5);
+/* 管家停靠面板打开时：宽屏把工作区让出面板宽度（不盖住页头动作）；窄屏仍浮在上面。宽度变化不做过渡。 */
+@media (min-width: 1280px) {
+  .shell[data-dock='open'] .shell-main {
+    margin-right: var(--dock-w, 440px);
+  }
 }
-.page-title {
-  font-size: var(--text-headline);
-  font-weight: 600;
-  letter-spacing: -0.012em;
-  line-height: 1.3;
-}
-.page-sub {
-  margin-top: var(--sp-1);
-  font-size: var(--text-ui);
-  color: var(--text-2);
-}
-.page-actions {
-  display: flex;
-  gap: var(--sp-2);
-  align-items: center;
-  flex: none;
+/* ---------------------------------------------------------------- 收起（⌘B）：只留图标的窄导轨；宽度不做过渡（不动画 width），文字淡出 */
+@media (min-width: 901px) {
+  .sidebar.collapsed {
+    width: var(--sidebar-w-collapsed);
+    padding-left: var(--sp-2);
+    padding-right: var(--sp-2);
+  }
+  /* 展开时顶栏整行留给空间名（产品名在导轨底部）；收起时只剩 Logo 与三个图标 */
+  .sidebar:not(.collapsed) .sb-brand .logo {
+    display: none;
+  }
+  .sidebar.collapsed .sb-brand {
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-1) 0 var(--sp-4);
+  }
+  .sidebar.collapsed .space-switcher,
+  .sidebar.collapsed .sb-label,
+  .sidebar.collapsed .sb-count,
+  .sidebar.collapsed .sb-create,
+  .sidebar.collapsed .sb-section,
+  .sidebar.collapsed .sb-version,
+  .sidebar.collapsed .theme-switch {
+    display: none;
+  }
+  .sidebar.collapsed .sb-tools {
+    flex-direction: column;
+  }
+  .sidebar.collapsed .sb-item {
+    justify-content: center;
+    padding: 0;
+  }
+  .sidebar.collapsed .sb-row.has-create .sb-item {
+    padding-right: 0;
+  }
+  .sidebar.collapsed .sb-item.active::before {
+    left: -8px;
+  }
+  .sidebar.collapsed .sb-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    font-size: 10px;
+  }
 }
 
 /* ---------------------------------------------------------------- 窄屏：导轨收为抽屉 */
@@ -322,6 +421,9 @@
   }
   .sb-close {
     display: grid;
+  }
+  .sb-tool-collapse {
+    display: none;
   }
   .sb-scrim {
     display: block;

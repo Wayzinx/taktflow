@@ -93,7 +93,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
     setBusy(true)
     try {
       await ds.answer(item.requestId, body)
-      toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : '已提交，运行将自动继续。' })
+      toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : '已提交，运行将自动继续。', tone: 'success' })
       invalidate()
     } catch (e) {
       toast('提交失败', { body: (e as Error).message, tone: 'failed' })
@@ -103,7 +103,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
   }
 
   return (
-    <div className={`att-card${compact ? ' compact' : ''}${answered ? ' answered' : ''}${item.stale ? ' stale' : ''}`}>
+    <div data-steward-anchor={`${item.requestId} ${item.requirementId}`} className={`att-card${compact ? ' compact' : ''}${answered ? ' answered' : ''}${item.stale ? ' stale' : ''}`}>
       <div className="att-head">
         <span className="att-form">
           <Icon />

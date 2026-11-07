@@ -75,7 +75,8 @@ it('repo/member/skill/chat 的全部新增命令持久化，并拒绝重复、�
   expect((await cli(root, ['chat', 'ls', 'REQ-001'])).some((entry: { id: string }) => entry.id === message.id)).toBe(true)
   expect((await (await openProject(root)).runs.list()).map((run) => run.workflowId)).toEqual(['lead'])
   const events = (await readFile(join(root, '.takt/space-events.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
-  expect(events).toHaveLength(5)
+  expect(events).toHaveLength(7)
+  expect(events.filter((event: { data: { message: string } }) => event.data.message.includes('requirement.create'))).toHaveLength(2)
   for (const args of [['skill', 'bad'], ['workflow', 'edit', 'x'], ['repo', 'add'], ['member', 'ls', 'extra'], ['chat', 'post', 'REQ-001']]) await cli(root, args, 2)
 }, 15000)
 

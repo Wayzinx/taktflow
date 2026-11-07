@@ -41,6 +41,7 @@ jobs:
         if: runner.os == 'Linux'
       - run: npm run build -w @taktflow/web
       - run: npm run motion:audit -w @taktflow/web
+      - run: npm run ux:audit -w @taktflow/web
   docker:
     runs-on: ubuntu-latest
     steps:

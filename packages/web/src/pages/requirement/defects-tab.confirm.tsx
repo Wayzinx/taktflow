@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { LoaderCircle, Plus, Trash2 } from 'lucide-react'
 import type { DefectAttribution, DefectConfirmRequest, DefectDetail, DefectOrigin, GraphNode, MissReason } from '@taktflow/core'
 import { invalidate, useSource } from '../../api'
 import { Dialog, toast } from '../../components/ui'
@@ -66,8 +66,9 @@ export function ConfirmDialog({ mode, defect, nodes, onClose }: { mode?: 'confir
           <button className="btn btn-sm" onClick={onClose}>
             取消
           </button>
-          <button className="btn btn-sm btn-primary" disabled={!ok} onClick={submit}>
-            {busy ? '正在提交…' : edit ? '按修改确认' : '确认归因'}
+          <button className="btn btn-sm btn-primary" disabled={!ok} aria-busy={busy} onClick={submit}>
+            {busy && <LoaderCircle className="spin" aria-hidden />}
+            {edit ? '按修改确认' : '确认归因'}
           </button>
         </>
       }

@@ -1,0 +1,224 @@
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react'
+import { ArrowUp, AtSign, FileText, Paperclip, SquareSlash, X } from 'lucide-react'
+import type { StewardContextRef, StewardPostRequest } from '@taktflow/core'
+import { useSource } from '../../api'
+import { Chips, Popover, SkeletonRows, toast } from '../ui'
+import { commandItems, filterItems, loadMentions, triggerAt, useLazy, type PickItem } from './mentions'
+
+type Attachment = NonNullable<StewardPostRequest['attachments']>[number]
+const MAX_FILE = 200_000
+const refKey = (c: StewardContextRef) => `${c.type}:${c.id}`
+const CTX_LABEL: Record<StewardContextRef['type'], string> = { space: '空间', requirement: '需求', run: '运行', node: '节点', workflow: 'workflow', knowledge: '知识库', file: '文件' }
+
+export interface ComposerProps {
+  draft: string
+  onDraft: (v: string) => void
+  context: StewardContextRef[]
+  onContext: (next: StewardContextRef[]) => void
+  /** 返回 false 表示没发出去，草稿保留。 */
+  onSend: (text: string, extra: { context: StewardContextRef[]; attachments: Attachment[] }) => Promise<boolean> | boolean
+  busy?: boolean
+  placeholder?: string
+  autoFocus?: boolean
+}
+
+/**
+ * 管家输入框（docs/design/22 §1.3）：@ 引用对象、/ 选命令、附件（按钮或拖入，文本文件）、Enter 发送、Shift+Enter 换行。
+ * 上下文标签在输入框上方，可删；@ 选中的对象会加进上下文。
+ */
+export function Composer({ draft, onDraft, context, onContext, onSend, busy, placeholder = '问管家，或让它帮你做点什么', autoFocus }: ComposerProps) {
+  const ds = useSource()
+  const box = useRef<HTMLDivElement>(null)
+  const ta = useRef<HTMLTextAreaElement>(null)
+  const file = useRef<HTMLInputElement>(null)
+  const [files, setFiles] = useState<Attachment[]>([])
+  const [drag, setDrag] = useState(false)
+  const [caret, setCaret] = useState(0)
+  const [sel, setSel] = useState(0)
+  const [dismissed, setDismissed] = useState<number>()
+  const trig = triggerAt(draft, caret)
+  const mentions = useLazy(() => loadMentions(ds), trig?.kind === '@')
+  const commands = useLazy(() => ds.commands().then(commandItems).catch(() => [] as PickItem[]), trig?.kind === '/')
+  const pool = trig?.kind === '@' ? mentions : trig?.kind === '/' ? commands : undefined
+  const items = trig && pool ? filterItems(pool, trig.query) : []
+  const pickerOpen = !!trig && dismissed !== trig.start && (pool === undefined || items.length > 0)
+
+  useEffect(() => setSel(0), [trig?.kind, trig?.query])
+  // 高度跟内容走（最多 8 行），不做过渡
+  useLayoutEffect(() => {
+    const el = ta.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 8 * 22 + 16)}px`
+  }, [draft])
+  useEffect(() => {
+    if (autoFocus) ta.current?.focus({ preventScroll: true })
+  }, [autoFocus])
+
+  const pick = (it: PickItem | undefined) => {
+    if (!it || !trig) return
+    const next = draft.slice(0, trig.start) + it.insert + (it.insert.endsWith(' ') ? '' : ' ') + draft.slice(caret)
+    onDraft(next)
+    if (it.ref && !context.some((c) => refKey(c) === refKey(it.ref!))) onContext([...context, it.ref])
+    const pos = trig.start + it.insert.length + (it.insert.endsWith(' ') ? 0 : 1)
+    requestAnimationFrame(() => {
+      ta.current?.focus()
+      ta.current?.setSelectionRange(pos, pos)
+      setCaret(pos)
+    })
+  }
+
+  const send = async () => {
+    const text = draft.trim()
+    if (!text || busy) return
+    const sentFiles = files
+    onDraft('')
+    setFiles([])
+    const ok = await onSend(text, { context, attachments: sentFiles })
+    if (!ok) {
+      onDraft(text)
+      setFiles(sentFiles)
+    }
+  }
+
+  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.nativeEvent.isComposing) return
+    if (pickerOpen && items.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSel((s) => (s + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        return pick(items[sel])
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        return setDismissed(trig!.start)
+      }
+    }
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      void send()
+    }
+  }
+
+  const addFiles = async (list: FileList | null) => {
+    for (const f of Array.from(list ?? [])) {
+      if (f.size > MAX_FILE) {
+        toast(`${f.name} 太大`, { tone: 'failed', body: '附件只收 200KB 以内的文本文件' })
+        continue
+      }
+      const content = await f.text()
+      setFiles((cur) => [...cur.filter((x) => x.name !== f.name), { name: f.name, content }])
+    }
+  }
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault()
+    setDrag(false)
+    void addFiles(e.dataTransfer.files)
+  }
+  const insertTrigger = (ch: '@' | '/') => {
+    const el = ta.current
+    const at = el?.selectionStart ?? draft.length
+    const pre = draft.slice(0, at)
+    const glue = pre && !/\s$/.test(pre) ? ' ' : ''
+    onDraft(pre + glue + ch + draft.slice(at))
+    const pos = at + glue.length + 1
+    requestAnimationFrame(() => {
+      el?.focus()
+      el?.setSelectionRange(pos, pos)
+      setCaret(pos)
+      setDismissed(undefined)
+    })
+  }
+
+  return (
+    <div
+      ref={box}
+      className="stw-composer"
+      data-drag={drag || undefined}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('Files')) return
+        e.preventDefault()
+        setDrag(true)
+      }}
+      onDragLeave={(e) => {
+        if (!box.current?.contains(e.relatedTarget as Node)) setDrag(false)
+      }}
+      onDrop={onDrop}
+    >
+      {(context.length > 0 || files.length > 0) && (
+        <div className="stw-composer-ctx">
+          {context.length > 0 && <Chips items={context.map((c) => ({ id: refKey(c), label: c.label ?? c.id, title: `${CTX_LABEL[c.type]}：${c.id}` }))} onRemove={(id) => onContext(context.filter((c) => refKey(c) !== id))} />}
+          {files.map((f) => (
+            <span key={f.name} className="ui-chip stw-file">
+              <FileText aria-hidden />
+              <span className="truncate">{f.name}</span>
+              <button type="button" className="ui-chip-x" aria-label={`移除 ${f.name}`} onClick={() => setFiles((cur) => cur.filter((x) => x.name !== f.name))}>
+                <X />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <textarea
+        ref={ta}
+        className="stw-input"
+        rows={1}
+        value={draft}
+        placeholder={placeholder}
+        aria-label="给管家的消息"
+        data-autofocus
+        onChange={(e) => {
+          onDraft(e.target.value)
+          setCaret(e.target.selectionStart)
+        }}
+        onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+        onKeyDown={onKey}
+      />
+      <div className="stw-composer-bar">
+        <button type="button" className="btn btn-ghost btn-icon btn-sm" title="引用空间、需求、运行、workflow、知识库（@）" aria-label="引用" onClick={() => insertTrigger('@')}>
+          <AtSign />
+        </button>
+        <button type="button" className="btn btn-ghost btn-icon btn-sm" title="选命令（/）" aria-label="命令" onClick={() => insertTrigger('/')}>
+          <SquareSlash />
+        </button>
+        <button type="button" className="btn btn-ghost btn-icon btn-sm" title="添加附件（也可以拖进来）" aria-label="添加附件" onClick={() => file.current?.click()}>
+          <Paperclip />
+        </button>
+        <input ref={file} type="file" multiple hidden accept=".md,.txt,.json,.ts,.tsx,.js,.yaml,.yml,.csv,.log,text/*" onChange={(e) => void addFiles(e.target.files).then(() => (e.target.value = ''))} />
+        <span className="stw-composer-hint faint">Enter 发送 · Shift+Enter 换行</span>
+        <button type="button" className="btn btn-primary btn-icon btn-sm stw-send" title="发送（Enter）" aria-label="发送" disabled={!draft.trim() || busy} onClick={() => void send()}>
+          <ArrowUp />
+        </button>
+      </div>
+      {drag && <div className="stw-drop">松开即可添加附件</div>}
+      <Popover open={pickerOpen} onClose={() => setDismissed(trig?.start)} anchor={box} placement="top-start" matchWidth className="stw-picker" role="listbox" ariaLabel={trig?.kind === '@' ? '引用' : '命令'}>
+        {pool === undefined ? (
+          <div className="stw-picker-sk">
+            <SkeletonRows rows={3} gap={10} />
+          </div>
+        ) : (
+          <div className="ov-menu-list">
+            {items.map((it, i) => {
+              const Icon = it.icon
+              return (
+                <div key={it.key}>
+                  {(i === 0 || items[i - 1]!.section !== it.section) && <div className="ov-mi-section">{it.section}</div>}
+                  <div role="option" aria-selected={i === sel} className={`ov-mi${i === sel ? ' on' : ''}`} onMouseEnter={() => setSel(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(it)}>
+                    <Icon className="ov-mi-icon" aria-hidden />
+                    <span className="ov-mi-label truncate">{it.label}</span>
+                    {it.hint && <span className="ov-mi-hint mono">{it.hint}</span>}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Popover>
+    </div>
+  )
+}

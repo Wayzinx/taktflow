@@ -1,39 +1,21 @@
-import { copyFile, mkdir } from 'node:fs/promises'
-import { basename, join, relative, resolve } from 'node:path'
-import { constants } from 'node:fs'
-import { initProject } from '@taktflow/core'
-import { atomicWrite } from '@taktflow/server'
+import { basename, resolve } from 'node:path'
+import { initSpace } from '@taktflow/server'
 import { UsageError } from '../args.js'
 import { createPrinter } from '../output.js'
-import { templatesDir } from '../project.js'
 
 /** 复制 templates 下的角色与流水线；已存在不覆盖。 */
 export async function runInit(project: string | undefined, options: { name?: string; json: boolean; layout?: string }, dir?: string): Promise<string> {
   const target = resolve(project ?? process.cwd(), dir ?? '.')
   if (options.layout !== undefined && options.layout !== 'space' && options.layout !== 'legacy') throw new UsageError('--layout 必须是 space 或 legacy')
-  const stores = await initProject(target, { name: options.name, layout: options.layout })
-  const agentSource = join(templatesDir, 'agents')
-  const workflowSource = join(templatesDir, 'workflows')
-  const agentTarget = stores.paths.agents
-  const workflowTarget = stores.paths.workflows
-  await mkdir(agentTarget, { recursive: true })
-  await mkdir(workflowTarget, { recursive: true })
+  const before = await import('node:fs/promises').then(async ({ readdir }) => {
+    const { openProject } = await import('@taktflow/core')
+    try { const stores = await openProject(target); return { agents: await readdir(stores.paths.agents), workflows: await readdir(stores.paths.workflows) } }
+    catch { return { agents: [] as string[], workflows: [] as string[] } }
+  })
+  const stores = await initSpace(target, 'standard', { name: options.name, layout: options.layout, includeLegacyWorkflow: true })
   const { readdir } = await import('node:fs/promises')
-  const agents: string[] = []
-  for (const entry of await readdir(agentSource)) {
-    if (!entry.endsWith('.md')) continue
-    const copied = await copyIfAbsent(join(agentSource, entry), join(agentTarget, entry))
-    if (copied) agents.push(entry)
-  }
-  const workflows: string[] = []
-  for (const entry of await readdir(workflowSource)) {
-    if (entry.endsWith('.ts') && await copyIfAbsent(join(workflowSource, entry), join(workflowTarget, entry))) workflows.push(entry)
-  }
-  const registered = ['sdlc.workflow.ts', 'taktflow-standard.workflow.ts', 'quick-fix.workflow.ts'].map((name) => relative(stores.projectDir, join(workflowTarget, name)))
-  if (registered.some((entry) => !stores.config.workflows.includes(entry))) {
-    stores.config.workflows = [...new Set([...stores.config.workflows, ...registered])]
-    await atomicWrite(join(stores.projectDir, 'takt.config.json'), JSON.stringify(stores.config, null, 2) + '\n')
-  }
+  const agents = (await readdir(stores.paths.agents)).filter((name) => name.endsWith('.md') && !before.agents.includes(name))
+  const workflows = (await readdir(stores.paths.workflows)).filter((name) => name.endsWith('.workflow.ts') && !before.workflows.includes(name))
   const workflowCopied = workflows.includes('sdlc.workflow.ts')
   const printer = createPrinter(options.json)
   if (options.json) {
@@ -54,13 +36,3 @@ export async function runInit(project: string | undefined, options: { name?: str
 }
 
 const storeName = (value: string) => basename(value === '' ? '.' : value)
-
-async function copyIfAbsent(from: string, to: string): Promise<boolean> {
-  try {
-    await copyFile(from, to, constants.COPYFILE_EXCL)
-    return true
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false
-    throw error
-  }
-}

@@ -59,3 +59,8 @@ export { answerOrRead } from './engine/answers.js'
 
 export { startRouted } from './route/start.js'
 export { getEvalOutput } from './eval/output.js'
+export * from './commands/crud-commands.js'
+export * from './knowledge/index.js'
+export * from './commands/knowledge-commands.js'
+export * from './steward/index.js'
+export * from './insights/risks.js'

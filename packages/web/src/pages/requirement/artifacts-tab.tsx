@@ -94,7 +94,7 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
           {scopeSwitch}
         </nav>
         <div className="card">
-          <EmptyState icon={FolderOpen} title="当前阶段还没有产物" hint={<>{stageTitle ?? '当前阶段'}的节点产出后会出现在这里；切回"全部"可以看之前阶段的产物。</>} />
+          <EmptyState icon={FolderOpen} title="当前阶段还没有产物" body={<>{stageTitle ?? '当前阶段'}的节点产出后会出现在这里；切回"全部"可以看之前阶段的产物。</>} />
         </div>
       </div>
     )
@@ -104,12 +104,10 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
         <EmptyState
           icon={FolderOpen}
           title="公共存放区还是空的"
-          hint={
-            <>
-              PRD、会议纪要、设计稿放进 <span className="mono">inputs/</span> 后，所有 Agent 都从这里取。命令行：
-              <span className="mono"> takt ws put {id} inputs/prd.md ./prd.md --kind input</span>
-            </>
-          }
+          body="PRD、会议纪要、设计稿放进来以后，所有 Agent 都从这里取。把文件发到群聊，或者交给管家整理进来。"
+          action={<Link to={`/req/${id}?tab=chat`} className="btn btn-sm">去群聊发文件</Link>}
+          stewardAsk={`帮我把这个需求的 PRD 放进 ${id} 的公共存放区：`}
+          stewardContext={[{ type: 'requirement', id, label: id }]}
         />
       </div>
     )

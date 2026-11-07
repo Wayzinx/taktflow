@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RequirementDetail, RoomMessage } from '@taktflow/core'
 import { MessagesSquare } from 'lucide-react'
 import { useAsync } from '../../api'
-import { EmptyState, ErrorState } from '../../components/ui'
+import { EmptyState, ErrorState, SkeletonRows } from '../../components/ui'
 import { LeadLight } from '../../components/lead-light'
-import { TaktLoader } from '../../components/takt'
 import { setQuery, useLocation } from '../../lib/router'
 import { Composer, type ComposerApi } from './chat/composer'
 import { MemberList } from './chat/member-list'
@@ -105,8 +104,8 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
   if (chat.error && !chat.room) return <ErrorState error={chat.error} onRetry={chat.reload} />
   if (chat.loading || !chat.room) {
     return (
-      <div className="card chat-loading">
-        <TaktLoader label="正在读取群成员与消息" />
+      <div className="card chat-loading" aria-busy="true" style={{ padding: 20 }}>
+        <SkeletonRows rows={6} gap={20} />
       </div>
     )
   }
@@ -125,7 +124,7 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
         </header>
         {chat.messages.length === 0 ? (
           <div className="chat-feed-wrap">
-            <EmptyState icon={MessagesSquare} title="群里还没有消息" hint="@lead 问进度、提要求，Lead 会派任务并把结果回帖到这里。" />
+            <EmptyState icon={MessagesSquare} title="群里还没有消息" body="@lead 问进度、提要求，Lead 会派任务并把结果回帖到这里。" />
           </div>
         ) : (
           <MessageFeed apiRef={feed} messages={chat.messages} ctx={ctx} leadThinking={chat.leadThinking} />

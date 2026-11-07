@@ -7,17 +7,22 @@
 @keyframes shimmer-text {
   from {
     background-position: 100% 0;
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
   }
   to {
     background-position: 0 0;
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
   }
 }
+/* 文字保持实色，只用遮罩让一道窄亮带扫过（不用渐变文字） */
 .shimmer-text {
   --shimmer-base: var(--text);
-  background: linear-gradient(100deg, var(--shimmer-base) 42%, color-mix(in oklch, var(--accent-text) 70%, var(--shimmer-base)) 50%, var(--shimmer-base) 58%) 0 0 / 300% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  --shimmer-mask: linear-gradient(100deg, rgb(0 0 0 / 0.5) 40%, #000 50%, rgb(0 0 0 / 0.5) 60%) 0 0 / 300% 100%;
+  color: var(--shimmer-base);
+  -webkit-mask: var(--shimmer-mask);
+  mask: var(--shimmer-mask);
   animation: shimmer-text calc(var(--takt) * 2) linear infinite;
 }
 
@@ -79,7 +84,8 @@
 @media (prefers-reduced-motion: reduce) {
   .shimmer-text {
     animation: none !important;
-    background: none;
+    -webkit-mask: none;
+    mask: none;
     color: var(--shimmer-base);
   }
   /* 不做淡出：高亮保持 2.4s 后一次性消失，定位提示仍在 */
@@ -163,5 +169,196 @@
   }
   .hover-lift:hover {
     transform: none;
+  }
+}
+
+/* ================================================================ M4 体验基线（docs/dev/m4-web.md、docs/design/22 §3.2）
+ * 曲线统一 --ease-out-soft；reduced-motion 下只保留透明度（!important 压过 base.css 的全局兜底），无限动画静止但可见。
+ */
+
+/* ---------------------------------------------------------------- 路由转场（components/ui/page-transition.tsx）
+ * 支持 View Transitions 时：只给 .page-view（view-transition-name: page）做旧页淡出 120ms / 新页淡入上移 6px 200ms；
+ * 不支持时：新页挂载时播 .page-enter（没有退出帧）。共享元素用 view-transition-name（vtName()）。 */
+@keyframes route-out {
+  to {
+    opacity: 0;
+  }
+}
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes fade-only-in {
+  from {
+    opacity: 0;
+  }
+}
+.page-view {
+  view-transition-name: page;
+}
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-old(page) {
+  animation: route-out var(--dur-route-out) var(--ease-out-soft) both;
+}
+::view-transition-new(page) {
+  animation: route-in var(--dur-route-in) var(--ease-out-soft) both;
+}
+::view-transition-group(*) {
+  animation-duration: var(--dur-route-in);
+  animation-timing-function: var(--ease-out-soft);
+}
+.page-enter {
+  /* backwards：播完不留 transform，避免 position: fixed 的后代被它困住 */
+  animation: route-in var(--dur-route-in) var(--ease-out-soft) backwards;
+}
+
+/* ---------------------------------------------------------------- 列表首屏逐项入场（useStagger）：24ms 间隔、160ms、位移 4px */
+@keyframes item-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.stagger-item {
+  animation: item-in var(--dur-item) var(--ease-out-soft) backwards;
+  animation-delay: var(--stagger-delay, 0ms);
+}
+
+/* ---------------------------------------------------------------- 新行底色闪一下，1.2s 淡出（FlashRow / useFlash） */
+@keyframes flash-row {
+  0%,
+  20% {
+    background-color: var(--flash);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.flash-row {
+  animation: flash-row var(--dur-flash) var(--ease-out-soft) both;
+}
+
+/* ---------------------------------------------------------------- Tab 内容交叉淡化 150ms（TabPanel） */
+.tab-panel {
+  animation: fade-only-in var(--dur-tab) var(--ease-out-soft) both;
+}
+
+/* ---------------------------------------------------------------- 运行中：按 --takt 呼吸的外环（.live-ring 放在有圆角的元素上） */
+@keyframes live-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklch, var(--live-color, var(--st-running)) 38%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--live-color, var(--st-running)) 0%, transparent);
+  }
+}
+.live-ring {
+  animation: live-ring calc(var(--takt) * 2) var(--ease-in-out) infinite;
+}
+
+/* ---------------------------------------------------------------- 流式文本末尾光标：按半拍闪 */
+@keyframes caret-blink {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0;
+  }
+}
+.stream-caret::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: caret-blink var(--takt) steps(1, end) infinite;
+}
+
+/* ---------------------------------------------------------------- 展开 / 收起：grid-template-rows 0fr → 1fr（不动画 height）
+ * <div class="expand" data-open="true"><div>内容</div></div> */
+.expand {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-item) var(--ease-out-soft);
+}
+.expand[data-open='true'] {
+  grid-template-rows: 1fr;
+}
+.expand > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------- 骨架扫光（Skeleton）：加载超过 120ms 才淡入 */
+@keyframes skeleton-sweep {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0 0;
+  }
+}
+.sk {
+  display: block;
+  border-radius: var(--r-sm);
+  background: linear-gradient(100deg, var(--bg-sunken) 40%, var(--surface-hover) 50%, var(--bg-sunken) 60%) 0 0 / 300% 100%;
+  animation: skeleton-sweep 1.6s linear infinite;
+}
+.sk-delay {
+  animation:
+    fade-only-in 160ms var(--ease-out-soft) var(--skeleton-delay) both,
+    skeleton-sweep 1.6s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(page),
+  ::view-transition-new(page) {
+    animation-name: fade-only-in !important;
+    animation-duration: 160ms !important;
+  }
+  ::view-transition-old(page) {
+    animation-name: route-out !important;
+  }
+  .page-enter,
+  .stagger-item {
+    animation-name: fade-only-in !important;
+    animation-duration: var(--dur-item) !important;
+  }
+  .stagger-item {
+    animation-delay: 0ms !important;
+  }
+  .tab-panel {
+    animation-duration: var(--dur-tab) !important;
+  }
+  /* 闪烁保留为一次性的淡出（只有颜色，没有位移） */
+  .flash-row {
+    animation-duration: var(--dur-flash) !important;
+  }
+  .live-ring {
+    animation: none !important;
+    box-shadow: 0 0 0 2px color-mix(in oklch, var(--live-color, var(--st-running)) 30%, transparent);
+  }
+  .stream-caret::after {
+    animation: none !important;
+    opacity: 0.7;
+  }
+  .expand {
+    transition: none;
+  }
+  .sk,
+  .sk-delay {
+    animation: none !important;
+    background: var(--bg-sunken);
   }
 }

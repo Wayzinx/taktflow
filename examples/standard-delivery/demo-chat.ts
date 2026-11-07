@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
-import { cp, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { cp, mkdir, mkdtemp, readFile, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { initProject, openProject, type RoomMessage, type RunSummary } from '@taktflow/core'
 import { createServer } from '@taktflow/server'
@@ -13,6 +13,7 @@ const example = dirname(fileURLToPath(import.meta.url))
 // TAKT_DEMO_DIR：把演示数据留在指定目录（需不存在或为空），便于用 takt serve 查看
 const root = process.env.TAKT_DEMO_DIR ? await mkdir(process.env.TAKT_DEMO_DIR, { recursive: true }).then(() => process.env.TAKT_DEMO_DIR as string) : await mkdtemp(join(tmpdir(), 'takt-chat-demo-'))
 const stores = await initProject(root)
+await symlink(resolve('node_modules'), join(root, 'node_modules'), 'dir')
 await writeFile(join(root, 'package.json'), '{"type":"module"}')
 for (const role of ['lead', 'pm', 'reviewer']) {
   const source = await readFile(join(example, 'agents', `${role}.md`), 'utf8')
@@ -67,7 +68,7 @@ try {
   for (const run of runs) assert.deepEqual(await reopened.events.verify(run.runId), { ok: true })
   assert.deepEqual(await reopened.workspaces.detectUntracked(requirement.id), [])
   // 单独的小流程验证 auto 路由接入，不把 mock 路由冒充产品验收。
-  await writeFile(join(stores.paths.workflows, 'chat-auto.workflow.ts'), `export default { id: 'chat-auto', title: '群聊路由演示', tiers: ['T0','T1'], version: '1', stages: [], nodes: [{ id: 'ready', kind: 'script', title: '路由接入', run: async () => {} }] }`)
+  await writeFile(join(stores.paths.workflows, 'chat-auto.workflow.ts'), `import { defineWorkflow, script } from '@taktflow/core'\nexport default defineWorkflow({ id: 'chat-auto', title: '群聊路由演示', tiers: ['T0','T1'], version: '1', stages: [], nodes: [script({ id: 'ready', title: '路由接入', run: async () => {} })] })`)
   const autoLead = await createProjectLead(await loadRuntime(root), (_id, value) => { presence.push(value.state) })
   const trigger = await reopened.chat.post(requirement.id, { author: { type: 'human', id: 'demo-owner' }, kind: 'text', text: '@lead 自动启动', mentions: ['lead'] })
   await autoLead.onMessage(requirement.id, trigger); await autoLead.drain()
