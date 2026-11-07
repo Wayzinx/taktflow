@@ -18,7 +18,7 @@ await writeFile(join(root, 'takt.config.json'), JSON.stringify(config, null, 2) 
 await symlink(resolve('node_modules'), join(root, 'node_modules'), 'dir')
 for (const args of [['init', '-b', 'main'], ['add', 'src', 'tests', 'package.json'], ['-c', 'user.name=Demo', '-c', 'user.email=demo@localhost', 'commit', '-m', '演示基线']]) execFileSync('git', args, { cwd: root, stdio: 'pipe' })
 const stores = await initProject(root)
-const req = await stores.workspaces.createRequirement({ title: 'src 模块支持空名字', owner: 'demo-owner' })
+const req = await stores.workspaces.createRequirement({ title: '修复 src 模块空名字 bug', owner: 'demo-owner' })
 const by = { type: 'human', id: 'demo-owner' } as const
 await stores.workspaces.writeArtifact({ ref: { workspace: req.id, path: 'inputs/request.md' }, kind: 'input', author: by, content: 'src 模块支持空名字回退 stranger，保留普通名字行为。', reason: '原始需求' })
 for (const [id, input, expected, ac] of [['TC-GREET-001', 'World', 'Hello, World!', 'AC-1'], ['TC-GREET-002', '', 'Hello, stranger!', 'AC-2']]) {

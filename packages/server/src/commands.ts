@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { createCommandRegistry, evalCommandSpecs, createLessonStore, routeRequirement, setReviewDisposition, answerOrRead, validateAnswer, type CommandHandlers, type EngineDeps, type ProjectStores } from '@taktflow/core'
 import { auditSpace, workflowStore } from './space.js'
+import { configuredRouteModel } from './knowledge-runtime.js'
 import { serialize } from './stale.js'
 
 export function attachLessons(stores: ProjectStores): void {
@@ -13,9 +14,7 @@ export function projectCommands(stores: ProjectStores, handlers: CommandHandlers
   attachLessons(stores)
   return createCommandRegistry({ stores,
     audit: (entry) => auditSpace(stores, entry.actor, entry.reason ?? '查询命令', JSON.stringify(entry)),
-    route: async (input, context) => {
-      return routeRequirement({ stores, ...input, workflows: await routingWorkflows(stores), by: context.actor })
-    },
+    route: async (input, context) => routeRequirement({ stores, ...input, workflows: await routingWorkflows(stores), model: configuredRouteModel(stores), by: context.actor }),
     answerAttention: (input, context) => answerAttention(stores, input, context.actor),
     disposeReview: (input, context) => setReviewDisposition(stores, input.runId, input.nodeId, { ...input, by: context.actor, reason: context.reason! }),
     setLessonStatus: async (input, context) => {

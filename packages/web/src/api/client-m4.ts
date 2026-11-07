@@ -21,6 +21,7 @@ export function createM4Http({ req, get, url, stream, stewardStream }: Http): Cr
   return {
     // ---------------------------------------------------------------- 需求与空间增删改
     serverInfo: () => get('/server'),
+    routePreviewDraft: (body) => req('POST', '/route/preview', body),
     createRequirement: (body) => req('POST', '/requirements', body),
     updateRequirement: (id, body) => req('PATCH', `/requirements/${enc(id)}`, body),
     archiveRequirement: (id, reason) => req('POST', `/requirements/${enc(id)}/archive`, { reason }),

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, rename, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -76,6 +76,57 @@ it('中英文 BM25、候选与发布隔离、向量增量复用、源哈希和�
   expect(
     (await readdir(join(root, '.takt/knowledge/docs'))).filter((count) => /^v\d+$/.test(count)),
   ).toHaveLength(3)
+})
+it('索引 manifest 使用相对路径，空间移动后不误判过期且能精确发现单文档变化', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'takt-kb-move-'))
+  roots.push(parent)
+  const root = join(parent, 'a', 'standard-delivery')
+  await mkdir(root, { recursive: true })
+  await writeFile(
+    join(root, 'takt.config.json'),
+    JSON.stringify({ project: { name: 'test' }, space: { id: 'standard-delivery' }, workflows: [], paths: { knowledge: 'knowledge' } }),
+  )
+  let stores = await openProject(root)
+  let kb = createKnowledgeStore(stores)
+  stores.kb = kb
+  await kb.create({ id: 'docs', name: '规则', kind: 'rag', config: {} }, by, '新建')
+  await kb.upload('docs', Array.from({ length: 5 }, (_, i) => ({ path: `doc-${i}.md`, content: `# 文档 ${i}\n内容 ${i}` })), by)
+  expect((await built(kb, 'docs')).status).toBe('succeeded')
+  await kb.publish('docs', { by, reason: '发布' })
+  const manifest = JSON.parse(await readFile(join(root, '.takt/knowledge/docs/v1/index/index.json'), 'utf8')).manifest as Array<{ path: string }>
+  expect(manifest).toHaveLength(5)
+  expect(manifest.every((source) => !source.path.startsWith('/'))).toBe(true)
+  const moved = join(parent, 'b', 'standard-delivery')
+  await mkdir(join(parent, 'b'), { recursive: true })
+  await rename(root, moved)
+  stores = await openProject(moved)
+  kb = createKnowledgeStore(stores)
+  expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
+  await writeFile(join(moved, 'knowledge/docs/content/doc-3.md'), '# 文档 3\n已修改')
+  expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 1 })
+})
+it('旧索引中的绝对路径失效后按当前空间根重定位', async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'takt-kb-legacy-'))
+  roots.push(parent)
+  const root = join(parent, 'a', 'standard-delivery')
+  await mkdir(root, { recursive: true })
+  await writeFile(join(root, 'takt.config.json'), JSON.stringify({ project: { name: 'test' }, space: { id: 'standard-delivery' }, workflows: [], paths: { knowledge: 'knowledge' } }))
+  let stores = await openProject(root)
+  let kb = createKnowledgeStore(stores)
+  await kb.create({ id: 'docs', name: '规则', kind: 'rag', config: {} }, by, '新建')
+  await kb.upload('docs', [{ path: 'doc.md', content: '# 文档\n内容' }], by)
+  expect((await built(kb, 'docs')).status).toBe('succeeded')
+  await kb.publish('docs', { by, reason: '发布' })
+  const indexFile = join(root, '.takt/knowledge/docs/v1/index/index.json')
+  const index = JSON.parse(await readFile(indexFile, 'utf8'))
+  index.manifest = index.manifest.map((source: { path: string; hash: string }) => ({ ...source, path: join(root, source.path) }))
+  await writeFile(indexFile, JSON.stringify(index))
+  const moved = join(parent, 'b', 'standard-delivery')
+  await mkdir(join(parent, 'b'), { recursive: true })
+  await rename(root, moved)
+  stores = await openProject(moved)
+  kb = createKnowledgeStore(stores)
+  expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
 })
 it('无嵌入时中文二元组检索，保留全文与分项分数', async () => {
   const { kb } = await setup()

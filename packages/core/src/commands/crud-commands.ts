@@ -54,7 +54,7 @@ export async function createRequirementFull(deps: CommandDeps, input: Requiremen
   try {
     if (!input.workflowId) {
       if (!deps.route) throw new Error('路由尚未接入，请指定流程')
-      result.route = await deps.route({ requirementId: created.id, hint: input.description }, context) as RouteDecision
+      result.route = await deps.route({ requirementId: created.id, hint: input.description, repos: input.repos }, context) as RouteDecision
     }
     if (input.start !== false) {
       if (!deps.startRun) throw new Error('启动运行尚未接入，请手动启动')

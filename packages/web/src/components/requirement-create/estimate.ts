@@ -1,9 +1,8 @@
 import type { Tier, WorkflowSummary } from '@taktflow/core'
 
 /**
- * 草稿阶段的路由预估（还没有需求 id，调不了 POST /requirements/:id/route）。
- * 只看改动形状的线索；创建时由服务端路由器给出最终结论（RequirementCreateResponse.route）。
- * 见 protocolChangeRequests：希望有不带需求 id 的 POST /route/preview。
+ * 草稿路由的本地兜底规则：正常走服务端 POST /route/preview（与创建时同一个路由器），
+ * 接口不可用时才用这里，只看改动形状的线索。
  */
 export interface RouteEstimate {
   tier: Tier
@@ -22,19 +21,21 @@ const SURFACES: Array<[RegExp, string]> = [
   [/客户端|iOS|Android|小程序/i, '客户端'],
 ]
 const PARALLEL = /互不|独立|并行|各自|分别/
+const PATH = /(?:^|[\s`"'(（，、])((?:[\w.-]+\/)+[\w.*?/-]*)/g
 
 export function estimateRoute(text: string, workflows: WorkflowSummary[] | undefined): RouteEstimate | undefined {
   const t = text.trim()
   if (t.length < 4) return undefined
   const hits = SURFACES.filter(([re]) => re.test(t)).map(([, name]) => name)
+  const roots = new Set([...t.matchAll(PATH)].map((match) => match[1]!.replace(/^\.\//, '').split('/')[0]!).filter(Boolean))
   let tier: Tier
   let reason: string
   if (SMALL.test(t) && hits.length <= 1) {
     tier = 'T1'
     reason = hits.length ? `看起来只动${hits[0]}一处，单一改动面，走快速修复。` : '描述像一处小改动，单一改动面，走快速修复。'
-  } else if (hits.length >= 2 && PARALLEL.test(t)) {
+  } else if (roots.size >= 2 && hits.length === 0 && PARALLEL.test(t)) {
     tier = 'T3'
-    reason = `${hits.join('、')}几处改动互不依赖，可以并行研发。`
+    reason = '几处路径改动互不依赖且路径不相交，可以并行研发。'
   } else if (hits.length >= 2) {
     tier = 'T2'
     reason = `涉及${hits.join('、')}，有先后依赖，按标准流水线串行推进。`

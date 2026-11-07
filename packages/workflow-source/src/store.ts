@@ -29,7 +29,10 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
     if (!errorListeners.size) console.error('workflow watch 失败：', error)
     for (const listener of errorListeners) listener(error)
   }
+  // 每个 workflow 最近一次通知过的修订：同一修订只通知一次（本实例保存时已发，轮询再看到就不重发）
+  const announced = new Map<string, string>()
   const emit = (event: WorkflowChangedEvent) => {
+    announced.set(event.workflowId, event.revision.rev)
     for (const listener of listeners) { try { listener(event) } catch (error) { reportError(error) } }
   }
   function state(file: string, source: string, mtime: number, stamp?: string): FileState {
@@ -216,7 +219,13 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
           for (const file of await files(watched)) {
             if (watched.get(file.file) === file) continue
             const previous = (await revisions(file.id)).at(-1)
-            if (previous?.rev === file.rev) { watched.set(file.file, file); continue }
+            if (previous?.rev === file.rev) {
+              const before = watched.get(file.file)
+              watched.set(file.file, file)
+              // 修订已由同目录的另一个 store 实例记下（管家执行提案、CLI、另一个服务进程）：本实例的订阅者同样要收到
+              if (previous && before && before.rev !== file.rev && announced.get(file.id) !== file.rev) emit({ workflowId: file.id, revision: previous })
+              continue
+            }
             const parsed = parseWorkflowSource(file.source, file.file)
             await validateWorkflowSource(file.file)
             if (parsed.model.editable) {

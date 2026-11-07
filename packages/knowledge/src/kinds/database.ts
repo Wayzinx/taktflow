@@ -1,5 +1,7 @@
 import { sqlTokens, identifier, checkTables } from './sql-policy.js'
 import { sqliteQuery } from './sqlite-query.js'
+import { readFile } from 'node:fs/promises'
+import { relative } from 'node:path'
 import {
   type KnowledgeKind,
   type KnowledgeBase,
@@ -93,6 +95,7 @@ export function maskRow(
 interface Connection {
   query(sql: string): Promise<Record<string, unknown>[]>
   close(): Promise<void>
+  sourcePath?: string
 }
 async function connect(kb: KnowledgeBase, ctx: KnowledgeKindContext): Promise<Connection> {
   const driver = String(kb.config.driver ?? 'sqlite')
@@ -109,6 +112,7 @@ async function connect(kb: KnowledgeBase, ctx: KnowledgeKindContext): Promise<Co
     return {
       query: (sql) => sqliteQuery(url, guardSql(sql, limit), limit, timeout, ctx.signal),
       async close() {},
+      sourcePath: url,
     }
   }
   if (driver === 'postgres') {
@@ -289,7 +293,12 @@ export const databaseKind: KnowledgeKind = {
           hash: sha256(text),
         }
       })
-      await saveIndex(ctx.indexDir, makeIndex(chunks))
+      const index = makeIndex(chunks)
+      if (sqlite && db.sourcePath && !db.sourcePath.includes('://') && db.sourcePath !== ':memory:') {
+        const path = relative(ctx.stores.projectDir, db.sourcePath)
+        if (!path.startsWith('..')) index.manifest = [{ path, hash: sha256(await readFile(db.sourcePath)) }]
+      }
+      await saveIndex(ctx.indexDir, index)
       progress({ stage: 'snapshot', done: chunks.length, total: chunks.length })
       return {
         stats: {

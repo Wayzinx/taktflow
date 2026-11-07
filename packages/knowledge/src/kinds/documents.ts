@@ -1,6 +1,6 @@
 import { readSource } from './source-reader.js'
 import { stat } from 'node:fs/promises'
-import { join, extname } from 'node:path'
+import { dirname, extname, relative } from 'node:path'
 import {
   listFiles,
   parseFrontmatter,
@@ -16,6 +16,11 @@ export interface Document {
   path?: string
   hash: string
   aliases?: string[]
+}
+function manifestPath(kb: KnowledgeBase, ctx: KnowledgeKindContext, path: string): string {
+  if (kb.scope === 'shared') return relative(dirname(ctx.baseDir), path)
+  const projectRelative = relative(ctx.stores.projectDir, path)
+  return !projectRelative.startsWith('..') ? projectRelative : relative(ctx.baseDir, path)
 }
 export async function fetchText(
   url: string,
@@ -144,7 +149,7 @@ export async function documents(kb: KnowledgeBase, ctx: KnowledgeKindContext): P
         source.type === 'upload'
           ? path
           : [source.repo ?? source.path, path].filter(Boolean).join('/')
-      result.push({ ...parseDocument(raw, ref || root), path: full, hash: sha256(raw) })
+      result.push({ ...parseDocument(raw, ref || root), path: manifestPath(kb, ctx, full), hash: sha256(raw) })
     }
   }
   return result

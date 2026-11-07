@@ -2,7 +2,7 @@ import { trackStale } from './stale.js'
 import { configuredEmbedding } from './embedding.js'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm, stat, cp } from 'node:fs/promises'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import {
   auditKnowledge,
   changeKnowledgeConfig,
@@ -216,14 +216,15 @@ export function createKnowledgeStore(
     if (!index) return 0
     let count = 0
     for (const source of index.manifest ?? []) {
+      const path = await resolveSourcePath(kb, source.path)
       try {
-        const info = await stat(source.path)
+        const info = await stat(path)
         const stamp = `${info.mtimeMs}:${info.ctimeMs}:${info.size}`
-        let cached = sourceHashes.get(source.path)
+        let cached = sourceHashes.get(path)
         if (cached?.stamp !== stamp) {
-          cached = { stamp, hash: sha256(await readFile(source.path)) }
+          cached = { stamp, hash: sha256(await readFile(path)) }
           if (sourceHashes.size >= 10000) sourceHashes.delete(sourceHashes.keys().next().value!)
-          sourceHashes.set(source.path, cached)
+          sourceHashes.set(path, cached)
         }
         if (cached.hash !== source.hash) count++
       } catch (error) {
@@ -236,6 +237,55 @@ export function createKnowledgeStore(
       await save(kb)
     }
     return count
+  }
+  async function resolveSourcePath(kb: KnowledgeBase, source: string): Promise<string> {
+    if (!isAbsolute(source)) {
+      return safePath(sourceRoot(kb), source)
+    }
+    try {
+      await stat(source)
+      return source
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    const candidates = absoluteSourceRelocations(kb, source)
+    for (const candidate of candidates) {
+      try {
+        await stat(candidate)
+        return candidate
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+    return source
+  }
+  function absoluteSourceRelocations(kb: KnowledgeBase, source: string): string[] {
+    const currentRoot = resolve(sourceRoot(kb))
+    const normalized = resolve(source)
+    const parts = normalized.split(sep).filter(Boolean)
+    const candidates = new Set<string>()
+    const ids = [stores.config.space?.id, stores.projectDir.split(sep).filter(Boolean).at(-1), kb.id].filter((item): item is string => !!item)
+    for (const id of ids) {
+      const index = parts.lastIndexOf(id)
+      if (index >= 0 && index + 1 < parts.length) candidates.add(resolve(currentRoot, ...parts.slice(index + 1)))
+    }
+    const currentParts = currentRoot.split(sep).filter(Boolean)
+    for (let suffix = Math.min(parts.length, currentParts.length); suffix >= 1; suffix--) {
+      const tail = parts.slice(parts.length - suffix).join(sep)
+      if (tail === currentParts.slice(currentParts.length - suffix).join(sep)) {
+        candidates.add(resolve(currentRoot, ...parts.slice(parts.length - suffix + 1)))
+        break
+      }
+    }
+    for (const marker of ['knowledge', 'requirements', 'docs', 'inputs']) {
+      const index = parts.lastIndexOf(marker)
+      if (index >= 0) candidates.add(resolve(currentRoot, ...parts.slice(index)))
+    }
+    candidates.delete(normalized)
+    return [...candidates]
+  }
+  function sourceRoot(kb: KnowledgeBase): string {
+    return kb.scope === 'shared' ? roots(kb.scope).root : stores.projectDir
   }
   async function prune(kb: KnowledgeBase) {
     const paths3 = await paths(kb)
@@ -698,17 +748,23 @@ export function createKnowledgeStore(
           await cp(await safePath(generated, path), target)
         }
         const index = await loadIndex(ctx.indexDir)
+        const generatedProjectPath = relative(stores.projectDir, generated)
+        const generatedRelative = (path: string) => {
+          if (isAbsolute(path)) return relative(generated, path)
+          return path === generatedProjectPath
+            ? ''
+            : path.startsWith(`${generatedProjectPath}/`)
+              ? path.slice(generatedProjectPath.length + 1)
+              : path
+        }
+        const publishedSource = (path: string) => kb.scope === 'shared'
+          ? `${kb.id}/content/${generatedRelative(path)}`
+          : `knowledge/${kb.id}/content/${generatedRelative(path)}`
         for (const source of index.manifest ?? [])
-          source.path = await safePath(
-            ctx.baseDir,
-            `content/${source.path.slice(generated.length + 1)}`,
-          )
+          source.path = publishedSource(source.path)
         for (const chunk of index.chunks)
           if (chunk.source)
-            chunk.source = await safePath(
-              ctx.baseDir,
-              `content/${chunk.source.slice(generated.length + 1)}`,
-            )
+            chunk.source = publishedSource(chunk.source)
         await saveIndex(ctx.indexDir, index)
       }
       kb.version = version

@@ -1,9 +1,12 @@
 import type { CommandRegistry, LeadPresence, ProjectStores } from '@taktflow/core'
 import type { EvalRuntimeResolver } from './eval-routes.js'
-import { actor, body, HttpError, text, viewer } from './http.js'
+import { actor, authorize, body, HttpError, text, viewer } from './http.js'
 import { projectCommands } from './space.js'
 import type { Handler } from './routes.js'
 import { requirement } from './read-model.js'
+import { routeRequirement } from '@taktflow/core'
+import { configuredRouteModel } from './knowledge-runtime.js'
+import { routingWorkflows } from './commands.js'
 
 export interface M3Callbacks {
   resolveRuntime?: EvalRuntimeResolver
@@ -49,6 +52,24 @@ export function m3Routes(add: (method: string, path: string, handler: Handler) =
     if (input.tier !== undefined && !reason) throw new HttpError(400, '改档必须填写 reason')
     return execute(stores, request, 'route.preview', { requirementId: params.id, ...(input.hint === undefined ? {} : { hint: input.hint }),
       ...(input.tier === undefined ? {} : { override: { tier: input.tier, reason } }) }, reason)
+  })
+  add('POST', '/api/route/preview', async ({ stores, request }) => {
+    authorize(request, stores, 'viewer')
+    const input = await body(request)
+    const draftText = typeof input.text === 'string' ? input.text.trim() : ''
+    if (!draftText) throw new HttpError(400, 'text 必须是非空字符串')
+    if (input.repos !== undefined && (!Array.isArray(input.repos) || input.repos.some((repo) => typeof repo !== 'string' || !repo.trim())))
+      throw new HttpError(400, 'repos 必须是字符串数组')
+    const [title, ...rest] = draftText.split(/\r?\n/)
+    return routeRequirement({
+      stores,
+      draft: { title: title!.trim(), description: rest.join('\n').trim() || undefined },
+      workflows: await routingWorkflows(stores),
+      model: configuredRouteModel(stores),
+      by: actor(request, stores),
+      ...(input.hint === undefined ? {} : { hint: text(input.hint, 'hint') }),
+      ...(input.repos === undefined ? {} : { repos: input.repos }),
+    })
   })
   add('GET', '/api/lessons', async ({ stores, request, url }) => execute(stores, request, 'lessons.list', url.searchParams.has('status') ? { status: url.searchParams.get('status') } : {}))
   add('PATCH', '/api/lessons/:id', async ({ stores, request, params }) => {

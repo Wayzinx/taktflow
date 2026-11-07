@@ -51,7 +51,7 @@ it('完整创建持久化字段、清洗附件、在启动前写入 PRD，自动
   })
   const result = await registry.run('requirement.create', { title: '需求', description: '验收标准', owner: 'alice', members: ['bob'], dueAt: '2027-01-01', links: [{ type: 'prd', url: 'https://example.com' }], repos: ['app'], budget: { tokens: 10 }, attachments: [{ name: '../设计 图.txt', content: Buffer.from('附件').toString('base64'), encoding: 'base64' }] }, context)
   expect(result).toMatchObject({ ok: true, result: { runId: 'run-1', requirement: { description: '验收标准', members: ['bob'] }, route: { workflowId: 'quick-fix' } } })
-  expect(preview).toHaveBeenCalledWith({ requirementId: 'REQ-001', hint: '验收标准' }, context)
+  expect(preview).toHaveBeenCalledWith({ requirementId: 'REQ-001', hint: '验收标准', repos: ['app'] }, context)
   expect(start).toHaveBeenCalledWith(expect.objectContaining({ budget: { tokens: 10 }, args: { repos: ['app'] }, route: expect.objectContaining({ tier: 'T1' }) }), context)
   expect((await stores.workspaces.readArtifact({ workspace: 'REQ-001', path: 'inputs/..设计图.txt' }))?.toString()).toBe('附件')
   expect(await stores.workspaces.getRequirement('REQ-001')).toMatchObject({ owner: 'alice', dueAt: '2027-01-01' })

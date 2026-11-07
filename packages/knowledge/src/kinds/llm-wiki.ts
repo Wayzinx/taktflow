@@ -1,7 +1,7 @@
 import { readSource } from './source-reader.js'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { mkdir, readFile } from 'node:fs/promises'
 import { listFiles, parseFrontmatter, sha256, type KnowledgeKind } from '@taktflow/core'
 import { safePath, repositoryPath } from '../store/files.js'
@@ -129,8 +129,14 @@ export function createWikiKind(runtime?: WikiRuntime): KnowledgeKind {
             .replace(/[^\p{L}\p{N}]+/gu, '-')
             .replace(/^-|-$/g, '')}${index2 ? `-${index2}` : ''}`
         })
-        chunks.push(...page.map((chunk2) => ({ ...chunk2, aliases, source: path })))
-        manifest.push({ path, hash: sha256(raw) })
+        const projectRelative = relative(ctx.stores.projectDir, path)
+        const source = kb.scope === 'shared'
+          ? relative(dirname(ctx.baseDir), path)
+          : !projectRelative.startsWith('..')
+            ? projectRelative
+            : relative(ctx.baseDir, path)
+        chunks.push(...page.map((chunk2) => ({ ...chunk2, aliases, source })))
+        manifest.push({ path: source, hash: sha256(raw) })
       }
       const index = makeIndex(chunks)
       index.manifest = manifest

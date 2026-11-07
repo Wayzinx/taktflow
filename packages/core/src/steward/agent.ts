@@ -343,13 +343,18 @@ export class StewardAgent {
         }
       }
       Object.assign(message, normalizeCitations(message.text, citations))
-      message.suggestions = (
-        await stewardSuggestions(
-          this.deps,
-          'overview',
-          user.context?.find((ref) => ref.spaceId)?.spaceId,
-        )
-      ).slice(0, 3)
+      // 出了提案时下一步就是批准或拒绝，不再塞后续建议；否则按消息上下文所在页面给建议
+      const focus = user.context?.find((ref) => ['workflow', 'requirement', 'knowledge', 'run'].includes(ref.type))
+      message.suggestions = message.proposalIds?.length
+        ? []
+        : (
+            await stewardSuggestions(
+              this.deps,
+              focus?.type ?? 'overview',
+              user.context?.find((ref) => ref.spaceId)?.spaceId,
+              focus?.id,
+            )
+          ).slice(0, 3)
       message.status = 'done'
     } catch (error) {
       message.status = 'error'

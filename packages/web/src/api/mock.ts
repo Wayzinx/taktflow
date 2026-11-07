@@ -30,7 +30,7 @@ import type { KnowledgeSource, StewardSource } from './source-m4'
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
 export type ProjectSource = Omit<
   DataSource,
-  'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | keyof StewardSource | keyof KnowledgeSource | 'serverInfo' | 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace' | 'convertWorkflow'
+  'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | keyof StewardSource | keyof KnowledgeSource | 'serverInfo' | 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace' | 'convertWorkflow' | 'routePreviewDraft'
 >
 
 const clone = <T,>(v: T): T => structuredClone(v)

@@ -17,11 +17,17 @@ async function setup(title = '优化文案') {
   return { stores, requirementId: req.id, by, workflows: [workflow('quick-fix', ['T0', 'T1']), workflow('taktflow-standard', ['T2', 'T3'])] }
 }
 it.each([
-  ['优化文案', 'T1'], ['只改 src/title.ts', 'T0'], ['```diff\n-a\n+b\n```', 'T0'],
-  ['修改 src/a.ts 与 tests/a.ts', 'T2'], ['优化 src/a.ts 和 src/b.ts', 'T1'],
+  ['修复按钮文案错别字', 'T1'], ['只改 src/title.ts', 'T0'], ['```diff\n-a\n+b\n```', 'T0'],
+  ['修改 src/a.ts 与 tests/a.ts', 'T2'], ['优化 src/a.ts 和 src/b.ts', 'T2'], ['范围还不清楚', 'T2'],
 ])('启发式按形状判档：%s', async (title, tier) => {
   const input = await setup(title)
   expect(await routeRequirement(input)).toMatchObject({ tier, workflowId: tier === 'T2' ? 'taktflow-standard' : 'quick-fix', decidedBy: by })
+})
+it('草稿路由与关键词改动面一致，关键词并行不能证明 T3', async () => {
+  const input = await setup()
+  await expect(routeRequirement({ ...input, draft: { title: '导出订单报表支持按部门筛选（前端加多选、接口加参数）' }, requirementId: undefined })).resolves.toMatchObject({ tier: 'T2' })
+  await expect(routeRequirement({ ...input, draft: { title: '前端和接口分别并行' }, requirementId: undefined })).resolves.toMatchObject({ tier: 'T2' })
+  await expect(routeRequirement({ ...input, draft: { title: 'foo/src/a.ts 与 bar/src/a.ts 独立并行' }, requirementId: undefined })).resolves.toMatchObject({ tier: 'T3' })
 })
 it('仓库名也计入改动面；hint 与标题合并', async () => {
   const input = await setup('优化 api')

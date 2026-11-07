@@ -145,6 +145,22 @@ describe('workflow 存储', () => {
     expect(events).toHaveLength(1)
     expect(errors).toEqual([])
   }, 10_000)
+  it('同目录另一个 store 实例保存的修订也通知本实例订阅者，且只通知一次', async () => {
+    const base = await store.get('demo')
+    const events: WorkflowChangedEvent[] = []
+    stops.push(store.watch((event) => events.push(event)))
+    const other = createWorkflowStore({ dir: workflows, historyDir: history })
+    const steward: Actor = { type: 'agent', role: 'steward', harness: 'native' }
+    const saved = document(await other.edit('demo', { baseRev: base.rev, edits: [{ op: 'setMeta', key: 'title', value: '管家改的' }], author: steward }))
+    await expect.poll(() => events.length, { timeout: 5000 }).toBe(1)
+    expect(events[0]?.revision).toMatchObject({ rev: saved.rev, author: steward })
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    expect(events).toHaveLength(1)
+    // 本实例自己的保存仍只通知一次
+    const own = document(await store.edit('demo', { baseRev: saved.rev, edits: [{ op: 'setMeta', key: 'title', value: '本实例' }], author }))
+    await new Promise((resolve) => setTimeout(resolve, 1200))
+    expect(events.map((event) => event.revision.rev)).toEqual([saved.rev, own.rev])
+  }, 10_000)
   it('外部坏源码仍记录历史和事件，get 返回诊断', async () => {
     const events: WorkflowChangedEvent[] = []
     await store.get('demo')

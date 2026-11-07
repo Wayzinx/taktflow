@@ -24,6 +24,8 @@ import type {
   Proposal,
   ProposalDecisionRequest,
   RequirementCreateRequest,
+  RouteDecision,
+  RoutePreviewDraftRequest,
   RequirementCreateResponse,
   RequirementSummary,
   RequirementUpdateRequest,
@@ -51,6 +53,8 @@ import type {
 export interface CrudSource {
   /** GET /server：多空间模式、管家是否已配置模型、空间起点模板。 */
   serverInfo(): Promise<ServerInfo>
+  /** POST /route/preview：草稿还没有需求 id 时，用服务端路由器预估档位与流程（与不指定流程创建时一致）。 */
+  routePreviewDraft(body: RoutePreviewDraftRequest): Promise<RouteDecision>
   /** POST /requirements：start 为 true 时同时启动（失败时 startError，需求仍已创建）。 */
   createRequirement(body: RequirementCreateRequest): Promise<RequirementCreateResponse>
   updateRequirement(id: string, body: RequirementUpdateRequest): Promise<RequirementSummary>

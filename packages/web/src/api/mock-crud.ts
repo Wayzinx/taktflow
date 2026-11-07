@@ -187,7 +187,7 @@ export function createMockRequirementCrud(db: MockDb, summary: (id: string) => R
 }
 
 /** 新建时的路由：指定了流程就按流程定档，否则与新建对话框的草稿预估同一套规则，提示里的档位与预估一致。 */
-function draftRoute(title: string, description: string | undefined, workflowId: string | undefined, at: string) {
+export function draftRoute(title: string, description: string | undefined, workflowId: string | undefined, at: string) {
   const est = estimateRoute(`${title}\n${description ?? ''}`, undefined)
   const tier = workflowId ? (workflowId === 'quick-fix' || workflowId === 'hotfix' ? 'T1' : 'T2') : (est?.tier ?? 'T2')
   const r = routeOf(tier, { reason: est?.reason ?? '多个改动面且有先后依赖，走标准流水线', surfaces: [{ id: 'main', paths: ['src/**'], repo: 'shop-web' }], at })

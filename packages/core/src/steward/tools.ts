@@ -20,6 +20,28 @@ import { StewardProposals } from './proposals.js'
 import { refreshRisks } from './risks.js'
 import { productMetrics } from './metrics.js'
 
+
+/** 界面上的工具名：description 是写给模型的长约束，不适合直接展示在工具卡片里。 */
+const TOOL_LABELS: Record<string, string> = {
+  list_spaces: '列出空间',
+  resolve_space: '核对空间',
+  space_overview: '空间总览',
+  resolve_requirement: '核对需求',
+  list_requirements: '需求列表',
+  requirement_status: '需求状态',
+  run_status: '运行状态',
+  list_attention: '待办',
+  list_risks: '风险',
+  get_metrics: '指标',
+  workflow_get: '读取 workflow',
+  get_config: '空间配置',
+  eval_scorecards: '成绩单',
+  list_commands: '可用命令',
+  read_file: '读取文件',
+  propose: '生成提案',
+  ask_lead: '转达 Lead',
+  knowledge_search: '检索知识库',
+}
 export interface StewardToolResult {
   data: unknown
   citations: StewardCitation[]
@@ -471,7 +493,7 @@ export class StewardTools {
     return {
       data,
       citations,
-      summary: `${spec.description}：返回 ${Array.isArray(data) ? data.length : data === undefined ? 0 : 1} 条`,
+      summary: `${TOOL_LABELS[name] ?? name}：返回 ${Array.isArray(data) ? data.length : data === undefined ? 0 : 1} 条`,
     }
   }
   private resolveSpace(name: string, spaces: Awaited<ReturnType<StewardDeps['spaces']>>) {

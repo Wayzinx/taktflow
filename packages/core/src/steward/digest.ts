@@ -38,6 +38,7 @@ export async function buildDigest(
     progress: [],
     metrics: [],
   }
+  const metricChanges: Array<{ spaceId: string; label: string; value: string; delta?: string; ratio: number }> = []
   const visible = new Set(spaces.map((s) => s.id))
   const risks = peek
     ? Object.values(
@@ -86,7 +87,8 @@ export async function buildDigest(
         })
     }
     let tokens = 0,
-      previousTokens = 0
+      previousTokens = 0,
+      active = false
     for (const run of runs) {
       const events = await stores.events.read(run.runId),
         snapshot = await stores.runs.getWorkflow(run.runId)
@@ -100,6 +102,7 @@ export async function buildDigest(
             previousTokens += n
         }
         if (!inWindow(event.ts)) continue
+        if (event.type === 'run.started' || event.type.startsWith('node.')) active = true
         const kind =
           event.type === 'run.started'
             ? 'started'
@@ -122,13 +125,21 @@ export async function buildDigest(
           })
       }
     }
-    digest.metrics!.push({
-      spaceId: summary.id,
-      label: 'Token 用量',
-      value: String(tokens),
-      delta: since ? String(tokens - previousTokens) : undefined,
-    })
+    const delta = tokens - previousTokens,
+      ratio = previousTokens ? Math.abs(delta) / previousTokens : tokens ? 1 : 0
+    if (active && since && Math.abs(delta) >= 5000 && ratio >= 0.2)
+      metricChanges.push({
+        spaceId: summary.id,
+        label: delta >= 0 ? 'Token 用量比上个窗口上涨' : 'Token 用量比上个窗口下降',
+        value: String(tokens),
+        delta: String(delta),
+        ratio,
+      })
   }
+  digest.metrics = metricChanges
+    .sort((a, b) => b.ratio - a.ratio || Math.abs(Number(b.delta)) - Math.abs(Number(a.delta)))
+    .slice(0, 3)
+    .map(({ ratio: _ratio, ...item }) => item)
   digest.progress = [
     ...new Map(
       digest.progress.map((p) => [`${p.spaceId}/${p.requirementId}/${p.kind}/${p.to ?? p.at}`, p]),

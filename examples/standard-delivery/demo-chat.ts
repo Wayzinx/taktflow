@@ -68,14 +68,14 @@ try {
   for (const run of runs) assert.deepEqual(await reopened.events.verify(run.runId), { ok: true })
   assert.deepEqual(await reopened.workspaces.detectUntracked(requirement.id), [])
   // 单独的小流程验证 auto 路由接入，不把 mock 路由冒充产品验收。
-  await writeFile(join(stores.paths.workflows, 'chat-auto.workflow.ts'), `import { defineWorkflow, script } from '@taktflow/core'\nexport default defineWorkflow({ id: 'chat-auto', title: '群聊路由演示', tiers: ['T0','T1'], version: '1', stages: [], nodes: [script({ id: 'ready', title: '路由接入', run: async () => {} })] })`)
+  await writeFile(join(stores.paths.workflows, 'chat-auto.workflow.ts'), `import { defineWorkflow, script } from '@taktflow/core'\nexport default defineWorkflow({ id: 'chat-auto', title: '群聊路由演示', tiers: ['T0','T1','T2'], version: '1', stages: [], nodes: [script({ id: 'ready', title: '路由接入', run: async () => {} })] })`)
   const autoLead = await createProjectLead(await loadRuntime(root), (_id, value) => { presence.push(value.state) })
   const trigger = await reopened.chat.post(requirement.id, { author: { type: 'human', id: 'demo-owner' }, kind: 'text', text: '@lead 自动启动', mentions: ['lead'] })
   await autoLead.onMessage(requirement.id, trigger); await autoLead.drain()
   const routeCard = (await reopened.chat.list(requirement.id)).find((message) => message.kind === 'route')
   assert.equal(routeCard?.route?.workflowId, 'chat-auto')
   const routed = (await reopened.runs.list()).find((run) => run.workflowId === 'chat-auto')!
-  assert.equal(routed.route?.tier, 'T1')
+  assert.equal(routed.route?.tier, 'T2')
   assert((await reopened.events.read(routed.runId)).some((event) => event.type === 'route.decided'))
   assert(presence.includes('thinking') && presence.includes('working') && presence.includes('idle'))
   console.log(`PASS 离线群聊：${messages.length} 条消息、${runs.length} 个 task 运行、PRD v2、独立评审、任务卡片更新、Lead 回报和全部审计链。\n证据目录：${root}`)

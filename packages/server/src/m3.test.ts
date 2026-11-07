@@ -17,7 +17,8 @@ async function setup() {
   await symlink(resolve('node_modules'), join(root, 'node_modules'), 'dir')
   const file = join(stores.paths.workflows, 'quick.workflow.ts')
   await writeFile(file, `import { defineWorkflow, human } from '@taktflow/core'\nexport default defineWorkflow({ id: 'quick', title: '轻量', version: '1', tiers: ['T0','T1'], stages: [], nodes: [human({ id: 'confirm', title: '确认', ask: '继续？', form: 'approve' })] })`)
-  const req = await stores.workspaces.createRequirement({ title: 'src 模块修改', owner: 'alice' })
+  await writeFile(join(stores.paths.workflows, 'standard.workflow.ts'), `import { defineWorkflow, human } from '@taktflow/core'\nexport default defineWorkflow({ id: 'standard', title: '标准', version: '1', tiers: ['T2','T3'], stages: [], nodes: [human({ id: 'confirm', title: '确认', ask: '继续？', form: 'approve' })] })`)
+  const req = await stores.workspaces.createRequirement({ title: '修复 src 模块 bug', owner: 'alice' })
   attachLessons(stores)
   return { root, stores, req, file }
 }
@@ -50,6 +51,19 @@ it('M3 命令、路由、经验、当前用户和仓库设置经过校验并持�
   expect((await request(server, '/api/space/members', 'PUT', { members: stores.config.members, reason: '确认职责' })).data.members[0].duties).toEqual(['qa'])
   expect((await openProject(root)).config.repos![0]!.bootstrap).toBe('npm test')
   expect(await readFile(join(stores.taktDir, 'space-events.jsonl'), 'utf8')).toContain('确认职责')
+})
+
+it('草稿路由预览与创建路由使用同一套规则', async () => {
+  const { root } = await setup()
+  const server = await start({ projectDir: root })
+  const text = '导出订单报表支持按部门筛选（前端加多选、接口加参数）'
+  const preview = await request(server, '/api/route/preview', 'POST', { text })
+  const created = await request(server, '/api/commands/requirement.create', 'POST', { input: { title: text, start: false }, reason: '创建需求' })
+  expect(preview.data).toMatchObject({ tier: 'T2', workflowId: 'standard' })
+  expect(created.data.result.route).toMatchObject({ tier: preview.data.tier, workflowId: preview.data.workflowId })
+  expect((await request(server, '/api/route/preview', 'POST', { text: '修复按钮文案错别字' })).data).toMatchObject({ tier: 'T1', workflowId: 'quick' })
+  expect((await request(server, '/api/route/preview', 'POST', { text: '需要处理一个新需求' })).data).toMatchObject({ tier: 'T2', workflowId: 'standard' })
+  expect((await request(server, '/api/route/preview', 'POST', { text: 'foo/src/button.ts 与 bar/src/report.ts 分别独立并行' })).data).toMatchObject({ tier: 'T3', workflowId: 'standard' })
 })
 
 it('修订 GET 不写文件，初始时间取源文件 mtime，读取与移动视口不产生布局 PUT', async () => {

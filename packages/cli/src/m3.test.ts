@@ -16,7 +16,7 @@ async function setup() {
   await writeFile(join(root, 'takt.config.json'), JSON.stringify(stores.config))
   await writeFile(join(root, 'package.json'), '{"type":"module"}')
   await writeFile(join(stores.paths.workflows, 'quick.workflow.ts'), `export default { id: 'quick', title: '轻量流程', version: '1', tiers: ['T0','T1'], stages: [], nodes: [{ id: 'confirm', kind: 'human', title: '确认', ask: '确认', form: 'approve' }] }`)
-  const req = await stores.workspaces.createRequirement({ title: 'src 调整', owner: 'alice' })
+  const req = await stores.workspaces.createRequirement({ title: '修复按钮文案错别字', owner: 'alice' })
   return { root, stores, req }
 }
 async function cli(root: string, args: string[]) {

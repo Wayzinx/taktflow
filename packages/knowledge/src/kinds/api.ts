@@ -20,16 +20,19 @@ interface Operation {
 async function schema(
   kb: KnowledgeBase,
   ctx: KnowledgeKindContext,
-): Promise<{ operations: Operation[]; server?: string }> {
+): Promise<{ operations: Operation[]; server?: string; localSource?: { path: string; hash: string } }> {
   const source = kb.config.openapi
+  let localSource: { path: string; hash: string } | undefined
   const doc =
     typeof source === 'object' && source
       ? (source as Record<string, unknown>)
-      : (JSON.parse(
-          /^https?:\/\//i.test(String(source))
-            ? await fetchText(String(source), ctx, undefined, 8 * 1024 * 1024)
-            : await readSource(await safePath(ctx.stores.projectDir, String(source)), ctx),
-        ) as Record<string, unknown>)
+      : (JSON.parse(await (async () => {
+          if (/^https?:\/\//i.test(String(source))) return fetchText(String(source), ctx, undefined, 8 * 1024 * 1024)
+          const path = await safePath(ctx.stores.projectDir, String(source))
+          const raw = await readSource(path, ctx)
+          localSource = { path: String(source), hash: sha256(raw) }
+          return raw
+        })()) as Record<string, unknown>)
   if (!String(doc.openapi).startsWith('3.'))
     throw new Error('只支持 OpenAPI 3 JSON，请转换文件后重新导入')
   const operations: Operation[] = []
@@ -48,7 +51,7 @@ async function schema(
       })
     }
   }
-  return { operations, server: (doc.servers as Array<{ url: string }> | undefined)?.[0]?.url }
+  return { operations, server: (doc.servers as Array<{ url: string }> | undefined)?.[0]?.url, localSource }
 }
 export const apiKind: KnowledgeKind = {
   kind: 'api',
@@ -81,7 +84,7 @@ export const apiKind: KnowledgeKind = {
     }
   },
   async build(kb, ctx, progress) {
-    const { operations, server } = await schema(kb, ctx)
+    const { operations, server, localSource } = await schema(kb, ctx)
     const index = makeIndex(
       operations.map((operation2) => {
         const content = JSON.stringify({ ...operation2, server })
@@ -93,6 +96,7 @@ export const apiKind: KnowledgeKind = {
         }
       }),
     )
+    if (localSource) index.manifest = [localSource]
     await saveIndex(ctx.indexDir, index)
     progress({ stage: 'index', done: operations.length, total: operations.length })
     return {

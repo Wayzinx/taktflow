@@ -5,8 +5,10 @@ import { validateSchema } from '../engine/schema.js'
 
 export interface RouteInput {
   stores: ProjectStores
-  requirementId: string
+  requirementId?: string
+  draft?: { title: string; description?: string }
   hint?: string
+  repos?: string[]
   workflows: Array<{ id: string; snapshot: WorkflowSnapshot }>
   model?: (prompt: string, schema: object) => Promise<unknown>
   by: Actor
@@ -26,24 +28,54 @@ function overlap(surfaces: RouteDecision['surfaces']): boolean {
   return surfaces.some((a, index) => surfaces.slice(index + 1).some((b) =>
     !(a.repo && b.repo && a.repo !== b.repo) && a.paths.some((x) => b.paths.some((y) => pathsOverlap(x, y)))))
 }
+const small = /文案|拼写|错别字|typo|文件名|颜色|样式微调|格式|改个|小改|hotfix|修复|bug|崩溃|报错/i
+const keywordSurfaces: Array<[RegExp, string, string]> = [
+  [/前端|页面|按钮|弹窗|交互|UI|样式/i, 'frontend', '前端'],
+  [/接口|API|服务端|后端|网关/i, 'api', '接口'],
+  [/数据库|表结构|迁移|索引|SQL/i, 'data', '数据'],
+  [/定时|任务|消息|通知|推送|队列/i, 'async', '异步任务'],
+  [/CLI|命令行|脚本/i, 'cli', '命令行'],
+  [/客户端|iOS|Android|小程序/i, 'client', '客户端'],
+]
+const parallel = /互不|独立|并行|各自|分别/
 function heuristic(text: string, repos: string[]): Pick<RouteDecision, 'tier' | 'surfaces' | 'reason'> {
   const roots = new Set([...text.matchAll(/(?:^|[\s`"'(（，、])((?:[\w.-]+\/)+[\w.*?/-]*)/g)].map((match) => match[1]!.replace(/^\.\//, '').split('/')[0]!).filter(Boolean))
   for (const repo of repos) if (new RegExp(`(^|[^\\w-])${repo.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`).test(text)) roots.add(repo)
-  const tier: Tier = /```(?:diff|patch)|^diff --git|只改|改成/m.test(text) ? 'T0' : roots.size > 1 ? 'T2' : 'T1'
-  return { tier, surfaces: [...roots].map((id) => ({ id, paths: [`${id}/**`], ...(repos.includes(id) ? { repo: id } : {}) })),
-    reason: tier === 'T0' ? '已给出明确改动指令' : tier === 'T2' ? '涉及多个改动面，默认串行' : '单一改动面，使用轻量流程' }
+  const surfaces: Array<RouteDecision['surfaces'][number] & { label?: string }> = [
+    ...[...roots].map((id) => ({ id, paths: [`${id}/**`], ...(repos.includes(id) ? { repo: id } : {}) })),
+    ...keywordSurfaces.filter(([re]) => re.test(text)).map(([, id, label]) => ({ id, paths: [], label })),
+  ]
+  const byId = [...new Map(surfaces.map((surface) => [surface.id, surface])).values()]
+  const labels = byId.map((surface) => 'label' in surface ? surface.label : surface.id)
+  let tier: Tier
+  if (/```(?:diff|patch)|^diff --git|只改|改成/m.test(text)) tier = 'T0'
+  else if (small.test(text) && byId.length <= 1) tier = 'T1'
+  else if (parallel.test(text) && roots.size >= 2 && byId.length === roots.size) tier = 'T3'
+  else if (byId.length >= 2) tier = 'T2'
+  else tier = 'T2'
+  return {
+    tier,
+    surfaces: byId.map(({ label: _label, ...surface }) => surface),
+    reason: tier === 'T0'
+      ? '已给出明确改动指令'
+      : tier === 'T1'
+        ? (labels.length ? `看起来只动${labels[0]}一处，使用轻量流程` : '描述像一处小改动，使用轻量流程')
+        : tier === 'T3'
+          ? '多个路径改动面声明可并行且路径可证明不相交'
+          : byId.length ? `涉及${labels.join('、')}，按标准流程推进` : '范围还不清楚，按标准流程推进',
+  }
 }
 const flatten = (nodes: SnapshotNode[]): SnapshotNode[] => nodes.flatMap((node) => [node, ...flatten(node.body ?? [])])
 
 export async function routeRequirement(input: RouteInput): Promise<RouteDecision> {
-  const { stores, requirementId, workflows, by } = input
-  const requirement = await stores.workspaces.getRequirement(requirementId)
-  if (!requirement) throw new Error(`需求不存在：${requirementId}`)
+  const { stores, workflows, by } = input
+  const requirement = input.draft ?? (input.requirementId ? await stores.workspaces.getRequirement(input.requirementId) : undefined)
+  if (!requirement) throw new Error(`需求不存在：${input.requirementId ?? ''}`)
   if (!workflows.length) throw new Error('没有可用 workflow')
   const proposed = input.model ? await input.model([
     '按改动形状路由：T0 已写死；T1 单面；T2 多面串行；T3 多面且路径不相交。只输出指定 JSON。',
     JSON.stringify({ requirement, hint: input.hint, workflows: workflows.map(({ id, snapshot }) => ({ id, useWhen: snapshot.useWhen, tiers: snapshot.tiers })) }),
-  ].join('\n'), schema) : heuristic(`${requirement.title}\n${input.hint ?? ''}`, stores.config.repos?.map((repo) => repo.id) ?? [])
+  ].join('\n'), schema) : heuristic(`${requirement.title}\n${'description' in requirement ? requirement.description ?? '' : ''}\n${input.hint ?? ''}`, input.repos ?? stores.config.repos?.map((repo) => repo.id) ?? [])
   validateSchema(proposed, schema)
   const proposal = proposed as Pick<RouteDecision, 'tier' | 'surfaces' | 'reason'> & { workflowId?: string }
   let tier = proposal.tier

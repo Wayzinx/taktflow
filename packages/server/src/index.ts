@@ -125,7 +125,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         attachKnowledge(fresh, options.spacesDir)
         attachLessons(fresh)
         attachCrudServices(fresh)
-        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname)) authorize(request, fresh)
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname) && url.pathname !== '/api/route/preview') authorize(request, fresh)
         const result = await matched.handler({ stores: fresh, request, response, url, params: matched.params })
         if (url.pathname === '/api/space' && request.method === 'GET') {
           const { deps, store } = userService(request)

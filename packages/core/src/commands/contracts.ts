@@ -11,7 +11,7 @@ export interface CommandInputs {
   dispatchTask: { requirementId: string; task: TaskSpec }
   disposeReview: { runId: string; nodeId: string; groupKey: string; state: 'open' | 'resolved' | 'dismissed' }
   setLessonStatus: { id: string; status: 'tentative' | 'active' | 'retired' }
-  route: { requirementId: string; hint?: string; override?: { tier: Tier; reason: string } }
+  route: { requirementId?: string; draft?: { title: string; description?: string }; hint?: string; repos?: string[]; override?: { tier: Tier; reason: string } }
 }
 export type CommandHandlers = { [K in keyof CommandInputs]?: (input: CommandInputs[K], context: CommandContext) => Promise<unknown> }
 export interface CommandAudit extends CommandContext { id: string; input: Record<string, unknown>; phase: 'requested' | 'finished'; response?: CommandRunResponse }

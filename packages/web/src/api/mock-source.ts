@@ -5,7 +5,7 @@ import { createProjectMock, type ProjectSource } from './mock'
 import { createMockDb, type MockDb } from './mock-data'
 import { createMockSpaces, fakeHead, type MockSpace } from './mock-space'
 import { createMockWorkflows, type WorkflowApi } from './mock-workflows'
-import { archivedSpaces, createMockSpaceCrud, extraSpaces, MOCK_SERVER_INFO } from './mock-crud'
+import { archivedSpaces, createMockSpaceCrud, draftRoute, extraSpaces, MOCK_SERVER_INFO } from './mock-crud'
 import { createMockKnowledge } from './mock-knowledge'
 import { createMockSteward } from './mock-steward'
 import type { DataSource } from './source'
@@ -106,6 +106,10 @@ export function createMockSource(): DataSource {
     deleteSpace: crud.deleteSpace,
     convertWorkflow: workflowApi.convertWorkflow,
     // 需求增删改在单空间的 ProjectSource 里（mock.ts → mock-crud.ts），由下面的 Proxy 转发
+    routePreviewDraft: (body) => {
+      const [title = '', ...rest] = body.text.trim().split('\n')
+      return new Promise((r) => setTimeout(() => r(draftRoute(title, rest.join('\n'), undefined, new Date().toISOString())), 180))
+    },
     createRequirement: (body) => project().createRequirement(body),
     updateRequirement: (id, body) => project().updateRequirement(id, body),
     archiveRequirement: (id, reason) => project().archiveRequirement(id, reason),

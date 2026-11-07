@@ -52,6 +52,7 @@
  * | POST | /api/runs/:runId/nodes/:nodeId/dispositions    | 请求体 ReviewDispositionRequest → ReviewDisposition（人对评审问题的处置，进审计） |
  * | --- 外部参考改进（docs/design/19） | | |
  * | POST | /api/requirements/:id/route                    | 请求体 RoutePreviewRequest → RouteDecision（只预览，不启动） |
+ * | POST | /api/route/preview                              | 请求体 RoutePreviewDraftRequest → RouteDecision（还没有需求时按草稿文本预估；与不指定流程时创建需求的路由一致，不落盘） |
  * | GET  | /api/commands                                  | CommandInfo[]（⌘K、Lead、CLI 共用的命令注册表） |
  * | POST | /api/commands/:id                              | 请求体 CommandRunRequest → CommandRunResponse |
  * | GET  | /api/lessons?status=                           | Lesson[] |
@@ -576,6 +577,14 @@ export interface ReviewDispositionRequest {
   groupKey: string
   state: ReviewDisposition['state']
   reason: string
+}
+
+/** 新建需求对话框里的草稿路由预估：还没有需求 id。 */
+export interface RoutePreviewDraftRequest {
+  /** 草稿全文（第一行是标题）。 */
+  text: string
+  repos?: string[]
+  hint?: string
 }
 
 export interface RoutePreviewRequest {

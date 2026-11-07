@@ -1,22 +1,39 @@
 import { useEffect, useState } from 'react'
 import { Route, Sparkles } from 'lucide-react'
 import type { WorkflowSummary } from '@taktflow/core'
+import { useSource } from '../../api'
 import { TIER_LABEL, TierGlyph } from '../tier-glyph'
 import { estimateRoute, type RouteEstimate } from './estimate'
 import { CheckRow, Tag } from './tag'
 
-/** 输入停顿 600ms 后再算一次路由预估。 */
+/**
+ * 输入停顿 600ms 后预估路由：走服务端同一个路由器（POST /route/preview），保证"对话框里看到的 = 创建后的结果"；
+ * 接口不可用（旧服务端、离线）时退回本地规则。
+ */
 function useDebouncedEstimate(text: string, workflows?: WorkflowSummary[]) {
+  const ds = useSource()
   const [est, setEst] = useState<RouteEstimate>()
   const [pending, setPending] = useState(false)
   useEffect(() => {
+    let live = true
     setPending(true)
     const t = setTimeout(() => {
-      setEst(estimateRoute(text, workflows))
-      setPending(false)
+      const local = () => estimateRoute(text, workflows)
+      const done = (v: RouteEstimate | undefined) => {
+        if (!live) return
+        setEst(v)
+        setPending(false)
+      }
+      if (text.trim().length < 4) return done(undefined)
+      ds.routePreviewDraft({ text })
+        .then((r) => done({ tier: r.tier, workflowId: r.workflowId, workflowTitle: workflows?.find((w) => w.id === r.workflowId)?.title, reason: r.reason }))
+        .catch(() => done(local()))
     }, 600)
-    return () => clearTimeout(t)
-  }, [text, workflows])
+    return () => {
+      live = false
+      clearTimeout(t)
+    }
+  }, [ds, text, workflows])
   return { est, pending }
 }
 

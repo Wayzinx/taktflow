@@ -62,6 +62,7 @@ it('W5/W6：中文设置建议，显式空间覆盖默认空间', async () => {
   expect(calls).toEqual(['shop', 'shop'])
 })
 afterEach(async () => {
+  vi.useRealTimers()
   agents.splice(0).forEach((agent) => agent.close())
   await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
 })
@@ -971,6 +972,41 @@ it('未到 since 的历史进展排除，静音不通知但保留风险', async 
   ]
   expect(await refreshRisks(f.deps, f.agent.store)).toHaveLength(1)
   expect(await f.agent.store.lines('feed.jsonl')).toEqual([])
+})
+it('汇报指标只保留有活动且变化显著的 token 变化并按幅度排序', async () => {
+  const f = await fixture()
+  const actor = { type: 'system' as const, id: 'metric' }
+  async function space(id: string, name: string) {
+    const stores = id === 'shop' ? f.stores : await initProject(join(f.root, id), { name })
+    const req = await stores.workspaces.createRequirement({ title: name })
+    const run: RunState = { runId: `run-${id}`, requirementId: req.id, workflowId: 'wf', workflowVersion: '1', status: 'running', startedAt: '2026-11-06T10:05:00.000Z', args: {}, expansions: [], nodes: {} }
+    await stores.runs.create(run, { id: 'wf', title: 'wf', version: '1', stages: [], nodes: [{ id: 'n', kind: 'task', title: '节点', needs: [] }] })
+    return { id, name, stores, runId: run.runId }
+  }
+  const quiet = await space('quiet', '无活动')
+  const small = await space('small', '小波动')
+  const medium = await space('medium', '中变化')
+  const large = await space('large', '大变化')
+  const spaces = [quiet, small, medium, large]
+  f.deps.spaces = async () => spaces.map((s) => ({ id: s.id, name: s.name, requirements: 1, active: 1 }))
+  f.deps.open = async (id) => ({ stores: spaces.find((s) => s.id === id)!.stores }) as never
+  vi.useFakeTimers()
+  for (const s of spaces) {
+    vi.setSystemTime(new Date('2026-11-06T09:10:00.000Z'))
+    await s.stores.events.append(s.runId, { type: 'harness.usage', actor, nodeId: 'n', data: { inputTokens: 10000, outputTokens: 0 } })
+  }
+  for (const [s, tokens] of [[quiet, 50000], [small, 11000], [medium, 20000], [large, 40000]] as const) {
+    vi.setSystemTime(new Date('2026-11-06T10:10:00.000Z'))
+    if (s !== quiet) await s.stores.events.append(s.runId, { type: 'node.started', actor, nodeId: 'n', data: { attempt: 1 } })
+    await s.stores.events.append(s.runId, { type: 'harness.usage', actor, nodeId: 'n', data: { inputTokens: tokens, outputTokens: 0 } })
+  }
+  vi.useRealTimers()
+  f.clock('2026-11-06T11:00:00.000Z')
+  const digest = await buildDigest(f.deps, f.agent.store, '2026-11-06T10:00:00.000Z', false, true)
+  expect(digest.metrics).toEqual([
+    { spaceId: 'large', label: 'Token 用量比上个窗口上涨', value: '40000', delta: '30000' },
+    { spaceId: 'medium', label: 'Token 用量比上个窗口上涨', value: '20000', delta: '10000' },
+  ])
 })
 it('知识库草稿可低风险自动创建，并经审计命令删除撤销', async () => {
   const f = await fixture(),
