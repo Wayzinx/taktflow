@@ -19,7 +19,7 @@ import {
 } from '@taktflow/core'
 import { createHarnesses, createMockHarness, loadMockScript, type MockScript } from '@taktflow/harness'
 import { createRepoManager } from '@taktflow/sandbox'
-import { attachLessons } from '@taktflow/server'
+import { attachKnowledge, attachLessons } from '@taktflow/server'
 import { knowledgeFromConfig } from './knowledge.js'
 import { tsImport } from 'tsx/esm/api'
 import { UsageError } from './args.js'
@@ -35,7 +35,10 @@ export const webDir = join(repoRoot, 'packages', 'web', 'dist')
 /** 只有存储和配置：req / ws / status / audit / kb 用这个，不碰 workflow。 */
 export async function openStores(project: string | undefined): Promise<ProjectStores> {
   try {
-    return await openProject(project ?? process.cwd())
+    const stores = await openProject(project ?? process.cwd())
+    const parent = dirname(stores.projectDir)
+    const shared = await access(join(parent, '.shared')).then(() => parent, () => undefined)
+    return attachKnowledge(stores, shared)
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : String(error))
   }
@@ -53,14 +56,14 @@ export interface ProjectContext {
 }
 
 /** 运行类命令才加载 workflow / harness / knowledge。 */
-export async function loadRuntime(project: string | undefined, options: { mock?: string } = {}): Promise<ProjectContext> {
-  const stores = await openProject(project ?? process.cwd())
+export async function loadRuntime(project: string | undefined, options: { mock?: string; warn?: (message: string) => void } = {}): Promise<ProjectContext> {
+  const stores = await openStores(project)
   try {
     stores.config = normalizeConfig(stores.config)
     attachLessons(stores)
     const plugins = await loadProjectPlugins(stores)
     const providers = runtimeProviders(stores.config, plugins.providers)
-    const [profiles, workflows] = await Promise.all([loadRuntimeProfiles(stores.paths.agents, plugins.roles), loadWorkflows(stores)])
+    const [profiles, workflows] = await Promise.all([loadRuntimeProfiles(stores.paths.agents, plugins.roles, options.warn), loadWorkflows(stores)])
     for (const workflow of plugins.workflows) {
       if (workflows.some((item) => item.id === workflow.id)) throw new Error(`workflow 名称冲突：${workflow.id}`)
       workflows.push(workflow)

@@ -59,7 +59,10 @@
 .kb-method { font-size: var(--text-label); font-weight: 600; color: var(--st-success); }
 .kb-method:not([data-m='GET']) { color: var(--st-waiting); }
 .kb-method[data-m='DELETE'] { color: var(--st-failed); }
-.kb-ops-write { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-meta); color: var(--text-2); cursor: pointer; }
+.kb-ops-write { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin: 0; font-size: var(--text-meta); color: var(--text-2); }
+.kb-ops-load { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.kb-headers { display: grid; gap: var(--sp-2); }
+.kb-header-row { display: grid; grid-template-columns: minmax(0, 180px) minmax(0, 1fr) auto; gap: var(--sp-2); align-items: start; }
 .kb-ops-write svg { width: 14px; height: 14px; color: var(--st-waiting); }
 
 /* 开关胶囊（intents / 角色） */

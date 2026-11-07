@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, LoaderCircle } from 'lucide-react'
+import { Download, ListChecks, LoaderCircle } from 'lucide-react'
 import type { EvalTarget, EvalVariant, HarnessInfo, HarnessSelector } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
-import { Dialog, SkeletonRows, toast } from '../../components/ui'
+import { Dialog, EmptyState, SkeletonRows, toast } from '../../components/ui'
 import { navigate } from '../../lib/router'
 import { CASE_SOURCE, defaultHarness } from './labels'
 
@@ -142,7 +142,7 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
             {!cases.data ? (
               <SkeletonRows rows={3} gap={10} />
             ) : cases.data.length === 0 ? (
-              <p className="faint">这个目标还没有用例，先从历史与已确认缺陷收集。</p>
+              <EmptyState compact icon={ListChecks} title="这个目标还没有用例" body="从历史运行与已确认的缺陷里收集一批。" action={<button type="button" className="btn btn-sm" onClick={collect}>从历史与缺陷收集</button>} />
             ) : (
               cases.data.map((c) => (
                 <label key={c.id} className="ev-case-opt">

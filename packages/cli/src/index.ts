@@ -13,7 +13,8 @@ import { runWorkflow, resumeWorkflow } from './commands/run.js'
 import { runAnswer } from './commands/answer.js'
 import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
-import { runKbQuery } from './commands/kb.js'
+import { runStewardCommand } from './commands/steward.js'
+import { runKbQuery, runKbCommand, type KbCliOptions } from './commands/kb.js'
 import { runSpaceCommand, runSpaceServer } from './commands/space.js'
 import { runServe } from './commands/serve.js'
 import { runCatalog, runDoctor } from './commands/catalog.js'
@@ -28,12 +29,12 @@ registerDefectCommands(register)
 export async function main(argv: string[] = process.argv.slice(2)): Promise<number> {
   let cli: ParsedCli
   try {
-    cli = parseCrudArgs(argv)
+    cli = parseCliArgs(argv)
   } catch (error) {
     return fail(error, argv.includes('--json'))
   }
   if (cli.options.help || cli.command === undefined) {
-    process.stdout.write(`${HELP}\n\n需求增删改：req new <title> [--desc <text> | --desc-file <file>] [--workflow <id>] [--start] [--due <date>]\n  req edit <REQ> [--title <text>] [--desc <text>] [--due <date|null>] [--owner <id>]\n  req archive|restore|rm <REQ>\n空间管理：space new <id> --name <名称> --spaces <根> [--template blank|standard|quick] [--from <空间> --parts a,b] [--color <颜色>]\n  space archive|restore|rm <id> --spaces <根> [--confirm <归档ID>]\n流程转换：workflow convert <id> [--dry-run]\n`)
+    process.stdout.write(`${HELP}\n`)
     return cli.command === undefined && !cli.options.help ? 1 : 0
   }
   try {
@@ -41,27 +42,6 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<numb
   } catch (error) {
     return fail(error, cli.options.json)
   }
-}
-
-function parseCrudArgs(argv: string[]): ParsedCli {
-  const extra: CrudCliOptions = {}, rest: string[] = []
-  const strings = { 'desc-file': 'descFile', due: 'due', owner: 'owner', template: 'template', from: 'from', parts: 'parts', color: 'color', confirm: 'confirm' } as const
-  for (let index = 0; index < argv.length; index++) {
-    const arg = argv[index]!
-    if (arg === '--') { rest.push(...argv.slice(index)); break }
-    const match = /^--([^=]+)(?:=(.*))?$/.exec(arg)
-    if (match && Object.hasOwn(strings, match[1]!)) {
-      const key = strings[match[1] as keyof typeof strings]
-      const value = match[2] ?? argv[++index]
-      if (value === undefined || value.startsWith('--')) throw new UsageError(`${arg} 需要参数`)
-      extra[key] = value
-    } else if (arg === '--start') extra.start = true
-    else if (arg === '--dry-run') extra.dryRun = true
-    else rest.push(arg)
-  }
-  const cli = parseCliArgs(rest)
-  Object.assign(cli.options, extra)
-  return cli
 }
 
 async function dispatch(cli: ParsedCli): Promise<number> {
@@ -160,10 +140,14 @@ async function dispatch(cli: ParsedCli): Promise<number> {
       expectPositionals('audit verify', args.slice(1), 1, 1)
       return await runAuditVerify(options.project, args[1]!, options.json) ? 0 : 1
     }
+    case 'steward':
+      return runStewardCommand(cli)
     case 'kb': {
-      if (args[0] !== 'query') throw new UsageError('kb 子命令：query')
-      expectPositionals('kb query', args.slice(1), 1, 1)
-      await runKbQuery(options.project, args[1]!, options.intent, options.json)
+      const kbOptions = options as typeof options & KbCliOptions
+      if (args[0] === 'query' && !kbOptions.base && kbOptions.top === undefined) {
+        expectPositionals('kb query', args.slice(1), 1, 1)
+        await runKbQuery(options.project, args[1]!, options.intent, options.json)
+      } else await runKbCommand(options.project, args[0] ?? '', args.slice(1), kbOptions)
       return 0
     }
     case 'serve': {

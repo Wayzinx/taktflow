@@ -7,7 +7,7 @@ import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createGitHistorySource } from './git-history.js'
 
-vi.mock('node:child_process', async importOriginal => {
+vi.mock('node:child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:child_process')>()
   return { ...actual, execFile: vi.fn(actual.execFile) }
 })
@@ -29,7 +29,9 @@ async function commit(title: string): Promise<string> {
   await git('commit', '-m', title)
   return git('rev-parse', 'HEAD')
 }
-beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'takt-history-')) })
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'takt-history-'))
+})
 afterEach(async () => {
   const actual = await vi.importActual<typeof import('node:child_process')>('node:child_process')
   vi.mocked(execFile).mockReset().mockImplementation(actual.execFile)
@@ -48,8 +50,12 @@ describe('git history', () => {
     await commit('unrelated')
     const source = createGitHistorySource({ root })
     const hits = await source.query({ text: 'literal.[x]()' })
-    expect(hits.map(hit => hit.ref)).toEqual(hashes.reverse().slice(0, 10))
-    expect(hits[0]).toMatchObject({ title: 'change 11', snippet: 'change 11\nfile name.ts', sourceId: 'git-history' })
+    expect(hits.map((hit) => hit.ref)).toEqual(hashes.reverse().slice(0, 10))
+    expect(hits[0]).toMatchObject({
+      title: 'change 11',
+      snippet: 'change 11\nfile name.ts',
+      sourceId: 'git-history',
+    })
     for (const hit of hits) {
       expect(hit.evidenceLevel).toBe('derived')
       expect(new Date(hit.fetchedAt!).toISOString()).toBe(hit.fetchedAt)
@@ -88,7 +94,11 @@ describe('git history', () => {
     const hash = await commit('paths')
     const hits = await createGitHistorySource({ root }).query({ text: 'needle' })
     expect(hits).toHaveLength(1)
-    expect(hits[0]).toMatchObject({ ref: hash, title: 'paths', snippet: ['paths', ...paths].join('\n') })
+    expect(hits[0]).toMatchObject({
+      ref: hash,
+      title: 'paths',
+      snippet: ['paths', ...paths].join('\n'),
+    })
   })
 
   it('空标题与相邻普通提交分别保留，路径开头的换行不被裁掉', async () => {
@@ -116,17 +126,23 @@ describe('git history', () => {
   })
 
   it('缺失目录不是非仓库，错误包含上下文', async () => {
-    await expect(createGitHistorySource({ root: join(root, 'missing') }).query({ text: 'needle' }))
-      .rejects.toThrow('git-history 搜索失败')
+    await expect(
+      createGitHistorySource({ root: join(root, 'missing') }).query({ text: 'needle' }),
+    ).rejects.toThrow('git-history 搜索失败')
   })
 
   it('其余 git 错误不能吞掉', async () => {
     vi.mocked(execFile).mockImplementationOnce((...args: unknown[]) => {
       const callback = args.at(-1) as (error: Error, stdout: string, stderr: string) => void
-      callback(Object.assign(new Error('bad object HEAD'), { code: 128 }), '', 'fatal: bad object HEAD')
+      callback(
+        Object.assign(new Error('bad object HEAD'), { code: 128 }),
+        '',
+        'fatal: bad object HEAD',
+      )
       return {} as ChildProcess
     })
-    await expect(createGitHistorySource({ root }).query({ text: 'needle' }))
-      .rejects.toThrow(`git-history 搜索失败（${root}）：bad object HEAD`)
+    await expect(createGitHistorySource({ root }).query({ text: 'needle' })).rejects.toThrow(
+      `git-history 搜索失败（${root}）：bad object HEAD`,
+    )
   })
 })

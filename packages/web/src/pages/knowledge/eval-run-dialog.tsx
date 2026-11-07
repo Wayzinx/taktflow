@@ -3,6 +3,7 @@ import type { KnowledgeBaseSummary, KnowledgeEvalRun, KnowledgeEvalSet, Knowledg
 import { Plus, X } from 'lucide-react'
 import { useSource } from '../../api'
 import { Dialog, Segmented } from '../../components/ui'
+import { evalSetTitle } from './meta'
 
 export function defaultVariants(base: KnowledgeBaseSummary): KnowledgeEvalVariant[] {
   const out: KnowledgeEvalVariant[] = []
@@ -106,7 +107,7 @@ export function EvalRunDialog({ base, sets, open, extra, onClose, onStarted }: {
           <span className="ov-field-label">
             评测集<span className="ov-field-hint num">{active} 条启用用例参与</span>
           </span>
-          <Segmented size="sm" ariaLabel="评测集" value={setId} onChange={setSetId} options={sets.map((s) => ({ value: s.id, label: s.title, count: s.cases.length }))} />
+          <Segmented size="sm" ariaLabel="评测集" value={setId} onChange={setSetId} options={sets.map((s) => ({ value: s.id, label: evalSetTitle(s), count: s.cases.length }))} />
         </div>
         <div className="ov-field">
           <span className="ov-field-label">变体</span>

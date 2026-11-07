@@ -11,7 +11,9 @@ async function page(path: string, content: string) {
   await writeFile(join(root, path), content)
 }
 
-beforeEach(async () => { root = await mkdtemp(join(tmpdir(), 'takt-wiki-')) })
+beforeEach(async () => {
+  root = await mkdtemp(join(tmpdir(), 'takt-wiki-'))
+})
 afterEach(async () => {
   vi.useRealTimers()
   await rm(root, { recursive: true, force: true })
@@ -19,11 +21,19 @@ afterEach(async () => {
 
 describe('Wiki 两阶段检索', () => {
   it('中文问题通过 bigram 召回并提取最相关正文段落', async () => {
-    await page('billing.md', '# 退款流程\n\n这里介绍背景。\n\n订单退款需要审核，到账时间为三个工作日。')
+    await page(
+      'billing.md',
+      '# 退款流程\n\n这里介绍背景。\n\n订单退款需要审核，到账时间为三个工作日。',
+    )
     await page('login.md', '# 登录规则\n\n用户使用密码登录。')
     const hits = await createWikiSource({ root }).query({ text: '订单退款多久到账' })
     expect(hits).toHaveLength(1)
-    expect(hits[0]).toMatchObject({ sourceId: 'wiki', ref: 'billing.md', title: '退款流程', evidenceLevel: 'derived' })
+    expect(hits[0]).toMatchObject({
+      sourceId: 'wiki',
+      ref: 'billing.md',
+      title: '退款流程',
+      evidenceLevel: 'derived',
+    })
     expect(hits[0]!.snippet).toContain('三个工作日')
     expect(hits[0]!.fetchedAt).toBeDefined()
   })
@@ -47,9 +57,12 @@ describe('Wiki 两阶段检索', () => {
   })
 
   it('正文只对前 N 个入口候选重排', async () => {
-    for (let i = 0; i < 16; i++) await page(`${i}.md`, '# alpha beta\n\n背景。')
+    for (let index = 0; index < 16; index++) await page(`${index}.md`, '# alpha beta\n\n背景。')
     await page('outside.md', '# alpha\n\nbeta gamma delta epsilon zeta eta theta。')
-    const hits = await createWikiSource({ root }).query({ text: 'alpha beta gamma delta epsilon zeta eta theta', limit: 1 })
+    const hits = await createWikiSource({ root }).query({
+      text: 'alpha beta gamma delta epsilon zeta eta theta',
+      limit: 1,
+    })
     expect(hits).toHaveLength(1)
     expect(hits[0]!.ref).not.toBe('outside.md')
   })
@@ -65,11 +78,16 @@ describe('Wiki 两阶段检索', () => {
   it('英文不区分大小写且按完整单词匹配', async () => {
     await page('one.md', '# Scatter catalog concatenate\n\ncat。')
     await page('two.md', '# CAT rules\n\nThe cat is allowed.')
-    expect((await createWikiSource({ root }).query({ text: 'cAt' })).map(hit => hit.ref)).toEqual(['two.md'])
+    expect((await createWikiSource({ root }).query({ text: 'cAt' })).map((hit) => hit.ref)).toEqual(
+      ['two.md'],
+    )
   })
 
   it('支持带逗号、井号和转义引号的 aliases 与 CRLF frontmatter', async () => {
-    await page('one.md', '\uFEFF---\r\naliases: ["refund, repayment", \'customer, # returns\', "say \\"hello\\""] # aliases\r\n---\r\n# General\r\n\r\nDetails.')
+    await page(
+      'one.md',
+      '\uFEFF---\r\naliases: ["refund, repayment", \'customer, # returns\', "say \\"hello\\""] # aliases\r\n---\r\n# General\r\n\r\nDetails.',
+    )
     for (const text of ['repayment', 'returns', 'hello']) {
       expect(await createWikiSource({ root }).query({ text })).toHaveLength(1)
     }
@@ -77,30 +95,62 @@ describe('Wiki 两阶段检索', () => {
 
   it('支持 Setext 一级标题且忽略代码块中的伪标题', async () => {
     await page('one.md', '```md\n# wrong\n```\n\nRefund rules\n============\n\nDetails.')
-    expect((await createWikiSource({ root }).query({ text: 'refund' }))[0]!.title).toBe('Refund rules')
+    expect((await createWikiSource({ root }).query({ text: 'refund' }))[0]!.title).toBe(
+      'Refund rules',
+    )
     expect(await createWikiSource({ root }).query({ text: 'wrong' })).toEqual([])
   })
 
   it('YAML 锚点、别名、注释和折叠文本由共享解析器处理，元数据不混入正文', async () => {
-    await page('one.md', '\uFEFF---\r\nterms: &terms [" refund ", returns] # comment\r\naliases: *terms\r\nsummary: >-\r\n  Refund policy\r\n  for customers\r\nverifiedAt: 2026-10-20\r\n...\r\n# General\r\n\r\nDetails.')
-    expect(await markdownPages(root)).toEqual([{
-      ref: 'one.md', title: 'General', aliases: ['refund', 'returns'],
-      summary: 'Refund policy for customers', verifiedAt: '2026-10-20',
-      body: '# General\n\nDetails.',
-    }])
+    const source = [
+      '\uFEFF---\r',
+      'terms: &terms [" refund ", returns] # comment\r',
+      'aliases: *terms\r',
+      'summary: >-\r',
+      '  Refund policy\r',
+      '  for customers\r',
+      'verifiedAt: 2026-10-20\r',
+      '...\r',
+      '# General\r',
+      '\r',
+      'Details.',
+    ].join('\n')
+    await page(
+      'one.md',
+      source,
+    )
+    expect(await markdownPages(root)).toEqual([
+      {
+        ref: 'one.md',
+        title: 'General',
+        aliases: ['refund', 'returns'],
+        summary: 'Refund policy for customers',
+        verifiedAt: '2026-10-20',
+        body: '# General\n\nDetails.',
+      },
+    ])
     expect(await createWikiSource({ root }).query({ text: 'returns' })).toHaveLength(1)
     expect(await createWikiSource({ root }).query({ text: 'comment' })).toEqual([])
   })
 
   it.each([
-    ['aliases: [refund, 42, null, false, { bad: value }, " "]\nsummary: { bad: value }\nverifiedAt: [2026-10-20]', ['refund']],
+    [
+      'aliases: [refund, 42, null, false, { bad: value }, " "]\nsummary: { bad: value }\nverifiedAt: [2026-10-20]',
+      ['refund'],
+    ],
     ['aliases: " refund "\nsummary: false\nverifiedAt: 42', ['refund']],
     ['aliases: { bad: value }\nsummary: null\nverifiedAt: true', []],
   ])('非文本元数据不参与检索或证据分级：%s', async (metadata, aliases) => {
     await page('one.md', `---\n${metadata}\n---\n# General\n\nDetails.`)
-    expect((await markdownPages(root))[0]).toMatchObject({ aliases, summary: '', verifiedAt: undefined })
+    expect((await markdownPages(root))[0]).toMatchObject({
+      aliases,
+      summary: '',
+      verifiedAt: undefined,
+    })
     expect(await createWikiSource({ root }).query({ text: 'value' })).toEqual([])
-    expect((await createWikiSource({ root }).query({ text: 'general' }))[0]?.evidenceLevel).toBe('derived')
+    expect((await createWikiSource({ root }).query({ text: 'general' }))[0]?.evidenceLevel).toBe(
+      'derived',
+    )
   })
 
   it.each([
@@ -124,7 +174,8 @@ describe('Wiki 两阶段检索', () => {
   })
 
   it('默认限制 8，支持路径 scope、空查询和零 limit', async () => {
-    for (let i = 0; i < 10; i++) await page(`group/${i}.md`, '# Refund\n\nDetails.')
+    for (let index2 = 0; index2 < 10; index2++)
+      await page(`group/${index2}.md`, '# Refund\n\nDetails.')
     await page('group-other/one.md', '# Refund\n\nDetails.')
     const source = createWikiSource({ root })
     expect(await source.query({ text: 'refund' })).toHaveLength(8)
@@ -151,7 +202,9 @@ describe('Wiki 证据时效与文件边界', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-04T00:00:00Z'))
     await page('one.md', `---\nverifiedAt: '${date}'\n---\n# Refund\n\nDetails.`)
-    expect((await createWikiSource({ root }).query({ text: 'refund' }))[0]!.evidenceLevel).toBe(expected)
+    expect((await createWikiSource({ root }).query({ text: 'refund' }))[0]!.evidenceLevel).toBe(
+      expected,
+    )
   })
 
   it('缺目录返回 []，不跟随目录、文件、根目录 symlink', async () => {
@@ -162,22 +215,29 @@ describe('Wiki 证据时效与文件边界', () => {
     await symlink(join(root, 'wiki'), join(root, 'wiki', 'cycle'))
     await symlink(join(root, 'outside'), join(root, 'linked-root'))
     for (const name of ['missing', 'wiki', 'linked-root']) {
-      expect(await createWikiSource({ root: join(root, name) }).query({ text: 'refund' })).toEqual([])
+      expect(await createWikiSource({ root: join(root, name) }).query({ text: 'refund' })).toEqual(
+        [],
+      )
     }
   })
 
   it('只读取 Markdown，文件冒充目录时抛出带路径的错误', async () => {
     await page('one.txt', '# Refund')
     expect(await createWikiSource({ root }).query({ text: 'refund' })).toEqual([])
-    await expect(createWikiSource({ root: join(root, 'one.txt') }).query({ text: 'refund' })).rejects.toThrow(join(root, 'one.txt'))
+    await expect(
+      createWikiSource({ root: join(root, 'one.txt') }).query({ text: 'refund' }),
+    ).rejects.toThrow(join(root, 'one.txt'))
   })
 
-  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')('Markdown 读取失败保留文件路径和原始错误', async () => {
-    await page('unreadable.md', '# Refund\n\nDetails.')
-    await chmod(join(root, 'unreadable.md'), 0o000)
-    await expect(createWikiSource({ root }).query({ text: 'refund' })).rejects.toMatchObject({
-      message: expect.stringContaining(join(root, 'unreadable.md')),
-      cause: expect.objectContaining({ code: 'EACCES' }),
-    })
-  })
+  it.skipIf(process.getuid?.() === 0 || process.platform === 'win32')(
+    'Markdown 读取失败保留文件路径和原始错误',
+    async () => {
+      await page('unreadable.md', '# Refund\n\nDetails.')
+      await chmod(join(root, 'unreadable.md'), 0o000)
+      await expect(createWikiSource({ root }).query({ text: 'refund' })).rejects.toMatchObject({
+        message: expect.stringContaining(join(root, 'unreadable.md')),
+        cause: expect.objectContaining({ code: 'EACCES' }),
+      })
+    },
+  )
 })

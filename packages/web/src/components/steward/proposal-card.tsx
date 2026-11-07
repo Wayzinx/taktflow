@@ -4,7 +4,7 @@ import type { Proposal, ProposalStep } from '@taktflow/core'
 import { useSource } from '../../api'
 import { toast } from '../ui'
 import { askSteward, previewWorkflowProposal } from '../../lib/ui-store'
-import { previewFor, ProposalStepView } from './proposal-step'
+import { confirmTargetOf, previewFor, ProposalStepView } from './proposal-step'
 import './cards.css'
 
 const RISK = {
@@ -63,6 +63,7 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
   const [rejecting, setRejecting] = useState(false)
   const [reason, setReason] = useState('')
   const [justApplied, setJustApplied] = useState(false)
+  const [typed, setTyped] = useState('')
   const reasonRef = useRef<HTMLTextAreaElement>(null)
   const p = proposal
   const pending = p.status === 'pending'
@@ -123,6 +124,9 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
 
   const risk = RISK[p.risk]
   const RiskIcon = risk.icon
+  // 高风险 / 删除类：批准前手动输入目标确认（服务端校验见 protocolChangeRequests：ProposalDecisionRequest.confirm）
+  const confirmTarget = pending ? confirmTargetOf({ risk: p.risk, steps }) : undefined
+  const confirmed = !confirmTarget || typed.trim() === confirmTarget
   const st = STATUS[p.status]
   return (
     <section className={`stw-proposal${animate ? ' stw-in' : ''}`} data-status={p.status} aria-label={`提案：${p.title}`} data-steward-anchor={p.id}>
@@ -151,6 +155,7 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
             key={i}
             index={i}
             step={s}
+            original={p.steps[i]}
             preview={previewFor(p, i)}
             proposalId={p.id}
             threadId={p.threadId}
@@ -170,7 +175,7 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
           <div className="stw-reject">
             <div className="stw-reject-chips">
               {REJECT_REASONS.map((r) => (
-                <button key={r} type="button" className="suggest-chip pressable" aria-pressed={reason === r} onClick={() => setReason(r)}>
+                <button key={r} type="button" className="suggest-chip pressable" aria-pressed={reason === r} tabIndex={rejecting ? 0 : -1} onClick={() => setReason(r)}>
                   {r}
                 </button>
               ))}
@@ -181,9 +186,17 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
       </div>
 
       <footer className="stw-proposal-foot">
+        {pending && !rejecting && confirmTarget && (
+          <label className="stw-confirm">
+            <span>
+              这是不可逆或高风险操作，输入 <code className="mono">{confirmTarget}</code> 确认
+            </span>
+            <input className="input mono" value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={confirmTarget} aria-label={`输入 ${confirmTarget} 确认`} autoComplete="off" spellCheck={false} />
+          </label>
+        )}
         {pending && !rejecting && (
           <>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => void approve()} disabled={!!busy}>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => void approve()} disabled={!!busy || !confirmed} title={confirmed ? undefined : '先输入目标确认'}>
               <Check />
               {busy === 'approve' ? '正在执行' : edited ? '按修改后批准' : '批准并执行'}
             </button>
@@ -191,7 +204,6 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
               <X />
               拒绝
             </button>
-            {p.risk === 'high' && <span className="faint">高风险操作每次都需要确认</span>}
           </>
         )}
         {pending && rejecting && (

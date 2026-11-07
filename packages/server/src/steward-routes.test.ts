@@ -25,7 +25,7 @@ async function fixture() {
     } catch (error) { fail(response, error) }
   })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
-  cleanup.push(async () => { registration.close(); await new Promise<void>((resolve, reject) => { server.close((error) => error ? reject(error) : resolve()); server.closeAllConnections() }) })
+  cleanup.push(async () => { await registration.close(); await new Promise<void>((resolve, reject) => { server.close((error) => error ? reject(error) : resolve()); server.closeAllConnections() }) })
   const base = `http://127.0.0.1:${(server.address() as { port: number }).port}`
   const request = (path: string, user = 'alice', method = 'GET', value?: unknown) => fetch(`${base}/api/steward${path}`, { method, headers: { 'x-takt-user': user, ...(method === 'GET' ? {} : { 'content-type': 'application/json' }) }, ...(value === undefined ? {} : { body: JSON.stringify(value) }) })
   return { root, stores, registered, registration, base, request, connections }

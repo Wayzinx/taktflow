@@ -22,5 +22,19 @@
   ],
   "space": {
     "id": "standard-delivery"
-  }
+  },
+  "knowledgeBindings": [
+    {
+      "baseId": "delivery-docs",
+      "scope": "space",
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "baseId": "shop-db",
+      "scope": "space",
+      "enabled": true,
+      "priority": 0
+    }
+  ]
 }

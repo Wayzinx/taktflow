@@ -2,7 +2,7 @@
 role: steward
 title: 管家
 description: 跨空间查询、风险汇报与需要用户批准的变更提案
-harness: { harness: native }
+harness: { harness: claude-code, fallback: [{ harness: codex }] }
 skills: []
 writeScope: []
 allowBash: false

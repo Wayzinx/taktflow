@@ -1,7 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ArrowRight, CircleCheck, CirclePlus, CircleX, Inbox, OctagonPause, Play, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react'
 import type { Digest, Risk, StewardContextRef } from '@taktflow/core'
-import { useSource } from '../../api'
+import { useAsync, useSource } from '../../api'
 import { fmtRelative } from '../../lib/format'
 import { hm, since } from './fmt'
 import { jumpTo } from './jump'
@@ -35,6 +35,14 @@ function Section({ title, count, children, empty }: { title: string; count: numb
  */
 export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Digest; onRisk?: (r: Risk) => void; onAsk?: (text: string, ctx: StewardContextRef[]) => void; className?: string }) {
   const ds = useSource()
+  // 汇报跨空间：两个空间都有 REQ-001、每个空间一条"Token 用量"，不标空间就分不清（也会撞 React key）
+  const spaces = useAsync((d) => d.spaces().catch(() => []), [])
+  const multi = new Set([...digest.attention, ...digest.progress, ...(digest.metrics ?? [])].map((x) => x.spaceId)).size > 1
+  const spaceName = (id?: string) => (id ? spaces.data?.find((x) => x.id === id)?.name ?? id : '')
+  const tag = (id?: string) => (multi && id ? <span className="stw-digest-space">{spaceName(id)}</span> : null)
+  const [allProgress, setAllProgress] = useState(false)
+  const PROGRESS_MAX = 8
+  const progress = allProgress ? digest.progress : digest.progress.slice(-PROGRESS_MAX)
   const go = (href: string, label?: string) => {
     void ds.reportProductEvent({ type: 'digest.click', feature: 'steward.digest', detail: { href } }).catch(() => undefined)
     jumpTo(href, label)
@@ -50,12 +58,13 @@ export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Diges
         <Section title="需要你处理" count={digest.attention.length} empty="没有等你的事">
           <ul className="stw-digest-list">
             {digest.attention.map((a) => (
-              <li key={a.requestId}>
+              <li key={`${a.spaceId}-${a.requestId}`}>
                 <a href={a.href} className="stw-digest-row pressable" onClick={(e) => (e.preventDefault(), go(a.href, a.requirementId))}>
                   <Inbox className="stw-digest-icon" data-tone="waiting" aria-hidden />
                   <span className="stw-digest-main">
                     <span className="stw-digest-title">{a.ask}</span>
                     <span className="faint truncate">
+                      {tag(a.spaceId)}
                       <span className="mono">{a.requirementId}</span> {a.requirementTitle}
                     </span>
                   </span>
@@ -74,18 +83,19 @@ export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Diges
         </Section>
         <Section title="进展" count={digest.progress.length} empty="这段时间没有推进">
           <ul className="stw-digest-list">
-            {digest.progress.map((p) => {
+            {progress.map((p) => {
               const k = PROGRESS[p.kind]
               const Icon = k.icon
               return (
-                <li key={`${p.requirementId}-${p.kind}-${p.at}`}>
+                <li key={`${p.spaceId}-${p.requirementId}-${p.kind}-${p.at}-${p.to ?? ''}`}>
                   <a href={p.href} className="stw-digest-row pressable" onClick={(e) => (e.preventDefault(), go(p.href, p.requirementId))}>
                     <Icon className="stw-digest-icon" data-tone={k.tone} aria-hidden />
                     <span className="stw-digest-main">
                       <span className="stw-digest-title">
+                        {tag(p.spaceId)}
                         <span className="mono">{p.requirementId}</span> {p.title}
                       </span>
-                      <span className="faint">{p.kind === 'stage' && p.from ? `${p.from} → ${p.to}` : k.label}</span>
+                      <span className="faint">{p.kind === 'stage' && p.from ? `${p.from} → ${p.to}` : p.kind === 'stage' && p.to ? `推进到 ${p.to}` : k.label}</span>
                     </span>
                     <span className="faint num">{fmtRelative(p.at)}</span>
                   </a>
@@ -93,6 +103,11 @@ export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Diges
               )
             })}
           </ul>
+          {digest.progress.length > PROGRESS_MAX && (
+            <button type="button" className="btn btn-sm btn-ghost stw-digest-more" onClick={() => setAllProgress((v) => !v)}>
+              {allProgress ? '只看最近的' : `再看更早的 ${digest.progress.length - PROGRESS_MAX} 项`}
+            </button>
+          )}
         </Section>
         <Section title="指标变化" count={digest.metrics?.length ?? 0} empty="指标没有明显变化">
           <div className="stw-digest-metrics">
@@ -100,8 +115,11 @@ export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Diges
               const up = m.delta?.startsWith('+')
               const Trend = up ? TrendingUp : TrendingDown
               return (
-                <div key={m.label} className="stw-metric">
-                  <span className="stw-metric-label">{m.label}</span>
+                <div key={`${m.spaceId ?? ''}-${m.label}`} className="stw-metric">
+                  <span className="stw-metric-label">
+                    {m.label}
+                    {multi && m.spaceId ? <span className="faint"> · {spaceName(m.spaceId)}</span> : null}
+                  </span>
                   <span className="stw-metric-value num">{m.value}</span>
                   {m.delta && (
                     <span className="stw-metric-delta num faint">

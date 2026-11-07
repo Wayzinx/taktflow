@@ -294,6 +294,23 @@ export interface KnowledgeBuildProgress {
   error?: { ref: string; message: string }
 }
 
+/** 谁在查：记进 .takt/knowledge/queries.jsonl，用于使用统计、线上采集与引用检测。 */
+export interface KnowledgeCaller {
+  queryId?: string
+  runId?: RunId
+  nodeId?: NodeId
+  requirementId?: RequirementId
+  role?: string
+  via?: 'prefetch' | 'tool' | 'playground' | 'eval' | 'steward'
+}
+
+/** database / api 类型实际执行的语句或请求（检索测试页展示，拦截时带原因）。 */
+export interface KnowledgeExecution {
+  kind: 'sql' | 'http'
+  text: string
+  blocked?: string
+}
+
 /** 一种知识库类型（插件扩展点）。页面表单由 configSchema 生成，密钥字段标 format: 'secret'。 */
 export interface KnowledgeKind {
   kind: string
@@ -309,7 +326,8 @@ export interface KnowledgeKind {
   available?(): Promise<{ ok: boolean; reason?: string }>
   test(kb: KnowledgeBase, ctx: KnowledgeKindContext): Promise<{ ok: boolean; message: string; preview?: Array<{ title: string; ref: string; snippet: string }> }>
   build?(kb: KnowledgeBase, ctx: KnowledgeKindContext, progress: (p: KnowledgeBuildProgress) => void): Promise<{ stats: NonNullable<KnowledgeBase['stats']> }>
-  query(kb: KnowledgeBase, q: KnowledgeQuery, ctx: KnowledgeKindContext, retrieval: KnowledgeRetrieval): Promise<KnowledgeHit[]>
+  /** database / api 执行语句时可以返回 { hits, executed }。 */
+  query(kb: KnowledgeBase, q: KnowledgeQuery, ctx: KnowledgeKindContext, retrieval: KnowledgeRetrieval): Promise<KnowledgeHit[] | { hits: KnowledgeHit[]; executed?: KnowledgeExecution }>
 }
 
 /** 知识库存储与生命周期：配置在 knowledge/<id>/kb.json，构建产物在 .takt/knowledge/<id>/。写操作都记 space-events。 */
@@ -334,9 +352,9 @@ export interface KnowledgeStore {
   /** 发布候选版本：先过评测门槛（docs/design/23）；force 需要 reason，进审计。 */
   publish(id: string, input: { version?: number; by: Actor; reason: string; force?: boolean }): Promise<{ base: KnowledgeBase; gate: { pass: boolean; reasons: string[] } }>
   /** 单库检索（检索测试页）：candidate 用候选版本。 */
-  query(id: string, q: KnowledgeQuery, opts?: { version?: 'candidate' | 'published'; retrieval?: Partial<KnowledgeRetrieval> }): Promise<{ hits: KnowledgeHit[]; latencyMs: number; tokens: number; intent: KnowledgeIntent }>
+  query(id: string, q: KnowledgeQuery, opts?: { version?: 'candidate' | 'published'; retrieval?: Partial<KnowledgeRetrieval>; caller?: KnowledgeCaller }): Promise<{ hits: KnowledgeHit[]; latencyMs: number; tokens: number; intent: KnowledgeIntent; executed?: KnowledgeExecution }>
   /** 运行时检索：按空间绑定 + intent + 角色路由多库，RRF 合并，按预算截断。 */
-  route(q: KnowledgeQuery, opts: { role?: string; bases?: string[] }): Promise<{ hits: KnowledgeHit[]; bases: Array<{ id: string; version: number }>; latencyMs: number; tokens: number }>
+  route(q: KnowledgeQuery, opts: { role?: string; bases?: string[]; caller?: KnowledgeCaller }): Promise<{ hits: KnowledgeHit[]; bases: Array<{ id: string; version: number }>; latencyMs: number; tokens: number; queryId: string }>
   bindings(): Promise<KnowledgeBinding[]>
   setBindings(bindings: KnowledgeBinding[], by: Actor, reason: string): Promise<KnowledgeBinding[]>
   evalSets(id: string): Promise<Array<{ id: string; title: string; cases: KnowledgeEvalCase[] }>>

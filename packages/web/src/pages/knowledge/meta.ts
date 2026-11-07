@@ -88,3 +88,9 @@ export const autoReason = (what: string) => `在知识库页面${what}`
 
 /** 名字 → 知识库 id（只取 ASCII；中文名没有可用字符时用备用 id）。 */
 export const kbId = (name: string, fallback: string) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || fallback
+
+/**
+ * 评测集显示名：检索测试的标注会写进 es-manual，服务端第一次写入时自动建集、标题就是 id（协议没有建集接口），
+ * 这里给它一个人话名字。
+ */
+export const evalSetTitle = (s: { id: string; title: string }) => (s.title && s.title !== s.id ? s.title : s.id === 'es-manual' ? '手工标注' : s.title || s.id)

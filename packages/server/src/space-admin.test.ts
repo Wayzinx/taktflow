@@ -30,6 +30,7 @@ it('按 parts 复制资产与配置，保留源并将创建者设为 owner', asy
   const source = await openProject(join(spacesDir, 'source'))
   await writeFile(join(source.paths.skills, 'sample.md'), '技能')
   await writeFile(join(source.paths.knowledge, 'wiki.md'), '知识')
+  source.config.members!.push({ id: 'bob', name: 'bob', role: 'maintainer' })
   source.config.models = { model: { provider: 'test', id: 'model' } }
   source.config.providers = { test: { protocol: 'openai', baseUrl: 'http://localhost', apiKeyEnv: 'TEST_KEY' } } as never
   source.config.knowledgeBindings = [{ baseId: 'wiki', enabled: true }] as never
@@ -100,4 +101,20 @@ it('拒绝符号链接、缺失本地仓库；git URL 只登记', async () => {
   expect((await openProject(join(spacesDir, 'remote'))).config.repos?.[0]?.url).toBe('https://example.com/repo.git')
   await symlink(resolve(tmpdir()), join(spacesDir, 'linked'))
   await expect(createSpace(deps, { id: 'linked', name: 'linked', template: 'blank', reason }, author)).rejects.toMatchObject({ status: 409 })
+})
+it('M4-27：非成员不能复制私有空间', async () => {
+  const spacesDir = await root()
+  await createSpace({ spacesDir }, { id: 'private', name: '私有', template: 'blank' }, { type: 'human', id: 'bob' })
+  await expect(createSpace({ spacesDir }, {
+    id: 'stolen', name: '复制', template: { copyFrom: 'private', parts: ['knowledge', 'models', 'members'] },
+  }, author)).rejects.toMatchObject({ status: 403 })
+})
+it('M4-28：坏配置和重复 ID 不阻断健康空间发现', async () => {
+  const spacesDir = await root()
+  await createSpace({ spacesDir }, { id: 'good', name: '健康', template: 'blank' }, author)
+  await mkdir(join(spacesDir, 'bad'))
+  await writeFile(join(spacesDir, 'bad/takt.config.json'), '{broken')
+  await mkdir(join(spacesDir, 'duplicate'))
+  await copyFile(join(spacesDir, 'good/takt.config.json'), join(spacesDir, 'duplicate/takt.config.json'))
+  expect((await discoverSpaces(spacesDir)).map(stores => stores.config.space?.id)).toEqual(['good'])
 })

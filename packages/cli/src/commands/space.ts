@@ -140,8 +140,8 @@ export async function runSpaceServer(options: import('./serve.js').ServeOptions)
     let pending = runtimes.get(dir)
     if (!pending) {
       pending = (async () => {
-        const context = await loadRuntime(dir)
-        validateRuntime(context)
+        const context = await loadRuntime(dir, { warn: console.warn })
+        validateRuntime(context, console.warn)
         const lead = await createProjectLead(context, (id, presence) => { for (const send of listeners.get(`${dir}:${id}`) ?? []) send(presence) })
         const entry = { context, lead, stop: await watchLeadEvents(context, lead) }
         ready.set(dir, entry)

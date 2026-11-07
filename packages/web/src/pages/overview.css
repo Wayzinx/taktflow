@@ -75,6 +75,24 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+/* 按可用宽度收起次要列：停靠面板打开或窄窗口时，标题列不被固定列宽挤没 */
+.req-table-wrap {
+  container-type: inline-size;
+}
+@container (max-width: 980px) {
+  .req-table .c-node,
+  .req-table .c-cost {
+    display: none;
+  }
+}
+@container (max-width: 780px) {
+  .req-table .c-owner,
+  .req-table .c-updated {
+    display: none;
+  }
 }
 .pending-pill {
   display: inline-grid;

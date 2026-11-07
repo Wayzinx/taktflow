@@ -1,7 +1,7 @@
 import type { NodeScorecard } from '@taktflow/core'
-import { FlaskConical } from 'lucide-react'
+import { FlaskConical, History } from 'lucide-react'
 import { useAsync } from '../../api'
-import { Dialog, SkeletonRows, StatusDot } from '../../components/ui'
+import { Dialog, EmptyState, SkeletonRows, StatusDot } from '../../components/ui'
 import { useLastDefined } from '../../lib/motion'
 import { fmtCost, fmtDate, fmtDuration, fmtTokens, totalTokens } from '../../lib/format'
 import { Link } from '../../lib/router'
@@ -23,7 +23,7 @@ function RecentExecutions({ workflowId, nodeId }: { workflowId?: string; nodeId?
     }).slice(0, 6)
   }, [workflowId, nodeId])
   if (!q.data) return <SkeletonRows rows={3} gap={10} />
-  if (q.data.length === 0) return <p className="faint sc-empty">最近的运行里没有这个节点的执行。</p>
+  if (q.data.length === 0) return <EmptyState compact icon={History} title="最近没有执行" body="最近的运行里没有这个节点的执行。" />
   return (
     <ul className="sc-recent">
       {q.data.map(({ run, node }) => (

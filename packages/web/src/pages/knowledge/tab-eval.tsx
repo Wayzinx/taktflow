@@ -8,7 +8,7 @@ import { setQuery, useLocation } from '../../lib/router'
 import { CaseList } from './eval-cases'
 import { EvalRunDialog } from './eval-run-dialog'
 import { RunResult } from './eval-run'
-import { SOURCE_META } from './meta'
+import { evalSetTitle, SOURCE_META } from './meta'
 
 const VERDICT_TAG = { better: ['更好', 'success'], worse: ['更差', 'failed'], same: ['持平', undefined], inconclusive: ['不确定', 'waiting'] } as const
 
@@ -80,7 +80,7 @@ export function EvalTab({ base }: { base: KnowledgeBaseDetail }) {
       <section className="kb-section">
         <div className="kb-section-head">
           <h2 className="kb-h2">评测集</h2>
-          <Segmented size="sm" ariaLabel="评测集" value={set?.id ?? ''} onChange={setSetId} options={sets.data.map((s) => ({ value: s.id, label: s.title, count: s.cases.length }))} />
+          <Segmented size="sm" ariaLabel="评测集" value={set?.id ?? ''} onChange={setSetId} options={sets.data.map((s) => ({ value: s.id, label: evalSetTitle(s), count: s.cases.length }))} />
           <span className="kb-spacer" />
           {genButtons}
         </div>
@@ -110,8 +110,9 @@ export function EvalTab({ base }: { base: KnowledgeBaseDetail }) {
           {runs.data.length > 0 && (
             <select className="select kb-run-pick" value={runId} onChange={(e) => setQuery({ run: e.target.value })} aria-label="选择评测运行">
               {runs.data.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.id} · {r.variants.map((v) => v.label).join(' / ')} · {fmtRelative(r.startedAt)}
+                <option key={r.id} value={r.id} title={r.id}>
+                  {/* 服务端运行 id 是 eval-<uuid>：下拉里只放时间与变体，完整 id 在 title 里 */}
+                  {fmtRelative(r.startedAt)} · {r.variants.map((v) => v.label).join(' / ')}
                   {r.comparison ? ` · ${VERDICT_TAG[r.comparison.verdict][0]}` : ''}
                 </option>
               ))}

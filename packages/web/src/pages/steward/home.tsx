@@ -3,6 +3,7 @@ import { CornerDownRight, ShieldCheck } from 'lucide-react'
 import type { Risk, StewardContextRef } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { DigestCard } from '../../components/steward/digest-card'
+import { markDigestSeen, peekDigest } from '../../components/steward/digest-session'
 import { RiskCard } from '../../components/steward/risk-card'
 import { EmptyState, ErrorState, Skeleton, SkeletonCard, SkeletonText, useStagger } from '../../components/ui'
 
@@ -22,18 +23,20 @@ function HomeSkeleton() {
 }
 
 /**
- * 管家页没选会话时的右栏："今天"——最新汇报 + 风险清单 + 可以直接问的问题；打开即上报 digest.open（清未读）。
+ * 管家页没选会话时的右栏："今天"——最新汇报 + 风险清单 + 可以直接问的问题；打开即标已读（digest-session.ts）。
  * ask：直接用这句话开一个新会话。
  */
 export function StewardHome({ ask, suggestions }: { ask: (text: string, ctx?: StewardContextRef[]) => void; suggestions: string[] }) {
   const ds = useSource()
-  const digest = useAsync((d) => d.digest(), [])
+  const digest = useAsync((d) => peekDigest(d), [])
   const risks = useAsync((d) => d.risks(), [])
   const [local, setLocal] = useState<Record<string, Risk>>({})
   const [showQuiet, setShowQuiet] = useState(false)
+  // 打开管家页就算看过汇报：标已读一次（服务端记 digest.open、清未读）
+  const digestId = digest.data?.id
   useEffect(() => {
-    void ds.reportProductEvent({ type: 'digest.open', feature: 'steward.digest' }).catch(() => undefined)
-  }, [ds])
+    if (digestId) markDigestSeen(ds, digestId)
+  }, [ds, digestId])
   const all = (risks.data ?? []).map((r) => local[r.key] ?? r)
   const open = all.filter((r) => r.state === 'open').sort((a, b) => (a.level === b.level ? b.lastSeenAt.localeCompare(a.lastSeenAt) : a.level === 'high' ? -1 : 1))
   const quiet = all.filter((r) => r.state === 'snoozed' || r.state === 'ignored')

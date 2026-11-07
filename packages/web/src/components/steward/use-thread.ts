@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Proposal, StewardContextRef, StewardMessage, StewardPostRequest, StewardStreamEvent, StewardThread } from '@taktflow/core'
 import { useSource } from '../../api'
+import { applyStreamEvent, mergeDetail, settleLocal } from './thread-reducer'
 
 /**
  * 一个管家会话的实时状态：拉详情 + 订阅线程 SSE（message / thinking / tool / delta / proposal / done / error），
@@ -23,16 +24,6 @@ export interface ThreadState {
   upsertProposal(p: Proposal): void
   patchMessage(id: string, patch: Partial<StewardMessage>): void
   reload(): void
-}
-
-const upsert = (list: StewardMessage[], m: StewardMessage) => {
-  const i = list.findIndex((x) => x.id === m.id)
-  if (i < 0) return [...list, m]
-  const next = list.slice()
-  const prev = list[i]!
-  // 流式中途拉到的详情可能比本地累积的短，保留更长的正文
-  next[i] = { ...prev, ...m, text: m.text.length >= prev.text.length ? m.text : prev.text }
-  return next
 }
 
 export function useStewardThread(threadId: string | undefined, onCreated?: (thread: StewardThread) => void): ThreadState {
@@ -70,7 +61,7 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
         if (!alive) return
         if (!fresh) initialIds.current = new Set(d.messages.map((m) => m.id))
         setThread(d.thread)
-        setMessages((cur) => d.messages.reduce(upsert, cur.filter((m) => !m.id.startsWith('local-') || !d.messages.some((x) => x.role === 'user' && x.text === m.text))))
+        setMessages((cur) => mergeDetail(cur, d.messages))
         setProposals((cur) => ({ ...Object.fromEntries(d.proposals.map((p) => [p.id, p])), ...cur }))
         setLoading(false)
       },
@@ -89,54 +80,36 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
   useEffect(() => {
     if (!threadId) return
     const on = (e: StewardStreamEvent) => {
-      switch (e.type) {
-        case 'message':
-          setWaiting(false)
-          setMessages((cur) => upsert(cur, e.message))
-          break
-        case 'thinking':
-          setMessages((cur) => cur.map((m) => (m.id === e.messageId ? { ...m, thinking: e.text } : m)))
-          break
-        case 'tool':
-          setMessages((cur) =>
-            cur.map((m) => {
-              if (m.id !== e.messageId) return m
-              const tools = m.tools ?? []
-              const i = tools.findIndex((t) => t.id === e.tool.id)
-              return { ...m, tools: i < 0 ? [...tools, e.tool] : tools.map((t, j) => (j === i ? e.tool : t)) }
-            }),
-          )
-          break
-        case 'delta':
-          setMessages((cur) => cur.map((m) => (m.id === e.messageId ? { ...m, text: m.text + e.text } : m)))
-          break
-        case 'proposal':
-          setProposals((cur) => ({ ...cur, [e.proposal.id]: e.proposal }))
-          // 提案先于最终 message 事件到达：挂到正在流式的那条上
-          setMessages((cur) => {
-            const live = [...cur].reverse().find((m) => m.status === 'streaming')
-            if (!live || live.proposalIds?.includes(e.proposal.id)) return cur
-            return cur.map((m) => (m.id === live.id ? { ...m, proposalIds: [...(m.proposalIds ?? []), e.proposal.id] } : m))
-          })
-          break
-        case 'done':
-          setMessages((cur) => cur.map((m) => (m.id === e.messageId ? { ...m, status: 'done' } : m)))
-          break
-        case 'error':
-          setWaiting(false)
-          setMessages((cur) => cur.map((m) => (m.id === e.messageId ? { ...m, status: 'error', error: e.error } : m)))
-          break
-        default:
-          break
-      }
+      if ((e.type === 'message' && e.message.role !== 'user') || e.type === 'error') setWaiting(false)
+      if (e.type === 'proposal') setProposals((cur) => ({ ...cur, [e.proposal.id]: e.proposal }))
+      setMessages((cur) => applyStreamEvent(cur, e))
     }
     return ds.subscribeSteward(threadId, on)
   }, [ds, threadId])
 
+  // 消息引用了还没拿到的提案（新会话的流在提案事件之后才连上，proposal 事件就错过了）：补拉一次详情
+  const missing = [...new Set(messages.flatMap((m) => m.proposalIds ?? []))].filter((id) => !proposals[id]).sort().join(',')
+  const fetchedFor = useRef('')
+  useEffect(() => {
+    if (!threadId || !missing || fetchedFor.current === missing) return
+    fetchedFor.current = missing
+    let alive = true
+    const t = setTimeout(() => {
+      ds.stewardThread(threadId).then(
+        (d) => alive && setProposals((cur) => ({ ...Object.fromEntries(d.proposals.map((p) => [p.id, p])), ...cur })),
+        () => undefined,
+      )
+    }, 150)
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [ds, threadId, missing])
+
   const send = useCallback<ThreadState['send']>(
     async (text, opts = {}) => {
       const body: StewardPostRequest = { text, context: opts.context, attachments: opts.attachments }
-      const local: StewardMessage = { id: `local-${Date.now()}`, threadId: threadId ?? '', role: 'user', at: new Date().toISOString(), text, context: opts.context }
+      const local: StewardMessage = { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, threadId: threadId ?? '', role: 'user', at: new Date().toISOString(), text, context: opts.context }
       setMessages((cur) => [...cur, local])
       setWaiting(true)
       try {
@@ -144,11 +117,11 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
           const r = await ds.createStewardThread(body)
           created.current = r.thread.id
           setThread(r.thread)
-          setMessages((cur) => cur.map((m) => (m.id === local.id ? r.message : m)))
+          setMessages((cur) => settleLocal(cur, local.id, r.message))
           onCreated?.(r.thread)
         } else {
           const m = await ds.postStewardMessage(threadId, body)
-          setMessages((cur) => cur.map((x) => (x.id === local.id ? m : x)))
+          setMessages((cur) => settleLocal(cur, local.id, m))
         }
         return true
       } catch (e) {

@@ -152,3 +152,20 @@ export function fmtBudget(b?: RunBudget): string | undefined {
   const parts = [b.costUsd ? `$${b.costUsd}` : '', b.tokens ? `${Math.round(b.tokens / 10_000)} 万 tokens` : '', b.minutes ? `${b.minutes} 分钟` : ''].filter(Boolean)
   return parts.length ? parts.join(' · ') : undefined
 }
+
+/**
+ * 附件落到 inputs/<name>：服务端按 [\w.\-一-龥] 清洗文件名、不区分大小写去重，并且 prd.md 留给需求描述。
+ * 提交前在这里按同样的规则改名（重名追加 -2、-3），避免拖入一份 prd.md 就整单 400。
+ */
+export function uniqueAttachmentNames(names: string[]): string[] {
+  const used = new Set(['prd.md'])
+  return names.map((raw) => {
+    const clean = raw.replace(/[^\w.\-一-龥]/g, '').replace(/^\.+$/, '') || 'attachment'
+    const dot = clean.lastIndexOf('.')
+    const [stem, ext] = dot > 0 ? [clean.slice(0, dot), clean.slice(dot)] : [clean, '']
+    let name = clean
+    for (let i = 2; used.has(name.toLowerCase()); i++) name = `${stem}-${i}${ext}`
+    used.add(name.toLowerCase())
+    return name
+  })
+}

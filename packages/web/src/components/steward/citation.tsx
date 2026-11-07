@@ -70,7 +70,8 @@ export function CitationRef({ n, c }: { n: number; c: StewardCitation }) {
   )
 }
 
-const INLINE = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[\d+\])/g
+/** 粗体、行内代码、Markdown 链接 [文字](/站内路径 或 http(s) 地址)、[n] 引用。 */
+const INLINE = /(\*\*[^*]+\*\*)|(`[^`]+`)|\[([^\]\n]+)\]\(((?:\/|https?:\/\/)[^)\s]*)\)|(\[\d+\])/g
 
 function inline(text: string, cites: StewardCitation[] | undefined, key: string): ReactNode[] {
   const out: ReactNode[] = []
@@ -81,10 +82,24 @@ function inline(text: string, cites: StewardCitation[] | undefined, key: string)
     const k = `${key}-${i++}`
     if (m[1]) out.push(<strong key={k}>{inline(m[1].slice(2, -2), cites, k)}</strong>)
     else if (m[2]) out.push(<code key={k}>{m[2].slice(1, -1)}</code>)
-    else {
-      const n = Number(m[3]!.slice(1, -1))
+    else if (m[3] && m[4]) {
+      const href = m[4]
+      // 站内路径走 jumpTo（带空间前缀与高亮），外链新开标签页
+      out.push(
+        href.startsWith('/') ? (
+          <a key={k} href={href} className="stw-link" onClick={(e) => (e.preventDefault(), jumpTo(href, m[3]))}>
+            {m[3]}
+          </a>
+        ) : (
+          <a key={k} href={href} className="stw-link" target="_blank" rel="noreferrer noopener">
+            {m[3]}
+          </a>
+        ),
+      )
+    } else {
+      const n = Number(m[5]!.slice(1, -1))
       const c = cites?.[n - 1]
-      out.push(c ? <CitationRef key={k} n={n} c={c} /> : <Fragment key={k}>{m[3]}</Fragment>)
+      out.push(c ? <CitationRef key={k} n={n} c={c} /> : <Fragment key={k}>{m[5]}</Fragment>)
     }
     last = m.index + m[0].length
   }
@@ -92,7 +107,7 @@ function inline(text: string, cites: StewardCitation[] | undefined, key: string)
   return out
 }
 
-/** 管家正文：段落、行首 "- " 列表、粗体、行内代码、[n] 引用；流式时最后一段末尾带光标。 */
+/** 管家正文：段落、行首 "- " 列表、粗体、行内代码、链接、[n] 引用；流式时最后一段末尾带光标。 */
 export function StewardText({ text, citations, streaming }: { text: string; citations?: StewardCitation[]; streaming?: boolean }) {
   const blocks = text.split(/\n{2,}/)
   return (

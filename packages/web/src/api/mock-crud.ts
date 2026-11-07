@@ -54,19 +54,24 @@ export function extraSpaces(): MockSpace[] {
 }
 /** 已归档的空间（/spaces?archived=1）。 */
 export function archivedSpaces(): MockSpace[] {
-  const s = bareSpace('growth-2025', '增长实验 2025', '上一年度的增长实验，已结束', 0, 0, 'qiao')
+  // 与服务端一致：归档后目录（和 id）改名为 <id>@yyyymmdd-hhmmss
+  const s = bareSpace('growth-2025@20251018-090000', '增长实验 2025', '上一年度的增长实验，已结束', 0, 0, 'qiao')
   return [s]
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9-]{1,39}$/
+const ARCHIVED_RE = /^[a-z0-9][a-z0-9-]{1,39}@\d{8}-\d{6}$/
+/** 服务端的归档时间戳：ISO 去掉 - 和 :，T 换成 -，取到秒。 */
+export const archiveStamp = (d = new Date()) => d.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
+const baseId = (id: string) => id.split('@')[0]!
 
 /** 空间增删改：直接改 mock-source 持有的两个数组。 */
 export function createMockSpaceCrud(live: MockSpace[], archived: MockSpace[], onCreate: (sp: MockSpace) => void): Pick<CrudSource, 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace'> & { summary: (sp: MockSpace) => SpaceSummary; list: (archived?: boolean) => SpaceSummary[] } {
-  const archivedAt = new Map<string, string>([['growth-2025', ago(20 * 24 * 60)]])
+  const archivedAt = new Map<string, string>([['growth-2025@20251018-090000', ago(20 * 24 * 60)]])
   const summary = (sp: MockSpace): SpaceSummary => {
     const d = sp.detail
     const at = archivedAt.get(d.id)
-    return { id: d.id, name: d.name, description: d.description, requirements: d.requirements, active: d.active, ...SPACE_STATS[d.id], ...(d.color ? { color: d.color } : {}), ...(at ? { archived: true, archivedAt: at } : {}) }
+    return { id: d.id, name: d.name, description: d.description, requirements: d.requirements, active: d.active, ...SPACE_STATS[baseId(d.id)], ...(d.color ? { color: d.color } : {}), ...(at ? { archived: true, archivedAt: at } : {}) }
   }
   const find = (id: string) => live.find((s) => s.detail.id === id)
   return {
@@ -99,14 +104,29 @@ export function createMockSpaceCrud(live: MockSpace[], archived: MockSpace[], on
       if (i < 0) return fail(404, `空间 ${id} 不存在`)
       if (live[i]!.detail.active > 0) return fail(409, `空间里还有 ${live[i]!.detail.active} 个进行中的需求，先归档或交付它们`)
       if (live.length === 1) return fail(409, '至少保留一个空间')
-      return needReason(reason) ?? (archivedAt.set(id, new Date().toISOString()), archived.unshift(...live.splice(i, 1)), delay(summary(archived[0]!)))
+      const bad = needReason(reason)
+      if (bad) return bad
+      const sp = live.splice(i, 1)[0]!
+      sp.detail.id = `${id}@${archiveStamp()}`
+      archivedAt.set(sp.detail.id, new Date().toISOString())
+      archived.unshift(sp)
+      return delay(summary(sp))
     },
     restoreSpace(id, reason) {
+      if (!ARCHIVED_RE.test(id)) return fail(400, '归档 ID 不合法，请从归档列表选择')
       const i = archived.findIndex((s) => s.detail.id === id)
       if (i < 0) return fail(404, `已归档空间 ${id} 不存在`)
-      return needReason(reason) ?? (archivedAt.delete(id), live.push(...archived.splice(i, 1)), delay(summary(live[live.length - 1]!)))
+      if (live.some((s) => s.detail.id === baseId(id))) return fail(409, '原空间 ID 已被占用，请先解决冲突')
+      const bad = needReason(reason)
+      if (bad) return bad
+      const sp = archived.splice(i, 1)[0]!
+      archivedAt.delete(id)
+      sp.detail.id = baseId(id)
+      live.push(sp)
+      return delay(summary(sp))
     },
     deleteSpace(id, body) {
+      if (!ARCHIVED_RE.test(id)) return fail(400, '归档 ID 不合法，请从归档列表选择')
       const i = archived.findIndex((s) => s.detail.id === id)
       if (i < 0) return fail(409, '只能彻底删除已归档的空间')
       if (body.confirm !== id) return fail(400, '确认 id 不一致')

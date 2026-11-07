@@ -1,3 +1,5 @@
+import { createShopFixture } from './fixtures/create-shop.js'
+import { demoKnowledge } from './demo-knowledge.js'
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
 import { createRepoManager } from '@taktflow/sandbox'
@@ -13,12 +15,14 @@ const example = dirname(fileURLToPath(import.meta.url))
 // TAKT_DEMO_DIR：把演示数据留在指定目录（需不存在或为空），便于用 takt serve 查看
 const root = process.env.TAKT_DEMO_DIR ? await mkdir(process.env.TAKT_DEMO_DIR, { recursive: true }).then(() => process.env.TAKT_DEMO_DIR as string) : await mkdtemp(join(tmpdir(), 'takt-standard-delivery-'))
 // 每次使用独立的新布局空间，证据保留在打印的目录，不修改示例源码或其他运行。
-for (const name of ['agents', 'workflows', 'skills', 'knowledge', 'requirements', 'fixtures', 'src', 'tests', 'package.json', 'takt.config.json', 'mock.json']) {
+for (const name of ['agents', 'workflows', 'skills', 'docs', 'knowledge', 'requirements', 'fixtures', 'src', 'tests', 'package.json', 'takt.config.json', 'mock.json']) {
   await cp(join(example, name), join(root, name), { recursive: true })
 }
 for (const args of [['init', '-b', 'main'], ['add', 'src', 'tests', 'package.json'], ['-c', 'user.name=Demo', '-c', 'user.email=demo@localhost', 'commit', '-m', '演示基线']]) execFileSync('git', args, { cwd: root, stdio: 'pipe' })
 console.log(`演示空间与持久化证据：${root}`)
+process.env.TAKT_KB_DEMO_SHOP_DB = await createShopFixture(root)
 const stores = await initProject(root)
+await demoKnowledge(stores)
 assert.equal(stores.paths.requirements, join(root, 'requirements'))
 const req = await stores.workspaces.createRequirement({ title: '问候语支持空名字：标准评审演示', owner: 'demo-owner' })
 await stores.workspaces.writeArtifact({ ref: { workspace: req.id, path: 'inputs/prd.md' }, kind: 'input', content: await readFile(join(root, 'fixtures/prd.md')), author: { type: 'human', id: 'demo-owner' }, reason: '导入演示物料' })

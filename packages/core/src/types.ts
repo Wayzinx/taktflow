@@ -1099,6 +1099,8 @@ export interface KnowledgeHit {
   rank?: number
   /** 分项得分：检索测试页展示，便于调参。 */
   scores?: { bm25?: number; vector?: number; rerank?: number; rrf?: number }
+  /** 命中块全文（只在检索测试与评测时返回，不写进上下文）。 */
+  content?: string
 }
 
 export interface KnowledgeSource {

@@ -90,7 +90,7 @@ export async function restoreRequirement(stores: ProjectStores, id: string): Pro
 }
 export async function writeSpaceFile(stores: ProjectStores, input: { path: string; content: string; baseHash?: string }): Promise<{ path: string; hash: string }> {
   const path = assertArtifactPath(input.path)
-  if (!/^(?:agents|skills)\/.+/.test(path) && !/^knowledge\/(?:.*\/)?[^/]+\.(?:md|json)$/.test(path) && !/^workflows\/[^/]+\.layout\.json$/.test(path)) throw new Error('文件不在允许写入的范围内')
+  if (!writableProjectFile(path)) throw new Error('文件不在允许写入的范围内')
   const file = join(stores.projectDir, path)
   await assertNoSymlinks(stores.projectDir, file)
   return withFileLock(file, async () => {
@@ -115,4 +115,11 @@ export function crudCommandSpecs(deps: CommandDeps): CommandSpec[] {
     define('file.write', '写入文件', objectSchema({ path: text, content: text, baseHash: text }, ['path', 'content']), (input) => writeSpaceFile(deps.stores, input as { path: string; content: string; baseHash?: string }), true),
     define('config.patch', '修改配置', objectSchema({ patch: { type: 'object' } }, ['patch']), (input, context) => service().configPatch(input.patch as Record<string, unknown>, context), true),
   ]
+}
+
+export function writableProjectFile(path: string): boolean {
+  if (/^knowledge\/[^/]+\/kb\.json$/i.test(path)) return false
+  return /^(?:agents|skills)\/.+/.test(path)
+    || /^knowledge\/(?:.*\/)?[^/]+\.(?:md|json)$/.test(path)
+    || /^workflows\/[^/]+\.layout\.json$/.test(path)
 }

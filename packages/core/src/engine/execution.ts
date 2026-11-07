@@ -82,27 +82,19 @@ export function cwdGuard(host: HarnessHost, cwd: string): WriteGuard {
 }
 
 
-// harness 已完成且输出仍在工作区，先记录引用；产物版本由后续 collectOutputs 冻结。
-export async function recordKnowledgeUsage(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext): Promise<void> {
+// 只读取已冻结的最终产物版本，避免把评审中间稿算作实际引用。
+export async function recordKnowledgeUsage(host: HarnessHost, nodeId: string, outputs: import('../types.js').ArtifactRef[]): Promise<void> {
   const { readKnowledgeQueries, appendKnowledgeQuery } = await import('../knowledge/support.js')
-  const { readFile } = await import('node:fs/promises')
-  const { join } = await import('node:path')
-  const { listFiles } = await import('../util/glob.js')
-  const { assertNoSymlinks } = await import('../store/fs-utils.js')
   const stores = host.deps.stores
-  const ledger = await readKnowledgeQueries(stores)
-  const queries = ledger.filter(q => q.type !== 'used' && q.runId === ctx.runId && q.nodeId === node.id)
-  if (!queries.length || !node.outputs?.length) return
-  const files = await listFiles(ctx.workspaceDir, node.outputs.map(o => o.path))
-  for (const path of files) {
-    const file = join(ctx.workspaceDir, path)
-    await assertNoSymlinks(ctx.workspaceDir, file)
-    const content = await readFile(file, 'utf8')
+  const queries = (await readKnowledgeQueries(stores)).filter(q => q.type !== 'used' && q.runId === host.state.runId && q.nodeId === nodeId)
+  for (const artifact of outputs) {
+    const content = (await stores.workspaces.readArtifact(artifact))?.toString('utf8')
+    if (!content) continue
     for (const query of queries) {
-      const refs = query.top.filter(h => content.includes(h.ref)).map(h => h.ref)
+      const refs = [...new Set(query.top.filter(h => content.includes(h.ref)).map(h => h.ref))]
       if (!refs.length) continue
-      await host.emit('knowledge.used', { queryId: query.queryId, refs, artifact: { workspace: ctx.requirementId, path } }, node.id)
-      await appendKnowledgeQuery(stores, { ...query, type: 'used', at: new Date().toISOString(), refs })
+      await host.emit('knowledge.used', { queryId: query.queryId, refs, artifact }, nodeId)
+      await appendKnowledgeQuery(stores, { queryId: query.queryId, type: 'used', at: new Date().toISOString(), refs, top: [], bases: [], text: '', tokens: 0, latencyMs: 0 })
     }
   }
 }

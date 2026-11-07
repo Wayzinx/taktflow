@@ -3,7 +3,7 @@
  * 构建进度会动：业务 Wiki 的 generate 阶段每 0.8 秒前进一格，完成后进入索引、成功并产出候选版本。
  */
 import type { KnowledgeBaseDetail, KnowledgeBaseSummary, KnowledgeBuild, KnowledgeEvalCase, KnowledgeEvalRun, KnowledgeQueryResponse } from '@taktflow/core'
-import { GATE_FAIL_REASONS, KINDS, seedBases, seedBindings, seedBuilds, seedEvalCases, seedEvalRuns } from './mock-knowledge-seed'
+import { GATE_FAIL_REASONS, KINDS, mockTest, seedBases, seedBindings, seedBuilds, seedEvalCases, seedEvalRuns } from './mock-knowledge-seed'
 import type { KnowledgeSource } from './source-m4'
 
 const clone = <T,>(v: T): T => structuredClone(v)
@@ -98,7 +98,7 @@ export function createMockKnowledge(seeded: boolean): KnowledgeSource {
         return delay(b)
       }),
     deleteKnowledgeBase: (id, reason) => need(id, () => (reason.trim() ? (bases.splice(bases.findIndex((b) => b.id === id), 1), (bindings = bindings.filter((x) => x.baseId !== id)), delay(undefined)) : fail(400, 'reason 必须是非空字符串'))),
-    testKnowledgeBase: (id) => need(id, (b) => delay(b.kind === 'api' && !(b.config as { auth?: { secret?: string } }).auth?.secret ? { ok: false, message: '401 Unauthorized：还没有配置认证密钥' } : { ok: true, message: `连接正常，预览前 3 项（${b.kind === 'database' ? '表' : b.kind === 'api' ? '操作' : '文档'}）`, preview: [1, 2, 3].map((i) => ({ title: `${b.name} · 示例 ${i}`, ref: `item-${i}`, snippet: '预览内容（演示数据）' })) }, 900)),
+    testKnowledgeBase: (id) => need(id, (b) => delay(mockTest(b), 900)),
     uploadKnowledge: (id, body) => need(id, () => delay({ docs: body.files.length }, 500)),
     knowledgeDocs: (id) => need(id, (b) => delay(Array.from({ length: Math.min(12, b.stats?.docs ?? 0) }, (_, i) => ({ path: `docs/section-${i + 1}.md`, bytes: 4000 + i * 731, updatedAt: now(), indexed: i % 5 !== 4 })))),
     startKnowledgeBuild: (id, reason) =>
@@ -131,6 +131,8 @@ export function createMockKnowledge(seeded: boolean): KnowledgeSource {
     publishKnowledge: (id, body) =>
       need(id, (b) => {
         if (!body.reason?.trim()) return fail(400, 'reason 必须是非空字符串')
+        // 与服务端一致：需要构建的类型必须有成功的候选版本；不需要构建的类型不带 version 时现构建一个
+        if (!body.version && !b.candidateVersion && KINDS.find((k) => k.kind === b.kind)?.needsBuild !== false) return fail(409, '没有成功的候选版本，请先构建')
         const gateFails = b.id === 'shop-docs' && (body.version ?? b.candidateVersion) === 4
         if (gateFails && !body.force) return delay({ base: b, gate: { pass: false, reasons: GATE_FAIL_REASONS, evalRunId: 'kr-12' } }, 400)
         Object.assign(b, { version: body.version ?? b.candidateVersion ?? b.version + 1, candidateVersion: undefined, publishedAt: now(), status: 'ready' })

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Sparkles } from 'lucide-react'
 import type { StewardContextRef } from '@taktflow/core'
+import { currentSpaceId } from '../../lib/space'
 import { useAsync } from '../../api'
 import { askSteward } from '../../lib/ui-store'
 import './primitives.css'
@@ -66,9 +67,16 @@ export function SuggestionChips({ items, context, className, onPick }: { items: 
 
 /**
  * 当前页的管家建议（GET /api/steward/suggestions?page=&space=&id=，最多 3 条）。拿不到时返回空数组，不影响页面。
- * page 取值：overview / requirements / requirement / run / attention / workflows / workflow / knowledge / knowledge-detail / settings / eval / spaces / steward
+ * page 取值（与 core/steward/suggestions.ts 对齐）：overview / requirements / requirement / run / attention / workflows / workflow / knowledge（详情页带 id）/ settings-<tab> / eval / spaces / steward
  */
 export function useStewardSuggestions(page: string, id?: string): string[] {
-  const q = useAsync((ds) => ds.stewardSuggestions({ page, id }).catch(() => [] as string[]), [page, id])
+  // 默认空间 / 单空间模式下 URL 不带 /s/:space：用当前空间的真实 id，否则服务端只能说"当前空间"
+  const q = useAsync(
+    (ds) =>
+      (page === 'spaces' || currentSpaceId() ? Promise.resolve(undefined) : ds.space().then((s) => s.id).catch(() => undefined))
+        .then((space) => ds.stewardSuggestions({ page, id, ...(space ? { space } : {}) }))
+        .catch(() => [] as string[]),
+    [page, id],
+  )
   return q.data ?? []
 }

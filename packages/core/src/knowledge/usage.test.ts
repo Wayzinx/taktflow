@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { initProject } from '../store/project.js'
 import { appendKnowledgeQuery } from './support.js'
-import { knowledgeUsage } from './usage.js'
+import { knowledgeUsage } from '../../../knowledge/src/usage.js'
 it('七天趋势按库计算引用率，过期查询不计入', async () => {
   const root = await mkdtemp(join(tmpdir(), 'takt-usage-'))
   try {

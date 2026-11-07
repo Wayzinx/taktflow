@@ -1,13 +1,17 @@
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { openProject, type AttentionItem } from '@taktflow/core'
+import { openProject, StewardStore, StewardError, type AttentionItem } from '@taktflow/core'
 import { createRouter } from './router.js'
+import { knowledgeRisks } from '@taktflow/knowledge'
+import { attachKnowledge, stewardModel } from './knowledge-runtime.js'
+import { registerStewardRoutes, createStewardDeps } from './steward-routes.js'
+import { createServerCommandRegistry, listSpaces, serverInfo } from './space-admin.js'
 import { serverCrudRoutes } from './crud-routes.js'
 import type { Handler } from './routes.js'
-import { attachCrudServices, discoverSpaces, spaceId } from './space.js'
+import { attachCrudServices, discoverSpaces, spaceSummary, spaceId } from './space.js'
 import type { LeadMention } from './space-routes.js'
 import type { CatalogCallbacks } from './catalog.js'
-import { authorize, validateWriteRequest, fail, HttpError, json } from './http.js'
+import { actor, authorize, validateWriteRequest, fail, HttpError, json } from './http.js'
 import { routes, STREAMING } from './routes.js'
 import { attachLessons } from './commands.js'
 import type { M3Callbacks } from './m3-routes.js'
@@ -35,8 +39,10 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, options,
     options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
+  let refreshedAt = Date.now()
   const refresh = async () => {
-    spaces = options.spacesDir ? await discoverSpaces(options.spacesDir) : spaces
+    refreshedAt = Date.now()
+    spaces = options.spacesDir ? await discoverSpaces(options.spacesDir) : await Promise.all(spaces.map(space => openProject(space.projectDir)))
     byId.clear()
     for (const space of spaces) {
       byId.set(spaceId(space), space)
@@ -47,7 +53,39 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     for (const id of routers.keys()) if (!byId.has(id)) routers.delete(id)
   }
   const admin = createRouter<Handler>()
-  serverCrudRoutes(admin.add, { spacesDir: options.spacesDir, projectDir: options.projectDir, onChange: refresh })
+  const modelSpaces = async () => (await Promise.all(spaces.map(space =>
+    openProject(space.projectDir).catch(() => undefined)))).filter(space => space !== undefined)
+  const adminDeps = { spacesDir: options.spacesDir, projectDir: options.projectDir, onChange: refresh }
+  const stewardOptions = { ...adminDeps, registry: byId, connections,
+    serverCommands: createServerCommandRegistry(adminDeps),
+    prepareStores: async (stores: import('@taktflow/core').ProjectStores) => attachKnowledge(stores, options.spacesDir),
+    commands: options.getCommands,
+    onLeadMention: options.onSpaceLeadMention ?? (options.onLeadMention ? (_dir: string, id: string, message: Parameters<LeadMention>[1]) => options.onLeadMention!(id, message) : undefined),
+    steward: { extraRisks: knowledgeRisks },
+    resolveChat: async (prefs: import('@taktflow/core').StewardPrefs) => stewardModel(await modelSpaces(), prefs).chat,
+  }
+  const userService = (request: import('node:http').IncomingMessage) => {
+    const by = actor(request, spaces[0])
+    if (by.type !== 'human') throw new HttpError(403, '管家需要用户身份')
+    try {
+      const deps = createStewardDeps(stewardOptions, by.id)
+      return { deps, store: new StewardStore(deps.dataDir(by.id)) }
+    } catch (error) {
+      if (error instanceof StewardError) throw new HttpError(error.status, error.message)
+      throw error
+    }
+  }
+  const serverRead: Handler = async ({ request }) => {
+    const { store } = userService(request)
+    return { ...serverInfo(adminDeps), steward: stewardModel(await modelSpaces(), await store.prefs()).info }
+  }
+  const spacesRead: Handler = async ({ request, url }) => {
+    const { deps, store } = userService(request)
+    const risks = Object.values(await store.read<Record<string, import('@taktflow/core').Risk>>('risks.json') ?? {})
+    return (url.searchParams.get('archived') === '1' ? await listSpaces(adminDeps, true) : await Promise.all(spaces.map(spaceSummary))).map(space => ({ ...space, risks: risks.filter(r => r.spaceId === space.id && r.state === 'open').length }))
+  }
+  serverCrudRoutes(admin.add, adminDeps, { server: serverRead, spaces: spacesRead })
+  const steward = registerStewardRoutes(admin, stewardOptions)
   let closing = false
   const server = httpServer((request, response) => {
     void (async () => {
@@ -61,7 +99,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return }
       let url: URL
       try { url = new URL(request.url ?? '/', 'http://localhost') } catch { throw new HttpError(400, 'URL 不合法') }
-      if (options.spacesDir && url.pathname.startsWith('/api/')) await refresh()
+      if (url.pathname.startsWith('/api/') && Date.now() - refreshedAt > 2000) await refresh()
       const adminRoute = admin.match(request.method ?? 'GET', url.pathname)
       if (adminRoute) {
         validateWriteRequest(request)
@@ -84,10 +122,16 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         validateWriteRequest(request)
         // openProject 的 config 是快照，按请求重新打开，CLI 修改配置和文件后即可读到。
         const fresh = await openProject(selected!.projectDir)
+        attachKnowledge(fresh, options.spacesDir)
         attachLessons(fresh)
         attachCrudServices(fresh)
         if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname)) authorize(request, fresh)
         const result = await matched.handler({ stores: fresh, request, response, url, params: matched.params })
+        if (url.pathname === '/api/space' && request.method === 'GET') {
+          const { deps, store } = userService(request)
+          const risks = Object.values(await store.read<Record<string, import('@taktflow/core').Risk>>('risks.json') ?? {})
+          Object.assign(result as object, { risks: risks.filter(r => r.spaceId === spaceId(fresh) && r.state === 'open').length })
+        }
         if (result !== STREAMING) json(response, result)
         return
       }
@@ -96,10 +140,12 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       await staticFile(options.webDir, url.pathname, response, request.method === 'HEAD')
     })().catch((error: unknown) => fail(response, error))
   })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(options.port ?? 4870, options.host ?? '127.0.0.1', () => { server.off('error', reject); resolve() })
-  })
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(options.port ?? 4870, options.host ?? '127.0.0.1', () => { server.off('error', reject); resolve() })
+    })
+  } catch (error) { await steward.close(); throw error }
   const address = server.address() as AddressInfo
   let closePromise: Promise<void> | undefined
   return {
@@ -107,17 +153,17 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     close() {
       if (closePromise) return closePromise
       closing = true
-      closePromise = new Promise<void>((resolve, reject) => {
+      closePromise = steward.close().then(() => new Promise<void>((resolve, reject) => {
         for (const close of connections) close()
         server.close((error) => { if (error) reject(error); else resolve() })
         server.closeAllConnections()
-      })
+      }))
       return closePromise
     },
   }
 }
 
-export { discoverSpaces, spaceId, spaceSummary, spaceDetail, workflowStore, repoManager, auditSpace, changeConfig, members, repoBinding, spaceFile, atomicWrite } from './space.js'
+export { discoverSpaces, spaceSummary, spaceId, spaceDetail, workflowStore, repoManager, auditSpace, changeConfig, members, repoBinding, spaceFile, atomicWrite } from './space.js'
 export type { LeadMention } from './space-routes.js'
 
 export { projectCommands, attachCrudServices, patchConfig } from './space.js'
@@ -127,3 +173,7 @@ export type { M3Callbacks } from './m3-routes.js'
 export * from './space-admin.js'
 export { deleteRequirement } from './crud-routes.js'
 export { convertWorkflow } from './workflow-routes.js'
+
+export { attachKnowledge, configuredChat, stewardModel } from './knowledge-runtime.js'
+export { registerStewardRoutes, createStewardDeps } from './steward-routes.js'
+export { registerKnowledgeRoutes } from './knowledge-routes.js'

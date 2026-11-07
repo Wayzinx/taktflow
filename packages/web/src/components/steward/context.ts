@@ -1,6 +1,10 @@
 import type { StewardContextRef } from '@taktflow/core'
 import { matchPath, useLocation } from '../../lib/router'
 import { usePageContextExtra } from '../../lib/ui-store'
+import { useAsync } from '../../api'
+
+/** 全局页面（不属于任何空间）：不带空间上下文。 */
+const GLOBAL = /^\/(steward|spaces)(\/|$)/
 
 /**
  * 停靠面板自动带上的上下文（docs/design/22 §1.2）：按当前路由推导空间 / 需求 / 运行 / 节点 / workflow / 知识库，
@@ -10,8 +14,11 @@ export function usePageStewardContext(): StewardContextRef[] {
   const { path, query, spaceId } = useLocation()
   const extra = usePageContextExtra()
   const out: StewardContextRef[] = []
-  const space = spaceId
-  if (spaceId) out.push({ type: 'space', id: spaceId, label: spaceId })
+  // 默认空间 / 单空间模式下 URL 不带 /s/:space 前缀：用当前空间的真实 id 补上，管家才知道指的是哪个空间的对象
+  const global = GLOBAL.test(path)
+  const current = useAsync((d) => (spaceId || global ? Promise.resolve(undefined) : d.space().then((s) => ({ id: s.id, name: s.name })).catch(() => undefined)), [spaceId ?? '', global])
+  const space = spaceId ?? (global ? undefined : current.data?.id)
+  if (space) out.push({ type: 'space', id: space, label: current.data?.id === space ? current.data.name : space })
   const req = matchPath('/req/:id', path)
   if (req) out.push({ type: 'requirement', spaceId: space, id: req.id!, label: req.id })
   const run = matchPath('/run/:runId', path)

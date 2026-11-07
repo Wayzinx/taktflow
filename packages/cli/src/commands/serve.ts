@@ -31,9 +31,9 @@ async function webDirectory(): Promise<string | undefined> {
 export async function runServe(options: ServeOptions): Promise<void> {
   if (options.project && options.spaces) throw new Error('--project 与 --spaces 不能同时指定')
   const contexts = options.spaces
-    ? await Promise.all((await discoverSpaces(options.spaces)).map((stores) => loadRuntime(stores.projectDir)))
-    : [await loadRuntime(options.project)]
-  for (const context of contexts) validateRuntime(context)
+    ? await Promise.all((await discoverSpaces(options.spaces)).map((stores) => loadRuntime(stores.projectDir, { warn: console.warn })))
+    : [await loadRuntime(options.project, { warn: console.warn })]
+  for (const context of contexts) validateRuntime(context, console.warn)
   const listeners = new Map<string, Set<(presence: import('@taktflow/core').LeadPresence) => void>>()
   const leads = new Map(await Promise.all(contexts.map(async (context) => [context.stores.projectDir, await createProjectLead(context, (id, presence) => { for (const send of listeners.get(`${context.stores.projectDir}:${id}`) ?? []) send(presence) })] as const)))
   const stops = await Promise.all(contexts.map((context) => watchLeadEvents(context, leads.get(context.stores.projectDir)!)))

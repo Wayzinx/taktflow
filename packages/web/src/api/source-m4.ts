@@ -68,7 +68,7 @@ export interface CrudSource {
   /** 只允许已归档的空间；confirm 必须等于 id。 */
   deleteSpace(id: string, body: { confirm: string; reason: string }): Promise<void>
   /** 把不可编辑写法改写为 defineWorkflow；dryRun 只返回 diff。 */
-  convertWorkflow(id: string, body: { dryRun?: boolean; reason?: string }): Promise<WorkflowConvertResult>
+  convertWorkflow(id: string, body: { dryRun?: boolean; reason?: string; baseRev?: string }): Promise<WorkflowConvertResult>
 }
 
 export interface StewardThreadDetail {
@@ -95,7 +95,8 @@ export interface StewardSource {
   risks(opts?: { space?: string; state?: Risk['state'] }): Promise<Risk[]>
   setRiskState(key: string, body: RiskStateRequest): Promise<Risk>
   /** since 缺省为上次查看。 */
-  digest(since?: string): Promise<Digest>
+  /** peek：只读，不标已读（服务端默认会把"上次查看"推到此刻并记一次 digest.open）。 */
+  digest(since?: string, opts?: { peek?: boolean }): Promise<Digest>
   /** "动态"：汇报、风险变化、提案结果、未读数。 */
   stewardFeed(): Promise<StewardFeedItem[]>
   /** 全局动态 SSE（含 type: 'unread'）。 */

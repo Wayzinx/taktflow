@@ -38,6 +38,8 @@ export function ScoreBars({ scores }: { scores?: Hit['scores'] }) {
 
 export function HitRow({ hit, index, mark, onMark }: { hit: Hit; index: number; mark: Mark; onMark: (m: Mark) => void }) {
   const [open, setOpen] = useState(false)
+  // 原文和摘要一样（例如 SQL 结果行）时不给"展开原文"
+  const more = !!hit.content && hit.content.trim() !== hit.snippet?.trim()
   const ev = hit.evidenceLevel ? EVIDENCE[hit.evidenceLevel] : undefined
   const style = index < 10 ? ({ '--stagger-delay': `${index * 24}ms` } as CSSProperties) : undefined
   return (
@@ -59,13 +61,15 @@ export function HitRow({ hit, index, mark, onMark }: { hit: Hit; index: number; 
         <span className="mono faint kb-hit-ref truncate">{hit.ref}</span>
         <p className="kb-hit-snippet">{hit.snippet}</p>
         <ScoreBars scores={hit.scores} />
-        <div className="expand" data-open={open}>
-          <div inert={!open}>
-            <pre className="kb-hit-content">{hit.content ?? hit.snippet}</pre>
+        {more && (
+          <div className="expand" data-open={open}>
+            <div inert={!open}>
+              <pre className="kb-hit-content">{hit.content}</pre>
+            </div>
           </div>
-        </div>
+        )}
         <div className="kb-hit-actions">
-          {hit.content && (
+          {more && (
             <button type="button" className="btn btn-ghost btn-sm" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
               <ChevronDown className={`kb-chev${open ? ' open' : ''}`} />
               {open ? '收起原文' : '展开原文'}

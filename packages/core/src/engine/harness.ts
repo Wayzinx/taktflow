@@ -1,8 +1,6 @@
 import { recordRecipe } from './recipe.js'
 import { randomUUID } from 'node:crypto'
-import { knowledgeQueryContext } from '../knowledge/support.js'
 import { writeFileAtomic } from '../store/fs-utils.js'
-import { recordKnowledgeUsage } from './execution.js'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
@@ -61,10 +59,12 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const summaries: string[] = []
     const spec = Array.isArray(node.knowledge) ? { prefetch: node.knowledge, mode: 'prefetch' as const } : node.knowledge
     const prefetch = Array.isArray(node.knowledge) ? node.knowledge : node.knowledge?.mode === 'tool' ? [] : node.knowledge?.prefetch ?? []
+    // 接上空的 KnowledgeStore 不代表已迁移；批准绑定之前仍使用旧知识源。
+    const hasBindings = stores.kb && (await stores.kb.bindings()).length > 0
     for (const query of prefetch) {
-      if (stores.kb) {
+      if (stores.kb && (hasBindings || spec?.bases !== undefined || query.bases !== undefined)) {
         const queryId = randomUUID()
-        const result = await host.guard.system(['.takt/knowledge/queries.jsonl', '.takt/space-events.jsonl*'], () => knowledgeQueryContext.run({ queryId, runId: ctx.runId, nodeId: node.id, requirementId: ctx.requirementId, workflowId: host.state.workflowId, role: node.role, via: 'prefetch' }, () => stores.kb!.route(query, { role: node.role, bases: spec?.bases })))
+        const result = await host.guard.system(['.takt/knowledge/queries.jsonl', '.takt/space-events.jsonl*'], () => stores.kb!.route(query, { bases: spec?.bases, caller: { queryId, runId: ctx.runId, nodeId: node.id, requirementId: ctx.requirementId, role: node.role, via: 'prefetch' } }))
         const file = join(runDir(stores.taktDir, ctx.runId), 'context/knowledge', `${queryId}.md`)
         await assertNoSymlinks(stores.taktDir, file)
         await writeFileAtomic(file, result.hits.map(hit => `## ${hit.title}\n${hit.ref}\n${hit.snippet}`).join('\n\n'))
@@ -245,7 +245,6 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         if (data === undefined) parseResult(result.finalText, schema)
         validateSchema(data, schema)
       }
-      if (stores.kb) await host.guard.system(['.takt/knowledge/queries.jsonl'], () => recordKnowledgeUsage(host, node, ctx))
       return { data, actor }
     }
     throw new Error(previous || '没有可用 harness')

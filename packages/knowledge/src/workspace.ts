@@ -7,10 +7,11 @@ export function createWorkspaceSource({ taktDir }: { taktDir: string }): Knowled
     id: 'workspace',
     kind: 'workspace',
     intents: ['business', 'history'],
-    describe: () => `过往需求：${taktDir}/workspaces；检索 spec、decisions、reports 中的 Markdown。`,
-    query: async q => {
+    describe: () =>
+      `过往需求：${taktDir}/workspaces；检索 spec、decisions、reports 中的 Markdown。`,
+    query: async (query2) => {
       const roots = await directoryEntries(taktDir)
-      if (!roots.some(entry => entry.name === 'workspaces' && !entry.isSymbolicLink())) return []
+      if (!roots.some((entry) => entry.name === 'workspaces' && !entry.isSymbolicLink())) return []
       const root = join(taktDir, 'workspaces')
       const pages = []
       for (const requirement of await directoryEntries(root)) {
@@ -18,11 +19,12 @@ export function createWorkspaceSource({ taktDir }: { taktDir: string }): Knowled
         const requirementDir = join(root, requirement.name)
         const entries = await directoryEntries(requirementDir)
         for (const directory of ['spec', 'decisions', 'reports']) {
-          if (!entries.some(entry => entry.name === directory && !entry.isSymbolicLink())) continue
-          pages.push(...await markdownPages(join(requirementDir, directory), root))
+          if (!entries.some((entry) => entry.name === directory && !entry.isSymbolicLink()))
+            continue
+          pages.push(...(await markdownPages(join(requirementDir, directory), root)))
         }
       }
-      return rankMarkdown(pages, q, 'workspace')
+      return rankMarkdown(pages, query2, 'workspace')
     },
   }
 }

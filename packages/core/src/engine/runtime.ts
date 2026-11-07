@@ -10,7 +10,7 @@ import { runDir } from '../store/paths.js'
 import { collectOutputs, readCurrent, resolveInputs } from './artifacts.js'
 import { expandPlanner, qualify, validateDag, type Entry, type Graph } from './graph.js'
 import { WriteGuard } from './guard.js'
-import { saveWorktreeDiff } from './execution.js'
+import { saveWorktreeDiff, recordKnowledgeUsage } from './execution.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
 import { BudgetGuard } from './budget.js'
@@ -212,6 +212,13 @@ export class Runtime implements HarnessHost {
     this.signal.throwIfAborted()
     await this.save()
     if (ns.status === 'stale') return
+    if (this.deps.stores.kb) {
+      try {
+        await this.guard.system(['.takt/knowledge/queries.jsonl'], () => recordKnowledgeUsage(this, entry.def.id, ns.outputs))
+      } catch {
+        await this.emit('log', { level: 'warn', message: '知识引用统计失败，节点结果保留，请检查查询日志' }, ns.id)
+      }
+    }
     ns.status = 'succeeded'
     ns.endedAt = this.timestamp()
     delete ns.error

@@ -1,0 +1,26 @@
+{
+  "description": "示例自己的资料，仅用于本地演示",
+  "scope": "space",
+  "retrieval": {
+    "topK": 10,
+    "budgetTokens": 4000
+  },
+  "status": "draft",
+  "version": 0,
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "id": "shop-db",
+  "name": "商店数据库",
+  "kind": "database",
+  "intents": [
+    "schema",
+    "fact"
+  ],
+  "config": {
+    "driver": "sqlite",
+    "connection": "${env:TAKT_KB_DEMO_SHOP_DB}",
+    "tables": [
+      "orders"
+    ]
+  }
+}

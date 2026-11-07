@@ -4,6 +4,25 @@ import { parseArgs } from 'node:util'
 export class UsageError extends Error {}
 
 export interface CliOptions {
+  descFile?: string
+  due?: string
+  owner?: string
+  template?: string
+  from?: string
+  parts?: string
+  color?: string
+  confirm?: string
+  thread?: string
+  space?: string
+  hash?: string
+  config?: string
+  base?: string[]
+  top?: number
+  wait?: boolean
+  force?: boolean
+  off?: boolean
+  start?: boolean
+  dryRun?: boolean
   by?: string
   workflow?: string
   target?: string
@@ -102,12 +121,49 @@ export const HELP = `用法：takt <命令> [选项]
   defect confirm <REQ> <defectId> [--note <text>]
   serve [--spaces <dir>] [--port 4870] [--host 127.0.0.1]
 
+需求与空间管理：
+  req new <title> [--desc-file <file>] [--workflow <id>] [--start] [--due <date>]
+  req edit <REQ> [--title <text>] [--desc <text>] [--due <date|null>] [--owner <id>]
+  req archive|restore|rm <REQ>
+  space new <id> --name <名称> --spaces <根> [--template blank|standard|quick]
+  space new <id> --name <名称> --spaces <根> --from <空间> --parts a,b
+  space archive|restore|rm <id> --spaces <根> [--confirm <归档ID>]
+  steward ask <问题> [--space <id>] [--thread <id>]
+  steward risks|digest|proposals
+  steward approve|reject|undo <id> [--confirm <名称>]
+  kb ls
+  kb new --kind <kind> --name <名称> [--config <json文件>]
+  kb upload <id> <文件...>
+  kb build <id> [--wait]
+  kb query <问题> [--base <id>] [--top N]
+  kb publish <id> [--force --reason <说明>]
+  kb bind <id> [--off]
+  kb migrate [--dry-run]
+  kb secret set <名称>
+  workflow convert <id> [--dry-run]
+
 全局选项：
   --project <dir>   项目目录（默认 cwd，并向上查找 takt.config.json）
   --json            机器可读输出
   --help            显示帮助`
 
+const EXTRA_STRINGS = {
+  'desc-file': 'descFile', due: 'due', owner: 'owner', template: 'template', from: 'from', parts: 'parts',
+  color: 'color', confirm: 'confirm', thread: 'thread', space: 'space', hash: 'hash', config: 'config',
+} as const
+const EXTRA_COMMANDS: Record<string, string[]> = {
+  'desc-file': ['req'], due: ['req'], owner: ['req'], start: ['req'], template: ['space'], from: ['space'],
+  parts: ['space'], color: ['space'], confirm: ['space', 'steward', 'req'], thread: ['steward'], space: ['steward'],
+  hash: ['steward'], config: ['kb'], base: ['kb'], top: ['kb'], wait: ['kb'], force: ['kb'], off: ['kb'],
+  'dry-run': ['kb', 'workflow'],
+}
 const OPTIONS = {
+  'desc-file': { type: 'string' }, due: { type: 'string' }, owner: { type: 'string' },
+  template: { type: 'string' }, from: { type: 'string' }, parts: { type: 'string' }, color: { type: 'string' },
+  confirm: { type: 'string' }, thread: { type: 'string' }, space: { type: 'string' }, hash: { type: 'string' },
+  config: { type: 'string' }, base: { type: 'string', multiple: true }, top: { type: 'string' },
+  wait: { type: 'boolean' }, force: { type: 'boolean' }, off: { type: 'boolean' }, start: { type: 'boolean' },
+  'dry-run': { type: 'boolean' },
   by: { type: 'string' }, workflow: { type: 'string' }, target: { type: 'string' }, defects: { type: 'boolean' },
   variant: { type: 'string', multiple: true }, judge: { type: 'string' },
   title: { type: 'string' }, desc: { type: 'string' }, severity: { type: 'string' }, note: { type: 'string' },
@@ -172,6 +228,19 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     if (value !== undefined) options[key] = value
   }
   const [command, ...positionals] = parsed.positionals
+  for (const [flag, commands] of Object.entries(EXTRA_COMMANDS)) {
+    if (Object.hasOwn(values, flag) && command && !commands.includes(command)) throw new UsageError(`--${flag} 不适用于 ${command}`)
+  }
+  for (const [flag, key] of Object.entries(EXTRA_STRINGS)) {
+    const value = values[flag as keyof typeof EXTRA_STRINGS]
+    if (value !== undefined) options[key] = value
+  }
+  Object.assign(options, { base: values.base, wait: values.wait, force: values.force, off: values.off,
+    start: values.start, dryRun: values['dry-run'] })
+  if (values.top !== undefined) {
+    if (!/^\d+$/.test(values.top) || !Number.isSafeInteger(Number(values.top))) throw new UsageError('--top 必须是非负整数')
+    options.top = Number(values.top)
+  }
   return command === undefined ? { positionals, options } : { command, positionals, options }
 }
 

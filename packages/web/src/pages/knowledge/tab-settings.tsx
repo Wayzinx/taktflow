@@ -7,6 +7,7 @@ import { navigate } from '../../lib/router'
 import { AccessCard } from './settings-access'
 import { INTENTS, autoReason } from './meta'
 import { SchemaForm, type Schema } from './schema-form'
+import { compactConfig } from './schema-config'
 
 type Form = { name: string; description: string; intents: KnowledgeIntent[]; config: Record<string, unknown>; retrieval: KnowledgeRetrieval }
 const fromBase = (b: KnowledgeBaseDetail): Form => ({ name: b.name, description: b.description, intents: b.intents, config: b.config, retrieval: b.retrieval })
@@ -33,7 +34,7 @@ export function SettingsTab({ base, reload }: { base: KnowledgeBaseDetail; reloa
     setBusy(true)
     const prev = fromBase(base)
     try {
-      await ds.updateKnowledgeBase(base.id, { ...form, reason: autoReason('修改设置') })
+      await ds.updateKnowledgeBase(base.id, { ...form, config: compactConfig(form.config), reason: autoReason('修改设置') })
       reload()
       toast('设置已保存', { body: '检索参数立即生效；数据源配置下次构建生效。', undo: async () => (await ds.updateKnowledgeBase(base.id, { ...prev, reason: autoReason('撤销设置修改') }), reload(), setForm(prev)) })
     } catch (e) {
@@ -77,7 +78,7 @@ export function SettingsTab({ base, reload }: { base: KnowledgeBaseDetail; reloa
 
       <section className="kb-section">
         <h2 className="kb-h2">连接与解析</h2>
-        {schema ? <SchemaForm kind={base.kind} schema={schema} value={form.config} onChange={(config) => set({ config })} files={[]} onFiles={() => undefined} /> : <SkeletonText lines={3} />}
+        {schema ? <SchemaForm kind={base.kind} schema={schema} value={form.config} onChange={(config) => set({ config })} files={[]} onFiles={() => undefined} baseId={base.id} /> : <SkeletonText lines={3} />}
       </section>
 
       <section className="kb-section">

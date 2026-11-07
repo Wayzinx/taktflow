@@ -15,7 +15,8 @@ export function RequirementActions({ r, onChanged }: { r: RequirementDetail; onC
   const btn = useRef<HTMLButtonElement>(null)
   const archived = r.status === 'archived'
   const hasRuns = r.runs.length > 0 || !!r.latestRunId
-  const running = r.stages.some((s) => s.status === 'running')
+  // 服务端对 running 与 waiting_human（等人处理）的运行都拒绝归档（409）
+  const running = r.stages.some((s) => s.status === 'running') || r.runs.some((x) => x.status === 'running' || x.status === 'waiting_human') || r.pendingAttention > 0
 
   const archive = async () => {
     try {
@@ -67,7 +68,7 @@ export function RequirementActions({ r, onChanged }: { r: RequirementDetail; onC
         items={[
           archived
             ? { id: 'restore', label: '恢复', icon: ArchiveRestore, onSelect: () => void restore() }
-            : { id: 'archive', label: '归档', icon: Archive, disabled: running, hint: running ? '运行中' : undefined, onSelect: () => void archive() },
+            : { id: 'archive', label: '归档', icon: Archive, disabled: running, hint: running ? '有进行中的运行' : undefined, onSelect: () => void archive() },
           { id: 'delete', label: '删除', icon: Trash2, danger: true, separator: true, disabled: hasRuns, hint: hasRuns ? '有运行记录，只能归档' : undefined, onSelect: () => setConfirm(true) },
         ]}
       />

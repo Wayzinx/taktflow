@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { ChevronDown, Sparkles, X } from 'lucide-react'
 import type { Digest } from '@taktflow/core'
 import { useAsync, useSource } from '../api'
 import { fmtRelative } from '../lib/format'
 import { Link } from '../lib/router'
 import { openSteward } from '../lib/ui-store'
+import { markDigestSeen, peekDigest } from '../components/steward/digest-session'
 
 const SEEN_KEY = 'taktflow.digest.seen'
 
@@ -39,22 +40,18 @@ const PROGRESS_WORD: Record<Digest['progress'][number]['kind'], string> = {
  */
 export function SinceBanner() {
   const ds = useSource()
-  const q = useAsync((d) => d.digest().catch(() => undefined), [])
+  const q = useAsync((d) => peekDigest(d), [])
   const [seen, setSeen] = useState(readSeen)
   const [open, setOpen] = useState(false)
-  const reported = useRef<string | undefined>(undefined)
   const d = q.data
   const total = d ? d.attention.length + d.risks.length + d.progress.length : 0
   const visible = Boolean(d && total > 0 && seen !== d.id)
-  useEffect(() => {
-    if (!visible || !d || reported.current === d.id) return
-    reported.current = d.id
-    void ds.reportProductEvent({ type: 'digest.open', feature: 'steward.digest', detail: { items: total } }).catch(() => undefined)
-  }, [visible, d, ds, total])
   if (!visible || !d) return null
 
   const click = (what: string) => void ds.reportProductEvent({ type: 'digest.click', feature: 'steward.digest', detail: { what } }).catch(() => undefined)
+  // 用户看了（展开 / 知道了）才标已读；digest.open 由服务端在标已读时记，页面不重复上报
   const dismiss = () => {
+    markDigestSeen(ds, d.id)
     writeSeen(d.id)
     setSeen(d.id)
   }
@@ -78,7 +75,7 @@ export function SinceBanner() {
           {d.progress.length > 0 && <span className="since-count"><b className="num">{d.progress.length}</b> 项进展</span>}
         </div>
         <div className="since-actions">
-          <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={() => (setOpen((v) => !v), click('expand'))}>
+          <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={() => (setOpen((v) => !v), click('expand'), markDigestSeen(ds, d.id))}>
             {open ? '收起' : '展开'}
             <ChevronDown className={`since-chevron${open ? ' up' : ''}`} aria-hidden />
           </button>

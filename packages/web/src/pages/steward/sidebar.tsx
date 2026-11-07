@@ -6,6 +6,9 @@ import { EmptyState, ErrorState, Segmented, SkeletonRows, TabPanel, useFlashRows
 import { fmtRelative } from '../../lib/format'
 import { useStewardUnread } from '../../lib/ui-store'
 
+/** 列表预览用纯文本：去掉 Markdown 链接 / 粗体 / 行内代码与 [n] 引用标记。 */
+const plain = (t: string) => t.replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1').replace(/\*\*|`/g, '').replace(/\[\d+\]/g, '')
+
 export type SideView = 'threads' | 'feed'
 
 function ThreadList({ threads, current, onPick }: { threads: StewardThread[]; current?: string; onPick: (id: string) => void }) {
@@ -37,7 +40,7 @@ function ThreadList({ threads, current, onPick }: { threads: StewardThread[]; cu
                     <span className="stwp-item-title truncate">{t.title}</span>
                     <span className="faint num">{fmtRelative(t.updatedAt)}</span>
                   </span>
-                  {t.lastMessage && <span className="stwp-item-last truncate">{t.lastMessage}</span>}
+                  {t.lastMessage && <span className="stwp-item-last truncate">{plain(t.lastMessage)}</span>}
                   {(t.pendingProposals ?? 0) > 0 && (
                     <span className="stw-tag" data-tone="waiting">
                       <Hourglass aria-hidden />

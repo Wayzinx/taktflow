@@ -22,7 +22,8 @@ import './steward-page.css'
 export function StewardPage() {
   const { query } = useLocation()
   const threadId = query.get('thread') ?? undefined
-  const drawer = query.get('drawer') ?? undefined
+  // ?settings=1 是服务端离线回复里的写法（core/steward/offline.ts），等同 drawer=settings
+  const drawer = query.get('drawer') ?? (query.get('settings') ? 'settings' : undefined)
   const side: SideView = query.get('side') === 'feed' ? 'feed' : 'threads'
   const threads = useAsync((ds) => ds.stewardThreads(), [])
   const suggestions = useStewardSuggestions('steward')
@@ -46,9 +47,12 @@ export function StewardPage() {
   )
   const current = threads.data?.find((t) => t.id === threadId)
   // 页头建议在本页不开停靠面板：直接开新会话并预填
+  // 页头建议按当前（默认）空间生成（"帮我查看 群聊演示 的进度"）：点它时把这个空间作为上下文带上，否则服务端按偏好里的默认空间回答
+  const home = useAsync((d) => d.space().then((s) => ({ id: s.id, name: s.name })).catch(() => undefined), [])
   const onHeaderChip = (text: string) => {
     pick(undefined)
-    setCtx([])
+    const sp = home.data
+    setCtx(sp && text.includes(sp.name) ? [{ type: 'space', id: sp.id, label: sp.name }] : [])
     setDraft(text)
   }
   const fresh = () => {
@@ -127,7 +131,7 @@ export function StewardPage() {
         </section>
       </div>
       <HealthDrawer open={drawer === 'health'} onClose={() => setQuery({ drawer: undefined })} />
-      <SettingsDrawer open={drawer === 'settings'} onClose={() => setQuery({ drawer: undefined })} />
+      <SettingsDrawer open={drawer === 'settings'} onClose={() => setQuery({ drawer: undefined, settings: undefined })} />
     </div>
   )
 }

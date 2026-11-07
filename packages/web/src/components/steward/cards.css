@@ -168,6 +168,19 @@
 .stw-proposal-foot:empty {
   display: none;
 }
+/* 高风险 / 删除类：输入目标确认（占满一行） */
+.stw-confirm {
+  flex-basis: 100%;
+  display: grid;
+  gap: var(--sp-1);
+  color: var(--text-2);
+}
+.stw-confirm code {
+  color: var(--st-failed);
+}
+.stw-confirm .input {
+  max-width: 320px;
+}
 
 /* 执行成功：圆 + 勾描边 300ms */
 @keyframes stw-check-draw {
@@ -536,4 +549,20 @@
 .stw-diff {
   min-width: 0;
   max-width: 100%;
+}
+
+/* 汇报跨空间时，每条前标空间名 */
+.stw-digest-space {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  font-size: var(--text-label);
+  line-height: 18px;
+  vertical-align: 1px;
+}
+.stw-digest-more {
+  margin-top: 4px;
 }

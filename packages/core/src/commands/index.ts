@@ -3,6 +3,7 @@ import type { SpaceMember } from '../types.js'
 import { validateSchema } from '../engine/schema.js'
 import type { CommandContext, CommandDeps, CommandInputs, CommandRegistry, CommandSpec } from './contracts.js'
 import { createRequirementFull, crudCommandSpecs, requirementCreateReason } from './crud-commands.js'
+import { knowledgeCommandSpecs } from './knowledge-commands.js'
 import { commandSchemas } from './schema.js'
 export type * from './contracts.js'
 
@@ -32,6 +33,7 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
     define('review.dispose', '处置评审问题', 'write', invoke('disposeReview')),
     define('lesson.status', '修改经验状态', 'write', invoke('setLessonStatus'), 'maintainer'),
     ...crudCommandSpecs(deps),
+    ...knowledgeCommandSpecs(stores),
     ...(deps.extensions ?? []),
   ]
   const commands = new Map(specs.map((spec) => [spec.id, spec]))

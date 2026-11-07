@@ -20,21 +20,39 @@ function matchesPath(pattern: string, path: string): boolean {
 
 async function collectFiles(root: string, ignore: string[]): Promise<string[]> {
   // listFiles 会将裸名称扩展到任意层级；根目录限定的裸名称用后置过滤，目录仍提前剪枝。
-  const traversalIgnore = ignore.flatMap(pattern => pattern.includes('/') ? [pattern] : [`${pattern}/**`])
-  return (await listFiles(root, ['**'], { ignore: traversalIgnore }))
-    .filter(file => !ignore.some(pattern => matchesPath(pattern, file)))
+  const traversalIgnore = ignore.flatMap((pattern) =>
+    pattern.includes('/') ? [pattern] : [`${pattern}/**`],
+  )
+  return (await listFiles(root, ['**'], { ignore: traversalIgnore })).filter(
+    (file) => !ignore.some((pattern) => matchesPath(pattern, file)),
+  )
 }
 
 function runRg(root: string, text: string, files: string[]): Promise<string> {
   return new Promise((accept, reject) => {
-    execFile('rg', [
-      '--json', '--fixed-strings', '--multiline', '--hidden', '--no-ignore',
-      '--no-follow', '--no-config', '--encoding', 'none', '-e', text, '--',
-      ...files.map(file => `./${file}`),
-    ], { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => {
-      if (error && error.code !== 1) reject(error)
-      else accept(stdout)
-    })
+    execFile(
+      'rg',
+      [
+        '--json',
+        '--fixed-strings',
+        '--multiline',
+        '--hidden',
+        '--no-ignore',
+        '--no-follow',
+        '--no-config',
+        '--encoding',
+        'none',
+        '-e',
+        text,
+        '--',
+        ...files.map((file) => `./${file}`),
+      ],
+      { cwd: root, encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error && error.code !== 1) reject(error)
+        else accept(stdout)
+      },
+    )
   })
 }
 
@@ -49,14 +67,20 @@ async function matchedFiles(root: string, text: string, files: string[]): Promis
         data: { path?: { text?: string; bytes?: string } }
       }
       if (event.type !== 'match' || !event.data.path) continue
-      const path = event.data.path.text ?? Buffer.from(event.data.path.bytes!, 'base64').toString('utf8')
+      const path =
+        event.data.path.text ?? Buffer.from(event.data.path.bytes!, 'base64').toString('utf8')
       matched.add(path.replace(/^\.\//, ''))
     }
   }
   return matched
 }
 
-async function fileHits(root: string, path: string, text: string, fetchedAt: string): Promise<KnowledgeHit[]> {
+async function fileHits(
+  root: string,
+  path: string,
+  text: string,
+  fetchedAt: string,
+): Promise<KnowledgeHit[]> {
   const buffer = await readFile(resolve(root, path))
   // rg 可能在遇到 NUL 前已经发出 match，必须检查整个文件才能一致跳过二进制。
   if (buffer.includes(0)) return []
@@ -72,9 +96,13 @@ async function fileHits(root: string, path: string, text: string, fetchedAt: str
     if (match < nextLine) {
       const ref = `${path}:${index + 1}`
       hits.push({
-        sourceId: 'grep', title: ref, ref,
+        sourceId: 'grep',
+        title: ref,
+        ref,
         snippet: lines.slice(Math.max(0, index - 2), index + 3).join('\n'),
-        score: 1, evidenceLevel: 'verified', fetchedAt,
+        score: 1,
+        evidenceLevel: 'verified',
+        fetchedAt,
       })
       // 同一行只返回一个 hit；游标只前进，避免无匹配时反复扫描后缀。
       match = content.indexOf(text, nextLine)
@@ -86,19 +114,25 @@ async function fileHits(root: string, path: string, text: string, fetchedAt: str
 
 export function createGrepSource(options: { root: string; ignore?: string[] }): KnowledgeSource {
   const root = resolve(options.root)
-  const ignore = [...defaultIgnore, ...options.ignore ?? []].filter(Boolean).map(pathGlob)
+  const ignore = [...defaultIgnore, ...(options.ignore ?? [])].filter(Boolean).map(pathGlob)
   return {
-    id: 'grep', kind: 'grep', intents: ['symbol'],
-    describe: () => '字面搜索项目文件，包含隐藏文件、不应用 gitignore；排除默认目录和追加 ignore，不跟随符号链接。rg 不存在时使用 Node。',
-    async query(q: KnowledgeQuery) {
-      if (!q.text) return []
+    id: 'grep',
+    kind: 'grep',
+    intents: ['symbol'],
+    describe: () => [
+      '字面搜索项目文件，包含隐藏文件、不应用 gitignore；',
+      '排除默认目录和追加 ignore，不跟随符号链接。rg 不存在时使用 Node。',
+    ].join(''),
+    async query(query2: KnowledgeQuery) {
+      if (!query2.text) return []
       try {
-        const scopes = q.scope?.map(pathGlob)
-        const files = (await collectFiles(root, ignore))
-          .filter(file => !scopes?.length || scopes.some(scope => matchesPath(scope, file)))
+        const scopes = query2.scope?.map(pathGlob)
+        const files = (await collectFiles(root, ignore)).filter(
+          (file) => !scopes?.length || scopes.some((scope) => matchesPath(scope, file)),
+        )
         let matched: Set<string>
         try {
-          matched = await matchedFiles(root, q.text, files)
+          matched = await matchedFiles(root, query2.text, files)
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
           matched = new Set(files)
@@ -106,7 +140,7 @@ export function createGrepSource(options: { root: string; ignore?: string[] }): 
         const hits: KnowledgeHit[] = []
         const fetchedAt = new Date().toISOString()
         for (const file of files) {
-          if (matched.has(file)) hits.push(...await fileHits(root, file, q.text, fetchedAt))
+          if (matched.has(file)) hits.push(...(await fileHits(root, file, query2.text, fetchedAt)))
         }
         return hits
       } catch (error) {

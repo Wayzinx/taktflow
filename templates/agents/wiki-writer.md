@@ -2,7 +2,7 @@
 role: wiki-writer
 title: Wiki 编写者
 description: 从代码生成可审阅的模块文档
-harness: { harness: native }
+harness: { harness: claude-code, fallback: [{ harness: codex }] }
 skills: []
 writeScope:
   - requirements/**/generated/**

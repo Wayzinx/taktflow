@@ -7,7 +7,9 @@ import { autoReason } from './meta'
 /** 访问控制：本空间里哪些角色能用它（改的是空间绑定的 roles，立即保存、可撤销）。 */
 export function AccessCard({ base }: { base: KnowledgeBaseDetail }) {
   const ds = useSource()
+  // ux-audit: ok 绑定卡片只编辑本库的一条绑定，没有列表区域；加载用骨架
   const bindings = useAsync((d) => d.knowledgeBindings(), [])
+  // ux-audit: ok 角色只是多选项
   const roles = useAsync((d) => d.space().then((s) => s.agents.map((a) => a.role)).catch(() => [] as string[]), [])
   const mine = bindings.data?.find((b) => b.baseId === base.id)
 

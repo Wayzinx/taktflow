@@ -91,6 +91,7 @@ function NoComparison({ run }: { run: EvalRun }) {
   const errors = run.results.filter((r) => r.error)
   const failed = run.status === 'failed'
   // 服务端把整体失败原因写成这个评测运行 id 下的 log 事件（level error）
+  // ux-audit: ok 失败原因的补充日志，只在有内容时显示；没有时外层卡片已经说明了状态
   const log = useAsync(
     (ds) => (failed ? ds.events(run.id).then((es) => es.filter((e) => e.type === 'log' && (e.data as { level?: string }).level === 'error').map((e) => (e.data as { message: string }).message)).catch(() => [] as string[]) : Promise.resolve([] as string[])),
     [run.id, failed],

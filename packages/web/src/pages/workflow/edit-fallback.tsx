@@ -2,13 +2,16 @@ import { useState } from 'react'
 import { Check, Lock, Sparkles, Wand2 } from 'lucide-react'
 import type { WorkflowConvertResult } from '@taktflow/core'
 import { useSource } from '../../api'
+import { WorkflowConflictError } from '../../api/source'
 import { DiffView } from '../../components/steward/tool-card'
 import { Dialog, toast } from '../../components/ui'
 import { askSteward } from '../../lib/ui-store'
 import type { WorkflowDocState } from './state'
 import './edit-fallback.css'
 
-type Phase = { kind: 'idle' } | { kind: 'checking' } | { kind: 'preview'; result: WorkflowConvertResult } | { kind: 'writing'; result: WorkflowConvertResult } | { kind: 'failed'; reason: string } | { kind: 'done' }
+/** baseRev：预览 diff 时的文件版本；写入时带上，文件在这之后被改过服务端会 409，避免写入没审阅过的改写。 */
+type Preview = { result: WorkflowConvertResult; baseRev?: string }
+type Phase = { kind: 'idle' } | { kind: 'checking' } | ({ kind: 'preview' } & Preview) | ({ kind: 'writing' } & Preview) | { kind: 'failed'; reason: string } | { kind: 'done' }
 
 /**
  * workflow 编辑兜底（docs/design/22 §2.3）：源文件不是 defineWorkflow 写法时，画布只读，顶部横幅说明原因。
@@ -22,23 +25,29 @@ export function EditFallbackBanner({ workflowId, wf }: { workflowId: string; wf:
 
   const check = async () => {
     setPhase({ kind: 'checking' })
+    const baseRev = wf.doc?.rev
     try {
       const r = await ds.convertWorkflow(workflowId, { dryRun: true })
-      setPhase(r.ok ? { kind: 'preview', result: r } : { kind: 'failed', reason: r.reason ?? '这个文件没法确定性改写' })
+      setPhase(r.ok ? { kind: 'preview', result: r, baseRev } : { kind: 'failed', reason: r.reason ?? '这个文件没法确定性改写' })
     } catch (e) {
       setPhase({ kind: 'failed', reason: (e as Error).message })
     }
   }
-  const write = async (result: WorkflowConvertResult) => {
-    setPhase({ kind: 'writing', result })
+  const write = async ({ result, baseRev }: Preview) => {
+    setPhase({ kind: 'writing', result, baseRev })
     try {
-      const r = await ds.convertWorkflow(workflowId, { dryRun: false, reason: '转换为 defineWorkflow 写法，以便可视化编辑' })
+      const r = await ds.convertWorkflow(workflowId, { dryRun: false, baseRev, reason: '转换为 defineWorkflow 写法，以便可视化编辑' })
       if (!r.ok) return setPhase({ kind: 'failed', reason: r.reason ?? '写入时改写失败' })
       setPhase({ kind: 'done' })
       toast('已转换为可编辑格式', { tone: 'success', body: `${workflowId} 现在可以在画布上直接编辑；改动已记入修订历史` })
       await wf.reload()
     } catch (e) {
-      setPhase({ kind: 'preview', result })
+      if ((e as { status?: number }).status === 409 || e instanceof WorkflowConflictError) {
+        toast('文件在预览后被改过', { tone: 'waiting', body: '已按最新文件重新生成 diff，请再看一遍再确认' })
+        await wf.reload()
+        return void check()
+      }
+      setPhase({ kind: 'preview', result, baseRev })
       toast('写入失败', { tone: 'failed', body: (e as Error).message })
     }
   }
@@ -47,7 +56,7 @@ export function EditFallbackBanner({ workflowId, wf }: { workflowId: string; wf:
 
   const failed = phase.kind === 'failed'
   const busy = phase.kind === 'checking' || phase.kind === 'writing'
-  const preview = phase.kind === 'preview' || phase.kind === 'writing' ? phase.result : undefined
+  const preview = phase.kind === 'preview' || phase.kind === 'writing' ? { result: phase.result, baseRev: phase.baseRev } : undefined
   return (
     <>
       <div className="wf-fallback" role="note" data-tone={failed ? 'failed' : undefined}>
@@ -92,7 +101,7 @@ export function EditFallbackBanner({ workflowId, wf }: { workflowId: string; wf:
       >
         <div className="wf-fallback-diff">
           <div className="wf-fallback-file mono">{wf.doc?.file ?? `workflows/${workflowId}.workflow.ts`}</div>
-          {preview?.diff ? <DiffView diff={preview.diff} maxHeight={360} /> : <p className="faint">没有需要改动的行</p>}
+          {preview?.result.diff ? <DiffView diff={preview.result.diff} maxHeight={360} /> : <p className="faint">没有需要改动的行</p>}
         </div>
       </Dialog>
     </>

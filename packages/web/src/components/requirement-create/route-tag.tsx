@@ -62,7 +62,7 @@ export function RouteTag({ text, workflows, value, onChange }: { text: string; w
                 <p className={`rc-route-reason${pending ? ' shimmer-text' : ''}`}>{est.reason}</p>
                 <p className="rc-pop-foot">
                   <Sparkles aria-hidden className="rc-inline-icon" />
-                  草稿预估；创建时路由器结合仓库改动面再确认一次。
+                  按关键词的本地预估，不是路由器结论；创建时由服务端路由器决定（结果在创建提示里）。
                 </p>
               </>
             ) : (

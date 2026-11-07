@@ -21,7 +21,15 @@ export async function discoverSpaces(dir: string): Promise<ProjectStores[]> {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue
     const root = resolve(dir, entry.name)
     try { await access(join(root, 'takt.config.json')) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error }
-    spaces.push(await openProject(root))
+    try {
+      const stores = await openProject(root)
+      const id = spaceId(stores)
+      if (spaces.some(space => spaceId(space) === id)) continue
+      spaces.push(stores)
+    } catch {
+      // 一个空间损坏不能阻断其他空间；目录保持原样，修复配置后会重新发现。
+      continue
+    }
   }
   const ids = spaces.map(spaceId)
   if (new Set(ids).size !== ids.length) throw new Error('空间 ID 重复')
@@ -36,8 +44,7 @@ export async function spaceSummary(stores: ProjectStores): Promise<SpaceSummary>
   const allRequirements = await stores.workspaces.listRequirements()
   const requirements = allRequirements.filter((item) => item.status !== 'archived')
   const runs = await stores.runs.list()
-  const events = await Promise.all(runs.map((run) => stores.events.read(run.runId)))
-  const lastActivityAt = [...allRequirements.map((item) => item.updatedAt), ...events.flatMap((items) => items.map((item) => item.ts))].sort().at(-1)
+  const lastActivityAt = [...allRequirements.map(item => item.updatedAt), ...runs.map(run => run.endedAt ?? run.startedAt)].sort().at(-1)
   const pendingAttention = (await stores.attention.list({ pending: true })).filter((item) => requirements.some((req) => req.id === item.requirementId)).length
   return { pendingAttention, lastActivityAt, id: spaceId(stores), ...stores.config.project, requirements: requirements.length, active: requirements.filter((req) => req.status === 'active').length }
 }
@@ -60,40 +67,8 @@ export async function spaceDetail(stores: ProjectStores): Promise<SpaceDetail> {
     knowledge: (stores.config.knowledge ?? []).map(({ id, kind }) => ({ id, kind, description: '' })) }
 }
 
-// EventStore 尚无自定义文件路径；在临时目录复用它的 append/verify，再原子替换空间日志。
-export async function auditSpace(stores: Pick<ProjectStores, 'taktDir'>, author: Actor, reason: string, message: string, filename = 'space-events.jsonl'): Promise<void> {
-  text(reason, 'reason')
-  const file = join(stores.taktDir, filename)
-  await spaceLock(file, async () => {
-    const scratch = await mkdtemp(join(tmpdir(), 'takt-space-audit-'))
-    try {
-      const target = join(scratch, 'runs/space/events.jsonl')
-      await mkdir(dirname(target), { recursive: true })
-      try { await copyFile(file, target) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-      const events = new FsEventStore(scratch)
-      if (!(await events.verify('space')).ok) throw new Error('空间审计链已损坏，拒绝写入')
-      await events.append('space', { type: 'log', actor: author, data: { level: 'info', message: JSON.stringify({ message, reason }) } })
-      await atomicWrite(file, await readFile(target))
-    } finally { await rm(scratch, { recursive: true, force: true }) }
-  })
-}
-export async function atomicWrite(file: string, content: string | Buffer): Promise<void> {
-  await mkdir(dirname(file), { recursive: true })
-  const temp = `${file}.${randomUUID()}.tmp`
-  try { await writeFile(temp, content, { flag: 'wx' }); await rename(temp, file) }
-  finally { await rm(temp, { force: true }) }
-}
-export async function changeConfig(stores: ProjectStores, author: Actor, reason: string, message: string, change: (config: TaktConfig) => void): Promise<void> {
-  text(reason, 'reason')
-  const file = join(stores.projectDir, 'takt.config.json')
-  await spaceLock(file, async () => {
-    const config = (await openProject(stores.projectDir)).config
-    change(config)
-    await auditSpace(stores, author, reason, message)
-    await atomicWrite(file, JSON.stringify(config, null, 2) + '\n')
-    stores.config = config
-  })
-}
+export { auditKnowledge as auditSpace, changeKnowledgeConfig as changeConfig, writeFileAtomic as atomicWrite } from '@taktflow/core'
+import { auditKnowledge as auditSpace, changeKnowledgeConfig as changeConfig, writeFileAtomic as atomicWrite } from '@taktflow/core'
 export function members(value: unknown): SpaceMember[] {
   if (!Array.isArray(value)) throw new HttpError(400, 'members 必须是数组')
   const result = value.map((member: Record<string, unknown>) => {

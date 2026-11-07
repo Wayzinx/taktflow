@@ -10,6 +10,8 @@ export interface ToastOptions {
   tone?: Tone
   /** 能撤销的操作带撤销按钮；点击后执行并收起这条提示。 */
   undo?: () => void | Promise<void>
+  /** 撤销按钮文案，默认"撤销"；撤销不是原样回退时写清楚（例如"撤销（归档）"）。 */
+  undoLabel?: string
   /** 其他动作（"查看"）。 */
   action?: { label: string; onClick: () => void }
   /** 毫秒，默认 5000；悬停时暂停。 */
@@ -113,7 +115,7 @@ export function Toaster() {
                 }}
               >
                 <Undo2 aria-hidden />
-                撤销
+                {t.undoLabel ?? '撤销'}
               </button>
             )}
             {t.action && (

@@ -7,6 +7,7 @@ import { navigate } from '../../lib/router'
 import type { PendingFile } from './fields'
 import { KindCards } from './kind-cards'
 import { defaultsOf, missingFields, type Schema } from './schema-form'
+import { compactConfig } from './schema-config'
 import { StepBuild, StepData, StepTest } from './wizard-steps'
 import { QueryPanel } from './query-panel'
 import { PublishFlow } from './publish'
@@ -77,7 +78,7 @@ export function CreateWizard({ open, initialKind, onClose, onCreated }: { open: 
     setBusy(true)
     setError(undefined)
     try {
-      const body = { name: draft.name.trim(), description: draft.description.trim(), intents: draft.intents, config: draft.config }
+      const body = { name: draft.name.trim(), description: draft.description.trim(), intents: draft.intents, config: compactConfig(draft.config) }
       const b = base ? await ds.updateKnowledgeBase(base.id, { ...body, reason: '新建向导：修改数据源' }) : await ds.createKnowledgeBase({ ...body, id, kind: k.kind, reason: '新建向导：创建草稿' })
       if (draft.files.length) await ds.uploadKnowledge(b.id, { files: draft.files.map((f) => ({ path: f.path, content: f.content })) })
       setBase(b)
@@ -107,14 +108,14 @@ export function CreateWizard({ open, initialKind, onClose, onCreated }: { open: 
     if (b) exit(b)
   }
 
-  const missing = draft.kind ? missingFields(draft.kind.kind, draft.config, draft.files, draft.kind.configSchema as Schema) : []
+  const missing = draft.kind ? missingFields(draft.kind.kind, draft.config, draft.files.length, draft.kind.configSchema as Schema, !!base?.stats?.docs) : []
   const canNext = step === 0 ? !!draft.kind : step === 1 ? !!draft.name.trim() && missing.length === 0 : step === 2 ? !!test : step === 3 ? built || !draft.kind?.needsBuild : true
   const nextLabel = step === 1 ? (base ? '保存并测试' : '创建草稿并测试') : step === 2 && test && !test.ok ? '仍然继续' : step === 4 ? '下一步：发布' : '下一步'
 
   let body
   if (step === 0) body = kinds.error ? <ErrorState compact error={kinds.error} onRetry={kinds.reload} /> : !kinds.data ? <SkeletonGrid count={6} min={200} /> : <KindCards kinds={kinds.data} value={draft.kind?.kind} onPick={pick} />
   else if (step === 1 && draft.kind) body = <StepData id={id} kind={draft.kind} draft={draft} onChange={(p) => setDraft((d) => ({ ...d, ...p }))} missing={missing} />
-  else if (step === 2 && base) body = <StepTest base={base} result={test} onResult={setTest} onEdit={() => go(1)} />
+  else if (step === 2 && base) body = <StepTest base={base} result={test} onResult={setTest} onEdit={() => go(1)} onBase={setBase} />
   else if (step === 3 && base && draft.kind) body = <StepBuild base={base} needsBuild={draft.kind.needsBuild} buildId={buildId} onStarted={setBuildId} onBuilt={(b) => (setBase(b), setBuilt(true))} />
   else if (step === 4 && base) body = <QueryPanel compact base={base} example={draft.kind?.example} />
   else if (step === 5 && base) body = <PublishFlow inline base={base} onDone={(b) => (onCreated(), onClose(), navigate(`/knowledge/${b.id}`))} />

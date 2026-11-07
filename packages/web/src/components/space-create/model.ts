@@ -98,12 +98,19 @@ export function checkName(name: string, live: SpaceSummary[]): Check {
 const isUrl = (s: string) => /^(https?:\/\/|git@|ssh:\/\/)/.test(s)
 const repoId = (loc: string) => loc.replace(/\.git$/, '').split(/[/:]/).filter(Boolean).pop()?.toLowerCase().replace(/[^a-z0-9-]+/g, '-') ?? 'repo'
 
-export function toRequest(f: SpaceForm): SpaceCreateRequest {
+/**
+ * creator：对话框里显示为"owner · 创建者"的当前用户（GET /api/me）。显式放进 members：
+ * 服务端 createSpace 取请求头身份，没有头时回落成 'web'，和管家 / 其他接口的缺省身份（第一个空间的 owner）不是同一个人，
+ * 新空间就只有 'web' 一个 owner，管家查这个空间一律 403（见 knownIssues）。复制来源空间成员且没填成员时不加，保留服务端的复制。
+ */
+export function toRequest(f: SpaceForm, creator?: { id: string; name: string }): SpaceCreateRequest {
   const template: SpaceTemplate = f.start === 'copy' && f.copyFrom ? { copyFrom: f.copyFrom, parts: f.parts } : f.start === 'copy' ? 'blank' : f.start
   const repos = f.repos.filter((r) => r.loc.trim()).map((r) => ({ id: repoId(r.loc.trim()), ...(isUrl(r.loc.trim()) ? { url: r.loc.trim() } : { path: r.loc.trim() }), defaultBranch: r.branch.trim() || 'main' }))
   const members: SpaceMember[] = f.members
     .filter((m) => m.name.trim())
     .map((m) => ({ id: (m.email.split('@')[0] || m.name).trim().toLowerCase().replace(/\s+/g, '-'), name: m.name.trim(), role: m.role, ...(m.email.trim() ? { email: m.email.trim() } : {}) }))
+  const copiesMembers = typeof template === 'object' && template.parts.includes('members') && !members.length
+  if (creator && !copiesMembers && !members.some((m) => m.id === creator.id)) members.unshift({ id: creator.id, name: creator.name, role: 'owner' })
   return {
     id: f.id,
     name: f.name.trim(),

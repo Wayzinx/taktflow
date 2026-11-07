@@ -2,6 +2,7 @@ import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@tak
 import { currentSpaceId } from '../lib/space'
 import { actingUserHeader } from '../lib/acting-user'
 import { createM4Http } from './client-m4'
+import { fetchStream } from './sse'
 import { WorkflowConflictError, type DataSource, type EvalOutputSnapshot } from './source'
 
 /** 调用方已带 reason（以后协议补上字段时）就用它，否则用按操作生成的说明。 */
@@ -26,6 +27,8 @@ const enc = encodeURIComponent
 
 /** 全局接口：管家、空间列表与增删改、服务信息，不加 /s/:spaceId 前缀（docs/design/22）。 */
 const GLOBAL_PATH = /^\/(steward|spaces|server)(\/|\?|$)/
+/** 管家接口：按人存，用全局身份（lib/acting-user 的 stewardUser），不按空间取。 */
+const STEWARD_PATH = /^\/steward(\/|\?|$)/
 
 export function qs(params: Record<string, string | number | boolean | undefined>): string {
   const p = new URLSearchParams()
@@ -42,10 +45,13 @@ export function createHttpSource(base = '/api'): DataSource {
     return sid && !GLOBAL_PATH.test(path) ? `${base}/s/${enc(sid)}${path}` : base + path
   }
   async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+    // 服务端 validateWriteRequest 要求所有写请求都是 application/json（无 body 的 POST 会 415）：写方法没给 body 时发 {}
+    const write = method !== 'GET' && method !== 'HEAD'
+    const payload = body === undefined ? (write ? {} : undefined) : body
     const res = await fetch(scoped(path), {
       method,
-      headers: { ...actingUserHeader(), ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      headers: { ...actingUserHeader(STEWARD_PATH.test(path)), ...(payload === undefined ? {} : { 'content-type': 'application/json' }) },
+      body: payload === undefined ? undefined : JSON.stringify(payload),
     })
     const text = await res.text()
     const data = text ? (JSON.parse(text) as unknown) : undefined
@@ -129,7 +135,7 @@ export function createHttpSource(base = '/api'): DataSource {
     workflowRevision: (id, rev) => get(`/workflows/${enc(id)}/revisions/${enc(rev)}`),
     rollbackWorkflow: (id, body) => req('POST', `/workflows/${enc(id)}/rollback`, body),
     subscribeWorkflow: (id, onChange) => stream(scoped(`/workflows/${enc(id)}/stream`), onChange),
-    ...createM4Http({ req, get, url: scoped, stream }),
+    ...createM4Http({ req, get, url: scoped, stream, stewardStream: (url, on) => fetchStream(url, on, () => actingUserHeader(true)) }),
   }
 }
 

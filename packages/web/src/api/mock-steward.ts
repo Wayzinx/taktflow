@@ -208,7 +208,10 @@ export function createMockSteward(): StewardSource {
       Object.assign(r, { state: body.state, snoozedUntil: body.state === 'snoozed' ? (body.until ?? new Date(Date.now() + 3 * 3600_000).toISOString()) : undefined } satisfies Partial<Risk>)
       return delay(r)
     },
-    digest: () => delay(digest, 140),
+    digest: (_since, opts) => {
+      if (!opts?.peek) bumpUnread(-unread)
+      return delay(digest, 140)
+    },
     stewardFeed: () => delay(feed, 100),
     subscribeStewardFeed(on) {
       feedSubs.add(on)
@@ -218,7 +221,8 @@ export function createMockSteward(): StewardSource {
     saveStewardPrefs: (next) => ((prefs = clone(next)), delay(prefs, 200)),
     stewardProfile: () => delay({ content: profile }),
     saveStewardProfile: (content) => ((profile = content), delay({ content }, 200)),
-    stewardSuggestions: ({ page }) => delay(SUGGESTIONS[page] ?? [], 60),
+    // 页名与服务端一致：知识库详情是 knowledge + id，设置页是 settings-<tab>
+    stewardSuggestions: ({ page, id }) => delay(SUGGESTIONS[page === 'knowledge' && id ? 'knowledge-detail' : page.startsWith('settings-') ? 'settings' : page] ?? [], 60),
     productMetrics: () => delay(PRODUCT_METRICS, 160),
     async reportProductEvent(e) {
       if (e.type === 'digest.open') bumpUnread(-unread)

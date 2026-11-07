@@ -54,7 +54,7 @@ export function OverviewTab({ base, live, onBuild }: { base: KnowledgeBaseDetail
   if (has && u.emptyRate > 0.1) items.push(<Health key="empty" icon={SearchX} tone="waiting" action={<button type="button" className="btn btn-sm" onClick={() => setQuery({ tab: 'usage' })}>看失败查询</button>}>无结果率 {pct(u.emptyRate)}，偏高：可能缺文档或缺同义词。</Health>)
   if (recall !== undefined && recall < 0.8) items.push(<Health key="recall" icon={AlertTriangle} tone="waiting" action={<button type="button" className="btn btn-sm" onClick={() => setQuery({ tab: 'eval' })}>看评测</button>}>Recall@10 只有 {recall.toFixed(2)}，建议看逐用例诊断。</Health>)
   if (!base.bound) items.push(<Health key="bound" icon={Unplug} tone="skipped" action={<Link to="/settings?tab=knowledge" className="btn btn-sm">去绑定</Link>}>还没有绑定到本空间，运行时不会用到它。</Health>)
-  if (!items.length) items.push(<Health key="ok" icon={CircleCheck} tone="success">一切正常：{scaleText(base)}，{base.builtAt ? `${fmtRelative(base.builtAt)}构建` : '还没有构建'}。</Health>)
+  if (!items.length) items.push(<Health key="ok" icon={CircleCheck} tone="success">{base.builtAt || base.stats ? <>一切正常：{scaleText(base)}{base.builtAt ? `，${fmtRelative(base.builtAt)}构建` : ''}。</> : '还没有构建：构建后就能做检索测试和评测。'}</Health>)
 
   return (
     <div className="kb-overview">

@@ -1,43 +1,40 @@
-import { useMemo, useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { useState } from 'react'
+import type { KnowledgeTestResult } from '@taktflow/core'
+import { RotateCw, ShieldAlert } from 'lucide-react'
+import { useSource } from '../../api'
+import { ErrorState, SkeletonRows } from '../../components/ui'
 
 export interface ApiOperation {
+  /** 服务端操作 id（operationId，或 `METHOD /path`）：写进 config.allow 的就是它。 */
   id: string
-  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  method: string
   path: string
   summary: string
-  tag: string
 }
 
 /**
- * OpenAPI 操作清单。协议里还没有"解析 spec、列出操作"的接口（knownIssues 已提），
- * 这里按 spec 地址本地构造一份演示清单；接上后换成服务端返回即可。
+ * 从"测试连接"的结果里取操作清单：服务端 api.test 解析 OpenAPI 后，preview 每项是 { title: 摘要, ref: 操作 id, snippet: 'GET /path' }。
+ * 不伪造：拿不到就是空清单。
  */
-export function demoOperations(spec: string): ApiOperation[] {
-  if (!spec.trim()) return []
-  const op = (method: ApiOperation['method'], path: string, summary: string, tag: string): ApiOperation => ({ id: `${method.toLowerCase()} ${path}`, method, path, summary, tag })
-  return [
-    op('GET', '/v2/orders/{id}', '查询订单详情', '订单'),
-    op('GET', '/v2/orders', '按条件列出订单', '订单'),
-    op('POST', '/v2/orders/{id}/cancel', '取消订单', '订单'),
-    op('GET', '/v2/refunds/{id}', '查询退款', '退款'),
-    op('POST', '/v2/refunds', '发起退款', '退款'),
-    op('GET', '/v2/apps/{appId}', '查询应用注册信息', '应用'),
-    op('PATCH', '/v2/apps/{appId}', '修改应用配置', '应用'),
-    op('GET', '/v2/apps/{appId}/quota', '查询调用配额', '应用'),
-    op('DELETE', '/v2/apps/{appId}/keys/{keyId}', '吊销密钥', '应用'),
-  ]
+export function operationsFromPreview(result?: KnowledgeTestResult): ApiOperation[] {
+  return (result?.preview ?? []).flatMap((p) => {
+    const m = /^([A-Z]+)\s+(\S+)/.exec(p.snippet ?? '')
+    return m ? [{ id: p.ref, method: m[1]!, path: m[2]!, summary: p.title }] : []
+  })
 }
 
-/** 操作勾选：默认只开 GET；写操作要先展开"允许写操作"才能勾。 */
-export function OpsPicker({ spec, value, onChange }: { spec: string; value: string[]; onChange: (v: string[]) => void }) {
-  const ops = useMemo(() => demoOperations(spec), [spec])
-  const [allowWrite, setAllowWrite] = useState(() => value.some((v) => !v.startsWith('get ')))
+/** 结果文案里的"读取 N 个操作"：比清单多时提示清单不全。 */
+const totalOf = (result?: KnowledgeTestResult) => Number(/读取\s*(\d+)\s*个操作/.exec(result?.message ?? '')?.[1] ?? 0)
+
+/** 操作勾选：本期服务端只允许 GET 实时查询，其他方法只展示不可勾。 */
+export function OpsPicker({ result, value, onChange }: { result?: KnowledgeTestResult; value: string[]; onChange: (v: string[]) => void }) {
+  const ops = operationsFromPreview(result)
   const [filter, setFilter] = useState('')
-  if (!ops.length) return <p className="kb-help">先填 OpenAPI 地址，这里会列出可调用的操作。</p>
-  const shown = ops.filter((o) => !filter || `${o.path} ${o.summary} ${o.tag}`.toLowerCase().includes(filter.toLowerCase()))
+  if (!ops.length) return <p className="kb-help">{result ? '没有从 OpenAPI 里读到操作，检查地址或文件后再测一次。' : '测试连接后，这里会列出 OpenAPI 里的操作。'}</p>
+  const shown = ops.filter((o) => !filter || `${o.path} ${o.summary}`.toLowerCase().includes(filter.toLowerCase()))
   const gets = ops.filter((o) => o.method === 'GET').map((o) => o.id)
   const toggle = (id: string) => onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id])
+  const total = totalOf(result)
   return (
     <div className="kb-ops">
       <div className="kb-ops-bar">
@@ -46,16 +43,15 @@ export function OpsPicker({ spec, value, onChange }: { spec: string; value: stri
           全选 GET
         </button>
         <span className="faint num">
-          已选 {value.length}/{ops.length}
+          已选 {value.length}/{gets.length}
         </span>
       </div>
       <ul className="kb-ops-list">
         {shown.map((o) => {
-          const write = o.method !== 'GET'
-          const disabled = write && !allowWrite
+          const disabled = o.method !== 'GET'
           return (
             <li key={o.id}>
-              <label className={`kb-op${disabled ? ' disabled' : ''}`}>
+              <label className={`kb-op${disabled ? ' disabled' : ''}`} title={disabled ? '本期只允许 GET 实时查询' : undefined}>
                 <input type="checkbox" checked={value.includes(o.id)} disabled={disabled} onChange={() => toggle(o.id)} />
                 <span className="kb-method mono" data-m={o.method}>
                   {o.method}
@@ -67,11 +63,43 @@ export function OpsPicker({ spec, value, onChange }: { spec: string; value: stri
           )
         })}
       </ul>
-      <label className="kb-ops-write">
-        <input type="checkbox" checked={allowWrite} onChange={(e) => (setAllowWrite(e.target.checked), e.target.checked || onChange(value.filter((v) => v.startsWith('get '))))} />
+      <p className="kb-ops-write">
         <ShieldAlert aria-hidden />
-        允许写操作（POST / PATCH / DELETE 会真实改数据，默认关闭）
-      </label>
+        只允许 GET：写操作会真实改数据，本期不开放。
+        {total > ops.length && <span className="faint"> 测试只返回了前 {ops.length} 个（共 {total} 个），其余可以直接按 id 填写。</span>}
+      </p>
     </div>
   )
+}
+
+/** 详情页设置里用：按需"读取操作"（调测试连接），再勾选。 */
+export function LiveOpsPicker({ baseId, value, onChange }: { baseId: string; value: string[]; onChange: (v: string[]) => void }) {
+  const ds = useSource()
+  const [result, setResult] = useState<KnowledgeTestResult>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<Error>()
+  async function load() {
+    setBusy(true)
+    setError(undefined)
+    try {
+      setResult(await ds.testKnowledgeBase(baseId))
+    } catch (e) {
+      setError(e as Error)
+    } finally {
+      setBusy(false)
+    }
+  }
+  if (error) return <ErrorState compact error={error} onRetry={() => void load()} title="没能读取操作" />
+  if (busy) return <SkeletonRows rows={3} icon={false} />
+  if (!result)
+    return (
+      <div className="kb-ops-load">
+        {value.length > 0 && <span className="mono faint truncate">{value.join('、')}</span>}
+        <button type="button" className="btn btn-sm" onClick={() => void load()}>
+          <RotateCw />
+          读取操作
+        </button>
+      </div>
+    )
+  return <OpsPicker result={result} value={value} onChange={onChange} />
 }

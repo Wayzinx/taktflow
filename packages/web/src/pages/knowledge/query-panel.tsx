@@ -4,7 +4,7 @@ import { Search, SearchX, ShieldBan } from 'lucide-react'
 import { useAsync, useSource } from '../../api'
 import { EmptyState, ErrorState, Segmented, SkeletonRows, toast } from '../../components/ui'
 import { HitRow, type Mark } from './hit-row'
-import { INTENTS } from './meta'
+import { evalSetTitle, INTENTS } from './meta'
 
 type Hit = KnowledgeQueryResponse['hits'][number]
 
@@ -23,8 +23,12 @@ export function QueryPanel({ base, example, compact, initial }: { base: Knowledg
   const [busy, setBusy] = useState(false)
   const [marks, setMarks] = useState<Record<string, Mark>>({})
   const [setId, setSetId] = useState<string>()
+  const me = useAsync((d) => d.me().catch(() => undefined), [])
+  // 本次会话里建过的手工用例（按 评测集 + 问题）：sets.reload() 是异步的，连续标注时不能只靠 sets.data 找已有用例
+  const made = useRef(new Map<string, KnowledgeEvalCase>())
   const targetSet = setId ?? sets.data?.[0]?.id ?? 'es-manual'
-  const targetTitle = sets.data?.find((s) => s.id === targetSet)?.title ?? '手工标注'
+  const found = sets.data?.find((s) => s.id === targetSet)
+  const targetTitle = found ? evalSetTitle(found) : '手工标注'
 
   async function run(q = text) {
     if (!q.trim()) return
@@ -53,11 +57,14 @@ export function QueryPanel({ base, example, compact, initial }: { base: Knowledg
     const next = { ...marks, [hit.ref]: marks[hit.ref] === m ? undefined : m }
     const prevMarks = marks
     setMarks(next)
-    const existing = sets.data?.find((s) => s.id === targetSet)?.cases.find((c) => c.query === res.q && c.source === 'manual')
+    const key = `${targetSet}\u0000${res.q}`
+    const existing = made.current.get(key) ?? sets.data?.find((s) => s.id === targetSet)?.cases.find((c) => c.query === res.q && c.source === 'manual')
     const relevant = Object.entries(next).filter(([, v]) => v === 'rel').map(([ref]) => ({ ref, grade: 3 as const }))
     const c: KnowledgeEvalCase = existing
       ? { ...existing, relevant, status: relevant.length ? 'active' : 'retired' }
-      : { id: `kc-m-${Date.now().toString(36)}`, query: res.q, intent, relevant, source: 'manual', status: relevant.length ? 'active' : 'retired', createdAt: new Date().toISOString(), createdBy: { type: 'human', id: 'me' } }
+      : { id: `kc-m-${Date.now().toString(36)}`, query: res.q, intent, relevant, source: 'manual', status: relevant.length ? 'active' : 'retired', createdAt: new Date().toISOString(), createdBy: { type: 'human', id: me.data?.id ?? 'web' } }
+    const before = made.current.get(key)
+    made.current.set(key, c)
     try {
       await ds.saveKnowledgeEvalCases(base.id, targetSet, [c])
       sets.reload()
@@ -66,12 +73,16 @@ export function QueryPanel({ base, example, compact, initial }: { base: Knowledg
         body: `${relevant.length} 条相关结果 · ${res.q}`,
         undo: async () => {
           setMarks(prevMarks)
-          await ds.saveKnowledgeEvalCases(base.id, targetSet, [existing ?? { ...c, status: 'retired' }])
+          const back = existing ?? { ...c, status: 'retired' as const }
+          made.current.set(key, back)
+          await ds.saveKnowledgeEvalCases(base.id, targetSet, [back])
           sets.reload()
         },
       })
     } catch (e) {
       setMarks(prevMarks)
+      if (before) made.current.set(key, before)
+      else made.current.delete(key)
       toast('标注没有保存', { tone: 'failed', body: (e as Error).message })
     }
   }

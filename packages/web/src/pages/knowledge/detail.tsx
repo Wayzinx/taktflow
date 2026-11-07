@@ -34,7 +34,9 @@ export function KnowledgeDetailPage({ id }: { id: string }) {
   const { query } = useLocation()
   const tab = query.get('tab') ?? 'overview'
   const q = useAsync((d) => d.knowledgeBase(id), [id])
-  const suggestions = useStewardSuggestions('knowledge-detail', id)
+  const kinds = useAsync((d) => d.knowledgeKinds(), [])
+  const needsBuild = kinds.data?.find((k) => k.kind === q.data?.kind)?.needsBuild
+  const suggestions = useStewardSuggestions('knowledge', id)
   const [publishing, setPublishing] = useState(query.get('publish') === '1')
   const [starting, setStarting] = useState(false)
   const [startedId, setStartedId] = useState<string>()
@@ -92,10 +94,10 @@ export function KnowledgeDetailPage({ id }: { id: string }) {
                 <Hammer />
                 {b.status === 'draft' && !b.builtAt ? '开始构建' : '重新构建'}
               </button>
-              {(b.candidateVersion || (!b.version && b.builtAt)) && (
+              {(b.candidateVersion || needsBuild === false) && (
                 <button type="button" className="btn btn-primary" onClick={() => setPublishing(true)}>
                   <Rocket />
-                  发布 v{b.candidateVersion ?? 1}
+                  {b.candidateVersion ? `发布 v${b.candidateVersion}` : b.version ? '重新发布' : '发布'}
                 </button>
               )}
             </>

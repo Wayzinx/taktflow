@@ -4,13 +4,26 @@ import { navigate } from '../../lib/router'
 import { closeCreateRequirement, useCreateRequirement } from '../../lib/ui-store'
 import { Dialog, Kbd, toast } from '../ui'
 import { AcceptanceAssist } from './ac-assist'
-import { clearDraft, emptyDraft, hasContent, loadDraft, saveDraft, titleOf, type Attachment, type RequirementDraft } from './draft'
+import { clearDraft, emptyDraft, hasContent, loadDraft, saveDraft, titleOf, uniqueAttachmentNames, type Attachment, type RequirementDraft } from './draft'
 import { DraftEditor } from './editor'
 import { insertAcceptance } from './estimate'
 import { LinksTag } from './links'
 import { RouteTag } from './route-tag'
 import { BudgetTag, DueTag, PeopleTag, RepoTag } from './tags'
 import './create.css'
+
+/** 取消运行后服务端要过一会儿才把运行落成 cancelled：归档遇到 409 时短暂重试（最多约 6 秒）。 */
+async function archiveWhenIdle(archive: () => Promise<unknown>, retry: boolean): Promise<void> {
+  for (let i = 0; ; i++) {
+    try {
+      await archive()
+      return
+    } catch (e) {
+      if (!retry || i >= 11 || (e as { status?: number }).status !== 409) throw e
+      await new Promise((r) => setTimeout(r, 500))
+    }
+  }
+}
 
 /**
  * 新建需求对话框（docs/design/22 §2.1）。全局一份，挂在 app.tsx；props 无。
@@ -79,19 +92,29 @@ export function RequirementCreateDialog() {
         repos: d.repos.length ? d.repos : undefined,
         owner,
         members: members.length ? members : undefined,
-        budget: d.budget,
+        // 服务端 createRequirement 把 budget: undefined 原样交给 run.start，被 schema 拒成"$.budget: expected object"（见 knownIssues）；
+        // 启动时没填预算就发 {}（RunBudget 各项可选，等价于按 workflow 默认预算）
+        budget: d.budget ?? (d.start ? {} : undefined),
         dueAt: d.dueAt,
         links: d.links.length ? d.links : undefined,
-        attachments: attachments.length ? attachments.map(({ name, content, encoding }) => ({ name, content, encoding })) : undefined,
+        attachments: attachments.length ? uniqueAttachmentNames(attachments.map((a) => a.name)).map((name, i) => ({ name, content: attachments[i]!.content, encoding: attachments[i]!.encoding })) : undefined,
       })
       const id = r.requirement.id
       clearDraft()
       closeCreateRequirement()
       invalidate()
-      const route = r.route ? `${r.route.tier} · ${workflows?.find((w) => w.id === r.route!.workflowId)?.title ?? r.route.workflowId}` : undefined
+      const route = r.route ? `${r.route.tier} · ${workflows?.find((w) => w.id === r.route!.workflowId)?.title || r.route.workflowId}` : undefined
       toast(r.runId ? `已创建并启动 ${id}` : `已创建 ${id}`, {
         body: [title, route].filter(Boolean).join(' · '),
-        undo: () => ds.archiveRequirement(id, '撤销新建需求').then(() => (invalidate(), navigate('/requirements'))),
+        // 已启动时服务端拒绝归档有运行的需求（409）：撤销先取消该运行，再归档
+        undoLabel: r.runId ? '撤销（取消运行并归档）' : undefined,
+        undo: async () => {
+          // 运行可能已经结束（取消会报错）：取消失败不拦撤销，归档时服务端再判一次
+          if (r.runId) await ds.runCommand('run.cancel', { input: { runId: r.runId }, reason: '撤销新建需求：取消刚启动的运行' }).catch(() => undefined)
+          await archiveWhenIdle(() => ds.archiveRequirement(id, '撤销新建需求'), !!r.runId)
+          invalidate()
+          navigate('/requirements')
+        },
       })
       if (r.startError) toast('需求已创建，但没能启动', { tone: 'waiting', body: r.startError, action: { label: '去需求页', onClick: () => navigate(`/req/${id}`) } })
       navigate(`/req/${id}?tab=chat`)

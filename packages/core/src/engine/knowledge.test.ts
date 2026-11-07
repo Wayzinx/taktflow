@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, appendFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { initProject } from '../store/project.js'
@@ -18,6 +18,7 @@ it('知识库预取身份、上下文文件、工具提示和 knowledge.used 留
   await stores.kb.create({ id: 'docs', name: '规则', kind: 'fixture', config: {} }, by, '新建')
   await stores.kb.publish('docs', { by, reason: '发布' })
   await stores.kb.setBindings([{ baseId: 'docs', scope: 'space', enabled: true, priority: 0 }], by, '绑定')
+  await appendFile(join(stores.taktDir, 'knowledge/queries.jsonl'), '{broken\n')
   const req = await stores.workspaces.createRequirement({ title: '知识测试' })
   let prompt = '', nodeId = ''
   const harness: HarnessAdapter = { id: 'mock', displayName: 'mock', available: async () => ({ ok: true }), async run(request) {
@@ -33,6 +34,21 @@ it('知识库预取身份、上下文文件、工具提示和 knowledge.used 留
   expect(nodeId).toBe('work'); expect(prompt).toContain('takt kb query'); expect(prompt).toContain('context/knowledge')
   const events = await stores.events.read(run.runId)
   expect(events.find(e => e.type === 'knowledge.query')?.data).toMatchObject({ via: 'prefetch', bases: [{ id: 'docs', version: 1 }], hits: 1, tokens: 1 })
-  expect(events.find(e => e.type === 'knowledge.used')?.data).toMatchObject({ refs: ['refund.md#0'], artifact: { workspace: req.id, path: 'reports/result.md' } })
+  expect(events.find(e => e.type === 'knowledge.used')?.data).toMatchObject({ refs: ['refund.md#0'], artifact: { workspace: req.id, path: 'reports/result.md', version: run.nodes.work!.outputs[0]!.version } })
   expect((await readKnowledgeQueries(stores)).filter(q => q.type === 'used')).toHaveLength(1)
+})
+
+it('挂上空知识库存储后，未迁移的旧知识源继续预取', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-engine-legacy-kb-')); roots.push(root)
+  const stores = await initProject(root, { layout: 'space' })
+  stores.kb = createKnowledgeStore(stores)
+  const req = await stores.workspaces.createRequirement({ title: '旧 Wiki 兼容' })
+  let prompt = ''
+  const harness: HarnessAdapter = { id: 'mock', displayName: 'mock', available: async () => ({ ok: true }), async run(request) { prompt = request.prompt; return { ok: true, finalText: '完成' } } }
+  const profile: AgentProfile = { role: 'dev', title: 'dev', description: '', instructions: '', skills: [], writeScope: ['**'], harness: { harness: 'mock' } }
+  const workflow = defineWorkflow({ id: 'legacy-kb', title: '旧知识源', version: '1', stages: [], nodes: [agent({ id: 'work', title: '查询', role: 'dev', prompt: '查询退款规则', knowledge: [{ text: '退款规则', intent: 'business' }] })] })
+  const run = await createEngine({ stores, profiles: { dev: profile }, harnesses: { mock: harness }, knowledge: [{ id: 'legacy-wiki', kind: 'wiki', describe: () => '旧 Wiki', intents: ['business'], query: async () => [{ sourceId: 'legacy-wiki', ref: 'refund.md', title: '退款', snippet: '旧 Wiki 七天退款' }] }] }).start({ workflow, requirementId: req.id })
+  expect(run.status).toBe('succeeded')
+  expect(prompt).toContain('旧 Wiki 七天退款')
+  expect((await stores.events.read(run.runId)).find(e => e.type === 'knowledge.query')?.data).toMatchObject({ sources: ['legacy-wiki'], hits: 1 })
 })

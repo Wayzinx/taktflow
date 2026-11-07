@@ -1,7 +1,7 @@
 import type { CommandRegistry, LeadPresence, ProjectStores } from '@taktflow/core'
 import type { EvalRuntimeResolver } from './eval-routes.js'
 import { actor, body, HttpError, text, viewer } from './http.js'
-import { projectCommands } from './commands.js'
+import { projectCommands } from './space.js'
 import type { Handler } from './routes.js'
 import { requirement } from './read-model.js'
 
@@ -12,11 +12,22 @@ export interface M3Callbacks {
   subscribeLead?(projectDir: string, requirementId: string, send: (presence: LeadPresence) => void): () => void
 }
 export function commandExecutor(options: M3Callbacks = {}) {
-  const commands = async (stores: ProjectStores, id?: string) => options.getCommands?.(stores) ?? projectCommands(stores, {},
-    id && ['eval.run', 'defect.attribute'].includes(id) ? await options.resolveRuntime?.(stores) : undefined)
+  const commands = async (stores: ProjectStores, id?: string): Promise<CommandRegistry> => {
+    if (id?.startsWith('requirement.')) return projectCommands(stores, options.getCommands ? {
+      startRun: async (input, context) => {
+        const runtime = await options.getCommands!(stores)
+        const clean = Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined))
+        const response = await runtime.run('run.start', clean, context)
+        if (!response.ok) throw new Error(response.message)
+        return response.result
+      },
+    } : {})
+    return options.getCommands?.(stores) ?? projectCommands(stores, {},
+      id && ['eval.run', 'defect.attribute'].includes(id) ? await options.resolveRuntime?.(stores) : undefined)
+  }
   const execute = async (stores: ProjectStores, request: Parameters<typeof actor>[0], id: string, input: Record<string, unknown>, reason?: string) => {
     const result = await (await commands(stores, id)).run(id, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)), { actor: actor(request, stores), reason })
-    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
+    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|冲突|已存在/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
     return result.result
   }
   return { commands, execute }
@@ -26,9 +37,10 @@ export function m3Routes(add: (method: string, path: string, handler: Handler) =
   add('GET', '/api/me', ({ stores, request }) => viewer(request, stores))
   add('GET', '/api/commands', async ({ stores }) => (await commands(stores)).list())
   add('POST', '/api/commands/:id', async ({ stores, request, params }) => {
-    const input = await body(request)
+    const input = await body(request, false, params.id === 'requirement.create' ? 30 * 1024 * 1024 : 8 * 1024 * 1024)
     if (!input.input || typeof input.input !== 'object' || Array.isArray(input.input)) throw new HttpError(400, 'input 必须是对象')
-    return (await commands(stores, params.id)).run(params.id!, input.input as Record<string, unknown>, { actor: actor(request, stores), reason: input.reason === undefined ? undefined : text(input.reason, 'reason') })
+    const allowEmptyReason = params.id === 'requirement.create'
+    return (await commands(stores, params.id)).run(params.id!, input.input as Record<string, unknown>, { actor: actor(request, stores), reason: input.reason === undefined ? undefined : text(input.reason, 'reason', allowEmptyReason) })
   })
   add('POST', '/api/requirements/:id/route', async ({ stores, request, params }) => {
     await requirement(stores, params.id!)

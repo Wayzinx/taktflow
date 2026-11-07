@@ -33,23 +33,25 @@ export function SpacesPage() {
 
   const archive = async (s: SpaceSummary) => {
     try {
-      await ds.archiveSpace(s.id, '网页归档空间')
+      // 服务端归档会把 id 改成 <id>@<时间>：撤销（恢复）要用返回的归档 id
+      const archivedSpace = await ds.archiveSpace(s.id, '网页归档空间')
       invalidate()
       // 归档的是当前空间：换到另一个空间继续看这个页面
       if (s.id === currentId) {
         const other = live?.find((x) => x.id !== s.id)
         if (other) navigate(spacePath(other.id, '/spaces'), { replace: true })
       }
-      toast(`已归档「${s.name}」`, { body: '可以在下方"已归档"里恢复', undo: () => ds.restoreSpace(s.id, '撤销归档').then(invalidate) })
+      toast(`已归档「${s.name}」`, { body: '可以在下方"已归档"里恢复', undo: () => ds.restoreSpace(archivedSpace.id, '撤销归档').then(invalidate) })
     } catch (e) {
       toast('没能归档', { tone: 'failed', body: (e as Error).message })
     }
   }
   const restore = async (s: SpaceSummary) => {
     try {
-      await ds.restoreSpace(s.id, '网页恢复空间')
+      // 恢复后 id 变回原 id：撤销与"进入"都用返回值
+      const restored = await ds.restoreSpace(s.id, '网页恢复空间')
       invalidate()
-      toast(`已恢复「${s.name}」`, { undo: () => ds.archiveSpace(s.id, '撤销恢复').then(invalidate), action: { label: '进入', onClick: () => navigate(spacePath(s.id)) } })
+      toast(`已恢复「${s.name}」`, { undo: () => ds.archiveSpace(restored.id, '撤销恢复').then(invalidate), action: { label: '进入', onClick: () => navigate(spacePath(restored.id)) } })
     } catch (e) {
       toast('没能恢复', { tone: 'failed', body: (e as Error).message })
     }

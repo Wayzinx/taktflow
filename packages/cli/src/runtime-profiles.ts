@@ -26,7 +26,7 @@ function profile(markdown: string, roleName: string, source: string): AgentProfi
   }
 }
 
-export async function loadRuntimeProfiles(dir: string, roles: Record<string, string>): Promise<Record<string, AgentProfile>> {
+export async function loadRuntimeProfiles(dir: string, roles: Record<string, string>, warn?: (message: string) => void): Promise<Record<string, AgentProfile>> {
   const result: Record<string, AgentProfile> = Object.create(null)
   const add = (value: AgentProfile) => {
     if (Object.hasOwn(result, value.role)) throw new Error(`角色名称冲突：${value.role}`)
@@ -44,7 +44,11 @@ export async function loadRuntimeProfiles(dir: string, roles: Record<string, str
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (!entry.isFile() || !entry.name.endsWith('.md')) continue
     const file = join(dir, entry.name)
-    add(profile(await readFile(file, 'utf8'), entry.name.slice(0, -3), file))
+    try { add(profile(await readFile(file, 'utf8'), entry.name.slice(0, -3), file)) }
+    catch (error) {
+      if (!warn) throw error
+      warn(`跳过无法解析的角色 ${entry.name}：${error instanceof Error ? error.message : String(error)}`)
+    }
   }
   return result
 }

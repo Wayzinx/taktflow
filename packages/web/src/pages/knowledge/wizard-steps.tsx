@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import type { KnowledgeBaseSummary, KnowledgeBuild, KnowledgeKindInfo, KnowledgeTestResult } from '@taktflow/core'
 import { CircleCheck, CircleX, PencilLine, RotateCw, Zap } from 'lucide-react'
 import { useSource } from '../../api'
-import { ErrorState, SkeletonRows, SkeletonText } from '../../components/ui'
+import { ErrorState, SkeletonRows, SkeletonText, toast } from '../../components/ui'
 import { BuildProgress } from './build-progress'
 import { KindGlyph, useLiveBuild } from './card'
 import { INTENTS } from './meta'
+import { OpsPicker } from './ops-picker'
 import { SchemaForm, type Schema } from './schema-form'
 import type { WizardDraft } from './wizard'
 
@@ -55,11 +56,21 @@ export function StepData({ kind, draft, onChange, missing, id }: { kind: Knowled
 }
 
 /** 第 3 步：进来就测一次（连接 / 读第一个文档），预览前几项。 */
-export function StepTest({ base, result, onResult, onEdit }: { base: KnowledgeBaseSummary; result?: KnowledgeTestResult; onResult: (r: KnowledgeTestResult) => void; onEdit: () => void }) {
+export function StepTest({ base, result, onResult, onEdit, onBase }: { base: KnowledgeBaseSummary; result?: KnowledgeTestResult; onResult: (r: KnowledgeTestResult) => void; onEdit: () => void; onBase: (b: KnowledgeBaseSummary) => void }) {
   const ds = useSource()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<Error>()
   const started = useRef(false)
+  const [allow, setAllow] = useState<string[]>(() => (base.config.allow as string[] | undefined) ?? [])
+  // api：测试读出的操作就地勾选，写进 config.allow（服务端只放行 allow 里的 GET）
+  async function saveAllow(next: string[]) {
+    setAllow(next)
+    try {
+      onBase(await ds.updateKnowledgeBase(base.id, { config: { ...base.config, allow: next }, reason: '新建向导：勾选允许调用的操作' }))
+    } catch (e) {
+      toast('没能保存勾选', { tone: 'failed', body: (e as Error).message })
+    }
+  }
   async function run() {
     setBusy(true)
     setError(undefined)
@@ -102,7 +113,13 @@ export function StepTest({ base, result, onResult, onEdit }: { base: KnowledgeBa
           再测一次
         </button>
       </div>
-      {!!result.preview?.length && (
+      {base.kind === 'api' && result.ok && (
+        <div className="ov-field">
+          <span className="ov-field-label">允许调用的操作</span>
+          <OpsPicker result={result} value={allow} onChange={(v) => void saveAllow(v)} />
+        </div>
+      )}
+      {base.kind !== 'api' && !!result.preview?.length && (
         <ul className="kb-preview">
           {result.preview.map((p, i) => (
             <li key={p.ref} className="stagger-item" style={{ '--stagger-delay': `${i * 24}ms` } as CSSProperties}>

@@ -84,7 +84,7 @@
  * | POST | /api/spaces/:id/archive                        | 请求体 { reason } → SpaceSummary（有运行中的需求时 409） |
  * | POST | /api/spaces/:id/restore                        | 请求体 { reason } → SpaceSummary |
  * | DELETE| /api/spaces/:id                               | 请求体 { confirm: <id>, reason } → 204（只允许已归档的空间） |
- * | POST | /api/workflows/:id/convert                     | 请求体 { dryRun?, reason? } → WorkflowConvertResult（把不可编辑写法改写为 defineWorkflow） |
+ * | POST | /api/workflows/:id/convert                     | 请求体 WorkflowConvertRequest → WorkflowConvertResult（把不可编辑写法改写为 defineWorkflow；baseRev 不一致 409） |
  *
  * —— 管家（docs/design/22）；按 x-takt-user 区分用户，数据在 <spaces 根>/.steward/<userId>/ ——
  * | GET  | /api/steward/threads                           | StewardThread[] |
@@ -99,7 +99,7 @@
  * | POST | /api/steward/proposals/:id/undo                | 请求体 { reason? } → Proposal |
  * | GET  | /api/steward/risks?space=&state=               | Risk[] |
  * | POST | /api/steward/risks/:key/state                  | 请求体 RiskStateRequest → Risk（key 需 encodeURIComponent） |
- * | GET  | /api/steward/digest?since=                     | Digest（since 缺省为上次查看） |
+ * | GET  | /api/steward/digest?since=&peek=1              | Digest（since 缺省为上次查看；peek=1 只读，不标记已读也不记 digest.open） |
  * | GET  | /api/steward/feed                              | StewardFeedItem[]（"动态"：汇报、风险变化、提案结果） |
  * | GET  | /api/steward/prefs                             | StewardPrefs |
  * | PUT  | /api/steward/prefs                             | 请求体 StewardPrefs → StewardPrefs |
@@ -144,7 +144,7 @@
  *
  * 多空间时所有路由都可加前缀 /api/s/:spaceId（例如 /api/s/shop/requirements），不加前缀即默认空间。
  */
-import type { AttentionItem } from './interfaces.js'
+import type { AttentionItem, KnowledgeCaller } from './interfaces.js'
 import type {
   Actor,
   AgentProfile,
@@ -801,6 +801,13 @@ export interface SpaceUpdateRequest {
   reason: string
 }
 
+export interface WorkflowConvertRequest {
+  dryRun?: boolean
+  /** 调用方看到的修订；与当前不一致时 409。 */
+  baseRev?: string
+  reason?: string
+}
+
 export interface WorkflowConvertResult {
   ok: boolean
   /** ok 为 false 时：确定性改写做不了的原因（可交给管家出提案）。 */
@@ -942,6 +949,8 @@ export interface ProposalDecisionRequest {
   reason?: string
   /** 人在批准前修改过的步骤（整体替换；服务端重算 hash 并标 edited）。 */
   steps?: ProposalStep[]
+  /** 删除类 / 高风险提案：人手输入的目标 id 或名称，服务端核对一致才执行。 */
+  confirm?: string
 }
 
 export type RiskKind = 'waiting-human' | 'budget' | 'stalled' | 'repeat-failure' | 'review-stuck' | 'gate-failed' | 'deadline' | 'defect-escape' | 'regression' | 'knowledge'
@@ -1084,7 +1093,7 @@ export interface KnowledgeBaseDetail extends KnowledgeBaseSummary {
   evalSets: Array<{ id: string; title: string; total: number; bySource: Partial<Record<KnowledgeEvalCase['source'], number>>; candidates: number }>
   usage: {
     byNode: Array<{ workflowId: string; nodeId: string; queries: number; citedRate: number }>
-    recent: Array<{ at: string; requirementId?: RequirementId; runId?: RunId; nodeId?: NodeId; query: string; hits: number; cited: boolean; latencyMs: number; via?: 'prefetch' | 'tool' }>
+    recent: Array<{ at: string; requirementId?: RequirementId; runId?: RunId; nodeId?: NodeId; query: string; hits: number; cited: boolean; latencyMs: number; via?: KnowledgeCaller['via'] }>
     trend: Array<{ date: string; queries: number; hitRate: number; emptyRate: number; citedRate: number }>
   }
 }

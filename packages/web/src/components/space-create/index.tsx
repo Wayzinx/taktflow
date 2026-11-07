@@ -55,17 +55,19 @@ export function SpaceCreateDialog() {
     setBusy(true)
     setError(undefined)
     try {
-      const body = toRequest(skipTeam ? { ...f, repos: [], members: [] } : f)
+      const body = toRequest(skipTeam ? { ...f, repos: [], members: [] } : f, me ? { id: me.id, name: me.name } : undefined)
       const sp = await ds.createSpace(body)
       closeCreateSpace()
       invalidate()
       toast(`已创建空间「${sp.name}」`, {
         body: <span className="mono">/s/{sp.id}</span>,
+        // 设计 22 §1.5 / §2.1：新建空间的撤销是"改为归档"，不彻底删除（归档后可在 /spaces 恢复或删除）
+        undoLabel: '撤销（归档）',
         undo: async () => {
           await ds.archiveSpace(sp.id, '撤销新建空间')
-          await ds.deleteSpace(sp.id, { confirm: sp.id, reason: '撤销新建空间' })
           invalidate()
           navigate('/spaces')
+          toast(`已归档「${sp.name}」`, { body: '可以在"全部空间"的已归档区恢复或彻底删除' })
         },
       })
       navigate(spacePath(sp.id))

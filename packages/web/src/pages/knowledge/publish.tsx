@@ -2,21 +2,23 @@ import { useEffect, useState } from 'react'
 import type { KnowledgeBaseSummary, KnowledgeEvalRun, KnowledgePublishResponse } from '@taktflow/core'
 import { CircleCheck, CircleX, Rocket, ShieldAlert } from 'lucide-react'
 import { useAsync, useSource } from '../../api'
-import { Dialog, ReasonField, reasonOk, toast } from '../../components/ui'
+import { Dialog, ReasonField, reasonOk, SkeletonText, toast } from '../../components/ui'
 import { setQuery } from '../../lib/router'
 
 /** 发布门槛预览：最近一次包含候选版本的对比评测（发布时服务端会再判一次，以服务端为准）。 */
-function GatePreview({ base, run }: { base: KnowledgeBaseSummary; run?: KnowledgeEvalRun }) {
+function GatePreview({ base, run, defectIds }: { base: KnowledgeBaseSummary; run?: KnowledgeEvalRun; defectIds?: Set<string> }) {
   if (!base.version) return <div className="kb-gate ok"><CircleCheck aria-hidden />第一次发布是 v1，不需要过评测门槛。</div>
   const cmp = run?.comparison
   if (!cmp) return <div className="kb-gate warn"><ShieldAlert aria-hidden />还没有候选版本和已发布版本的对比评测，发布时会现跑一次门槛检查。</div>
   const m = run.metrics
-  const worse = cmp.verdict === 'worse'
+  // 服务端门槛还要求缺陷回归用例全部命中：按这次运行里候选变体的逐用例结果预判
+  const failedDefects = run.perCase.filter((c) => c.variant === cmp.candidate && defectIds?.has(c.caseId) && c.diagnosis !== 'ok').length
+  const worse = cmp.verdict === 'worse' || failedDefects > 0
   return (
     <div className={`kb-gate ${worse ? 'bad' : 'ok'}`}>
       {worse ? <CircleX aria-hidden /> : <CircleCheck aria-hidden />}
       <span>
-        最近一次对比（<span className="mono">{run.id}</span>）：Recall@10 <span className="num">{m[cmp.baseline]?.recall10.toFixed(2)}</span> → <span className="num">{m[cmp.candidate]?.recall10.toFixed(2)}</span>，胜 {cmp.wins} / 负 {cmp.losses} / 平 {cmp.ties}。{worse ? '大概率过不了门槛。' : '预计能过门槛。'}
+        最近一次对比（<span className="mono">{run.id}</span>）：Recall@10 <span className="num">{m[cmp.baseline]?.recall10.toFixed(2)}</span> → <span className="num">{m[cmp.candidate]?.recall10.toFixed(2)}</span>，胜 {cmp.wins} / 负 {cmp.losses} / 平 {cmp.ties}{failedDefects ? `；${failedDefects} 条缺陷回归用例没有命中` : ''}。{worse ? '大概率过不了门槛。' : '预计能过门槛。'}
       </span>
     </div>
   )
@@ -28,10 +30,16 @@ function GatePreview({ base, run }: { base: KnowledgeBaseSummary; run?: Knowledg
  */
 export function PublishFlow({ base, onDone, inline }: { base: KnowledgeBaseSummary; onDone: (b: KnowledgeBaseSummary) => void; inline?: boolean }) {
   const ds = useSource()
-  const target = base.candidateVersion ?? (base.version ? undefined : 1)
+  const kinds = useAsync((d) => d.knowledgeKinds(), [])
+  const needsBuild = kinds.data?.find((k) => k.kind === base.kind)?.needsBuild
+  // 有候选版本就发布它；不需要构建的类型（code / history）没有候选时不传 version，服务端会现构建一个再发布
+  const target = base.candidateVersion
+  const auto = !target && needsBuild === false
   const runs = useAsync((d) => d.knowledgeEvalRuns(base.id), [base.id])
   const run = runs.data?.find((r) => r.status === 'done' && r.variants.some((v) => v.version === base.candidateVersion))
-  const [reason, setReason] = useState(target ? `发布${base.version ? '候选' : ''} v${target}` : '')
+  const sets = useAsync((d) => d.knowledgeEvalSets(base.id).catch(() => []), [base.id])
+  const defectIds = new Set((sets.data ?? []).flatMap((st) => st.cases.filter((c) => c.source === 'defect' && c.status === 'active').map((c) => c.id)))
+  const [reason, setReason] = useState(target ? `发布${base.version ? '候选' : ''} v${target}` : base.version ? '重新发布（读取最新数据）' : '首次发布')
   const [forceReason, setForceReason] = useState('')
   const [gate, setGate] = useState<KnowledgePublishResponse['gate']>()
   const [busy, setBusy] = useState(false)
@@ -41,7 +49,7 @@ export function PublishFlow({ base, onDone, inline }: { base: KnowledgeBaseSumma
     setBusy(true)
     setError(undefined)
     try {
-      const r = await ds.publishKnowledge(base.id, { version: target, reason: force ? forceReason : reason, force })
+      const r = await ds.publishKnowledge(base.id, { ...(target ? { version: target } : {}), reason: force ? forceReason : reason, force })
       if (!r.gate.pass && !force) return setGate(r.gate)
       toast(`${base.name} 已发布 v${r.base.version}`, { body: force ? '门槛未过，已按原因强制发布，记入审计。' : '运行中的节点从下一次查询起使用新版本。', tone: force ? 'waiting' : 'success' })
       onDone(r.base)
@@ -52,13 +60,15 @@ export function PublishFlow({ base, onDone, inline }: { base: KnowledgeBaseSumma
     }
   }
 
-  if (!target) return <p className="kb-help">没有可发布的候选版本：先构建一次。</p>
+  if (!kinds.data && !kinds.error && !target) return <SkeletonText lines={2} />
+  if (!target && !auto) return <p className="kb-help">没有可发布的候选版本：先构建一次。</p>
+  const what = target ? `v${target}` : '新版本'
   const body = gate ? (
     <div className="kb-gate-fail tab-panel" role="alert">
       <div className="kb-gate bad">
         <CircleX aria-hidden />
         <span>
-          门槛没有通过，v{target} 没有发布。{gate.evalRunId && <button type="button" className="kb-link" onClick={() => setQuery({ tab: 'eval', run: gate.evalRunId })}>看评测 {gate.evalRunId}</button>}
+          门槛没有通过，{what} 没有发布。{gate.evalRunId && <button type="button" className="kb-link" onClick={() => setQuery({ tab: 'eval', run: gate.evalRunId })}>看评测 {gate.evalRunId}</button>}
         </span>
       </div>
       <ol className="kb-gate-reasons">
@@ -73,11 +83,11 @@ export function PublishFlow({ base, onDone, inline }: { base: KnowledgeBaseSumma
       <div className="kb-publish-what">
         <Rocket aria-hidden />
         <span>
-          发布 <strong className="num">v{target}</strong>
-          {base.version ? <> 替换已发布的 <span className="num">v{base.version}</span></> : null}；运行时只用已发布版本。
+          发布 <strong className="num">{what}</strong>
+          {base.version ? <> 替换已发布的 <span className="num">v{base.version}</span></> : null}；{auto ? '这个类型查询时实时读取，发布时会现构建一个快照。' : '运行时只用已发布版本。'}
         </span>
       </div>
-      <GatePreview base={base} run={run} />
+      <GatePreview base={base} run={run} defectIds={defectIds} />
       <ReasonField value={reason} onChange={setReason} />
     </div>
   )
@@ -93,7 +103,7 @@ export function PublishFlow({ base, onDone, inline }: { base: KnowledgeBaseSumma
   ) : (
     <button type="button" className="btn btn-primary" disabled={busy || !reasonOk(reason)} onClick={() => void publish(false)}>
       <Rocket />
-      发布 v{target}
+      发布 {what}
     </button>
   )
   return (

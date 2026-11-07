@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { KnowledgeBaseDetail } from '@taktflow/core'
-import { FileText, FolderGit2, Globe, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { FileText, Folder, FolderGit2, Globe, Plus, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { useAsync, useSource } from '../../api'
 import { EmptyState, ErrorState, Segmented, SkeletonRows, toast, useFlashRows, useStagger } from '../../components/ui'
 import { fmtRelative } from '../../lib/format'
@@ -8,9 +8,12 @@ import { setQuery } from '../../lib/router'
 import { Dropzone, ListInput, type PendingFile } from './fields'
 import { autoReason } from './meta'
 
-type Src = { kind?: string; repo?: string; glob?: string; urls?: string[] }
-const SRC_ICON = { upload: Upload, repo: FolderGit2, urls: Globe } as Record<string, typeof Upload>
-const srcText = (s: Src) => (s.kind === 'repo' ? `${s.repo ?? '?'} · ${s.glob ?? '**/*'}` : s.kind === 'urls' ? `${s.urls?.length ?? 0} 个 URL` : '上传的文件')
+/** rag 数据源，字段同服务端 kinds/documents.ts：type = upload / path / repo / url。 */
+type Src = { type?: string; repo?: string; path?: string; glob?: string | string[]; urls?: string[] }
+type SrcType = 'repo' | 'path' | 'url' | 'upload'
+const SRC_ICON = { upload: Upload, repo: FolderGit2, path: Folder, url: Globe } as Record<string, typeof Upload>
+const srcText = (s: Src) =>
+  s.type === 'repo' ? `仓库 ${s.repo ?? '?'}${s.glob ? ` · ${String(s.glob)}` : ''}` : s.type === 'path' ? `目录 ${s.path ?? '.'}` : s.type === 'url' ? `${s.urls?.length ?? 0} 个 URL` : '上传的文件'
 
 /** 非 rag 类型的数据源只读展示：键值对，密钥只显示引用。 */
 function ConfigSummary({ config }: { config: Record<string, unknown> }) {
@@ -33,9 +36,9 @@ export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload
   const st = useStagger(docs.data?.length ?? 0)
   const flash = useFlashRows((docs.data ?? []).map((d) => d.path))
   const [adding, setAdding] = useState(false)
-  const [kind, setKind] = useState<'repo' | 'urls' | 'upload'>('repo')
+  const [kind, setKind] = useState<SrcType>('repo')
   const [repo, setRepo] = useState('')
-  const [glob, setGlob] = useState('docs/**/*.md')
+  const [dir, setDir] = useState('docs')
   const [urls, setUrls] = useState<string[]>([])
   const [files, setFiles] = useState<PendingFile[]>([])
   const [busy, setBusy] = useState(false)
@@ -53,11 +56,13 @@ export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload
     try {
       if (kind === 'upload') {
         const r = await ds.uploadKnowledge(base.id, { files: files.map((f) => ({ path: f.path, content: f.content })) })
+        // 服务端只解析 sources 里声明过的来源：还没有 upload 源时补一条（sources 为空时服务端默认就是 upload）
+        if (sources.length && !sources.some((x) => (x.type ?? 'upload') === 'upload')) await ds.updateKnowledgeBase(base.id, { config: { ...base.config, sources: [...sources, { type: 'upload' }] }, reason: autoReason('添加上传数据源') })
         toast(`已上传 ${r.docs} 个文件`, { body: '下次构建会解析它们。', action: { label: '立即构建', onClick: () => void sync() } })
         setFiles([])
         docs.reload()
       } else {
-        const s: Src = kind === 'repo' ? { kind, repo, glob } : { kind, urls }
+        const s: Src = kind === 'repo' ? { type: kind, repo } : kind === 'path' ? { type: kind, path: dir } : { type: kind, urls }
         await saveSources([...sources, s], `已添加数据源 ${srcText(s)}`, sources)
       }
       setAdding(false)
@@ -78,7 +83,7 @@ export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload
     }
   }
 
-  const canAdd = kind === 'upload' ? files.length > 0 : kind === 'repo' ? !!repo.trim() : urls.length > 0
+  const canAdd = kind === 'upload' ? files.length > 0 : kind === 'repo' ? !!repo.trim() : kind === 'path' ? !!dir.trim() : urls.length > 0
   return (
     <div className="kb-sources">
       <section className="kb-section">
@@ -99,7 +104,7 @@ export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload
         {isRag ? (
           <ul className="kb-src-list">
             {sources.map((s, i) => {
-              const Icon = SRC_ICON[s.kind ?? 'upload'] ?? FileText
+              const Icon = SRC_ICON[s.type ?? 'upload'] ?? FileText
               return (
                 <li key={i} className="kb-src">
                   <Icon aria-hidden />
@@ -117,14 +122,10 @@ export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload
         <div className="expand" data-open={adding}>
           <div inert={!adding}>
             <div className="kb-src-add">
-              <Segmented size="sm" ariaLabel="数据源类型" value={kind} onChange={setKind} options={[{ value: 'repo', label: '仓库 + glob' }, { value: 'urls', label: 'URL 列表' }, { value: 'upload', label: '上传文件' }]} />
-              {kind === 'repo' && (
-                <div className="kb-row-2">
-                  <input className="input mono" placeholder="仓库 id，例如 shop-docs" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="仓库" />
-                  <input className="input mono" value={glob} onChange={(e) => setGlob(e.target.value)} aria-label="glob" />
-                </div>
-              )}
-              {kind === 'urls' && <ListInput mono value={urls} onChange={setUrls} placeholder="粘贴 URL，回车添加" />}
+              <Segmented size="sm" ariaLabel="数据源类型" value={kind} onChange={setKind} options={[{ value: 'repo', label: '仓库' }, { value: 'path', label: '空间内目录' }, { value: 'url', label: 'URL 列表' }, { value: 'upload', label: '上传文件' }]} />
+              {kind === 'repo' && <input className="input mono" placeholder="仓库 id，例如 shop-docs" value={repo} onChange={(e) => setRepo(e.target.value)} aria-label="仓库" />}
+              {kind === 'path' && <input className="input mono" placeholder="相对空间目录，例如 docs" value={dir} onChange={(e) => setDir(e.target.value)} aria-label="目录" />}
+              {kind === 'url' && <ListInput mono value={urls} onChange={setUrls} placeholder="粘贴 URL，回车添加" />}
               {kind === 'upload' && <Dropzone files={files} onChange={setFiles} />}
               <div className="kb-row-end">
                 <button type="button" className="btn btn-sm btn-ghost" onClick={() => setAdding(false)}>

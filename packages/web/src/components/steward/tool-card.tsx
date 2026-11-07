@@ -51,7 +51,8 @@ export function ToolCard({ tool, animate }: { tool: StewardToolCall; animate?: b
 
 /** 统一 diff：+ 绿、- 红、@@ 中性；只读。 */
 export function DiffView({ diff, maxHeight = 260 }: { diff: string; maxHeight?: number }) {
-  const lines = diff.replace(/\n$/, '').split('\n')
+  // 去掉 git 的元信息行（diff --git / index / 临时文件名），文件名由调用方单独显示
+  const lines = diff.replace(/\n$/, '').split('\n').filter((l) => !/^(diff --git |index [0-9a-f]+\.\.[0-9a-f]+|--- a\/before|\+\+\+ b\/after)/.test(l))
   return (
     <pre className="stw-diff" style={{ maxHeight }} aria-label="改动预览">
       {lines.map((l, i) => {

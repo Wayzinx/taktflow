@@ -5,8 +5,10 @@
  * 扫描 packages/web/src/pages/** 与 src/components/** 的 *.tsx / *.ts（不含测试），报告：
  *   loading-text   违规：用"加载中"或"…"表示加载状态（JSX 文本或字符串字面量里的"加载中"、单独的"…"、"正在读取…"这类）；
  *                  请用 <Skeleton> / <SkeletonRows> 等骨架原语。输入框 placeholder / aria-label / title 不算。
- *   cli-hint       警告：页面文案里出现 takt.config.json，或"运行 takt …"、`takt init` 这类 CLI 指引；
- *                  应该给一个按钮（或"让管家帮我"）而不是教用户改文件、跑命令。
+ *   cli-hint       警告：页面文案里出现 takt.config.json，或"运行 takt …"、`takt init` 这类 CLI 指引，且附近（上下 4 行）
+ *                  没有对应的按钮（<button / stewardAsk / askSteward）；应该给按钮或"让管家帮我"，而不是教用户改文件、跑命令。
+ *   async-empty    违规：文件里用 useAsync 取数据并直接渲染成列表（`x.data.map(` / `(x.data ?? []).map(`），却没有 <EmptyState>
+ *                  （异步列表区域缺空状态）。辅助取数（下拉选项等不单独成区的）在 useAsync 那一行或上一行写 `ux-audit: ok <原因>` 豁免。
  *
  * 豁免：在该行或上一行写注释 `ux-audit: ok <原因>`。
  * 用法：node scripts/ux-audit.mjs [--json] [目录…]；有违规时退出码 1，只有警告时退出码 0。
@@ -102,12 +104,30 @@ const CLI = [
   { re: /\btakt\s+(init|req|run|serve|ws|kb|eval|space|workflow)\b/, what: 'takt CLI 命令' },
 ]
 
+/** 附近（上下 4 行）有没有能替代 CLI 指引的按钮。 */
+const ACTION = /<button\b|stewardAsk|askSteward|openSteward/
+function hasActionNear(lines, line) {
+  for (let k = Math.max(0, line - 5); k < Math.min(lines.length, line + 4); k++) if (ACTION.test(lines[k])) return true
+  return false
+}
+
 function check(file, src) {
   const { code, strings, allowLines } = lex(src)
   const rel = relative(ROOT, file)
+  const srcLines = src.split('\n')
   const push = (line, rule, level, message, text) => {
     if (allowLines.has(line)) return
+    if (rule === 'cli-hint' && hasActionNear(srcLines, line)) return
     findings.push({ file: rel, line, rule, level, message, text: text.trim().slice(0, 80) })
+  }
+  // 异步列表区域的空状态：`const x = useAsync(...)` 且 `x.data.map(` / `(x.data ?? []).map(` 渲染成列表的，文件里至少要有一个 EmptyState
+  if (!/<EmptyState\b/.test(code)) {
+    code.split('\n').forEach((text, idx) => {
+      const name = /\bconst\s+(\w+)\s*=\s*useAsync\b/.exec(text)?.[1]
+      if (!name) return
+      const listed = new RegExp(`\\b${name}\\.data\\??\\.map\\(|\\(${name}\\.data\\s*\\?\\?\\s*\\[\\]\\)\\.map\\(`).test(code)
+      if (listed) push(idx + 1, 'async-empty', 'error', `${name} 由 useAsync 取来直接渲染成列表，却没有 <EmptyState>：补上空状态，或注明 ux-audit: ok 的原因`, text)
+    })
   }
   // JSX 文本：代码部分逐行扫
   code.split('\n').forEach((text, idx) => {

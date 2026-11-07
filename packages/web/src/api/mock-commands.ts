@@ -11,50 +11,43 @@
  */
 import type { CommandInfo, CommandRunRequest, CommandRunResponse } from '@taktflow/core'
 
-const text = { type: 'string' }
-const strings = { type: 'array', items: text }
-const tierEnum = { type: 'string', enum: ['T0', 'T1', 'T2', 'T3'] }
-const lessonStatus = { type: 'string', enum: ['tentative', 'active', 'retired'] }
-const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required })
-const budget = { type: 'object', properties: { tokens: { type: 'number' }, costUsd: { type: 'number' }, minutes: { type: 'number' }, concurrency: { type: 'integer' } } }
-const task = {
-  type: 'object',
-  required: ['role', 'title', 'instructions'],
-  properties: { role: text, title: text, instructions: text, repo: text, inputs: strings, writeScope: strings, completion: strings, impact: { type: 'string', enum: ['cosmetic', 'semantic'] }, outputs: { type: 'array', items: obj({ path: text, kind: text }, ['path', 'kind']) } },
-}
-const evalTarget = obj({ kind: { type: 'string', enum: ['node', 'skill'] }, name: text, workflowId: text, nodeId: text }, ['kind'])
-const selector = obj({ harness: text, model: text, effort: text }, ['harness'])
-
-type Def = [id: string, title: string, risk: CommandInfo['risk'], input: Record<string, unknown>, minRole?: CommandInfo['minRole']]
-const define = ([id, title, risk, input, minRole]: Def): CommandInfo => ({ id, title, risk, kind: risk === 'read' ? 'query' : 'command', minRole: minRole ?? (risk === 'read' ? 'viewer' : 'member'), input })
-
-export const MOCK_COMMANDS: CommandInfo[] = (
-  [
-    // core/commands/index.ts
-    ['requirement.status', '需求状态', 'read', obj({ requirementId: text }, ['requirementId'])],
-    ['run.status', '运行状态', 'read', obj({ runId: text }, ['runId'])],
-    ['attention.list', '待办列表', 'read', obj({ requirementId: text, pending: { type: 'boolean' } })],
-    ['lessons.list', '经验列表', 'read', obj({ status: lessonStatus })],
-    ['requirement.create', '创建需求', 'write', obj({ id: text, title: text, owner: text, links: { type: 'array', items: obj({ type: text, url: text, title: text }, ['type', 'url']) } }, ['title'])],
-    ['route.preview', '路由预览', 'read', obj({ requirementId: text, hint: text, override: obj({ tier: tierEnum, reason: text }, ['tier', 'reason']) }, ['requirementId'])],
-    ['run.start', '启动运行', 'write', obj({ requirementId: text, workflowId: text, args: { type: 'object' }, budget, route: { type: 'object' } }, ['requirementId', 'workflowId'])],
-    ['run.resume', '继续运行', 'write', obj({ runId: text }, ['runId'])],
-    ['run.cancel', '取消运行', 'dangerous', obj({ runId: text }, ['runId']), 'maintainer'],
-    ['attention.answer', '回答待办', 'write', obj({ requestId: text, decision: { type: 'string', enum: ['approve', 'reject', 'answer', 'choice'] }, answer: text }, ['requestId'])],
-    ['task.dispatch', '派发任务', 'write', obj({ requirementId: text, task }, ['requirementId', 'task'])],
-    ['review.dispose', '处置评审问题', 'write', obj({ runId: text, nodeId: text, groupKey: text, state: { type: 'string', enum: ['open', 'resolved', 'dismissed'] } }, ['runId', 'nodeId', 'groupKey', 'state'])],
-    ['lesson.status', '修改经验状态', 'write', obj({ id: text, status: lessonStatus }, ['id', 'status']), 'maintainer'],
-    // server/commands.ts 扩展
-    ['lesson.update', '编辑经验', 'write', obj({ id: text, title: text, body: text, status: lessonStatus, trigger: obj(Object.fromEntries(['roles', 'paths', 'signatures', 'categories'].map((k) => [k, strings]))) }, ['id']), 'maintainer'],
-    // core/commands/eval-commands.ts
-    ['eval.scorecards', '查询评测成绩单', 'read', obj({ by: { type: 'string', enum: ['node', 'recipe', 'skill'] }, workflowId: text })],
-    ['defect.report', '录入逃逸缺陷', 'write', obj({ requirementId: text, title: text, description: text, severity: { type: 'string', enum: ['critical', 'major', 'minor'] }, acs: strings, evidence: strings, links: { type: 'array' } }, ['requirementId', 'title', 'description', 'severity'])],
-    ['defect.attribute', '生成候选归因', 'write', obj({ requirementId: text, defectId: text }, ['requirementId', 'defectId'])],
-    ['defect.confirm', '人工确认归因', 'write', obj({ requirementId: text, defectId: text, attribution: { type: 'object' }, note: text }, ['requirementId', 'defectId'])],
-    ['eval.collect', '收集评测用例', 'write', obj({ target: evalTarget, runIds: strings, includeDefects: { type: 'boolean' } })],
-    ['eval.run', '启动回放评测', 'write', obj({ target: evalTarget, caseIds: strings, judge: selector, variants: { type: 'array', items: obj({ id: text, label: text, skillsDir: text, promptFile: text, profileFile: text, harness: selector }, ['id', 'label']) } }, ['target', 'variants'])],
-  ] satisfies Def[]
-).map(define)
+export const MOCK_COMMANDS: CommandInfo[] = [
+  {"id":"requirement.status","title":"需求状态","risk":"read","kind":"query","minRole":"viewer","input":{"type":"object","properties":{"requirementId":{"type":"string"}},"required":["requirementId"]}},
+  {"id":"run.status","title":"运行状态","risk":"read","kind":"query","minRole":"viewer","input":{"type":"object","properties":{"runId":{"type":"string"}},"required":["runId"]}},
+  {"id":"attention.list","title":"待办列表","risk":"read","kind":"query","minRole":"viewer","input":{"type":"object","properties":{"requirementId":{"type":"string"},"pending":{"type":"boolean"}},"required":[]}},
+  {"id":"lessons.list","title":"经验列表","risk":"read","kind":"query","minRole":"viewer","input":{"type":"object","properties":{"status":{"type":"string","enum":["tentative","active","retired"]}},"required":[]}},
+  {"id":"requirement.create","title":"创建需求","risk":"write","kind":"command","minRole":"member","input":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"owner":{"type":"string"},"members":{"type":"array","items":{"type":"string"}},"dueAt":{"type":"string"},"workflowId":{"type":"string"},"start":{"type":"boolean"},"repos":{"type":"array","items":{"type":"string"}},"budget":{"type":"object","properties":{"tokens":{"type":"number"},"costUsd":{"type":"number"},"minutes":{"type":"number"},"concurrency":{"type":"integer"}}},"reason":{"type":"string"},"attachments":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"content":{"type":"string"},"encoding":{"type":"string","enum":["utf8","base64"]}},"required":["name","content"]}},"links":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"url":{"type":"string"},"title":{"type":"string"}},"required":["type","url"]}}},"required":["title"]}},
+  {"id":"route.preview","title":"路由预览","risk":"read","kind":"query","minRole":"viewer","input":{"type":"object","properties":{"requirementId":{"type":"string"},"hint":{"type":"string"},"override":{"type":"object","properties":{"tier":{"type":"string","enum":["T0","T1","T2","T3"]},"reason":{"type":"string"}},"required":["tier","reason"]}},"required":["requirementId"]}},
+  {"id":"run.start","title":"启动运行","risk":"write","kind":"command","minRole":"member","input":{"type":"object","properties":{"requirementId":{"type":"string"},"workflowId":{"type":"string"},"args":{"type":"object"},"budget":{"type":"object","properties":{"tokens":{"type":"number"},"costUsd":{"type":"number"},"minutes":{"type":"number"},"concurrency":{"type":"integer"}}},"route":{"type":"object"}},"required":["requirementId","workflowId"]}},
+  {"id":"run.resume","title":"继续运行","risk":"write","kind":"command","minRole":"member","input":{"type":"object","properties":{"runId":{"type":"string"}},"required":["runId"]}},
+  {"id":"run.cancel","title":"取消运行","risk":"dangerous","kind":"command","minRole":"maintainer","input":{"type":"object","properties":{"runId":{"type":"string"}},"required":["runId"]}},
+  {"id":"attention.answer","title":"回答待办","risk":"write","kind":"command","minRole":"member","input":{"type":"object","properties":{"requestId":{"type":"string"},"decision":{"type":"string","enum":["approve","reject","answer","choice"]},"answer":{"type":"string"}},"required":["requestId"]}},
+  {"id":"task.dispatch","title":"派发任务","risk":"write","kind":"command","minRole":"member","input":{"type":"object","properties":{"requirementId":{"type":"string"},"task":{"type":"object","required":["role","title","instructions"],"properties":{"role":{"type":"string"},"title":{"type":"string"},"instructions":{"type":"string"},"repo":{"type":"string"},"inputs":{"type":"array","items":{"type":"string"}},"writeScope":{"type":"array","items":{"type":"string"}},"completion":{"type":"array","items":{"type":"string"}},"impact":{"type":"string","enum":["cosmetic","semantic"]},"outputs":{"type":"array","items":{"type":"object","required":["path","kind"],"properties":{"path":{"type":"string"},"kind":{"type":"string"}}}}}}},"required":["requirementId","task"]}},
+  {"id":"review.dispose","title":"处置评审问题","risk":"write","kind":"command","minRole":"member","input":{"type":"object","properties":{"runId":{"type":"string"},"nodeId":{"type":"string"},"groupKey":{"type":"string"},"state":{"type":"string","enum":["open","resolved","dismissed"]}},"required":["runId","nodeId","groupKey","state"]}},
+  {"id":"lesson.status","title":"修改经验状态","risk":"write","kind":"command","minRole":"maintainer","input":{"type":"object","properties":{"id":{"type":"string"},"status":{"type":"string","enum":["tentative","active","retired"]}},"required":["id","status"]}},
+  {"id":"requirement.update","title":"编辑需求","input":{"type":"object","properties":{"requirementId":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"owner":{"type":"string"},"members":{"type":"array","items":{"type":"string"}},"links":{"type":"array","items":{"type":"object","properties":{"type":{"type":"string"},"url":{"type":"string"},"title":{"type":"string"}},"required":["type","url"]}},"dueAt":{}},"required":["requirementId"]},"kind":"command","risk":"write","minRole":"member"},
+  {"id":"requirement.archive","title":"归档需求","input":{"type":"object","properties":{"requirementId":{"type":"string"}},"required":["requirementId"]},"kind":"command","risk":"write","minRole":"member"},
+  {"id":"requirement.restore","title":"恢复需求","input":{"type":"object","properties":{"requirementId":{"type":"string"}},"required":["requirementId"]},"kind":"command","risk":"write","minRole":"member"},
+  {"id":"workflow.edit","title":"编辑流程","input":{"type":"object","properties":{"workflowId":{"type":"string"},"baseRev":{"type":"string"},"edits":{"type":"array"}},"required":["workflowId","baseRev","edits"]},"kind":"command","risk":"write","minRole":"maintainer"},
+  {"id":"workflow.convert","title":"转换流程","input":{"type":"object","properties":{"workflowId":{"type":"string"}},"required":["workflowId"]},"kind":"command","risk":"write","minRole":"maintainer"},
+  {"id":"file.write","title":"写入文件","input":{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"},"baseHash":{"type":"string"}},"required":["path","content"]},"kind":"command","risk":"write","minRole":"maintainer"},
+  {"id":"config.patch","title":"修改配置","input":{"type":"object","properties":{"patch":{"type":"object"}},"required":["patch"]},"kind":"command","risk":"write","minRole":"maintainer"},
+  {"id":"knowledge.create","title":"新建知识库","kind":"command","risk":"write","minRole":"maintainer","input":{"type":"object","properties":{"name":{"type":"string"},"kind":{"type":"string"},"config":{"type":"object"}},"required":["name","kind","config"]}},
+  {"id":"knowledge.update","title":"更新知识库","kind":"command","risk":"write","minRole":"maintainer","input":{"type":"object","properties":{"id":{"type":"string"},"patch":{"type":"object"}},"required":["id","patch"]}},
+  {"id":"knowledge.build","title":"构建知识库","kind":"command","risk":"write","minRole":"maintainer","input":{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}},
+  {"id":"knowledge.publish","title":"发布知识库","kind":"command","risk":"write","minRole":"maintainer","input":{"type":"object","properties":{"id":{"type":"string"},"version":{"type":"integer"},"force":{"type":"boolean"}},"required":["id"]}},
+  {"id":"knowledge.bind","title":"绑定知识库","kind":"command","risk":"write","minRole":"maintainer","input":{"type":"object","properties":{"bindings":{"type":"array"}},"required":["bindings"]}},
+  {"id":"knowledge.eval","title":"评测知识库","kind":"command","risk":"write","minRole":"maintainer","input":{"type":"object","properties":{"id":{"type":"string"},"setId":{"type":"string"},"variants":{"type":"array"}},"required":["id","setId","variants"]}},
+  {"id":"knowledge.query","title":"查询知识库","kind":"query","risk":"read","minRole":"viewer","input":{"type":"object","properties":{"text":{"type":"string"},"intent":{"type":"string"},"bases":{"type":"array"}},"required":["text"]}},
+  {"id":"knowledge.list","title":"知识库列表","kind":"query","risk":"read","minRole":"viewer","input":{"type":"object","properties":{},"required":[]}},
+  {"id":"eval.scorecards","title":"查询评测成绩单","kind":"query","risk":"read","minRole":"viewer","input":{"type":"object","properties":{"by":{"type":"string","enum":["node","recipe","skill"]},"workflowId":{"type":"string"}},"required":[]}},
+  {"id":"defect.report","title":"录入逃逸缺陷","kind":"command","risk":"write","minRole":"member","input":{"type":"object","properties":{"requirementId":{"type":"string"},"title":{"type":"string"},"description":{"type":"string"},"severity":{"type":"string","enum":["critical","major","minor"]},"acs":{"type":"array","items":{"type":"string"}},"evidence":{"type":"array","items":{"type":"string"}},"links":{"type":"array"}},"required":["requirementId","title","description","severity"]}},
+  {"id":"defect.attribute","title":"生成候选归因","kind":"command","risk":"write","minRole":"member","input":{"type":"object","properties":{"requirementId":{"type":"string"},"defectId":{"type":"string"}},"required":["requirementId","defectId"]}},
+  {"id":"defect.confirm","title":"人工确认归因","kind":"command","risk":"write","minRole":"member","input":{"type":"object","properties":{"requirementId":{"type":"string"},"defectId":{"type":"string"},"attribution":{"type":"object"},"note":{"type":"string"}},"required":["requirementId","defectId"]}},
+  {"id":"eval.collect","title":"收集评测用例","kind":"command","risk":"write","minRole":"member","input":{"type":"object","properties":{"target":{"type":"object","properties":{"kind":{"type":"string","enum":["node","skill"]},"name":{"type":"string"},"workflowId":{"type":"string"},"nodeId":{"type":"string"}},"required":["kind"]},"runIds":{"type":"array","items":{"type":"string"}},"includeDefects":{"type":"boolean"}},"required":[]}},
+  {"id":"eval.run","title":"启动回放评测","kind":"command","risk":"write","minRole":"member","input":{"type":"object","properties":{"target":{"type":"object","properties":{"kind":{"type":"string","enum":["node","skill"]},"name":{"type":"string"},"workflowId":{"type":"string"},"nodeId":{"type":"string"}},"required":["kind"]},"caseIds":{"type":"array","items":{"type":"string"}},"judge":{"type":"object","properties":{"harness":{"type":"string"},"model":{"type":"string"},"effort":{"type":"string"}},"required":["harness"]},"variants":{"type":"array","items":{"type":"object","properties":{"id":{"type":"string"},"label":{"type":"string"},"skillsDir":{"type":"string"},"promptFile":{"type":"string"},"profileFile":{"type":"string"},"harness":{"type":"object","properties":{"harness":{"type":"string"},"model":{"type":"string"},"effort":{"type":"string"}},"required":["harness"]}},"required":["id","label"]}}},"required":["target","variants"]}},
+  {"id":"lesson.update","title":"编辑经验","kind":"command","risk":"write","minRole":"maintainer","input":{"type":"object","properties":{"id":{"type":"string"},"title":{"type":"string"},"body":{"type":"string"},"status":{"type":"string","enum":["tentative","active","retired"]},"trigger":{"type":"object","properties":{"roles":{"type":"array","items":{"type":"string"}},"paths":{"type":"array","items":{"type":"string"}},"signatures":{"type":"array","items":{"type":"string"}},"categories":{"type":"array","items":{"type":"string"}}},"required":[]}},"required":["id"]}},
+]
 
 export type CommandHandler = (input: Record<string, unknown>, reason?: string) => Promise<CommandRunResponse>
 

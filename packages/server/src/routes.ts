@@ -11,6 +11,8 @@ import { serialize } from './stale.js'
 import { stream } from './stream.js'
 import { spaceRoutes, type LeadMention } from './space-routes.js'
 import { workflowRoutes } from './workflow-routes.js'
+import { registerKnowledgeRoutes } from './knowledge-routes.js'
+import { createSecretResolver } from '@taktflow/knowledge'
 import { crudRoutes } from './crud-routes.js'
 import { workflowStore } from './space.js'
 import type { WorkflowStore } from '@taktflow/workflow-source'
@@ -31,6 +33,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   const add = router.add
   const { execute } = commandExecutor(catalog)
   const workflows = new Map<string, WorkflowStore>()
+  registerKnowledgeRoutes(add, { connections })
   crudRoutes(add, catalog)
   spaceRoutes(add, connections, onLeadMention, catalog)
   m3Routes(add, catalog)

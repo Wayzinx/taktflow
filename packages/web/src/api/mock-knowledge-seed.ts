@@ -2,7 +2,7 @@
  * 知识库演示数据（docs/design/23）：5 个知识库——商城文档（rag，ready）、业务 Wiki（llm-wiki，构建中）、
  * 订单库（database，ready）、开放平台接口（api，草稿）、提交历史（history，ready）。
  */
-import type { Actor, KnowledgeBaseSummary, KnowledgeBinding, KnowledgeBuild, KnowledgeEvalCase, KnowledgeEvalRun, KnowledgeKindInfo } from '@taktflow/core'
+import type { Actor, KnowledgeBaseSummary, KnowledgeBinding, KnowledgeBuild, KnowledgeEvalCase, KnowledgeEvalRun, KnowledgeKindInfo, KnowledgeTestResult } from '@taktflow/core'
 
 const MIN = 60_000
 const ago = (min: number) => new Date(Date.now() - min * MIN).toISOString()
@@ -11,14 +11,31 @@ const SYS: Actor = { type: 'system', id: 'kb-builder' }
 
 const retrieval = { topK: 8, minScore: 0.2, hybrid: { bm25: 0.4, vector: 0.6 }, rerank: 'bge-reranker', budgetTokens: 2400 }
 
+/**
+ * 类型清单：kind / 标题 / 说明 / intents / needsBuild / configSchema 与服务端 packages/knowledge/src/kinds/* 一致
+ * （test/mock-knowledge-kinds-sync.test.ts 校验）；available / reason 是演示用的可用性。
+ */
 export const KINDS: KnowledgeKindInfo[] = [
-  { kind: 'rag', title: '文档检索（RAG）', summary: '适合回答"规范怎么写、文档里怎么说"', example: '退款接口的幂等键怎么传？', intents: ['business', 'fact'], needsBuild: true, available: true, configSchema: { type: 'object', required: ['sources'], properties: { sources: { type: 'array', title: '数据源', items: { type: 'object', properties: { kind: { enum: ['upload', 'repo', 'urls'] }, repo: { type: 'string' }, glob: { type: 'string', default: 'docs/**/*.md' }, urls: { type: 'array', items: { type: 'string' } } } } }, chunk: { type: 'object', properties: { size: { type: 'number', default: 800 }, overlap: { type: 'number', default: 120 } } } } } },
-  { kind: 'llm-wiki', title: 'LLM Wiki', summary: '适合回答"这个模块是干什么的、业务规则是什么"', example: '优惠券叠加的规则是什么？', intents: ['business', 'impact'], needsBuild: true, available: true, configSchema: { type: 'object', properties: { from: { enum: ['wiki', 'repo'], title: '来源' }, path: { type: 'string', title: 'Wiki 目录' }, repo: { type: 'string' }, scope: { type: 'string', title: '范围 glob', default: 'src/**' }, granularity: { enum: ['dir', 'module'], default: 'module' } } } },
-  { kind: 'database', title: '数据库', summary: '适合回答"表结构、字段口径、某个值现在是多少"', example: 'orders.status 有哪些取值？', intents: ['schema', 'fact'], needsBuild: false, available: true, configSchema: { type: 'object', required: ['driver', 'dsn'], properties: { driver: { enum: ['postgres', 'mysql', 'sqlite'] }, dsn: { type: 'string', format: 'secret', title: '连接串（密钥引用）' }, schema: { type: 'string', default: 'public' }, tables: { type: 'array', title: '表白名单', items: { type: 'string' } }, readOnly: { type: 'boolean', default: true } } } },
-  { kind: 'api', title: '接口（OpenAPI）', summary: '适合回答"某个接口现在返回什么、参数怎么填"', example: '查询订单详情要带哪些头？', intents: ['fact'], needsBuild: false, available: true, configSchema: { type: 'object', required: ['spec'], properties: { spec: { type: 'string', title: 'OpenAPI 地址或文件' }, operations: { type: 'array', title: '允许调用的操作', items: { type: 'string' } }, auth: { type: 'object', properties: { header: { type: 'string', default: 'Authorization' }, secret: { type: 'string', format: 'secret' } } } } } },
-  { kind: 'history', title: '提交与需求历史', summary: '适合回答"为什么这么写、以前改过什么"', example: '导出为什么限制 5000 行？', intents: ['history'], needsBuild: true, available: true, configSchema: { type: 'object', properties: { repos: { type: 'array', items: { type: 'string' } }, since: { type: 'string', default: '1y' }, includeRequirements: { type: 'boolean', default: true } } } },
-  { kind: 'code', title: '代码图谱', summary: '适合回答"谁调用了它、改它影响哪里"', example: 'formatAmount 被哪些模块用到？', intents: ['symbol', 'impact'], needsBuild: true, available: false, reason: '需要先安装 codegraph 插件', configSchema: { type: 'object', properties: {} } },
+  { kind: 'rag', title: '文档检索', summary: '业务规则、产品文档和规范', example: '退款规则是什么？', intents: ['business', 'fact'], needsBuild: true, available: true, configSchema: { type: 'object', properties: { sources: { type: 'array', items: { type: 'object', required: ['type'], properties: { type: { type: 'string', enum: ['upload', 'path', 'repo', 'url'] }, path: { type: 'string' }, repo: { type: 'string' }, urls: { type: 'array', items: { type: 'string' } } } } }, chunkTokens: { type: 'integer' }, overlapTokens: { type: 'integer' } } } },
+  { kind: 'llm-wiki', title: 'LLM Wiki', summary: '模块职责、业务流程和设计原因', intents: ['business', 'history', 'impact'], needsBuild: true, available: true, configSchema: { type: 'object', properties: { source: { type: 'string', enum: ['space', 'path', 'git'] }, path: { type: 'string' }, url: { type: 'string' }, branch: { type: 'string' }, generate: { type: 'object', required: ['repo'], properties: { repo: { type: 'string' }, granularity: { type: 'string', enum: ['directory', 'module'] } } } } } },
+  { kind: 'database', title: '数据库', summary: '表结构、字段口径和只读实时数据', intents: ['schema', 'fact'], needsBuild: true, available: true, configSchema: { type: 'object', required: ['driver', 'connection'], properties: { driver: { type: 'string', enum: ['sqlite', 'postgres', 'mysql'] }, connection: { type: 'string', format: 'secret' }, tables: { type: 'array', items: { type: 'string' } }, schemas: { type: 'array', items: { type: 'string' } }, rowLimit: { type: 'integer' }, notes: { type: 'object' }, mask: { type: 'object' } } } },
+  { kind: 'api', title: '接口', summary: 'OpenAPI 操作检索和允许的 GET 实时查询', intents: ['fact'], needsBuild: true, available: true, configSchema: { type: 'object', required: ['openapi'], properties: { allow: { type: 'array', items: { type: 'string' } }, baseURL: { type: 'string' }, headers: { type: 'object', additionalProperties: { type: 'string', format: 'secret' } }, maxBytes: { type: 'integer' } } } },
+  { kind: 'code', title: '代码', summary: '精确符号和代码定位', intents: ['symbol', 'impact'], needsBuild: false, available: false, reason: '需要先安装 codegraph 插件', configSchema: { type: 'object', properties: { path: { type: 'string' }, ignore: { type: 'array', items: { type: 'string' } }, repos: { type: 'array', items: { type: 'string' } } } } },
+  { kind: 'history', title: '历史', summary: '提交原因和过往需求', intents: ['history', 'business'], needsBuild: false, available: true, configSchema: { type: 'object', properties: { workspacePath: { type: 'string' }, path: { type: 'string' }, source: { type: 'string', enum: ['git-history', 'workspace', 'both'] } } } },
 ]
+
+/** 演示的 OpenAPI 操作（只在 mock 的"测试连接"里返回，形状同服务端 api.test 的 preview）。 */
+const DEMO_OPS: Array<[string, string, string]> = [
+  ['GET', '/v2/orders/{id}', '查询订单详情'], ['GET', '/v2/orders', '按条件列出订单'], ['POST', '/v2/orders/{id}/cancel', '取消订单'],
+  ['GET', '/v2/refunds/{id}', '查询退款'], ['POST', '/v2/refunds', '发起退款'], ['GET', '/v2/apps/{appId}/quota', '查询调用配额'],
+]
+export function mockTest(b: KnowledgeBaseSummary): KnowledgeTestResult {
+  if (b.kind === 'api') {
+    if (!b.config.openapi) return { ok: false, message: '还没有填 OpenAPI 地址或文件' }
+    return { ok: true, message: `读取 ${DEMO_OPS.length} 个操作，请勾选允许调用的 GET`, preview: DEMO_OPS.map(([m, path, title]) => ({ title, ref: `${m} ${path}`, snippet: `${m} ${path}` })) }
+  }
+  return { ok: true, message: `连接正常，预览前 3 项（${b.kind === 'database' ? '表' : '文档'}）`, preview: [1, 2, 3].map((i) => ({ title: `${b.name} · 示例 ${i}`, ref: `item-${i}`, snippet: '预览内容（演示数据）' })) }
+}
 
 const base = (b: Partial<KnowledgeBaseSummary> & Pick<KnowledgeBaseSummary, 'id' | 'name' | 'kind' | 'description' | 'intents' | 'status' | 'version'>): KnowledgeBaseSummary => ({
   scope: 'space',
@@ -34,11 +51,11 @@ const base = (b: Partial<KnowledgeBaseSummary> & Pick<KnowledgeBaseSummary, 'id'
 
 export function seedBases(): KnowledgeBaseSummary[] {
   return [
-    base({ id: 'shop-docs', name: '商城文档', kind: 'rag', description: '商城前后端的开发规范、接口文档与运维手册（shop-docs 仓库 docs/）', intents: ['business', 'fact'], status: 'ready', version: 3, candidateVersion: 4, builtAt: ago(25 * 60), publishedAt: ago(6 * 24 * 60), stats: { docs: 214, chunks: 1892, bytes: 3_412_000 }, config: { sources: [{ kind: 'repo', repo: 'shop-docs', glob: 'docs/**/*.md' }] }, usage7d: { queries: 1240, hitRate: 0.84, citedRate: 0.61, emptyRate: 0.06 }, lastEval: { runId: 'kr-12', recall10: 0.86, at: ago(24 * 60) }, staleDocs: 7 }),
-    base({ id: 'biz-wiki', name: '业务 Wiki', kind: 'llm-wiki', description: '从 shop-api 代码生成的模块级业务说明：订单、优惠券、库存', intents: ['business', 'impact'], status: 'building', version: 1, builtAt: ago(9 * 24 * 60), publishedAt: ago(9 * 24 * 60), stats: { docs: 31, chunks: 412, bytes: 640_000, pages: 31 }, config: { from: 'repo', repo: 'shop-api', scope: 'src/**', granularity: 'module' }, usage7d: { queries: 386, hitRate: 0.77, citedRate: 0.52, emptyRate: 0.11 }, lastEval: { runId: 'kr-9', recall10: 0.79, at: ago(9 * 24 * 60) }, building: { buildId: 'kb-b-wiki-2', stage: 'generate', done: 12, total: 31 } }),
-    base({ id: 'orders-db', name: '订单库', kind: 'database', description: '订单库表结构与字段口径（只读账号，18 张表白名单）', intents: ['schema', 'fact'], status: 'ready', version: 2, builtAt: ago(3 * 24 * 60), publishedAt: ago(3 * 24 * 60), stats: { docs: 18, chunks: 18, bytes: 96_000, tables: 18 }, config: { driver: 'postgres', dsn: 'secret:orders-ro', schema: 'public', tables: ['orders', 'order_items', 'refunds'] }, usage7d: { queries: 512, hitRate: 0.69, citedRate: 0.48, emptyRate: 0.17 }, lastEval: { runId: 'kr-11', recall10: 0.71, at: ago(26 * 60) } }),
-    base({ id: 'open-api', name: '开放平台接口', kind: 'api', description: '对外开放平台的 OpenAPI（草稿，还没测试连接）', intents: ['fact'], status: 'draft', version: 0, bound: false, stats: { docs: 0, chunks: 0, bytes: 0, operations: 46 }, config: { spec: 'https://open.example.com/openapi.json', operations: [] }, createdAt: ago(40), updatedAt: ago(40) }),
-    base({ id: 'git-history', name: '提交历史', kind: 'history', description: '三个业务仓库近一年的提交与过往需求存放区', intents: ['history'], status: 'ready', version: 5, builtAt: ago(12 * 60), publishedAt: ago(12 * 60), stats: { docs: 4210, chunks: 9830, bytes: 12_800_000 }, config: { repos: ['shop-web', 'shop-api', 'shop-e2e'], since: '1y', includeRequirements: true }, usage7d: { queries: 208, hitRate: 0.88, citedRate: 0.7, emptyRate: 0.03 }, lastEval: { runId: 'kr-10', recall10: 0.9, at: ago(5 * 24 * 60) } }),
+    base({ id: 'shop-docs', name: '商城文档', kind: 'rag', description: '商城前后端的开发规范、接口文档与运维手册（shop-docs 仓库 docs/）', intents: ['business', 'fact'], status: 'ready', version: 3, candidateVersion: 4, builtAt: ago(25 * 60), publishedAt: ago(6 * 24 * 60), stats: { docs: 214, chunks: 1892, bytes: 3_412_000 }, config: { sources: [{ type: 'repo', repo: 'shop-docs' }], chunkTokens: 800 }, usage7d: { queries: 1240, hitRate: 0.84, citedRate: 0.61, emptyRate: 0.06 }, lastEval: { runId: 'kr-12', recall10: 0.86, at: ago(24 * 60) }, staleDocs: 7 }),
+    base({ id: 'biz-wiki', name: '业务 Wiki', kind: 'llm-wiki', description: '从 shop-api 代码生成的模块级业务说明：订单、优惠券、库存', intents: ['business', 'impact'], status: 'building', version: 1, builtAt: ago(9 * 24 * 60), publishedAt: ago(9 * 24 * 60), stats: { docs: 31, chunks: 412, bytes: 640_000, pages: 31 }, config: { generate: { repo: 'shop-api', granularity: 'module' } }, usage7d: { queries: 386, hitRate: 0.77, citedRate: 0.52, emptyRate: 0.11 }, lastEval: { runId: 'kr-9', recall10: 0.79, at: ago(9 * 24 * 60) }, building: { buildId: 'kb-b-wiki-2', stage: 'generate', done: 12, total: 31 } }),
+    base({ id: 'orders-db', name: '订单库', kind: 'database', description: '订单库表结构与字段口径（只读账号，18 张表白名单）', intents: ['schema', 'fact'], status: 'ready', version: 2, builtAt: ago(3 * 24 * 60), publishedAt: ago(3 * 24 * 60), stats: { docs: 18, chunks: 18, bytes: 96_000, tables: 18 }, config: { driver: 'postgres', connection: 'secret:orders-ro', schemas: ['public'], tables: ['orders', 'order_items', 'refunds'], rowLimit: 200 }, usage7d: { queries: 512, hitRate: 0.69, citedRate: 0.48, emptyRate: 0.17 }, lastEval: { runId: 'kr-11', recall10: 0.71, at: ago(26 * 60) } }),
+    base({ id: 'open-api', name: '开放平台接口', kind: 'api', description: '对外开放平台的 OpenAPI（草稿，还没测试连接）', intents: ['fact'], status: 'draft', version: 0, bound: false, stats: { docs: 0, chunks: 0, bytes: 0, operations: 46 }, config: { openapi: 'https://open.example.com/openapi.json', allow: [] }, createdAt: ago(40), updatedAt: ago(40) }),
+    base({ id: 'git-history', name: '提交历史', kind: 'history', description: '三个业务仓库近一年的提交与过往需求存放区', intents: ['history'], status: 'ready', version: 5, builtAt: ago(12 * 60), publishedAt: ago(12 * 60), stats: { docs: 4210, chunks: 9830, bytes: 12_800_000 }, config: { source: 'both' }, usage7d: { queries: 208, hitRate: 0.88, citedRate: 0.7, emptyRate: 0.03 }, lastEval: { runId: 'kr-10', recall10: 0.9, at: ago(5 * 24 * 60) } }),
   ]
 }
 

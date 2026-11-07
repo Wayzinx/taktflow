@@ -1,0 +1,33 @@
+{
+  "description": "示例自己的资料，仅用于本地演示",
+  "scope": "space",
+  "retrieval": {
+    "topK": 10,
+    "budgetTokens": 4000
+  },
+  "status": "draft",
+  "version": 0,
+  "createdAt": "2026-01-01T00:00:00.000Z",
+  "updatedAt": "2026-01-01T00:00:00.000Z",
+  "id": "delivery-docs",
+  "name": "交付文档",
+  "kind": "rag",
+  "intents": [
+    "business",
+    "fact"
+  ],
+  "config": {
+    "sources": [
+      {
+        "type": "path",
+        "path": "docs",
+        "glob": "**/*.md"
+      },
+      {
+        "type": "path",
+        "path": "requirements",
+        "glob": "**/inputs/*.md"
+      }
+    ]
+  }
+}

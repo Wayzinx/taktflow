@@ -181,5 +181,10 @@ it('多空间前缀隔离数据、回调与默认空间，并拒绝重复空间 
     const file = join(parent, name, 'takt.config.json')
     const config = JSON.parse(await readFile(file, 'utf8')); config.space = { id: 'duplicate' }; await writeFile(file, JSON.stringify(config))
   }
-  await expect(createServer({ spacesDir: parent, port: 0 })).rejects.toThrow('重复')
+  const duplicateServer = await createServer({ spacesDir: parent, port: 0 })
+  try {
+    const response = await fetch(`${duplicateServer.url}/api/spaces`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toHaveLength(1)
+  } finally { await duplicateServer.close() }
 })
