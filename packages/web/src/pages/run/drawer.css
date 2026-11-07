@@ -984,6 +984,7 @@
 }
 .node-brief-stale ~ .btn-primary {
   margin-left: 0;
+}
 /* ---------------------------------------------------------------- 子 Agent 追溯（agents-tab.tsx） */
 .agent-stack {
   display: grid;
