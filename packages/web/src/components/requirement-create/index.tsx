@@ -4,7 +4,7 @@ import { navigate } from '../../lib/router'
 import { closeCreateRequirement, useCreateRequirement } from '../../lib/ui-store'
 import { Dialog, Kbd, toast } from '../ui'
 import { AcceptanceAssist } from './ac-assist'
-import { clearDraft, emptyDraft, hasContent, loadDraft, saveDraft, titleOf, uniqueAttachmentNames, type Attachment, type RequirementDraft } from './draft'
+import { clearDraft, descriptionOf, emptyDraft, hasContent, loadDraft, saveDraft, titleOf, uniqueAttachmentNames, type Attachment, type RequirementDraft } from './draft'
 import { DraftEditor } from './editor'
 import { insertAcceptance } from './estimate'
 import { LinksTag } from './links'
@@ -86,7 +86,7 @@ export function RequirementCreateDialog() {
       const members = [...new Set(d.members.filter((m) => m !== owner))]
       const r = await ds.createRequirement({
         title,
-        description: d.text.trim() || undefined,
+        description: descriptionOf(d) || undefined,
         start: d.start,
         workflowId: d.workflowId,
         repos: d.repos.length ? d.repos : undefined,

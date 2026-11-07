@@ -14,7 +14,7 @@ export function WorkflowsListPage() {
   const editable = q.data?.filter((w) => w.editable).length ?? 0
   const readonly = (q.data?.length ?? 0) - editable
   return (
-    <div className="page wf-page">
+    <div className="page wf-page wf-list-page">
       <PageHeader
         title="Workflow"
         description={

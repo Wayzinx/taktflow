@@ -108,16 +108,36 @@ async function fixture() {
     rev,
     diagnostics: [],
     layout: { nodes: {} },
-    model: {
-      editable: true,
-      meta: {
+      model: {
+        editable: true,
+        meta: {
         id: 'flow',
         title: { kind: 'literal', value: '交付流程' },
-        version: { kind: 'literal', value: '1' },
+          version: { kind: 'literal', value: '1' },
+        },
+        nodes: [
+          {
+            id: 'review-code',
+            kind: 'review',
+            props: {
+              id: { kind: 'literal', value: 'review-code' },
+              title: { kind: 'literal', value: '代码评审' },
+              stage: { kind: 'literal', value: 'review' },
+            },
+          },
+          {
+            id: 'acceptance',
+            kind: 'human',
+            props: {
+              id: { kind: 'literal', value: 'acceptance' },
+              title: { kind: 'literal', value: '验收' },
+              stage: { kind: 'literal', value: 'acceptance' },
+              needs: { kind: 'literal', value: ['review-code'] },
+            },
+          },
+        ],
+        stages: { kind: 'literal', value: [{ id: 'review', title: '评审' }, { id: 'acceptance', title: '验收' }] },
       },
-      nodes: [],
-      stages: { kind: 'literal', value: [] },
-    },
   })
   const space: StewardSpace = {
     id: 'shop',
@@ -213,6 +233,13 @@ async function fixture() {
   }
 }
 describe('提案生命周期', () => {
+  it('空间管理命令忽略 spaceId：归档空间不在活跃列表里也能出提案并执行', async () => {
+    const f = await fixture(),
+      step: ProposalStep = { kind: 'command', spaceId: 'shop@20261107-195504', commandId: 'space.archive', input: { id: 'shop@20261107-195504' } }
+    const p = await f.agent.proposals.create(f.thread.id, '归档', '用户要求', [step])
+    expect(p.status).toBe('pending')
+    expect((await f.agent.proposals.approve(p.id, { hash: p.hash }, { type: 'human', id: 'alice' })).status).toBe('applied')
+  })
   it('hash 绑定、批准执行、跨实例撤销与审计身份', async () => {
     const f = await fixture(),
       p = await f.agent.proposals.create(f.thread.id, '建需求', '用户要求', [f.create])
@@ -376,6 +403,62 @@ describe('提案生命周期', () => {
       f.agent.proposals.approve(stale.id, { hash: stale.hash }, { type: 'human', id: 'alice' }),
     ).rejects.toMatchObject({ status: 409 })
   })
+  it('提案步骤畸形输入只返回可操作 400，不崩溃', async () => {
+    const f = await fixture()
+    await expect(
+      f.agent.proposals.create(f.thread.id, '坏提案', '用户要求', [
+        { type: 'command', commandId: 'requirement.create', input: { title: '错形状' } },
+      ] as unknown as ProposalStep[]),
+    ).rejects.toThrow('字段名必须是 kind')
+    await expect(
+      f.agent.proposals.create(f.thread.id, '坏命令', '用户要求', [
+        { kind: 'command', spaceId: 'shop', input: { title: '缺 commandId' } } as unknown as ProposalStep,
+      ]),
+    ).rejects.toThrow('steps[0].commandId')
+    await expect(
+      f.agent.proposals.create(f.thread.id, '近似命令', '用户要求', [
+        { kind: 'command', spaceId: 'shop', commandId: 'requirement.creat', input: { title: '近似' } },
+      ]),
+    ).rejects.toThrow('requirement.create')
+  })
+  it('workflow edit 校验列出节点 id，并接受按提示改正后的 workflow 步骤', async () => {
+    const f = await fixture()
+    await expect(
+      f.agent.proposals.create(f.thread.id, '坏 workflow', '用户要求', [
+        {
+          kind: 'workflow',
+          spaceId: 'shop',
+          workflowId: 'flow',
+          baseRev: 'r1',
+          edits: [{ op: 'setNeeds', id: 'acceptance', needs: ['missing-node'] }],
+        },
+      ]),
+    ).rejects.toThrow('review-code')
+    const p = await f.agent.proposals.create(f.thread.id, '加人工确认', '用户要求', [
+      {
+        kind: 'workflow',
+        spaceId: 'shop',
+        workflowId: 'flow',
+        baseRev: 'r1',
+        edits: [
+          {
+            op: 'addNode',
+            kind: 'human',
+            after: 'review-code',
+            props: {
+              id: { kind: 'literal', value: 'prelaunch-confirm' },
+              title: { kind: 'literal', value: '上线前人工确认' },
+              stage: { kind: 'literal', value: 'acceptance' },
+              needs: { kind: 'literal', value: ['review-code'] },
+            },
+          },
+          { op: 'setNeeds', id: 'acceptance', needs: ['prelaunch-confirm'] },
+        ],
+      },
+    ])
+    expect(p.steps[0]).toMatchObject({ kind: 'workflow' })
+    expect(p.previews?.[0]?.body).toContain('changed')
+  })
   it('profile 提案可自动执行并保留审计', async () => {
     const f = await fixture()
     await f.agent.store.write('prefs.json', { trust: 'auto-low', digestTimes: [] })
@@ -443,6 +526,91 @@ describe('问答与工具', () => {
       ],
     })
   })
+  it('工具 schema 暴露 propose anyOf，workflow_get 返回可编辑视图且空间解析不代答', async () => {
+    const f = await fixture()
+    await f.stores.workspaces.createRequirement({ id: 'REQ-001', title: '问候语支持空名字' })
+    const propose = (await f.agent.tools.specs()).find((tool) => tool.name === 'propose')!
+    expect(JSON.stringify(propose.parameters)).toContain('anyOf')
+    expect(JSON.stringify(propose.parameters)).toContain('addNode')
+    const context = { threadId: f.thread.id, messageId: 'm', proposals: [], delegations: [] }
+    const view = await f.agent.tools.call(
+      'workflow_get',
+      { spaceId: 'shop', workflowId: 'flow' },
+      context,
+    )
+    expect(view.data).toMatchObject({ rev: 'r1', source: undefined })
+    expect(JSON.stringify(view.data)).toContain('review-code')
+    const withSource = await f.agent.tools.call(
+      'workflow_get',
+      { spaceId: 'shop', workflowId: 'flow', includeSource: true },
+      context,
+    )
+    expect(JSON.stringify(withSource.data)).toContain('revision r1')
+    const resolved = await f.agent.tools.call('resolve_space', { name: '作者版标准交付示例' }, context)
+    expect(resolved.data).toMatchObject({ exact: false })
+    expect(JSON.stringify(resolved.data)).toContain('不要用其他空间代答')
+    const requirement = await f.agent.tools.call(
+      'resolve_requirement',
+      { spaceId: 'shop', name: '不存在需求' },
+      context,
+    )
+    expect(requirement.data).toMatchObject({ exact: false })
+    expect(JSON.stringify(requirement.data)).toContain('不要用其他需求代答')
+    const matched = await f.agent.tools.call(
+      'list_requirements',
+      { spaceId: 'shop', query: '问候语' },
+      context,
+    )
+    expect(JSON.stringify(matched.data)).toContain('REQ-001')
+  })
+  it('脚本化模型先给错形状，读取错误后第二次生成正确 workflow 提案', async () => {
+    const f = await fixture()
+    const bad = JSON.stringify({
+      title: '加确认',
+      summary: '用户要求',
+      steps: [{ type: 'workflow', spaceId: 'shop', workflowId: 'flow', baseRev: 'r1', edits: [] }],
+    })
+    const good = JSON.stringify({
+      title: '加确认',
+      summary: '用户要求',
+      steps: [
+        {
+          kind: 'workflow',
+          spaceId: 'shop',
+          workflowId: 'flow',
+          baseRev: 'r1',
+          edits: [
+            {
+              op: 'addNode',
+              kind: 'human',
+              after: 'review-code',
+              props: {
+                id: { kind: 'literal', value: 'prelaunch-confirm' },
+                title: { kind: 'literal', value: '上线前人工确认' },
+                stage: { kind: 'literal', value: 'acceptance' },
+                needs: { kind: 'literal', value: ['review-code'] },
+              },
+            },
+            { op: 'setNeeds', id: 'acceptance', needs: ['prelaunch-confirm'] },
+          ],
+        },
+      ],
+    })
+    const replies: ChatResponse[] = [
+      { stopReason: 'tool_calls', message: { role: 'assistant', content: '', toolCalls: [{ id: 'bad', name: 'propose', arguments: bad }] } },
+      { stopReason: 'tool_calls', message: { role: 'assistant', content: '', toolCalls: [{ id: 'good', name: 'propose', arguments: good }] } },
+      { stopReason: 'end', message: { role: 'assistant', content: '已生成提案。' } },
+    ]
+    f.deps.chat = vi.fn(async () => replies.shift()!)
+    const agent = new StewardAgent(f.deps, 'alice')
+    agents.push(agent)
+    const result = await agent.ask({ text: '改 workflow' }, f.thread.id)
+    expect(result.status).toBe('done')
+    expect(result.text).toBe('已生成提案。')
+    expect(result.tools?.map((tool) => tool.ok)).toEqual([false, true])
+    expect(result.tools?.[0]?.summary).toContain('字段名必须是 kind')
+    expect(result.proposalIds).toHaveLength(1)
+  })
   it('离线进度、风险、待办、新建需求/空间和设置入口', async () => {
     const f = await fixture()
     const context = [{ type: 'space' as const, spaceId: 'shop', id: 'shop' }]
@@ -467,7 +635,7 @@ describe('问答与工具', () => {
       '需要先配置管家模型',
     )
   })
-  it('工具循环最多八轮，错误以 tool 事件反馈', async () => {
+  it('同一工具同一错误连续两次即停止并总结', async () => {
     const f = await fixture()
     let rounds = 0
     f.deps.chat = async () => {
@@ -484,10 +652,33 @@ describe('问答与工具', () => {
     const agent = new StewardAgent(f.deps, 'alice')
     agents.push(agent)
     const result = await agent.ask({ text: '执行' })
-    expect(rounds).toBe(8)
-    expect(result.text).toContain('轮次上限')
-    expect(result.tools).toHaveLength(8)
+    expect(rounds).toBe(2)
+    expect(result.text).toContain('连续 2 次')
+    expect(result.text).toContain('最后的错误')
+    expect(result.tools).toHaveLength(2)
     expect(result.tools!.every((tool) => tool.ok === false)).toBe(true)
+  })
+  it('工具循环上限为 14 轮，并带进展与最后错误', async () => {
+    const f = await fixture()
+    let rounds = 0
+    f.deps.chat = async () => {
+      rounds++
+      return {
+        stopReason: 'tool_calls',
+        message: {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{ id: String(rounds), name: `not_exists_${rounds}`, arguments: '{}' }],
+        },
+      }
+    }
+    const agent = new StewardAgent(f.deps, 'alice')
+    agents.push(agent)
+    const result = await agent.ask({ text: '执行' })
+    expect(rounds).toBe(14)
+    expect(result.text).toContain('14 轮工具调用上限')
+    expect(result.text).toContain('最后的错误')
+    expect(result.tools).toHaveLength(14)
   })
   it('Lead 超时返回已转达，后续只回填匹配的回复', async () => {
     const f = await fixture()
@@ -998,7 +1189,7 @@ it('M4-8：连接配置与运行中的 workflow 为 high，auto-low 不执行', 
   ] as RunState[])
   expect(
     await f.agent.proposals.validate([
-      { kind: 'workflow', spaceId: 'shop', workflowId: 'flow', baseRev: 'r1', edits: [] },
+      { kind: 'workflow', spaceId: 'shop', workflowId: 'flow', baseRev: 'r1', edits: [{ op: 'setMeta', key: 'title', value: '交付流程' }] },
     ]),
   ).toMatchObject({ risk: 'high' })
 })

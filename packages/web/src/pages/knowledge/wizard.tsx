@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { KnowledgeBaseSummary, KnowledgeIntent, KnowledgeKindInfo, KnowledgeTestResult } from '@taktflow/core'
-import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check, Sparkles } from 'lucide-react'
 import { useAsync, useSource } from '../../api'
 import { Dialog, ErrorState, SkeletonGrid, toast } from '../../components/ui'
 import { navigate } from '../../lib/router'
+import { askSteward } from '../../lib/ui-store'
 import type { PendingFile } from './fields'
 import { KindCards } from './kind-cards'
 import { defaultsOf, missingFields, type Schema } from './schema-form'
@@ -131,6 +132,20 @@ export function CreateWizard({ open, initialKind, onClose, onCreated }: { open: 
       description={<Stepper step={step} reached={reached} onGo={go} />}
       footer={
         <>
+          {step === 0 && (
+            // 第一步不用选：说清楚想让 Agent 查到什么，由管家选类型、填配置并出提案，人只需要批准
+            <button
+              type="button"
+              className="btn btn-ghost kb-wizard-ask"
+              onClick={() => {
+                onClose()
+                askSteward('帮我新建一个知识库：我想让流程里的 Agent 能查到 ')
+              }}
+            >
+              <Sparkles aria-hidden />
+              不确定选哪种？告诉管家要查什么，让它来配
+            </button>
+          )}
           {(base || (step === 1 && draft.name.trim())) && step < 5 && (
             <button type="button" className="btn btn-ghost kb-wizard-save" disabled={busy} onClick={() => void saveAndExit()}>
               保存草稿并退出

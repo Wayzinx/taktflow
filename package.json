@@ -25,7 +25,8 @@
     "demo:standard": "tsx examples/standard-delivery/demo.ts",
     "demo:chat": "tsx examples/standard-delivery/demo-chat.ts",
     "demo:quick": "tsx examples/standard-delivery/demo-quick.ts",
-    "demo:steward": "tsx examples/standard-delivery/demo-steward.ts"
+    "demo:steward": "tsx examples/standard-delivery/demo-steward.ts",
+    "eval:steward": "tsx evals/steward/steward-live.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

@@ -72,7 +72,11 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
   })
   add('GET', '/api/requirements/:id/room', async ({ stores, params }) => {
     const req = await requirement(stores, params.id!)
-    return { ...await stores.chat.ensureRoom(req.id, { title: req.title }), lead: options.getLeadPresence?.(stores.projectDir, req.id) ?? { state: 'idle', since: req.createdAt } }
+    const room = await stores.chat.ensureRoom(req.id, { title: req.title })
+    // 建群时只知道成员 id（name 填的也是 id）：读取时按空间成员表补显示名，改名后也立即生效
+    const names = new Map((stores.config.members ?? []).map((member) => [member.id, member.name]))
+    const members = room.members.map((member) => member.kind === 'human' && member.name === member.id && names.get(member.id) ? { ...member, name: names.get(member.id)! } : member)
+    return { ...room, members, lead: options.getLeadPresence?.(stores.projectDir, req.id) ?? { state: 'idle', since: req.createdAt } }
   })
   add('POST', '/api/requirements/:id/room/members', async ({ stores, params, request }) => {
     await requirement(stores, params.id!)

@@ -93,6 +93,8 @@
 .kb-stepper [data-state='current'] .kb-step-n { background: var(--ink); color: var(--text-inverse); box-shadow: none; }
 .kb-wizard-body { display: grid; gap: var(--sp-4); min-height: 300px; }
 .kb-wizard-save { margin-right: auto; }
+.kb-wizard-ask { margin-right: auto; color: var(--text-2); }
+.kb-wizard-ask svg { width: 14px; height: 14px; }
 .kb-wizard-err { margin-right: auto; }
 .kb-step-data { display: grid; gap: var(--sp-4); }
 .kb-step-kind { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--text-ui); }

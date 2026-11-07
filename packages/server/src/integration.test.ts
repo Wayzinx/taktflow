@@ -142,6 +142,10 @@ it('群聊成员、消息回放和实时 SSE，@lead 只调用注入点且失败
   expect((await request(server, base + '/chat', 'POST', { text: ' ', mentions: [] })).status).toBe(400)
   expect((await request(server, base + '/chat?after=bad')).status).toBe(400)
   expect((await request(server, '/api/requirements/missing/chat')).status).toBe(404)
+  // 只有 id 的真人成员（建群时 name 填的是 id）读取时按空间成员表补显示名
+  await request(server, base + '/room/members', 'POST', [{ id: 'carol', kind: 'human', name: 'carol' }])
+  expect((await request(server, '/api/space/members', 'PUT', [{ id: 'carol', name: '卡罗尔', role: 'owner' }], { 'x-takt-reason': 'add member name' })).status).toBe(200)
+  expect((await request(server, base + '/room', 'GET', undefined, { 'x-takt-user': 'carol' })).data.members.find((member: { id: string }) => member.id === 'carol').name).toBe('卡罗尔')
 })
 
 it('评审列表和 NodeDetail.review 返回实际轮次；临时任务摘要从群消息找来源', async () => {

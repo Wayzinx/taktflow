@@ -59,6 +59,8 @@
 }
 .stwp-list {
   display: grid;
+  /* 轨道不按内容撑开：长标题在条目内截断，右侧时间不被挤出面板 */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   padding: 0;
   list-style: none;
@@ -68,6 +70,7 @@
 }
 .stwp-item {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   width: 100%;
   padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-3);

@@ -529,13 +529,14 @@ export function createServerCommandRegistry(deps: ServerCommandDeps): CommandReg
     title: string,
     input: Record<string, unknown>,
     handler: CommandSpec['handler'],
+    risk: CommandSpec['risk'] = 'write',
   ): CommandSpec => ({
     id,
     title,
     input,
     handler,
     kind: 'command',
-    risk: 'write',
+    risk,
     minRole: 'maintainer',
   })
   const specs = [
@@ -599,6 +600,14 @@ export function createServerCommandRegistry(deps: ServerCommandDeps): CommandReg
     ),
     define('space.restore', '恢复空间', schema({ id: str }, ['id']), (input, ctx) =>
       restoreSpace(deps, input.id as string, ctx.actor, ctx.reason!),
+    ),
+    define(
+      'space.delete',
+      '删除已归档空间',
+      schema({ id: str, confirm: str }, ['id', 'confirm']),
+      (input, ctx) =>
+        deleteSpace(deps, input.id as string, input.confirm as string, ctx.actor, ctx.reason!),
+      'dangerous',
     ),
   ]
   return {

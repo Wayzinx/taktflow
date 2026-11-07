@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { uniqueAttachmentNames } from '../src/components/requirement-create/draft'
+import { descriptionOf, emptyDraft, titleOf, uniqueAttachmentNames } from '../src/components/requirement-create/draft'
 import { initialForm, toRequest } from '../src/components/space-create/model'
 import { compactConfig } from '../src/pages/knowledge/schema-config'
 
@@ -8,6 +8,15 @@ describe('real-backend adapters', () => {
   it('attachment names avoid prd.md (reserved for the description) and case-insensitive duplicates', () => {
     expect(uniqueAttachmentNames(['prd.md', 'PRD.md', 'spec.md', 'spec.md', 'a b.md'])).toEqual(['prd-2.md', 'PRD-3.md', 'spec.md', 'spec-2.md', 'ab.md'])
     expect(uniqueAttachmentNames(['???'])).toEqual(['attachment'])
+  })
+
+  it('the first line becomes the title and is not repeated as the first line of the description', () => {
+    const d = { ...emptyDraft(), text: '\n导出支持按部门筛选\n\n背景：按部门对账\n目标：多选部门' }
+    expect(titleOf(d)).toBe('导出支持按部门筛选')
+    expect(descriptionOf(d)).toBe('背景：按部门对账\n目标：多选部门')
+    // 手填标题时正文整段都是描述
+    expect(descriptionOf({ ...d, title: '手填标题' })).toBe(d.text.trim())
+    expect(descriptionOf({ ...emptyDraft(), text: '只有一行' })).toBe('')
   })
 
   it('space creation lists the creator as owner unless members are copied from the source space', () => {

@@ -1,9 +1,9 @@
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, ChevronsUpDown, LayoutGrid, Plus, Search } from 'lucide-react'
 import type { SpaceSummary } from '@taktflow/core'
 import { useAsync } from '../api'
 import { navigate, useLocation } from '../lib/router'
-import { spacePath } from '../lib/space'
+import { forgetSpace, lastSpaceId, rememberSpace, spacePath } from '../lib/space'
 import { openCreateSpace } from '../lib/ui-store'
 import { Popover } from './ui'
 import './space-switcher.css'
@@ -22,7 +22,7 @@ export function SpaceMark({ space, size = 22 }: { space: Pick<SpaceSummary, 'nam
  * 超过 5 个空间出现搜索；同名空间在名称下显示 id；底部是"新建空间"和"管理全部空间"。
  */
 export function SpaceSwitcher({ fallbackName }: { fallbackName?: string }) {
-  const { spaceId } = useLocation()
+  const { spaceId, path } = useLocation()
   const q = useAsync((ds) => ds.spaces(), [])
   const [open, setOpen] = useState(false)
   const [term, setTerm] = useState('')
@@ -30,6 +30,18 @@ export function SpaceSwitcher({ fallbackName }: { fallbackName?: string }) {
   const list = useRef<HTMLDivElement>(null)
   const spaces = useMemo(() => q.data ?? [], [q.data])
   const current = spaces.find((s) => s.id === spaceId) ?? (spaceId ? undefined : spaces[0])
+  useEffect(() => {
+    if (!q.data) return
+    if (spaceId) {
+      // 空间已删除 / 归档：忘掉它，下次直接进入时不再跳过去
+      if (spaces.some((s) => s.id === spaceId)) rememberSpace(spaceId)
+      else forgetSpace(spaceId)
+      return
+    }
+    // 不带前缀进入（书签、新标签页）：多空间时回到上次的空间
+    const last = lastSpaceId()
+    if (spaces.length > 1 && last && last !== spaces[0]?.id && spaces.some((s) => s.id === last)) navigate(spacePath(last, path) + location.search, { replace: true })
+  }, [q.data, spaceId, spaces, path])
   const dupNames = useMemo(() => {
     const n = new Map<string, number>()
     spaces.forEach((s) => n.set(s.name, (n.get(s.name) ?? 0) + 1))

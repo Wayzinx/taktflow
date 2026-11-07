@@ -60,7 +60,7 @@
   color: var(--text);
   transform: translateX(2px);
 }
-.wf-page {
+.wf-list-page {
   max-width: 1120px;
 }
 .wf-page-foot {

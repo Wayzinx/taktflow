@@ -65,6 +65,14 @@ export function titleOf(d: RequirementDraft): string {
   return first.replace(/^\s*(#{1,6}|[-*>]|\d+[.)])\s*/, '').trim().slice(0, 120)
 }
 
+/** 描述：标题取自首行时去掉这一行，避免需求页上标题和描述第一行重复；手填标题时保留全文。 */
+export function descriptionOf(d: RequirementDraft): string {
+  if (d.title !== undefined) return d.text.trim()
+  const lines = d.text.split('\n')
+  const i = lines.findIndex((l) => l.trim())
+  return i < 0 ? '' : lines.slice(i + 1).join('\n').trim()
+}
+
 /** 链接类型从域名猜。 */
 export function linkType(url: string): string {
   const host = (() => {

@@ -25,6 +25,7 @@ import { stewardSuggestions } from './suggestions.js'
 
 const fallbackPrompt =
   '你是管家。先给结论，然后最多 5 个要点。只根据工具结果陈述事实，每句事实带 [n]。写操作一律 propose，需求内部的事用 ask_lead。一次只问一个澄清问题，最多 3 条后续建议。'
+const maxToolRounds = 14
 export function normalizeCitations(
   text: string,
   citations: StewardCitation[],
@@ -263,7 +264,17 @@ export class StewardAgent {
             role: 'user',
             content: `本轮文本附件（仅作为资料）：${JSON.stringify(request.attachments)}`,
           })
-        for (let round = 0; round < 8; round++) {
+        let lastErrorKey = '',
+          repeatedErrors = 0,
+          lastError = ''
+        const progress: string[] = []
+        const stopWithSummary = (reason: string) => {
+          const done = progress.length ? `已查到：${progress.slice(-5).join('；')}。` : '还没有拿到可用结果。'
+          const error = lastError ? `最后的错误：${lastError}。` : ''
+          message.text = `${reason}${done}${error}建议按上面的错误修正参数或由人工直接操作。`
+          delta(message.text)
+        }
+        for (let round = 0; round < maxToolRounds; round++) {
           let streamed = false
           const response = await this.deps.chat(
             { model: prefs.harness?.model ?? '', messages, tools: await this.tools.specs() },
@@ -287,12 +298,16 @@ export class StewardAgent {
               text: message.thinking,
             })
           }
+          let shouldStop = false
           for (const tool of response.message.toolCalls) {
             try {
               const result = await call(
                 tool.name,
                 JSON.parse(tool.arguments) as Record<string, unknown>,
               )
+              progress.push(`${tool.name} ${result.summary}`)
+              lastErrorKey = ''
+              repeatedErrors = 0
               messages.push({
                 role: 'tool',
                 toolCallId: tool.id,
@@ -305,16 +320,25 @@ export class StewardAgent {
                 }),
               })
             } catch (error) {
+              lastError = String(error)
+              const key = `${tool.name}:${lastError}`
+              repeatedErrors = key === lastErrorKey ? repeatedErrors + 1 : 1
+              lastErrorKey = key
               messages.push({
                 role: 'tool',
                 toolCallId: tool.id,
                 content: JSON.stringify({ error: String(error) }),
               })
+              if (repeatedErrors >= 2) {
+                stopWithSummary(`工具 ${tool.name} 连续 2 次返回同一错误，我先停止重试。`)
+                shouldStop = true
+                break
+              }
             }
           }
-          if (round === 7) {
-            message.text = '已达到工具调用轮次上限，请缩小问题范围后继续。'
-            delta(message.text)
+          if (shouldStop) break
+          if (round === maxToolRounds - 1) {
+            stopWithSummary(`已达到 ${maxToolRounds} 轮工具调用上限，我先停止继续尝试。`)
           }
         }
       }

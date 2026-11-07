@@ -64,7 +64,8 @@ it('归档、恢复、删除、权限、审计哈希链', async () => {
 })
 it('服务端命令表 reason / actor、单空间限制；配置 merge patch 验证及权限审计', async () => {
   const spacesDir = await root(), registry = createServerCommandRegistry({ spacesDir })
-  expect(registry.list().map((item) => item.id)).toEqual(['space.create', 'space.update', 'space.archive', 'space.restore'])
+  expect(registry.list().map((item) => item.id)).toEqual(['space.create', 'space.update', 'space.archive', 'space.restore', 'space.delete'])
+  expect(registry.list().find((item) => item.id === 'space.delete')?.risk).toBe('dangerous')
   expect((await registry.run('space.update', { id: 'demo', name: '演示' }, { actor: author })).ok).toBe(false)
   expect((await registry.run('space.create', { id: 'demo', name: '演示', template: 'blank' }, { actor: { type: 'agent', role: 'lead', harness: 'mock' }, reason })).ok).toBe(false)
   expect((await registry.run('space.create', { id: 'demo', name: '演示', template: 'blank' }, { actor: author, reason })).ok).toBe(true)

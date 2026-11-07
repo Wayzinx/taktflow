@@ -1,13 +1,14 @@
 import { proposalDiff as diff } from './diff.js'
 import { randomUUID } from 'node:crypto'
 import type { Actor } from '../types.js'
-import type { Proposal, ProposalDecisionRequest, ProposalStep } from '../api.js'
+import type { EditableValue, Proposal, ProposalDecisionRequest, ProposalStep, WorkflowEdit } from '../api.js'
 import type { CommandRegistry } from '../commands/contracts.js'
 import { validateSchema } from '../engine/schema.js'
 import { canonicalJson, sha256 } from '../util/hash.js'
-import { StewardError, stewardActor, stewardId, timestamp, type StewardDeps } from './contracts.js'
+import { StewardError, stewardActor, stewardId, timestamp, type StewardDeps, type StewardSpace } from './contracts.js'
 import { StewardStore } from './store.js'
 import { readStewardFile, stewardFile } from './files.js'
+import type { NodeKind } from '../types.js'
 
 interface UndoRecord {
   step: ProposalStep
@@ -21,8 +22,120 @@ const commandId = (step: ProposalStep) =>
   step.kind === 'command' ? step.commandId : step.kind === 'file' ? 'file.write' : 'workflow.edit'
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? (value as Record<string, unknown>) : {}
+const nodeKinds: NodeKind[] = ['script', 'agent', 'gate', 'human', 'judge', 'loop', 'planner', 'review', 'subflow']
 export function proposalHash(steps: ProposalStep[]): string {
   return hash(steps)
+}
+function closest(value: string, candidates: string[]): string[] {
+  const q = value.toLowerCase()
+  return candidates
+    .map((candidate) => {
+      const text = candidate.toLowerCase()
+      let score = text === q ? 100 : text.includes(q) || q.includes(text) ? 60 : 0
+      for (let i = 0; i < Math.min(text.length, q.length); i++) if (text[i] === q[i]) score += 2
+      return { candidate, score }
+    })
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.candidate.localeCompare(b.candidate))
+    .slice(0, 5)
+    .map((item) => item.candidate)
+}
+function literal(value: unknown): EditableValue {
+  return { kind: 'literal', value }
+}
+function example(kind: ProposalStep['kind']): string {
+  if (kind === 'command') return JSON.stringify({ kind: 'command', spaceId: 'standard-delivery', commandId: 'requirement.create', input: { title: '新需求', start: false } })
+  if (kind === 'file') return JSON.stringify({ kind: 'file', spaceId: 'standard-delivery', path: 'agents/steward.md', content: '...' })
+  return JSON.stringify({ kind: 'workflow', spaceId: 'standard-delivery', workflowId: 'taktflow-standard', baseRev: '<workflow_get.rev>', edits: [{ op: 'addNode', kind: 'human', after: 'review-code', props: { id: literal('prelaunch-confirm'), title: literal('上线前人工确认'), needs: literal(['review-code']) } }, { op: 'setNeeds', id: 'acceptance', needs: ['prelaunch-confirm'] }] })
+}
+function fieldError(index: number, field: string, expected: string, got: unknown, kind?: ProposalStep['kind']): StewardError {
+  const received = got === undefined ? 'undefined' : JSON.stringify(got)
+  return new StewardError(400, `steps[${index}].${field}：期望 ${expected}，收到 ${received}。正确示例：${example(kind ?? 'workflow')}`)
+}
+function assertString(index: number, step: Record<string, unknown>, key: string, kind: ProposalStep['kind']): void {
+  if (typeof step[key] !== 'string') throw fieldError(index, key, 'string', step[key], kind)
+}
+function assertOptionalString(index: number, step: Record<string, unknown>, key: string, kind: ProposalStep['kind']): void {
+  if (step[key] !== undefined && typeof step[key] !== 'string') throw fieldError(index, key, 'string 或省略', step[key], kind)
+}
+function assertEditableValue(index: number, field: string, value: unknown): void {
+  const item = record(value)
+  if (item.kind === 'literal' && Object.hasOwn(item, 'value')) return
+  if (item.kind === 'code' && typeof item.code === 'string') return
+  throw fieldError(index, field, '{kind:"literal",value:...} 或 {kind:"code",code:"..."}', value, 'workflow')
+}
+function validateWorkflowEdit(index: number, edit: unknown, editIndex: number): void {
+  const item = record(edit),
+    prefix = `edits[${editIndex}]`
+  if (!edit || typeof edit !== 'object' || Array.isArray(edit)) throw fieldError(index, prefix, 'WorkflowEdit object', edit, 'workflow')
+  if (typeof item.op !== 'string') throw fieldError(index, `${prefix}.op`, 'addNode/removeNode/setProp/setNeeds/moveNode/setStages/setMeta/setMetaValue', item.op, 'workflow')
+  switch (item.op) {
+    case 'addNode':
+      if (!nodeKinds.includes(item.kind as NodeKind)) throw fieldError(index, `${prefix}.kind`, `NodeKind(${nodeKinds.join('|')})`, item.kind, 'workflow')
+      if (!item.props || typeof item.props !== 'object' || Array.isArray(item.props)) throw fieldError(index, `${prefix}.props`, 'Record<string, EditableValue>', item.props, 'workflow')
+      for (const [key, value] of Object.entries(record(item.props))) assertEditableValue(index, `${prefix}.props.${key}`, value)
+      if (item.after !== undefined && item.after !== null && typeof item.after !== 'string') throw fieldError(index, `${prefix}.after`, 'string/null/省略', item.after, 'workflow')
+      if (item.parent !== undefined && typeof item.parent !== 'string') throw fieldError(index, `${prefix}.parent`, 'string/省略', item.parent, 'workflow')
+      break
+    case 'removeNode':
+      if (typeof item.id !== 'string') throw fieldError(index, `${prefix}.id`, 'string', item.id, 'workflow')
+      break
+    case 'setProp':
+      if (typeof item.id !== 'string') throw fieldError(index, `${prefix}.id`, 'string', item.id, 'workflow')
+      if (typeof item.key !== 'string') throw fieldError(index, `${prefix}.key`, 'string', item.key, 'workflow')
+      if (item.value !== null) assertEditableValue(index, `${prefix}.value`, item.value)
+      break
+    case 'setNeeds':
+      if (typeof item.id !== 'string') throw fieldError(index, `${prefix}.id`, 'string', item.id, 'workflow')
+      if (!Array.isArray(item.needs) || item.needs.some((id) => typeof id !== 'string')) throw fieldError(index, `${prefix}.needs`, 'string[]', item.needs, 'workflow')
+      break
+    case 'moveNode':
+      if (typeof item.id !== 'string') throw fieldError(index, `${prefix}.id`, 'string', item.id, 'workflow')
+      if (item.after !== null && typeof item.after !== 'string') throw fieldError(index, `${prefix}.after`, 'string/null', item.after, 'workflow')
+      if (item.parent !== undefined && item.parent !== null && typeof item.parent !== 'string') throw fieldError(index, `${prefix}.parent`, 'string/null/省略', item.parent, 'workflow')
+      break
+    case 'setStages':
+      if (!Array.isArray(item.stages) || item.stages.some((stage) => typeof record(stage).id !== 'string' || typeof record(stage).title !== 'string')) throw fieldError(index, `${prefix}.stages`, 'Array<{id:string,title:string}>', item.stages, 'workflow')
+      break
+    case 'setMeta':
+      if (!['title', 'description', 'version'].includes(String(item.key))) throw fieldError(index, `${prefix}.key`, 'title/description/version', item.key, 'workflow')
+      if (typeof item.value !== 'string') throw fieldError(index, `${prefix}.value`, 'string', item.value, 'workflow')
+      break
+    case 'setMetaValue':
+      if (!['useWhen', 'tiers', 'leadInstructions', 'dynamicRules', 'budget'].includes(String(item.key))) throw fieldError(index, `${prefix}.key`, 'useWhen/tiers/leadInstructions/dynamicRules/budget', item.key, 'workflow')
+      if (item.value !== null) assertEditableValue(index, `${prefix}.value`, item.value)
+      break
+    default:
+      throw fieldError(index, `${prefix}.op`, 'addNode/removeNode/setProp/setNeeds/moveNode/setStages/setMeta/setMetaValue', item.op, 'workflow')
+  }
+}
+function validateStepShapes(steps: unknown): ProposalStep[] {
+  if (!Array.isArray(steps) || !steps.length || steps.length > 30)
+    throw new StewardError(400, '提案需要 1–30 个步骤，请拆分改动')
+  for (const [index, raw] of steps.entries()) {
+    const step = record(raw)
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw fieldError(index, 'kind', 'command/workflow/file', raw)
+    if (step.kind === undefined && step.type !== undefined)
+      throw new StewardError(400, `steps[${index}].kind：期望 command/workflow/file，收到 undefined；字段名必须是 kind，不要使用 type。正确示例：${example('workflow')}`)
+    if (!['command', 'workflow', 'file'].includes(String(step.kind))) throw fieldError(index, 'kind', 'command/workflow/file', step.kind)
+    const kind = step.kind as ProposalStep['kind']
+    assertOptionalString(index, step, 'spaceId', kind)
+    assertOptionalString(index, step, 'title', kind)
+    if (kind === 'command') {
+      assertString(index, step, 'commandId', kind)
+      if (!step.input || typeof step.input !== 'object' || Array.isArray(step.input)) throw fieldError(index, 'input', 'object', step.input, kind)
+    } else if (kind === 'workflow') {
+      assertString(index, step, 'workflowId', kind)
+      assertString(index, step, 'baseRev', kind)
+      if (!Array.isArray(step.edits) || !step.edits.length) throw fieldError(index, 'edits', '非空 WorkflowEdit[]', step.edits, kind)
+      step.edits.forEach((edit, editIndex) => validateWorkflowEdit(index, edit, editIndex))
+    } else {
+      assertString(index, step, 'path', kind)
+      assertString(index, step, 'content', kind)
+      assertOptionalString(index, step, 'baseHash', kind)
+    }
+  }
+  return steps as ProposalStep[]
 }
 function inversePatch(previous: unknown, patch: unknown): unknown {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return previous ?? null
@@ -44,8 +157,15 @@ export class StewardProposals {
     readonly store: StewardStore,
     readonly userId: string,
   ) {}
+  /**
+   * 空间管理命令（space.*）作用于空间本身，由服务端注册表执行；模型常把目标空间填进 spaceId，
+   * 归档空间又不在活跃列表里，按 spaceId 打开会误报"空间不存在"——这类步骤一律忽略 spaceId。
+   */
+  private serverLevel(step: ProposalStep): boolean {
+    return step.kind === 'command' && typeof step.commandId === 'string' && step.commandId.startsWith('space.')
+  }
   private async registry(step: ProposalStep): Promise<CommandRegistry> {
-    if (step.spaceId) return (await this.deps.open(stewardId(step.spaceId))).commands
+    if (step.spaceId && !this.serverLevel(step)) return (await this.deps.open(stewardId(step.spaceId))).commands
     if (!this.deps.serverCommands)
       throw new StewardError(400, '服务端命令尚未接入，请选择空间或联系管理员接入空间管理命令')
     return this.deps.serverCommands
@@ -64,13 +184,10 @@ export class StewardProposals {
     }
   }
   async validate(steps: ProposalStep[]): Promise<Pick<Proposal, 'risk' | 'previews'>> {
-    if (!Array.isArray(steps) || !steps.length || steps.length > 30)
-      throw new StewardError(400, '提案需要 1–30 个步骤，请拆分改动')
+    steps = validateStepShapes(steps)
     let risk: Proposal['risk'] = 'low'
     const previews: NonNullable<Proposal['previews']> = []
-    for (const step of steps) {
-      if (!step || !['command', 'file', 'workflow'].includes(step.kind))
-        throw new StewardError(400, '提案步骤类型错误，请重新生成')
+    for (const [index, step] of steps.entries()) {
       if (this.profile(step)) {
         if (step.kind !== 'file' || typeof step.content !== 'string')
           throw new StewardError(400, '记忆内容必须是文本')
@@ -84,13 +201,18 @@ export class StewardProposals {
       if (step.kind === 'command' && step.commandId.startsWith('steward.'))
         throw new StewardError(400, '内部撤销命令不能作为提案步骤，请使用普通写命令')
       const registry = await this.registry(step),
-        info = registry.list().find((c) => c.id === commandId(step))
+        commands = registry.list(),
+        id = commandId(step),
+        info = commands.find((c) => c.id === id)
       if (!info)
-        throw new StewardError(400, `命令 ${commandId(step)} 尚未接入，请联系管理员注册后重试`)
+        throw new StewardError(
+          400,
+          `steps[${index}].${step.kind === 'command' ? 'commandId' : 'kind'}：命令 ${id} 尚未接入。相近命令：${closest(id, commands.map((c) => c.id)).join('、') || '无'}。正确示例：${example(step.kind)}`,
+        )
       try {
         validateSchema(this.input(step), info.input)
       } catch (error) {
-        throw new StewardError(400, `命令参数不符合格式，请修改：${String(error)}`)
+        throw new StewardError(400, `steps[${index}].input：命令 ${info.id} 参数不符合格式：${String(error)}。正确示例：${example(step.kind)}`)
       }
       let level: Proposal['risk'] =
         info.risk === 'dangerous'
@@ -111,14 +233,15 @@ export class StewardProposals {
         const doc = await (
           await this.deps.open(step.spaceId)
         ).workflows.get(stewardId(step.workflowId))
+        this.validateWorkflowTargets(index, step, doc)
         let result: ReturnType<NonNullable<StewardDeps['applyWorkflowEdits']>>
         try {
           result = this.deps.applyWorkflowEdits(doc.source, step.edits)
         } catch (error) {
-          throw new StewardError(400, `workflow 编辑无法预览，请修正提案：${String(error)}`)
+          throw new StewardError(400, `steps[${index}].edits：workflow 编辑无法预览：${String(error)}。可用节点 id：${this.workflowNodeIds(doc).join('、') || '无'}。正确示例：${example('workflow')}`)
         }
         if (result.diagnostics?.some((d) => d.severity === 'error'))
-          throw new StewardError(400, 'workflow 编辑无法通过校验，请修正提案')
+          throw new StewardError(400, `steps[${index}].edits：workflow 编辑无法通过校验，请修正提案。可用节点 id：${this.workflowNodeIds(doc).join('、') || '无'}`)
         previews.push({
           kind: 'diff',
           title: step.workflowId,
@@ -167,6 +290,7 @@ export class StewardProposals {
     return this.store.serial(async () => {
       await this.store.thread(threadId)
       if (!title.trim() || !summary.trim()) throw new StewardError(400, '请填写提案标题和原因')
+      steps = validateStepShapes(steps)
       steps = await this.baselines(steps)
       const proposal: Proposal = {
         id: randomUUID(),
@@ -211,8 +335,45 @@ export class StewardProposals {
     }
     return result
   }
+  private workflowNodeIds(doc: Awaited<ReturnType<StewardSpace['workflows']['get']>>): string[] {
+    const ids: string[] = []
+    const visit = (nodes: Array<{ id: string; body?: Array<{ id: string; body?: unknown }> }>) => {
+      for (const node of nodes) {
+        ids.push(node.id)
+        if (Array.isArray(node.body)) visit(node.body as Array<{ id: string; body?: Array<{ id: string; body?: unknown }> }>)
+      }
+    }
+    if (doc.snapshot) visit(doc.snapshot.nodes)
+    else visit(doc.model.nodes)
+    return ids
+  }
+  private validateWorkflowTargets(index: number, step: Extract<ProposalStep, { kind: 'workflow' }>, doc: Awaited<ReturnType<StewardSpace['workflows']['get']>>): void {
+    const existingIds = new Set(this.workflowNodeIds(doc)),
+      ids = new Set(existingIds),
+      available = [...existingIds].join('、') || '无'
+    for (const [editIndex, edit] of step.edits.entries()) {
+      if (edit.op !== 'addNode') continue
+      const rawId = edit.props.id as EditableValue | undefined,
+        newId = rawId?.kind === 'literal' ? rawId.value : undefined
+      if (typeof newId !== 'string') continue
+      if (ids.has(newId))
+        throw new StewardError(400, `steps[${index}].edits[${editIndex}].props.id：节点 ${newId} 已存在。当前 workflow 节点 id：${available}`)
+      ids.add(newId)
+    }
+    for (const [editIndex, edit] of step.edits.entries()) {
+      const item = edit as WorkflowEdit
+      const check = (field: string, id: string | null | undefined, existing: boolean) => {
+        if (!id || (existing ? ids.has(id) : true)) return
+        throw new StewardError(400, `steps[${index}].edits[${editIndex}].${field}：节点 ${id} 不存在。当前 workflow 节点 id：${available}。正确示例：${example('workflow')}`)
+      }
+      if ('id' in item) check('id', item.id, true)
+      if ('after' in item) check('after', item.after, true)
+      if ('parent' in item) check('parent', item.parent, true)
+      if (item.op === 'setNeeds') for (const [needIndex, id] of item.needs.entries()) check(`needs[${needIndex}]`, id, true)
+    }
+  }
   private async sensitive(step: ProposalStep): Promise<boolean> {
-    if (!step.spaceId) return false
+    if (!step.spaceId || this.serverLevel(step)) return false
     const space = await this.deps.open(step.spaceId)
     if (step.kind === 'workflow') {
       return (await space.stores.runs.list()).some(
@@ -287,7 +448,7 @@ export class StewardProposals {
   }
   private async snapshot(step: ProposalStep, result?: unknown): Promise<unknown> {
     if (this.profile(step)) return this.store.text('profile.md')
-    const space = step.spaceId ? await this.deps.open(step.spaceId) : undefined
+    const space = step.spaceId && !this.serverLevel(step) ? await this.deps.open(step.spaceId) : undefined
     if (step.kind === 'workflow') return (await space!.workflows.get(step.workflowId)).rev
     const id = commandId(step),
       input = this.input(step),
@@ -418,7 +579,7 @@ export class StewardProposals {
       if (proposalHash(proposal.steps) !== proposal.hash)
         throw new StewardError(409, '提案内容与 hash 不一致，请重新生成提案')
       if (decision.steps) {
-        decision.steps = await this.baselines(decision.steps)
+        decision.steps = await this.baselines(validateStepShapes(decision.steps))
         Object.assign(proposal, await this.validate(decision.steps), {
           steps: structuredClone(decision.steps),
           edited: true,

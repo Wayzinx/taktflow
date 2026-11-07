@@ -7,9 +7,15 @@ export async function stewardSuggestions(
 ): Promise<string[]> {
   const space = spaceId ? await deps.open(spaceId) : undefined
   const name = space?.name ?? '当前空间'
-  if (page === 'spaces') return ['新建空间 我的项目', '帮我查看各空间的进度']
+  // 没配模型时管家走规则降级，只认"新建空间 <名称>"这类句式；建议点开后预填在输入框，用户改名后发送。
+  const online = Boolean(deps.chat)
+  if (page === 'spaces') return [online ? '帮我新建一个项目空间' : '新建空间 我的项目', '帮我看看各空间的进度和风险']
+  if (page === 'workflows') return [`帮我说明 ${name} 的每条流水线适合什么需求`, '帮我新建一条流水线']
   if (page === 'workflow')
-    return [`帮我查看 ${id ?? '当前 workflow'} 的配置`, '在 test 之后加一个交叉评审']
+    return [
+      `帮我解释 ${id ?? '这条流水线'} 每个阶段做什么`,
+      `帮我在 ${id ?? '这条流水线'} 的验收之前加一个人工确认节点`,
+    ]
   if (page === 'knowledge') {
     const bases = (await space?.stores.kb?.list()) ?? []
     return bases.length
@@ -43,6 +49,6 @@ export async function stewardSuggestions(
       pending.length ? `帮我看看 ${req?.id ?? id} 卡在哪` : `帮我查看 ${req?.title ?? id} 的进度`,
     ]
   }
-  if (page === 'requirements') return [`帮我查看 ${name} 的需求进度`, '新建需求 新需求']
+  if (page === 'requirements') return [`帮我查看 ${name} 的需求进度`, online ? '帮我新建一个需求' : '新建需求 新需求']
   return [`帮我查看 ${name} 的进度`, `帮我查看 ${name} 的风险`, `帮我查看 ${name} 的待办`]
 }

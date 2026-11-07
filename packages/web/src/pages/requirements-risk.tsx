@@ -1,13 +1,23 @@
 import { TriangleAlert } from 'lucide-react'
-import type { Risk } from '@taktflow/core'
+import type { Risk, SpaceSummary } from '@taktflow/core'
 import { useAsync } from '../api'
 import { askSteward } from '../lib/ui-store'
+import { useLocation } from '../lib/router'
 
 export type RiskIndex = Map<string, Risk[]>
 
-/** 当前空间未处理的风险，按需求分组（GET /api/steward/risks?state=open）。拿不到时为空，不影响列表。 */
+/**
+ * 当前空间未处理的风险，按需求分组（GET /api/steward/risks?space=&state=open）。拿不到时为空，不影响列表。
+ * 管家接口是跨空间的，需求 ID 在各空间里会重复（都有 REQ-001），所以必须按空间过滤；
+ * 不带 /s/:id 前缀时当前空间是列表第一个（与空间切换器一致）。
+ */
 export function useRequirementRisks(): RiskIndex {
-  const q = useAsync((ds) => ds.risks({ state: 'open' }).catch(() => [] as Risk[]), [])
+  const { spaceId } = useLocation()
+  const q = useAsync(async (ds) => {
+    const id = spaceId ?? (await ds.spaces().catch(() => [] as SpaceSummary[]))[0]?.id
+    const risks = await ds.risks({ state: 'open', ...(id ? { space: id } : {}) }).catch(() => [] as Risk[])
+    return id ? risks.filter((r) => r.spaceId === id) : risks
+  }, [spaceId])
   const map: RiskIndex = new Map()
   for (const r of q.data ?? []) {
     if (!r.requirementId) continue
