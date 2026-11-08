@@ -1,3 +1,4 @@
+import { runtimeRoutes, type RuntimeCallbacks } from './runtime-routes.js'
 import { qualityRoutes } from './quality-routes.js'
 import { runInsightRoutes } from './run-insight-routes.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -30,11 +31,12 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks = {}, onLeadMention?: LeadMention) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & RuntimeCallbacks = {}, onLeadMention?: LeadMention) {
   const router = createRouter<Handler>()
   const add = router.add
   const { execute } = commandExecutor(catalog)
   const workflows = new Map<string, WorkflowStore>()
+  runtimeRoutes(add, catalog)
   qualityRoutes(add, catalog)
   runInsightRoutes(add)
   registerKnowledgeRoutes(add, { connections })

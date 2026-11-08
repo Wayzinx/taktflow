@@ -134,3 +134,15 @@
 | `mock-eval-samples.ts` | 样本 S-001…S-007（S-007 已退役）；ER-0003 沙箱隔离、门槛达标；ER-0004 拒绝启动；ER-0005 模拟隔离、探索性（含证据不足与误报）；新建评测含旧整节点用例时拒绝启动 |
 | `mock-m5-quality.ts` | 质量日志链完整、锚点落后 14 条（可修复）；`?mockQuality=broken` 演示链被篡改（不给修复）；管家转达重发 |
 | `mock-data.ts` / `mock-m3-runs.ts` / `mock-chat.ts` / `mock-steward-seed.ts` | 待办时限（接近交还、已交还的假设、只提醒的 approve）；群聊 uncertain 与 refused（跳数超限）任务卡、回执逐站推进与重发；管家 uncertain 转达 |
+
+## M6：DAG 动效与运行时配置（docs/design/27）
+
+- **DAG 动效**（`pages/run/canvas-motion.ts`）：`useCompletionPulses(nodes)`（节点刚完成 → 出边送信号）、`useReplay(detail)`（已结束运行 6 秒回放）、`decorate(layout, focus, pulses, replay)`（只加类名与 `edge.data`，不重算布局）。边的叠层在 `pages/run/dag-edges.tsx`（`edge-sweep` / `edge-hl` / `edge-comet`），Workflow 编辑器在 `pages/workflow/canvas/canvas-edges.tsx`（`wf-sweep` / `wf-flow`）；共用关键帧在 `styles/motion.css`。
+- **模型与 Harness 设置**（`pages/settings/runtime/`，`/settings?tab=runtime`）：`useRuntime()`（运行配置 + 带 baseRevision 的补丁，保存后 `invalidate()`）、`EditorDrawer`（表单 + 必填原因；409 给"重新载入"）、`TestButton`（模型测试先确认"允许一次最小计费请求"）、`ProvidersCard`、`ModelsCard`、`RoutingCard`（角色 / 系统角色）、`OverrideDrawer`（内置 harness 的可执行文件、环境变量、停用）、`CustomHarnessDrawer`（ACP 预设 / 命令，或声明式 CLI）。环境变量值服务端遮盖为 `[REDACTED]`，原样提交表示不改。
+- **数据接口**：`api/source-m6.ts`（`M6Source`、`RuntimeConflictError`）、`api/client-m6.ts`。
+
+演示数据：
+
+| 文件 | 内容 |
+|---|---|
+| `mock-m6-runtime.ts` | 9 个 provider（密钥来源：环境变量 3、本机 2、缺失 2、不需要 1）；10 个模型别名（含一个向量模型）；7 条角色路由（含备选）与 4 个系统角色；自加 harness：OpenCode（ACP 预设）与 Aider（声明式 CLI）；gemini-cli 在本空间停用。测试：Ollama 连不上、缺密钥的 provider 报缺失、ACP 预设里 opencode / claude / codex / goose 能握手；校验与服务端同口径（provider 不存在、harness 停用、自定义 id 与内置冲突、ACP 无预设无命令、向量模型无维度） |

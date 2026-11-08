@@ -1,4 +1,5 @@
 import { reconcileAssumptions } from '../attention/timebox.js'
+import { withTaskReceiptLock } from './receipts.js'
 import { assertTaskResendable, checkDelegationHops, TaskResendConflictError } from './delegation.js'
 import { startRouted } from '../route/start.js'
 import type { StartRunInput } from '../interfaces.js'
@@ -25,6 +26,7 @@ import { errorText, type LeadRuntimeOptions, type LeadTurnResult, type TaskRunSt
 export type { LeadRuntimeOptions, LeadTurnResult, TaskRunState, LeadWorkflowAccess } from './contracts.js'
 export { taskWorkflow } from './task.js'
 export { assertTaskResendable, TaskResendConflictError } from './delegation.js'
+export { DEFAULT_RECEIPT_TIMEOUT_MINUTES, expireTaskReceipts, recoverTaskReceipts } from './receipts.js'
 
 interface Proposal { requestId: string; workflowId: string; description: string; baseRev: string; source?: string }
 const system: Actor = { type: 'system', id: 'lead' }
@@ -54,7 +56,8 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     const runs = await stores.runs.list({ requirementId: id })
     await setPresence(id, pending.length ? 'waiting' : runs.some((run) => run.workflowId !== 'lead' && run.status === 'running') ? 'working' : 'idle')
   }
-  const post = (id: string, message: Omit<RoomMessage, 'id' | 'seq' | 'roomId' | 'at'>) => stores.chat.post(id, message)
+  const post = (id: string, message: Omit<RoomMessage, 'id' | 'seq' | 'roomId' | 'at'>) => message.kind === 'task'
+    ? withTaskReceiptLock(stores, id, () => stores.chat.post(id, message)) : stores.chat.post(id, message)
   const audit = (runId: string, message: unknown) => stores.events.append(runId, { type: 'log', actor: author, data: { level: 'info', message: JSON.stringify(message) } })
   const scopedEngine = createLeadEngine(options, profiles, onRunEvent, audit)
   const serial = <T>(id: string, fn: () => Promise<T>): Promise<T> => {
@@ -121,16 +124,17 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return scopedEngine({ message, title, profiles: scopedProfiles, created, kind, origin })
   }
 
-  async function launch(workflow: WorkflowDefinition, requirementId: string, message: RoomMessage, scopedProfiles = profiles, args: Record<string, unknown> = {}, parentRunId?: string, start: Pick<StartRunInput, 'budget' | 'route'> = {}, resend?: { origin: NonNullable<TaskRunState['origin']>; reason: string }): Promise<{ runId: string; taskMessage?: RoomMessage }> {
+  async function launch(workflow: WorkflowDefinition, requirementId: string, message: RoomMessage, scopedProfiles = profiles, args: Record<string, unknown> = {}, parentRunId?: string, start: Pick<StartRunInput, 'budget' | 'route'> = {}, resend?: { origin: NonNullable<TaskRunState['origin']>; reason: string; resendOf: string }): Promise<{ runId: string; taskMessage?: RoomMessage }> {
     let resolveCreated!: (created: { runId: string; taskMessage?: RoomMessage }) => void
     let rejectCreated!: (error: unknown) => void
     const ready = new Promise<{ runId: string; taskMessage?: RoomMessage }>((resolve, reject) => { resolveCreated = resolve; rejectCreated = reject })
     const engine = instrument(message, workflow.title, scopedProfiles, async (state) => {
       engines.set(state.runId, engine)
-      if (parentRunId && workflow.id.startsWith('task:')) await stores.events.append(parentRunId, { type: 'task.dispatched', actor: author,
-        data: { taskRunId: state.runId, role: workflow.nodes[0]?.kind === 'agent' ? workflow.nodes[0].role : workflow.id, title: workflow.title, by: message.author } })
       const taskMessage = workflow.id.startsWith('task:') ? await post(requirementId, { author, kind: 'task', text: `${workflow.title}：已派发`, mentions: resend ? message.mentions : undefined,
         receipt: { status: 'sent', hops: state.origin?.hops, chain: state.origin?.chain, ...(resend ? { note: resend.reason } : {}) }, replyTo: message.id, refs: { taskRunId: state.runId, runId: state.runId } }) : undefined
+      if (parentRunId && taskMessage) await stores.events.append(parentRunId, { type: 'task.dispatched', actor: author,
+        data: { taskRunId: state.runId, role: workflow.nodes[0]?.kind === 'agent' ? workflow.nodes[0].role : workflow.id, title: workflow.title, by: message.author,
+          ...(resend ? { resendOf: resend.resendOf, reason: resend.reason } : {}) } })
       resolveCreated({ runId: state.runId, taskMessage })
     }, workflow.id.startsWith('task:') ? 'task' : 'workflow', resend?.origin)
     const job = engine.start({ workflow, requirementId, args, ...start }).then(async (state) => {
@@ -326,9 +330,18 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       try { task = taskWorkflow(state.args.__leadTask as import('../types.js').TaskSpec, stores, profiles) }
       catch (error) { throw new TaskResendConflictError(`原任务无法恢复：${errorText(error)}；请恢复角色与任务配置，或向 @lead 重新发起任务`) }
       if (task.workflow.id !== state.workflowId) throw new TaskResendConflictError('原任务定义与 workflow 不一致；请核对运行记录后向 @lead 重新发起任务')
+      let parentRunId: string | undefined
+      for (const candidate of await stores.runs.list({ requirementId })) {
+        if (candidate.workflowId !== 'lead') continue
+        const events = await stores.events.read(candidate.runId, { types: ['task.dispatched'] })
+        if (events.some(event => (event.data as import('../types.js').EventPayloads['task.dispatched']).taskRunId === state.runId)) {
+          parentRunId = candidate.runId
+          break
+        }
+      }
       // 重发是同一份工作的新尝试，不是下游派活；不能重新计算 hops 或向 chain 追加原运行。
-      const result = await launch(task.workflow, requirementId, original, task.profiles, structuredClone(state.args), undefined,
-        { budget: state.budget, route: state.route }, { origin: { ...structuredClone(state.origin), messageId: original.id }, reason })
+      const result = await launch(task.workflow, requirementId, original, task.profiles, structuredClone(state.args), parentRunId,
+        { budget: state.budget, route: state.route }, { origin: { ...structuredClone(state.origin), messageId: original.id }, reason, resendOf: state.runId })
       return result.taskMessage!
     })
   }

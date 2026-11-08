@@ -9,6 +9,7 @@ import { StreamState } from './stream-cli.js'
 
 export interface PiOptions {
   bin?: string
+  env?: Record<string, string>
   /** Pi 已配置的 provider 名；连接地址及凭据仍由 Pi 自己管理。 */
   provider?: string
 }
@@ -206,10 +207,11 @@ export function createPiHarness(options: PiOptions = {}): HarnessAdapter {
       compactionEvents: true, customProvider: false, sandbox: false, mcp: true,
     },
     async available() {
-      const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), timeoutMs: 5_000 })
+      const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })
       return proc.ok ? { ok: true } : { ok: false, reason: proc.error || proc.stderr || 'Pi 不可用' }
     },
     async run(req, onEvent) {
+      if (options.env && Object.keys(options.env).length) req = { ...req, env: { ...options.env, ...req.env } }
       if (req.provider) return { ok: false, finalText: '', error: 'Pi does not support customProvider connection overrides; configure providers in Pi and select provider/model via model' }
       if (options.provider && !req.model) return { ok: false, finalText: '', error: 'Pi --provider requires --model' }
       const args = ['--mode', 'json',

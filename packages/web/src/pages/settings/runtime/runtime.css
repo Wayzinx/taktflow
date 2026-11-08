@@ -1,0 +1,534 @@
+/* ---------------------------------------------------------------- 设置页「模型与 Harness」编辑（docs/design/27 §4） */
+
+/* 列表行：provider、角色路由 */
+.rt-rows {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rt-row {
+  padding: 0 var(--sp-4);
+  border-top: 1px solid var(--divider);
+  transition: background-color var(--dur) var(--ease);
+}
+.rt-row:first-child {
+  border-top: 0;
+}
+.rt-row:hover {
+  background: var(--surface-hover, var(--surface-2));
+}
+.rt-row-main {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.1fr) 150px minmax(120px, 1.6fr) minmax(150px, 1.1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 52px;
+}
+.rt-route .rt-row-main {
+  grid-template-columns: minmax(180px, 0.9fr) minmax(0, 2fr) auto;
+}
+.rt-row-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.rt-id {
+  font-size: var(--text-ui);
+  font-weight: 500;
+  color: var(--text);
+}
+.rt-url {
+  min-width: 0;
+  font-size: var(--text-meta);
+}
+.rt-row-acts {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  opacity: 0.72;
+  transition: opacity var(--dur) var(--ease);
+}
+.rt-row:hover .rt-row-acts,
+.rt-row:focus-within .rt-row-acts,
+.harness-card:hover .hc-acts,
+.harness-card:focus-within .hc-acts,
+.models-table tr:hover .rt-row-acts,
+.models-table tr:focus-within .rt-row-acts {
+  opacity: 1;
+}
+
+/* 系统角色名 */
+.rt-sys {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.rt-sys > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--accent-text);
+}
+.rt-sys > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.rt-sys b {
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.rt-sys .faint {
+  overflow: hidden;
+  font-size: var(--text-meta);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* harness · 模型 · effort · 备选 */
+.rt-selchips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-meta);
+}
+.rt-h {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  color: var(--text);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.rt-h::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-success);
+}
+.rt-h.down::before {
+  background: var(--st-failed);
+}
+.rt-m {
+  color: var(--text-2);
+}
+.rt-fb {
+  font-size: var(--text-label);
+}
+
+/* 密钥来源 */
+.rt-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 4px 0 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  color: var(--text-2);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  cursor: help;
+}
+.rt-key svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.rt-key-src {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+}
+.rt-key.is-env .rt-key-src,
+.rt-key.is-local .rt-key-src {
+  color: var(--st-success);
+  background: var(--st-success-soft);
+}
+.rt-key.is-missing .rt-key-src {
+  color: var(--st-waiting);
+  background: var(--st-waiting-soft);
+}
+.rt-key.is-missing svg {
+  color: var(--st-waiting);
+}
+
+/* 测试结果：展开出现 */
+.rt-outcome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 0 0 var(--sp-3);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  background: var(--bg-sunken);
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+.harness-card .rt-outcome {
+  margin: var(--sp-3) 0 0;
+}
+.rt-outcome > svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}
+.rt-outcome.ok > svg {
+  color: var(--st-success);
+}
+.rt-outcome.bad > svg {
+  color: var(--st-failed);
+}
+.rt-outcome-msg {
+  color: var(--text);
+}
+.rt-outcome-detail {
+  flex-basis: 100%;
+  padding-left: 24px;
+  color: var(--text-3);
+  overflow-wrap: anywhere;
+}
+.rt-billed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--st-waiting);
+  background: var(--st-waiting-soft);
+}
+.rt-billed svg {
+  width: 11px;
+  height: 11px;
+}
+.rt-test[aria-busy] svg {
+  color: var(--accent-text);
+}
+
+/* 模型表的操作列与结果行 */
+.model-acts {
+  white-space: nowrap;
+}
+.models-table .model-below td {
+  height: auto;
+  padding-top: 0;
+  border-top: 0;
+}
+.models-table .model-below .rt-outcome {
+  margin: 0;
+}
+.model-kind {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  font-family: var(--font-sans, inherit);
+  font-size: var(--text-label);
+  font-weight: 500;
+  vertical-align: 1px;
+  color: var(--st-stale);
+  background: var(--st-stale-soft);
+}
+
+/* harness 卡片：启动命令行、操作、停用态 */
+.hc-cmd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  margin-top: var(--sp-3);
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-label);
+  color: var(--text-2);
+  background: var(--bg-sunken);
+}
+.hc-cmd svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+}
+.hc-cmd-tag {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.hc-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  opacity: 0.72;
+  transition: opacity var(--dur) var(--ease);
+}
+.harness-card.is-disabled {
+  border-style: dashed;
+}
+.harness-card.is-disabled .hc-caps,
+.harness-card.is-disabled .hc-cmd {
+  opacity: 0.5;
+  filter: saturate(0.4);
+}
+
+/* 抽屉表单 */
+.rt-form {
+  padding: var(--sp-5);
+}
+.rt-form .segmented {
+  justify-self: start;
+  max-width: 100%;
+}
+.rt-form .input.is-bad {
+  box-shadow: inset 0 0 0 1px var(--st-failed);
+}
+.rt-field-err {
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--st-failed);
+}
+.rt-note {
+  font-size: var(--text-meta);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.rt-note code {
+  font-size: 0.95em;
+}
+.rt-key-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rt-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+.rt-pair {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 预设：provider 用小标签，ACP 用两行卡片 */
+.rt-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rt-preset,
+.rt-acp {
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  color: var(--text-2);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  cursor: pointer;
+  transition:
+    background-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    translate var(--dur) var(--ease);
+}
+.rt-preset {
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--text-meta);
+}
+.rt-preset:hover,
+.rt-acp:hover {
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+  translate: 0 -1px;
+}
+.rt-preset.on,
+.rt-acp.on {
+  color: var(--text);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.rt-acp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.rt-acp {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  text-align: left;
+}
+.rt-acp b {
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.rt-acp .mono {
+  font-size: var(--text-label);
+}
+
+/* 选择器（harness / 模型 / effort）与备选 */
+.rt-sel {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) 108px;
+  gap: 6px;
+}
+.rt-fallbacks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rt-fallback {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+.rt-fallback-arrow {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+.rt-add-fallback {
+  justify-self: start;
+}
+
+/* 环境变量 */
+.rt-env {
+  display: grid;
+  gap: 6px;
+}
+.rt-env-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr) auto;
+  gap: 6px;
+}
+
+/* 开关 */
+.rt-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+  height: 30px;
+  padding: 0 12px 0 4px;
+  border: 0;
+  border-radius: var(--radius-pill);
+  font: inherit;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  cursor: pointer;
+}
+.rt-switch-knob {
+  position: relative;
+  width: 34px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  background: var(--st-success-soft);
+  transition: background-color var(--dur) var(--ease);
+}
+.rt-switch-knob::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 15px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--st-success);
+  transition:
+    left var(--dur) var(--ease-spring),
+    background-color var(--dur) var(--ease);
+}
+.rt-switch.on .rt-switch-knob {
+  background: var(--st-failed-soft);
+}
+.rt-switch.on .rt-switch-knob::after {
+  left: 3px;
+  background: var(--st-failed);
+}
+.rt-switch > svg {
+  width: 13px;
+  height: 13px;
+}
+
+.rt-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+.rt-check-note {
+  margin: var(--sp-3) 0 0;
+  font-size: var(--text-meta);
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .rt-outcome {
+    animation: rt-reveal var(--dur-slow) var(--ease-out-soft) both;
+  }
+  .rt-test[aria-busy] svg {
+    animation: spin var(--takt) linear infinite;
+  }
+}
+@keyframes rt-reveal {
+  from {
+    opacity: 0;
+    translate: 0 -4px;
+  }
+}
+
+@media (max-width: 760px) {
+  .rt-row-main,
+  .rt-route .rt-row-main {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 10px 0;
+  }
+  .rt-row-main > .proto-pill,
+  .rt-url {
+    display: none;
+  }
+  .rt-row-main > .rt-key,
+  .rt-route .rt-selchips {
+    grid-column: 1 / -1;
+    order: 3;
+  }
+  .rt-sel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rt-acp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -4,7 +4,7 @@ import { ParseState, object, string, number, readUsage, readProviderApiKey } fro
 import type { EventSink, StreamParser } from './parse.js'
 import { finalizeResult, runProcess } from './process.js'
 
-export interface ClaudeCodeOptions { bin?: string }
+export interface ClaudeCodeOptions { bin?: string; env?: Record<string, string> }
 
 export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamParser {
   const state = new ParseState(onEvent)
@@ -59,10 +59,11 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
     displayName: 'Claude Code',
     capabilities,
     async available() {
-      const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), timeoutMs: 5_000 })
+      const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })
       return proc.ok ? { ok: true } : { ok: false, reason: proc.error || proc.stderr || 'Claude Code 不可用' }
     },
     async run(req, onEvent) {
+      if (options.env && Object.keys(options.env).length) req = { ...req, env: { ...options.env, ...req.env } }
       let processReq = req
       if (req.provider) {
         if (req.provider.protocol !== 'anthropic-messages') {

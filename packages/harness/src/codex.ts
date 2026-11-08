@@ -4,7 +4,7 @@ import { ParseState, object, string, text, readUsage, promptWithInstructions, re
 import type { EventSink, StreamParser } from './parse.js'
 import { finalizeResult, runProcess } from './process.js'
 
-export interface CodexOptions { bin?: string }
+export interface CodexOptions { bin?: string; env?: Record<string, string> }
 
 export function createCodexParser(onEvent: EventSink = () => {}): StreamParser {
   const state = new ParseState(onEvent)
@@ -64,10 +64,11 @@ export function createCodexHarness(options: CodexOptions = {}): HarnessAdapter {
     displayName: 'Codex',
     capabilities,
     async available() {
-      const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), timeoutMs: 5_000 })
+      const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })
       return proc.ok ? { ok: true } : { ok: false, reason: proc.error || proc.stderr || 'Codex 不可用' }
     },
     async run(req, onEvent) {
+      if (options.env && Object.keys(options.env).length) req = { ...req, env: { ...options.env, ...req.env } }
       const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access', '-C', req.cwd]
       if (req.provider) {
         const provider = req.provider

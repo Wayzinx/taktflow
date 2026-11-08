@@ -56,9 +56,11 @@ import type {
 } from '@taktflow/core'
 import type { CrudSource, KnowledgeSource, StewardSource } from './source-m4'
 import type { M5Source } from './source-m5'
+import type { M6Source } from './source-m6'
 
 export type { CrudSource, KnowledgeSource, StewardSource, StewardThreadDetail } from './source-m4'
 export { RevisionConflictError, RewindConflictError, type M5Source } from './source-m5'
+export { RuntimeConflictError, type M6Source } from './source-m6'
 
 export type SpaceFileKind = SpaceFile['kind']
 
@@ -98,7 +100,7 @@ export interface EvalOutputSnapshot {
 }
 
 /** Web 用到的全部数据接口：真实 HTTP 客户端和演示数据实现同一份。 */
-export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, M5Source {
+export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, M5Source, M6Source {
   readonly mock: boolean
   /** 当前用户（GET /me）：请求头 x-takt-user 指定，缺省为空间第一个 owner。 */
   me(): Promise<Viewer>

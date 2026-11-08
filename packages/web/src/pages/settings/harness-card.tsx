@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from 'react'
-import { Check, CircleAlert, CircleCheck, Minus } from 'lucide-react'
+import { useState, type CSSProperties, type ReactNode } from 'react'
+import { Check, CircleAlert, CircleCheck, Minus, PowerOff, TerminalSquare } from 'lucide-react'
 import type { HarnessInfo } from '@taktflow/core'
 import { CAPABILITIES, HARNESS_SOURCE, type CapabilityMeta } from '../../lib/capabilities'
 
@@ -52,12 +52,14 @@ function CapTile({ cap, on, align }: { cap: CapabilityMeta; on: boolean; align: 
   )
 }
 
-export function HarnessCard({ h }: { h: HarnessInfo }) {
+/** actions：页脚右侧的操作（测试 / 设置…）；below：卡片底部的测试结果。 */
+export function HarnessCard({ h, actions, below }: { h: HarnessInfo; actions?: ReactNode; below?: ReactNode }) {
   const src = HARNESS_SOURCE[h.source]
   const supported = CAPABILITIES.filter((c) => h.capabilities[c.key]).length
+  const disabled = Boolean(h.override?.disabled)
   return (
     <article
-      className={`card harness-card${h.available ? '' : ' unavailable'}`}
+      className={`card harness-card${h.available ? '' : ' unavailable'}${disabled ? ' is-disabled' : ''}`}
       style={{ '--src': src.color } as CSSProperties}
     >
       <header className="hc-head">
@@ -74,11 +76,18 @@ export function HarnessCard({ h }: { h: HarnessInfo }) {
           </div>
         </div>
         <span className={`hc-avail${h.available ? ' ok' : ''}`}>
-          {h.available ? <CircleCheck strokeWidth={2.2} /> : <CircleAlert strokeWidth={2.2} />}
-          {h.available ? '可用' : '不可用'}
+          {disabled ? <PowerOff strokeWidth={2.2} /> : h.available ? <CircleCheck strokeWidth={2.2} /> : <CircleAlert strokeWidth={2.2} />}
+          {disabled ? '已停用' : h.available ? '可用' : '不可用'}
         </span>
       </header>
-      {!h.available && (
+      {h.command && (
+        <div className="hc-cmd" title={h.command.join(' ')}>
+          <TerminalSquare aria-hidden />
+          <span className="mono truncate">{h.command.join(' ')}</span>
+          {(h.override?.command || h.override?.env) && <span className="hc-cmd-tag">已覆盖</span>}
+        </div>
+      )}
+      {!h.available && !disabled && (
         <div className="hc-reason" title={h.reason}>
           <CircleAlert />
           <span>{readableReason(h.reason)}</span>
@@ -118,7 +127,9 @@ export function HarnessCard({ h }: { h: HarnessInfo }) {
         ) : (
           <span className="faint">未绑定 · 节点或角色里指定 harness 时使用</span>
         )}
+        {actions && <span className="hc-acts">{actions}</span>}
       </footer>
+      {below}
     </article>
   )
 }

@@ -1,3 +1,4 @@
+import type { RuntimeCallbacks } from './runtime-routes.js'
 import { startMaintenance } from './maintenance.js'
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -18,7 +19,7 @@ import { attachLessons } from './commands.js'
 import type { M3Callbacks } from './m3-routes.js'
 import { staticFile } from './static.js'
 
-export interface ServerOptions extends CatalogCallbacks, M3Callbacks {
+export interface ServerOptions extends CatalogCallbacks, M3Callbacks, RuntimeCallbacks {
   projectDir?: string
   spacesDir?: string
   onLeadMention?: LeadMention

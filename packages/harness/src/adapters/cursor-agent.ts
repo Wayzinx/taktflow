@@ -13,6 +13,7 @@ export function createCursorAgentParser(onEvent: EventSink = () => {}): StreamPa
 
 export function createCursorAgentHarness(options: CursorAgentOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
+    env: options.env,
     id: 'cursor-agent', displayName: 'Cursor Agent', bin: options.bin ?? 'cursor-agent',
     parser: createCursorAgentParser, capabilities: { cost: true },
     command: req => ({

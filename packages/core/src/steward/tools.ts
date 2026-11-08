@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { DEFAULT_RECEIPT_TIMEOUT_MINUTES } from '../lead/receipts.js'
 import type { StewardBlock, StewardCitation, StewardContextRef, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
 import type { ToolSpec, RoomMessage, NodeKind, SnapshotNode, RunState, Usage, EventEnvelope } from '../types.js'
 import { createInsights } from '../insights/fs-insights.js'
@@ -123,7 +124,7 @@ export class StewardTools {
         }).catch(() => cleanup())
       })
       const timer = setTimeout(() => { void this.refreshDelegations().finally(cleanup).catch(() => {}) },
-        Math.max(1, 30 * 60_000 - (Date.parse(timestamp(this.deps)) - Date.parse(delegation.at))))
+        Math.max(1, DEFAULT_RECEIPT_TIMEOUT_MINUTES * 60_000 - (Date.parse(timestamp(this.deps)) - Date.parse(delegation.at))))
       timer.unref()
       const cleanup = () => { off(); clearTimeout(timer); this.cleanups.delete(cleanup) }
       this.cleanups.add(cleanup)
@@ -876,7 +877,7 @@ export class StewardTools {
           delegation.status = 'refused'; delegation.reply = message.text; delegation.at = message.at
         }
       }
-      if (delegation.status === 'sent' && Date.parse(timestamp(this.deps)) - Date.parse(record.sentAt) >= 30 * 60_000) {
+      if (delegation.status === 'sent' && Date.parse(timestamp(this.deps)) - Date.parse(record.sentAt) >= DEFAULT_RECEIPT_TIMEOUT_MINUTES * 60_000) {
         delegation.status = 'expired'; delegation.at = timestamp(this.deps)
       }
       if (before !== JSON.stringify(delegation)) await this.saveDelegation(record)
@@ -949,7 +950,7 @@ export class StewardTools {
         await this.saveDelegation(record, context)
         cleanup(); resolveWait(delegation)
       }).catch(() => { cleanup(); resolveWait(delegation) })
-    }, 30 * 60_000)
+    }, DEFAULT_RECEIPT_TIMEOUT_MINUTES * 60_000)
     expiryTimer.unref()
     return wait
   }

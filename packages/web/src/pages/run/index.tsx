@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, Workflow } from 'lucide-react'
+import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, Play, Square, Workflow } from 'lucide-react'
 import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
@@ -12,6 +12,7 @@ import { Link, setQuery, useLocation } from '../../lib/router'
 import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
 import { useIsDark } from '../../lib/theme'
 import { layoutRun, type FlowNode } from './dag-layout'
+import { decorate, useCompletionPulses, useReplay } from './canvas-motion'
 import { nodeTypes } from './dag-nodes'
 import { edgeTypes } from './dag-edges'
 import { EventTicker } from '../../components/event-ticker'
@@ -236,6 +237,12 @@ function RunCanvas({ detail, selected, stageFocus }: { detail: RunDetail; select
   const [miniMap, setMiniMap] = useMiniMapPref()
   const rf = useRef<ReactFlowInstance<FlowNode> | null>(null)
   const drawerOpen = Boolean(selected)
+  // 动效状态（docs/design/27 §2.1）：悬停的上下游、刚完成节点的交接信号、回放
+  const [hover, setHover] = useState<string>()
+  const pulses = useCompletionPulses(detail.graph.nodes)
+  const replay = useReplay(detail)
+  const focus = hover ?? selected
+  const view = useMemo(() => decorate(layout, focus, pulses, replay), [layout, focus, pulses, replay])
 
   function focusStage(instance: ReactFlowInstance<FlowNode>, animate: boolean, pick?: string) {
     const sel = selected ? detail.graph.nodes.find((n) => n.id === selected) : undefined
@@ -258,12 +265,17 @@ function RunCanvas({ detail, selected, stageFocus }: { detail: RunDetail; select
   useEffect(() => {
     if (stageFocus && rf.current) focusRef.current(rf.current, true, stageFocus)
   }, [stageFocus])
+  // 回放时画布跟着在跑的阶段走，结束后回到原来的聚焦
+  const replayStage = replay.playing ? detail.graph.nodes.find((n) => n.stage && replay.phaseOf(n.id) === 'run')?.stage : undefined
+  useEffect(() => {
+    if (replayStage && rf.current) focusRef.current(rf.current, true, replayStage)
+  }, [replayStage])
 
   return (
-    <div className="run-canvas">
+    <div className={`run-canvas${hover ? ' has-focus' : selected ? ' has-sel' : ''}${replay.playing ? ' is-replay' : ''}`}>
       <ReactFlow<FlowNode>
-        nodes={layout.nodes}
-        edges={layout.edges}
+        nodes={view.nodes}
+        edges={view.edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         colorMode={dark ? 'dark' : 'light'}
@@ -277,6 +289,8 @@ function RunCanvas({ detail, selected, stageFocus }: { detail: RunDetail; select
           setQuery({ node: id === selected ? undefined : id, dtab: undefined })
         }}
         onPaneClick={() => selected && setQuery({ node: undefined, dtab: undefined })}
+        onNodeMouseEnter={(_, n) => n.type === 'dag' && setHover(n.id)}
+        onNodeMouseLeave={() => setHover(undefined)}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
@@ -319,6 +333,18 @@ function RunCanvas({ detail, selected, stageFocus }: { detail: RunDetail; select
         </Panel>
         <Panel position="top-right" className="dag-tools" style={{ marginRight: drawerOpen ? 'calc(var(--drawer-w, 560px) + 16px)' : undefined }}>
           <ViewSwitch value="canvas" />
+          {replay.available && (
+            <button
+              className={`btn btn-sm${replay.playing ? ' on' : ''}`}
+              onClick={() => (replay.playing ? replay.stop() : replay.start())}
+              title={replay.playing ? '停止回放' : '把这次运行按真实先后压到 6 秒重演一遍'}
+              aria-pressed={replay.playing}
+              style={{ '--p': replay.progress } as CSSProperties}
+            >
+              {replay.playing ? <Square /> : <Play />}
+              {replay.playing ? '停止' : '回放'}
+            </button>
+          )}
           <button className={`btn btn-sm${miniMap ? ' on' : ''}`} onClick={() => setMiniMap(!miniMap)} title={miniMap ? '隐藏小地图' : '显示小地图'} aria-pressed={miniMap}>
             <MapIcon />
             小地图

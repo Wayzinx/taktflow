@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { initProject } from '@taktflow/core'
+import { createHarnesses } from '@taktflow/harness'
 import { createRuntimeCatalog } from './catalog.js'
 import type { ProjectContext } from './project.js'
 
@@ -130,4 +131,15 @@ it('mtime 变化期间旧加载失败不会删除新版本缓存', async () => {
   await f.catalog.getModels(f.stores)
   expect(f.load).toHaveBeenCalledTimes(2)
   expect(f.available).not.toHaveBeenCalled()
+})
+
+it('profile 仍指向停用内置项时目录仍可读取并展示重新启用入口，执行表不恢复该项', async () => {
+  const f = await fixture()
+  f.context.stores.config.harnessOverrides = { codex: { disabled: true } }
+  f.context.profiles = { dev: { role: 'dev', title: 'dev', description: '', instructions: '', skills: [], writeScope: [], harness: { harness: 'codex' } } }
+  f.context.harnesses = createHarnesses({ config: f.context.stores.config })
+  for (const h of Object.values(f.context.harnesses)) h.available = async () => ({ ok: true })
+  const catalog = createRuntimeCatalog({ load: async () => f.context, mtime: async () => 1 })
+  expect((await catalog.getHarnesses(f.stores)).find(h => h.id === 'codex')).toMatchObject({ available: false, reason: '本空间已停用', roles: ['dev'] })
+  expect(f.context.harnesses.codex).toBeUndefined()
 })

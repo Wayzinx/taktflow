@@ -426,3 +426,24 @@
     background: var(--bg-sunken);
   }
 }
+
+/* 边的信号（docs/design/27 §2.1）：运行页画布与 Workflow 编辑器共用 */
+@keyframes edge-sweep {
+  0% {
+    stroke-dashoffset: 0.14;
+    opacity: 0;
+  }
+  14%,
+  86% {
+    opacity: 0.95;
+  }
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+@keyframes edge-march {
+  to {
+    stroke-dashoffset: -12;
+  }
+}

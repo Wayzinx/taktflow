@@ -24,12 +24,12 @@ import { addUsage, ZERO, type MockDb, type MockRun } from './mock-data'
 import { mockDaily, mockHistory } from './mock-history'
 import { totalTokens } from '../lib/format'
 import { createMockReviews } from './mock-reviews'
-import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
 import type { WorkflowApi } from './mock-workflows'
 import { createMockRequirementCrud } from './mock-crud'
 import { createMockChanges, mockActivity, mockTimeline } from './mock-m5-run'
 import { createMockChecks } from './mock-m5-checks'
 import { createMockQuality } from './mock-m5-quality'
+import { createMockRuntime } from './mock-m6-runtime'
 import { RewindConflictError } from './source-m5'
 import type { DataSource } from './source'
 import type { KnowledgeSource, StewardSource } from './source-m4'
@@ -55,6 +55,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
   const fail = (msg: string) => Promise.reject(new Error(msg))
   const checks = createMockChecks(db)
   const quality = createMockQuality(db)
+  const runtime = createMockRuntime(db.requirements.length > 0)
   // 回退：本节点与下游标 stale，存放区产物写回退点版本（不删历史），记 node.rewound
   const changes = createMockChanges(db, (run, nodeId, p, reason) => {
     const actor: Actor = { type: 'human', id: 'web' }
@@ -380,8 +381,13 @@ export function createProjectMock(db: MockDb): ProjectSource {
       chat.onAnswered(item)
       return delay(attentionView(db, item), 160)
     },
-    harnesses: () => delay(MOCK_HARNESSES, 140),
-    models: () => delay(MOCK_MODELS, 140),
+    harnesses: () => delay(runtime.harnesses(), 140),
+    models: () => delay(runtime.models(), 140),
+    runtimeConfig: runtime.runtimeConfig,
+    patchRuntime: runtime.patchRuntime,
+    testRuntime: runtime.testRuntime,
+    putSecret: runtime.putSecret,
+    deleteSecret: runtime.deleteSecret,
     resendRoomTask(id, messageId, reason) {
       const r = chat.resendTask(id, messageId, reason)
       return typeof r === 'string' ? fail(r) : delay(r, 260)

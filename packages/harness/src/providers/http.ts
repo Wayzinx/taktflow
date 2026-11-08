@@ -5,6 +5,7 @@ export interface ProviderHttpOptions {
   timeoutMs?: number
   probeTimeoutMs?: number
   retryDelayMs?: number
+  resolveSecret?: (name: string) => string | undefined
 }
 
 export class ProviderHttpError extends Error {
@@ -30,11 +31,11 @@ export function endpoint(config: ProviderConfig, protocol: 'openai-chat' | 'anth
   return url
 }
 
-function headers(config: ProviderConfig, protocol: string): Headers {
+export function headers(config: ProviderConfig, protocol: string, resolveSecret: (name: string) => string | undefined = name => process.env[name]): Headers {
   const result = new Headers({ 'content-type': 'application/json' })
   if (protocol === 'anthropic-messages') result.set('anthropic-version', '2023-06-01')
   if (config.apiKeyEnv) {
-    const key = process.env[config.apiKeyEnv]
+    const key = resolveSecret(config.apiKeyEnv)
     if (!key?.trim()) throw new ProviderHttpError('API key environment variable is missing or empty')
     const authHeader = config.preset === 'azure-openai' ? 'api-key' : protocol === 'anthropic-messages' ? 'x-api-key' : 'authorization'
     result.set(authHeader, authHeader === 'authorization' ? `Bearer ${key}` : key)
@@ -86,7 +87,7 @@ export class HttpOperation {
 
   async post(url: URL, config: ProviderConfig, protocol: string, payload: unknown): Promise<unknown> {
     try {
-      const requestHeaders = headers(config, protocol)
+      const requestHeaders = headers(config, protocol, this.options.resolveSecret)
       const body = JSON.stringify(payload)
       for (;;) {
         this.controller.signal.throwIfAborted()
@@ -122,7 +123,7 @@ export async function probe(config: ProviderConfig, protocol: 'openai-chat' | 'a
   timer.unref()
   try {
     const url = endpoint(config, protocol)
-    const requestHeaders = headers(config, protocol)
+    const requestHeaders = headers(config, protocol, options.resolveSecret)
     // HEAD 不触发生成；404/405 仅代表端点未提供 HEAD，地址仍然可达。
     const response = await fetch(url, { method: 'HEAD', headers: requestHeaders, signal: controller.signal, redirect: 'manual' })
     await response.body?.cancel()

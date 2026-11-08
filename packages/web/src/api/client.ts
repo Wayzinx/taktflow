@@ -3,6 +3,7 @@ import { currentSpaceId } from '../lib/space'
 import { actingUserHeader } from '../lib/acting-user'
 import { createM4Http } from './client-m4'
 import { createM5Http } from './client-m5'
+import { createM6Http } from './client-m6'
 import { fetchStream } from './sse'
 import { WorkflowConflictError, type DataSource, type EvalOutputSnapshot } from './source'
 
@@ -138,6 +139,7 @@ export function createHttpSource(base = '/api'): DataSource {
     subscribeWorkflow: (id, onChange) => stream(scoped(`/workflows/${enc(id)}/stream`), onChange),
     ...createM4Http({ req, get, url: scoped, stream, stewardStream: (url, on) => fetchStream(url, on, () => actingUserHeader(true)) }),
     ...createM5Http({ req, get }),
+    ...createM6Http({ req, get }),
   }
 }
 

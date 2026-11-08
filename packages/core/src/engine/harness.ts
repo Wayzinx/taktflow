@@ -1,3 +1,4 @@
+import { resolveSecret } from '../secrets/index.js'
 import { recordRecipe } from './recipe.js'
 import { captureContext, type CaptureContext } from './checkpoints.js'
 import { startInvocation } from './invocations.js'
@@ -137,7 +138,8 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       await assertNoSymlinks(stores.taktDir, transcript)
       await mkdir(dirname(transcript), { recursive: true })
       const env: Record<string, string> = { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_NODE_ID: node.id, TAKT_KB_BASES: JSON.stringify(spec?.bases ?? []), TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript }
-      if (provider?.apiKeyEnv && process.env[provider.apiKeyEnv]) env[provider.apiKeyEnv] = process.env[provider.apiKeyEnv]!
+      const apiKey = provider?.apiKeyEnv ? resolveSecret(provider.apiKeyEnv) : undefined
+      if (provider?.apiKeyEnv && apiKey) env[provider.apiKeyEnv] = apiKey
       const sandbox = await sandboxCall(host, cwd, harness.id, ctx, env, node.timeoutMs, directories, identity.snapshot)
       let finishGuard: () => Promise<{ paths: string[]; action: 'flagged'; ambiguous: boolean }>
       try {

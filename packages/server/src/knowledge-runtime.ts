@@ -1,3 +1,4 @@
+import { resolveSecret } from '@taktflow/core'
 import type { ProjectStores, ServerInfo, StewardDeps, StewardPrefs } from '@taktflow/core'
 import { createKnowledgeStore, createProjectSecretResolver } from '@taktflow/knowledge'
 import { createOpenAIChatProvider, providerConfig } from '@taktflow/harness'
@@ -11,8 +12,8 @@ export function configuredChat(stores: ProjectStores, alias?: string): { info: S
   if (!raw) return unavailable('模型的 provider 不存在，请检查空间模型设置')
   const config = providerConfig(model.provider, raw)
   if (model.kind === 'embedding' || config.protocol !== 'openai-chat') return unavailable('管家需要 openai-chat 对话模型，请重新选择')
-  if (!config.baseURL || config.apiKeyEnv && !process.env[config.apiKeyEnv]) return unavailable('模型地址或所需环境变量未配置，请检查模型设置')
-  const provider = createOpenAIChatProvider(model.provider, config)
+  if (!config.baseURL || config.apiKeyEnv && !resolveSecret(config.apiKeyEnv)) return unavailable('模型地址或所需环境变量未配置，请检查模型设置')
+  const provider = createOpenAIChatProvider(model.provider, config, { resolveSecret })
   return { info: { configured: true, harness: 'native', model: alias }, chat: async (request, onToken) => {
     const response = await provider.chat({ ...request, model: model.id })
     if (response.message.content) onToken?.(response.message.content)

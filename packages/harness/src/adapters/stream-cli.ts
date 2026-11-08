@@ -3,7 +3,7 @@ import { addUsage, ParseState } from '../parse.js'
 import type { EventSink, StreamParser } from '../parse.js'
 import { finalizeResult, runProcess } from '../process.js'
 
-export interface StreamCliOptions { bin?: string }
+export interface StreamCliOptions { bin?: string; env?: Record<string, string> }
 
 export class StreamState extends ParseState {
   completed = false
@@ -39,6 +39,7 @@ interface StreamCliConfig {
   id: string
   displayName: string
   bin: string
+  env?: Record<string, string>
   capabilities?: HarnessCapabilities
   parser: (sink: EventSink) => StreamParser
   command: (req: HarnessRequest) => { args: string[]; stdin?: string }
@@ -55,10 +56,11 @@ export function createStreamCliHarness(config: StreamCliConfig): HarnessAdapter 
       ...config.capabilities,
     },
     async available() {
-      const proc = await runProcess(config.bin, ['--version'], { prompt: '', cwd: process.cwd(), timeoutMs: 5_000 })
+      const proc = await runProcess(config.bin, ['--version'], { prompt: '', cwd: process.cwd(), env: config.env, timeoutMs: 5_000 })
       return proc.ok ? { ok: true } : { ok: false, reason: proc.error || proc.stderr || `${config.displayName} 不可用` }
     },
     async run(req, onEvent) {
+      if (config.env && Object.keys(config.env).length) req = { ...req, env: { ...config.env, ...req.env } }
       if (req.provider) return { ok: false, finalText: '', error: `${config.displayName} does not support customProvider` }
       if (req.sessionId) return { ok: false, finalText: '', error: `${config.displayName} does not support resume` }
       const parser = config.parser(onEvent)

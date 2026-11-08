@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { Fragment, type CSSProperties, type ReactNode } from 'react'
 import { KeyRound } from 'lucide-react'
 import type { ModelInfo } from '@taktflow/core'
 import { protocolColor } from '../../lib/capabilities'
@@ -18,7 +18,8 @@ function contextRatio(n: number): number {
   return Math.max(0.06, Math.min(1, (Math.log(n) - lo) / (hi - lo)))
 }
 
-export function ModelsTable({ models }: { models: ModelInfo[] }) {
+/** actions：每行右侧的操作（设置页可编辑时给）；below：行下方的整行内容（测试结果）。 */
+export function ModelsTable({ models, actions, below, rowClass }: { models: ModelInfo[]; actions?: (m: ModelInfo) => ReactNode; below?: (m: ModelInfo) => ReactNode; rowClass?: (m: ModelInfo, i: number) => { className?: string; style?: CSSProperties } }) {
   return (
     <div className="models-scroll">
       <table className="table models-table">
@@ -32,13 +33,21 @@ export function ModelsTable({ models }: { models: ModelInfo[] }) {
               价格 <span className="th-unit">输入 / 输出 · $/1M</span>
             </th>
             <th style={{ width: '14%' }}>密钥</th>
+            {actions && <th className="r" style={{ width: 132 }}><span className="sr-only">操作</span></th>}
           </tr>
         </thead>
         <tbody>
-          {models.map((m) => (
-            <tr key={m.alias}>
+          {models.map((m, i) => {
+            const rc = rowClass?.(m, i)
+            const extra = below?.(m)
+            return (
+            <Fragment key={m.alias}>
+            <tr className={rc?.className} style={rc?.style}>
               <td>
-                <div className="model-alias mono truncate">{m.alias}</div>
+                <div className="model-alias mono truncate">
+                  {m.alias}
+                  {m.kind === 'embedding' && <span className="model-kind" title="向量模型：知识库向量化用">向量</span>}
+                </div>
                 <div className="model-id mono truncate" title="厂商侧的模型 ID">
                   {m.id}
                 </div>
@@ -79,13 +88,21 @@ export function ModelsTable({ models }: { models: ModelInfo[] }) {
                 )}
               </td>
               <td>
-                <span className={`key-state${m.keyPresent ? ' ok' : ''}`} title={m.keyPresent ? 'apiKeyEnv 对应的环境变量已设置（不读取值）' : 'apiKeyEnv 对应的环境变量未设置：调用会失败'}>
+                <span className={`key-state${m.keyPresent ? ' ok' : ''}`} title={m.keyPresent ? 'provider 的密钥在环境变量或本机密钥库里（不读取值）' : 'provider 的密钥在环境变量和本机密钥库里都没有：调用会失败'}>
                   <KeyRound />
                   {m.keyPresent ? '已配置' : '未配置'}
                 </span>
               </td>
+              {actions && <td className="r model-acts">{actions(m)}</td>}
             </tr>
-          ))}
+            {extra && (
+              <tr className="model-below">
+                <td colSpan={actions ? 7 : 6}>{extra}</td>
+              </tr>
+            )}
+            </Fragment>
+            )
+          })}
         </tbody>
       </table>
     </div>

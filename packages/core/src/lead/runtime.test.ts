@@ -4,6 +4,7 @@ import { leadContext } from './context.js'
 import { createCommandRegistry } from '../commands/index.js'
 import { snapshotWorkflow } from '../store/snapshot.js'
 import { recordTaskImpact } from './task-impact.js'
+import { recoverTaskReceipts } from './receipts.js'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -46,6 +47,67 @@ async function setup(turns: Array<LeadTurn | Record<string, unknown>>, hooks: { 
   return { root, stores, requirement, profiles, requests, lead, options, message, send }
 }
 const task = (overrides: Partial<TaskSpec> = {}): TaskSpec => ({ role: 'pm', title: '修改 AC-2', instructions: '修改 PRD AC-2', inputs: ['spec/prd.md'], outputs: [{ path: 'spec/prd.md', kind: 'spec' }], writeScope: ['requirements/**/spec/**'], ...overrides })
+
+it.each([true, false])('重发创建新运行并在原 Lead 运行记账；无父运行仍可重发（parent=%s）', async parent => {
+  const spec = task({ inputs: [], outputs: [], review: false })
+  const action = { type: 'dispatch_task', task: spec } as const
+  const { lead, stores, requirement, message, send, options } = await setup([{ reply: '派发', actions: [action] }])
+  const turn = parent ? (await send())! : undefined
+  const dispatched = turn?.results[0] ?? await lead.executeAction(action, requirement.id, await message(), undefined, 0)
+  expect(dispatched.ok).toBe(true)
+  await lead.drain()
+  const runId = dispatched.refs!.taskRunId!
+  const state = (await stores.runs.get(runId))!
+  state.origin = { ...state.origin!, hops: 3, chain: ['upstream'] }
+  await stores.runs.save(state)
+  const original = (await stores.chat.list(requirement.id)).find(item => item.refs?.taskRunId === runId && item.receipt?.status === 'sent')!
+  await stores.chat.post(requirement.id, { author: original.author, kind: 'task', text: '待人工确认', refs: original.refs, receipt: { status: 'uncertain', hops: 3, chain: ['upstream'] } })
+  // 重新打开运行时后仍从持久化派发事件找到父运行，不能依赖内存映射。
+  const restarted = createLeadRuntime({ ...options, stores: await openProject(stores.projectDir) })
+  await expect(restarted.resendTask(requirement.id, original, '')).rejects.toThrow('填写原因')
+  const retry = await restarted.resendTask(requirement.id, original, '人工核对后重发')
+  await restarted.drain()
+  expect(retry.refs!.taskRunId).not.toBe(runId)
+  expect(retry.receipt).toMatchObject({ status: 'sent', note: '人工核对后重发', hops: 3, chain: ['upstream'] })
+  expect(await stores.runs.get(retry.refs!.taskRunId!)).toMatchObject({ args: state.args, origin: { ...state.origin!, messageId: original.id } })
+  if (turn) {
+    const events = await stores.events.read(turn.run.runId, { types: ['task.dispatched'] })
+    expect(events).toHaveLength(2)
+    expect(events[0]!.data).not.toHaveProperty('resendOf')
+    expect(events[1]).toMatchObject({ runId: turn.run.runId, type: 'task.dispatched', actor: { type: 'agent', role: 'lead' },
+      data: { taskRunId: retry.refs!.taskRunId, resendOf: runId, reason: '人工核对后重发', role: spec.role, title: spec.title, by: original.author } })
+    expect(events[1]!.seq).toBeGreaterThan(events[0]!.seq)
+    expect(Number.isFinite(Date.parse(events[1]!.ts))).toBe(true)
+    expect(await stores.events.verify(turn.run.runId)).toEqual({ ok: true })
+    await stores.chat.post(requirement.id, { author: original.author, kind: 'task', text: '再次过期', refs: retry.refs, receipt: { status: 'expired' } })
+    const again = await restarted.resendTask(requirement.id, retry, '再次人工确认')
+    await restarted.drain()
+    expect((await stores.events.read(turn.run.runId, { types: ['task.dispatched'] })).at(-1)!.data)
+      .toMatchObject({ taskRunId: again.refs!.taskRunId, resendOf: retry.refs!.taskRunId, reason: '再次人工确认' })
+  } else {
+    for (const run of await stores.runs.list()) expect(await stores.events.read(run.runId, { types: ['task.dispatched'] })).toEqual([])
+  }
+  expect(await stores.chat.list(requirement.id)).toContainEqual(original)
+  await expect(restarted.resendTask(requirement.id, original, '重复重发')).rejects.toThrow('不能重复重发')
+})
+
+it('启动恢复能识别真实 Lead 任务正在本进程执行，任务退出后释放执行记录', async () => {
+  let release!: () => void
+  const blocked = new Promise<void>(resolve => { release = resolve })
+  const { stores, lead, requirement, send } = await setup([{ reply: '派发', actions: [{ type: 'dispatch_task', task: task({ inputs: [], outputs: [], review: false }) }] }], { task: () => blocked })
+  const turn = (await send())!
+  const runId = turn.results[0]!.refs!.taskRunId!
+  try {
+    await vi.waitFor(async () => expect((await stores.chat.list(requirement.id)).some(item => item.refs?.taskRunId === runId && item.receipt?.status === 'started')).toBe(true))
+    await stores.chat.post(requirement.id, { author: { type: 'system', id: 'test' }, kind: 'task', text: '测试接手回执', refs: { taskRunId: runId }, receipt: { status: 'taken' } })
+    expect(await recoverTaskReceipts(await openProject(stores.projectDir))).toEqual([])
+  } finally { release(); await lead.drain() }
+  const state = (await stores.runs.get(runId))!
+  state.status = 'running'; delete state.endedAt
+  await stores.runs.save(state)
+  await stores.chat.post(requirement.id, { author: { type: 'system', id: 'test' }, kind: 'task', text: '模拟遗留状态', refs: { taskRunId: runId }, receipt: { status: 'sent' } })
+  expect((await recoverTaskReceipts(stores)).map(item => item.refs?.taskRunId)).toEqual([runId])
+})
 
 it.each([true, false])('request_human 透传假设与时限，动作时限优先于空间默认：%s', async override => {
   const timebox = { remindAfter: '5m', handbackAfter: '10m' }

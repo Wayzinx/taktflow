@@ -839,7 +839,8 @@ export interface EventPayloads {
   'rework.started': { from: NodeId; to: NodeId; count: number; feedback: string; reset: NodeId[] }
   'worktree.created': { repo: string; path: string; branch: string; base: string }
   'worktree.bootstrapped': { repo: string; path: string; command?: string; shared?: string[]; ok: boolean; ms: number; output?: string }
-  'task.dispatched': { taskRunId: string; role: string; title: string; by: Actor }
+  /** resendOf：重发时为原任务运行 id，reason 为重发原因（docs/design/27 §5）。 */
+  'task.dispatched': { taskRunId: string; role: string; title: string; by: Actor; resendOf?: string; reason?: string }
   'node.checks': { checks: CompletionCheck[]; unmet: string[] }
   'retry.suppressed': { fingerprint: string; code: string; count: number; reason: string }
   'budget.warning': { budget: RunBudget; used: { tokens: number; costUsd?: number; minutes: number }; ratio: number }
@@ -1010,7 +1011,8 @@ export interface HarnessAdapter {
   id: string
   displayName: string
   capabilities?: HarnessCapabilities
-  available(): Promise<{ ok: boolean; reason?: string }>
+  /** detail：版本、ACP 协议版本与 agent 能力等，给设置页的"测试"显示。 */
+  available(): Promise<{ ok: boolean; reason?: string; detail?: string }>
   run(req: HarnessRequest, onEvent: (e: HarnessEvent) => void): Promise<HarnessResult>
 }
 
@@ -1034,6 +1036,34 @@ export interface CliHarnessConfig {
   /** 探测可用性的命令，退出码 0 即可用。 */
   available?: string[]
   capabilities?: HarnessCapabilities
+}
+
+/**
+ * ACP（Agent Client Protocol）agent（docs/design/27 §3）：stdio 上的 JSON-RPC，
+ * 一个适配器接所有支持 ACP 的 agent（Gemini CLI、Claude Agent / Codex 的 ACP 适配、OpenCode、Qwen Code、Kimi CLI、Goose、Copilot …）。
+ */
+export interface AcpHarnessConfig {
+  id: string
+  kind: 'acp'
+  displayName?: string
+  /** 内置预设名（见 GET /api/space/runtime 的 presets.acp），提供默认命令与说明；command 给了以 command 为准。 */
+  preset?: string
+  /** 启动命令，例如 ['gemini', '--experimental-acp']。 */
+  command?: string[]
+  env?: Record<string, string>
+  /**
+   * agent 发来 session/request_permission 时的默认处理：allow = 目标在工作目录内时放行一次，否则拒绝；reject = 一律拒绝。
+   * 只读运行（HarnessRequest.readOnly）时写类请求一律拒绝，不看这里。缺省 allow。
+   */
+  permissions?: 'allow' | 'reject'
+}
+
+/** 内置 harness 的本机覆盖：可执行文件不在 PATH 里、要加环境变量、或在本空间停用。 */
+export interface HarnessOverride {
+  /** 可执行文件路径（替换内置命令的第一个参数）。 */
+  command?: string
+  env?: Record<string, string>
+  disabled?: boolean
 }
 
 // ============================================================ LLM API（ModelProvider）
@@ -1464,8 +1494,8 @@ export interface TaktConfig {
   /** 目录约定；不写时新空间用顶层 agents/ workflows/ skills/ knowledge/ requirements/，旧项目沿用 .takt/ 下的目录。 */
   paths?: { agents?: string; workflows?: string; skills?: string; knowledge?: string; requirements?: string; evals?: string }
   sandbox?: { provider: 'local' | 'bwrap' | 'docker' | (string & {}); image?: string; network?: SandboxSpec['network'] }
-  /** 需求群的 Lead Agent。maxHops：任务派任务的跳数上限（默认 10）。 */
-  lead?: { harness?: HarnessSelector; progressUpdates?: boolean; maxHops?: number }
+  /** 需求群的 Lead Agent。maxHops：任务派任务的跳数上限（默认 10）；receiptTimeoutMinutes：派出的任务多久没人接手标为过期（默认 30）。 */
+  lead?: { harness?: HarnessSelector; progressUpdates?: boolean; maxHops?: number; receiptTimeoutMinutes?: number }
   /** 等人的默认时限（节点可覆盖，docs/design/26 §3）。 */
   human?: HumanTimebox
   /** 回放评测（docs/design/21 §6）：每个样本每个变体重复次数（默认 3）、发布门槛。 */
@@ -1495,7 +1525,9 @@ export interface TaktConfig {
   /** 插件：npm 包名或相对路径。 */
   plugins?: string[]
   /** 额外注册的 harness（声明式 CLI 适配等）。 */
-  harnesses?: CliHarnessConfig[]
+  harnesses?: Array<CliHarnessConfig | AcpHarnessConfig>
+  /** 内置 harness 的覆盖（id → 覆盖项），设置页「模型与 Harness」可改。 */
+  harnessOverrides?: Record<string, HarnessOverride>
   /** LLM API 提供方：id → 配置。 */
   providers?: Record<string, ProviderConfig>
   /** 模型别名：别名 → 配置。 */

@@ -24,12 +24,13 @@ export function StewardEditButton({ ask, label = '让管家帮我改', size = 's
 }
 
 /** 一行说明 + 按钮：放在只读区块的底部或空状态里。 */
-export function StewardEditNote({ what, ask }: { what: string; ask: string }) {
+/** text 不给时是"还不能在页面上直接改"的说法；能直接改的页面给一句自己的说法。 */
+export function StewardEditNote({ what, ask, text }: { what: string; ask: string; text?: string }) {
   return (
     <div className="steward-edit-note">
       <Sparkles aria-hidden className="steward-edit-icon" />
       <span className="steward-edit-text">
-        {what}还不能在页面上直接改。告诉管家想怎么改，它会出一份变更提案，你确认后才生效。
+        {text ?? `${what}还不能在页面上直接改。告诉管家想怎么改，它会出一份变更提案，你确认后才生效。`}
       </span>
       <StewardEditButton ask={ask} />
     </div>

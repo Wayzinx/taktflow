@@ -29,7 +29,7 @@ export interface SuccessFixture<Input = string> extends ConformanceFixture<Input
     started: Extract<HarnessEvent, { type: 'started' }>
     message: Extract<HarnessEvent, { type: 'message' }>
     toolCall: Extract<HarnessEvent, { type: 'tool_call' }>
-    usage: Usage
+    usage?: Usage
     /** 多轮流的 usage 事件可以是增量；结果中的 usage 仍断言总量。 */
     usageEvents?: readonly Usage[]
     finalText: string
@@ -98,7 +98,7 @@ function assertSuccess(result: HarnessResult, events: HarnessEvent[], fixture: S
   if (fixture.expected.sessionId !== undefined) expect(result.sessionId).toBe(fixture.expected.sessionId)
   expect(result.usage).toEqual(fixture.expected.usage)
   for (const expected of [fixture.expected.started, fixture.expected.message, fixture.expected.toolCall,
-    ...(fixture.expected.usageEvents ?? [fixture.expected.usage]).map(usage => ({ type: 'usage', usage }))]) {
+    ...(fixture.expected.usageEvents ?? (fixture.expected.usage ? [fixture.expected.usage] : [])).map(usage => ({ type: 'usage', usage }))]) {
     expect(events).toEqual(expect.arrayContaining([expect.objectContaining(expected)]))
   }
 }

@@ -1,11 +1,12 @@
-import { syncQuality, tickAttention, type AttentionItem, type ProjectStores } from '@taktflow/core'
+import { expireTaskReceipts, recoverTaskReceipts, syncQuality, tickAttention, type AttentionItem, type ProjectStores } from '@taktflow/core'
 
-/** 同步和限时交还分别按空间串行；恢复长运行时，事件入账仍可推进。关闭时等待落盘。 */
+/** 同步、回执和限时交还分别按空间串行；恢复长运行时，事件入账和回执过期仍可推进。关闭时等待落盘。 */
 export function startMaintenance(spaces: () => ProjectStores[], onAnswer?: (stores: ProjectStores, item: AttentionItem) => Promise<void> | void,
-  onError: (error: unknown) => void = error => { process.stderr.write(`质量与待办维护失败：${String(error)}\n`) }) {
-  const queues = new Map<string, Promise<void>>(), tickQueues = new Map<string, Promise<void>>()
+  onError: (error: unknown) => void = error => { process.stderr.write(`质量、待办与回执维护失败：${String(error)}；请检查空间文件与写入权限后重试\n`) }) {
+  const queues = new Map<string, Promise<void>>(), tickQueues = new Map<string, Promise<void>>(), receiptQueues = new Map<string, Promise<void>>()
   const subscriptions = new Map<string, { dir: string; stop: () => void }>()
   const syncing = new Set<string>()
+  const recovered = new Map<string, Promise<void>>()
   let closed = false, discovering: Promise<void> | undefined
   const enqueue = (stores: ProjectStores, work: () => Promise<void>, queue = queues) => {
     const previous = queue.get(stores.projectDir) ?? Promise.resolve()
@@ -23,15 +24,26 @@ export function startMaintenance(spaces: () => ProjectStores[], onAnswer?: (stor
       await syncQuality(stores, runId)
     })
   }
+  const recover = (stores: ProjectStores) => {
+    let pending = recovered.get(stores.projectDir)
+    if (!pending) {
+      pending = recoverTaskReceipts(stores).then(() => {}).catch(error => { recovered.delete(stores.projectDir); throw error })
+      recovered.set(stores.projectDir, pending)
+    }
+    return pending
+  }
   const discover = async () => {
     const current = spaces(), dirs = new Set(current.map(s => s.projectDir))
     for (const [key, sub] of subscriptions) if (!dirs.has(sub.dir)) { sub.stop(); subscriptions.delete(key) }
-    for (const stores of current) for (const state of await stores.runs.list()) {
-      if (closed) return
-      const key = `${stores.projectDir}:${state.runId}`
-      if (subscriptions.has(key)) continue
-      subscriptions.set(key, { dir: stores.projectDir, stop: stores.events.subscribe(state.runId, () => sync(stores, state.runId)) })
-      sync(stores, state.runId)
+    for (const stores of current) {
+      await recover(stores)
+      for (const state of await stores.runs.list()) {
+        if (closed) return
+        const key = `${stores.projectDir}:${state.runId}`
+        if (subscriptions.has(key)) continue
+        subscriptions.set(key, { dir: stores.projectDir, stop: stores.events.subscribe(state.runId, () => sync(stores, state.runId)) })
+        sync(stores, state.runId)
+      }
     }
   }
   const scan = () => {
@@ -39,13 +51,19 @@ export function startMaintenance(spaces: () => ProjectStores[], onAnswer?: (stor
     discovering = discover().catch(onError).finally(() => { discovering = undefined })
   }
   const tick = async () => {
-    await Promise.all(spaces().map(stores => enqueue(stores, async () => {
-      const result = await tickAttention(stores)
-      for (const runId of result.resume) {
-        const item = (await stores.attention.list()).find(item => item.runId === runId && item.handedBack)
-        if (item) await onAnswer?.(stores, item)
-      }
-    }, tickQueues)))
+    await Promise.all(spaces().flatMap(stores => [
+      enqueue(stores, async () => {
+        await recover(stores)
+        await expireTaskReceipts(stores)
+      }, receiptQueues),
+      enqueue(stores, async () => {
+        const result = await tickAttention(stores)
+        for (const runId of result.resume) {
+          const item = (await stores.attention.list()).find(item => item.runId === runId && item.handedBack)
+          if (item) await onAnswer?.(stores, item)
+        }
+      }, tickQueues),
+    ]))
   }
   scan()
   const scanner = setInterval(scan, 1000), timer = setInterval(() => { void tick() }, 60_000)
@@ -54,6 +72,6 @@ export function startMaintenance(spaces: () => ProjectStores[], onAnswer?: (stor
     closed = true; clearInterval(scanner); clearInterval(timer)
     await discovering
     for (const sub of subscriptions.values()) sub.stop()
-    await Promise.all([...queues.values(), ...tickQueues.values()])
+    await Promise.all([...queues.values(), ...tickQueues.values(), ...receiptQueues.values()])
   } }
 }

@@ -1,3 +1,4 @@
+import { resolveSecret } from '../secrets/index.js'
 import { randomUUID } from 'node:crypto'
 import type { EngineDeps } from '../interfaces.js'
 import type { AgentProfile, CheckpointRole, HarnessEvent, HarnessResult, HarnessSelector, Invocation, InvocationEnd, InvocationStart } from '../types.js'
@@ -28,7 +29,8 @@ export async function callReadOnly(deps: EngineDeps, input: { cwd: string; promp
     const began = Date.now()
     let reported: InvocationEnd['reported'], result: HarnessResult | undefined, failure: unknown
     const env: Record<string, string> = { TAKT_ROLE: input.profile.role, TAKT_NODE: input.role, TAKT_WORKSPACE: input.cwd }
-    if (provider?.apiKeyEnv && process.env[provider.apiKeyEnv]) env[provider.apiKeyEnv] = process.env[provider.apiKeyEnv]!
+    const apiKey = provider?.apiKeyEnv ? resolveSecret(provider.apiKeyEnv) : undefined
+    if (provider?.apiKeyEnv && apiKey) env[provider.apiKeyEnv] = apiKey
     try {
       result = await harness.run({ cwd: input.cwd, prompt: input.prompt, systemAppend: input.profile.instructions, model, modelConfig, provider,
         effort: input.selector.effort, readOnly: true, tools: { writeScope: [], allowBash: false }, sandbox, env,

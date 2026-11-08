@@ -1,4 +1,5 @@
 import { delegationOrigin } from './delegation.js'
+import { trackTaskExecution } from './receipts.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Engine, ProjectStores } from '../interfaces.js'
 import type { AgentProfile, EventEnvelope, RoomMessage } from '../types.js'
@@ -11,6 +12,7 @@ interface Invocation {
   created(state: TaskRunState): Promise<void>
   kind: 'task' | 'workflow'
   origin?: TaskRunState['origin']
+  release?: () => void
 }
 
 export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<string, AgentProfile>, onRunEvent: (runId: string, event: EventEnvelope) => Promise<void>, audit: (runId: string, message: unknown) => Promise<unknown>): (invocation: Invocation) => Engine {
@@ -26,6 +28,7 @@ export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<s
     const scope = invocation.getStore()
     if (!scope) throw new Error('缺少 Lead 引擎调用上下文')
     Object.assign(state, { kind: scope.kind, origin: scope.origin ?? { kind: 'chat', messageId: scope.message.id, by: scope.message.author, title: scope.title, ...await delegationOrigin(stores, scope.message) } })
+    scope.release = trackTaskExecution(stores, state.runId)
     await stores.runs.create(state, snapshot)
     await audit(state.runId, { kind: 'lead.origin', onBehalfOf: state.origin!.by, messageId: scope.message.id })
     await scope.created(state)
@@ -35,9 +38,14 @@ export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<s
     read: stores.events.read.bind(stores.events), subscribe: stores.events.subscribe.bind(stores.events), verify: stores.events.verify.bind(stores.events),
   }
   const engine = options.engineFactory({ stores: { ...stores, runs, events }, profiles: scopedProfiles, harnesses: options.harnesses })
+  async function execute<T>(scope: Invocation, work: () => Promise<T>, runId?: string): Promise<T> {
+    const current = { ...scope, release: runId ? trackTaskExecution(stores, runId) : undefined }
+    try { return await invocation.run(current, work) }
+    finally { current.release?.() }
+  }
   return (scope) => ({
-    start: (input) => invocation.run(scope, () => engine.start(input)),
-    resume: (runId, workflow) => invocation.run(scope, () => engine.resume(runId, workflow)),
+    start: (input) => execute(scope, () => engine.start(input)),
+    resume: (runId, workflow) => execute(scope, () => engine.resume(runId, workflow), runId),
     cancel: (runId) => invocation.run(scope, () => engine.cancel(runId)),
     markStale: (runId, cause) => invocation.run(scope, () => engine.markStale(runId, cause)),
   })

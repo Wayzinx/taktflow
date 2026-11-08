@@ -79,3 +79,7 @@ export { evalRevision } from './eval/quality-access.js'
 export { wilson95, blindOrder, buildEvalReport, validateEvalGate } from './eval/statistics.js'
 export { reconcileAssumptions } from './attention/timebox.js'
 export { snapshotMaterials } from './engine/snapshots.js'
+
+export * from './secrets/index.js'
+export * from './runtime-config/index.js'
+export { systemWrite } from './engine/guard.js'

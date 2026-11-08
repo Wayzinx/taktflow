@@ -14,6 +14,7 @@ export function createQwenCodeParser(onEvent: EventSink = () => {}): StreamParse
 
 export function createQwenCodeHarness(options: QwenCodeOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
+    env: options.env,
     id: 'qwen-code', displayName: 'Qwen Code', bin: options.bin ?? 'qwen',
     parser: createQwenCodeParser, capabilities: { cost: true },
     command: req => ({ args: ['-p', promptWithInstructions(req), '--output-format', 'stream-json',

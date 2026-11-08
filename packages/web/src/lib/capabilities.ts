@@ -28,6 +28,7 @@ export const HARNESS_SOURCE: Record<HarnessInfo['source'], { label: string; hint
   cli: { label: '声明式 CLI', hint: 'takt.config.json 里声明命令模板和输出映射，零代码接入', color: 'var(--c-4)' },
   plugin: { label: '插件', hint: '由插件（definePlugin）提供', color: 'var(--c-6)' },
   native: { label: 'native', hint: 'takt 自带的轻量 agent loop，直连任意 LLM API', color: 'var(--c-3)' },
+  acp: { label: 'ACP', hint: '通过 Agent Client Protocol 接入：任何支持 ACP 的 agent，配一条启动命令即可', color: 'var(--c-2)' },
 }
 
 const PROTOCOL_COLOR: Record<string, string> = {

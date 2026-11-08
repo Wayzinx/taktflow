@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Shrink,
+  RotateCw,
   Send,
   SquareStack,
   TimerOff,
@@ -247,6 +248,17 @@ export function describe(e: EventEnvelope): Described {
     }
     case 'task.dispatched': {
       const x = d(e, 'task.dispatched')
+      if (x.resendOf)
+        return {
+          icon: RotateCw,
+          tone: 'running',
+          title: <>重发任务「{x.title}」给 <span className="mono">{x.role}</span></>,
+          detail: (
+            <span className="faint">
+              <span className="mono">{x.taskRunId}</span> · 替代 <span className="mono">{x.resendOf}</span> · 由 {actorName(x.by)} 重发{x.reason ? `：${x.reason}` : ''}
+            </span>
+          ),
+        }
       return { icon: Send, tone: 'running', title: <>派发任务「{x.title}」给 <span className="mono">{x.role}</span></>, detail: <span className="mono faint">{x.taskRunId} · 由 {actorName(x.by)} 派发</span> }
     }
     default:

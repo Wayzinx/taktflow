@@ -1,3 +1,4 @@
+import { localSecretValues, resolveSecret } from '@taktflow/core'
 import type { HarnessRequest, ModelProvider, ProviderConfig } from '@taktflow/core'
 
 const REDACTED = '[REDACTED]'
@@ -23,14 +24,15 @@ function escapeRegExp(value: string): string {
 
 /** 本次运行可能泄露的密钥值：provider.apiKeyEnv、名字像密钥的环境变量、敏感 header（去重，仅用于内存内替换）。 */
 export function collectSecrets(req?: HarnessRequest, providers: Record<string, ModelProvider | ProviderConfig> = {}): string[] {
-  const values: Array<string | undefined> = []
+  const local = localSecretValues()
+  const values: Array<string | undefined> = [...Object.values(local), ...Object.keys(local).map(name => process.env[name])]
   for (const source of [process.env, req?.env ?? {}]) {
     for (const [name, value] of Object.entries(source)) if (SENSITIVE_ENV_NAME.test(name)) values.push(value)
   }
   for (const config of [...Object.values(providers ?? {}), ...(req?.provider ? [req.provider] : [])]) {
     // 配置错误的诊断也复用本函数，尚未通过校验的条目不能覆盖原始错误。
     if (!config || typeof config !== 'object' || 'chat' in config) continue
-    if (config.apiKeyEnv) values.push(req?.env?.[config.apiKeyEnv], process.env[config.apiKeyEnv])
+    if (config.apiKeyEnv) values.push(req?.env?.[config.apiKeyEnv], resolveSecret(config.apiKeyEnv))
     for (const [name, value] of Object.entries(config.headers ?? {})) {
       if (typeof value !== 'string') continue
       if (!SENSITIVE_ENV_NAME.test(name) && !/^(?:authorization|proxy-authorization|cookie|set-cookie)$/i.test(name)) continue

@@ -23,6 +23,12 @@
  * | POST | /api/attention/:requestId                      | 请求体 { decision?, answer? } → AttentionItem |
  * | GET  | /api/harnesses                                 | HarnessInfo[]（设置页：可用性与能力矩阵） |
  * | GET  | /api/models                                    | ModelInfo[] |
+ * | --- 模型与 Harness 配置（docs/design/27 §4） | | |
+ * | GET  | /api/space/runtime                             | RuntimeConfig |
+ * | PATCH| /api/space/runtime                             | 请求体 RuntimeConfigPatch → RuntimeConfig（owner；baseRevision 不一致 409；校验失败 400 并指出字段；不重启 serve 即生效） |
+ * | POST | /api/space/runtime/test                        | 请求体 RuntimeTestRequest → RuntimeTestResult（provider 只列模型不计费；model 只有 allowBilled 才发 1 token 请求；harness 跑探测 / ACP 握手） |
+ * | PUT  | /api/secrets/:name                             | 请求体 { value, reason } → SecretStatus（owner；存本机密钥库，不进空间目录与 git；任何接口都不回传值） |
+ * | DELETE| /api/secrets/:name                            | 请求体 { reason } → SecretStatus |
  * | --- 项目空间（docs/design/14） | | |
  * | GET  | /api/spaces                                    | SpaceSummary[]（多空间 serve；单空间时只有一项） |
  * | GET  | /api/space                                     | SpaceDetail |
@@ -170,8 +176,13 @@
  */
 import type { AttentionItem, KnowledgeCaller } from './interfaces.js'
 import type {
+  AcpHarnessConfig,
   Actor,
   Checkpoint,
+  CliHarnessConfig,
+  HarnessOverride,
+  ModelConfig,
+  ProviderConfig,
   DefectMergeSuggestion,
   DelegationStatus,
   EvalGate,
@@ -797,12 +808,18 @@ export interface HarnessInfo {
   id: string
   displayName: string
   /** builtin：内置适配器；cli：声明式 CLI 适配；plugin：插件提供；native：内置 agent loop。 */
-  source: 'builtin' | 'cli' | 'plugin' | 'native'
+  source: 'builtin' | 'cli' | 'plugin' | 'native' | 'acp'
   available: boolean
   reason?: string
   capabilities: HarnessCapabilities
   /** 哪些角色默认用它。 */
   roles: string[]
+  /** 实际启动的命令（含覆盖后的可执行文件路径）；native / mock 等进程内 harness 缺省。 */
+  command?: string[]
+  /** 本空间对它的覆盖（内置 harness）。 */
+  override?: HarnessOverride
+  /** 本空间自己加的（cli / acp），可以在设置页编辑和删除。 */
+  custom?: boolean
 }
 
 export interface ModelInfo {
@@ -814,6 +831,81 @@ export interface ModelInfo {
   price?: { input: number; output: number }
   /** 对应的 apiKeyEnv 是否已设置（不返回值）。 */
   keyPresent: boolean
+  kind?: 'chat' | 'embedding'
+}
+
+/** 设置页「模型与 Harness」的可编辑视图（docs/design/27 §4）：只含 takt.config.json 里运行时相关的几段。 */
+export interface RuntimeConfig {
+  /** 这几段内容的哈希；PATCH 时作为 baseRevision。 */
+  revision: string
+  providers: Record<string, ProviderConfig>
+  models: Record<string, ModelConfig>
+  /** 角色 → 默认 harness。 */
+  roles: Record<string, HarnessSelector>
+  /** 系统角色：lead（需求群）、route（路由判档）、steward（管家）、learner（经验提炼）。 */
+  system: Partial<Record<RuntimeSystemRole, HarnessSelector>>
+  /** 本空间自己加的 harness（声明式 CLI / ACP）。 */
+  harnesses: Array<CliHarnessConfig | AcpHarnessConfig>
+  harnessOverrides: Record<string, HarnessOverride>
+  /** 各 provider 用到的 apiKeyEnv 现在从哪来（不返回值）。 */
+  keys: Record<string, SecretSource>
+  presets: { providers: ProviderPresetInfo[]; acp: AcpPresetInfo[] }
+}
+
+export type RuntimeSystemRole = 'lead' | 'route' | 'steward' | 'learner'
+/** env：serve 进程的环境变量；local：本机密钥库；missing：都没有。环境变量优先。 */
+export type SecretSource = 'env' | 'local' | 'missing'
+
+/** 按段打补丁：给了的键整体替换该项，值为 null 删除该项；没给的段不动。 */
+export interface RuntimeConfigPatch {
+  baseRevision: string
+  reason: string
+  providers?: Record<string, ProviderConfig | null>
+  models?: Record<string, ModelConfig | null>
+  roles?: Record<string, HarnessSelector | null>
+  system?: Partial<Record<RuntimeSystemRole, HarnessSelector | null>>
+  /** 键为 harness id。 */
+  harnesses?: Record<string, CliHarnessConfig | AcpHarnessConfig | null>
+  harnessOverrides?: Record<string, HarnessOverride | null>
+}
+
+export interface RuntimeTestRequest {
+  target: { kind: 'provider'; id: string } | { kind: 'model'; alias: string } | { kind: 'harness'; id: string }
+  /** model 测试要真的发一次最小请求（会计费），必须显式同意。 */
+  allowBilled?: boolean
+}
+
+export interface RuntimeTestResult {
+  ok: boolean
+  /** 一句话结论，给人看。 */
+  message: string
+  latencyMs?: number
+  /** 细节：provider 列出的模型数、harness 的版本 / ACP 协议版本与 agent 能力等。 */
+  detail?: string
+  /** 这次测试是否产生了计费调用。 */
+  billed: boolean
+}
+
+export interface ProviderPresetInfo {
+  id: string
+  displayName: string
+  protocol: ProviderProtocol
+  baseURL?: string
+  /** 建议的环境变量名。 */
+  apiKeyEnv?: string
+}
+
+export interface AcpPresetInfo {
+  id: string
+  displayName: string
+  command: string[]
+  /** 怎么装（一句话或命令），不可用时给人看。 */
+  install?: string
+}
+
+export interface SecretStatus {
+  name: string
+  source: SecretSource
 }
 
 export type { AttentionItem, Lesson, QualityMetrics, RequirementMetrics, RouteDecision }

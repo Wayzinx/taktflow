@@ -1,3 +1,5 @@
+import { resolveSecret } from '@taktflow/core'
+import { createHarnesses, harnessCommand, collectSecrets, createRedactor } from '@taktflow/harness'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { HarnessInfo, ModelInfo, ProjectStores } from '@taktflow/core'
@@ -11,19 +13,38 @@ export function redactRuntime(context: ProjectContext, message: string): string 
   return redactConfigError(context.stores.config, message)
 }
 
+function catalogHarnesses(context: ProjectContext) {
+  const { config } = context.stores
+  const registry = { ...context.harnesses }
+  if (Object.values(config.harnessOverrides ?? {}).some(override => override.disabled)) {
+    const all = createHarnesses({ config, projectDir: context.stores.projectDir, providers: context.providers, includeDisabled: true })
+    for (const [id, override] of Object.entries(config.harnessOverrides ?? {})) if (override.disabled && all[id]) registry[id] = all[id]!
+  }
+  return registry
+}
+
 export async function runtimeHarnesses(context: ProjectContext, onProbeError?: () => void): Promise<HarnessInfo[]> {
   const { config } = context.stores
   const roles = { ...config.roles }
-  for (const [role, profile] of Object.entries(context.profiles)) roles[role] = profile.harness
-  const harnesses = await Promise.all(Object.entries(context.harnesses).map(async ([id, harness]): Promise<HarnessInfo> => {
+  for (const [role, profile] of Object.entries(context.profiles)) roles[role] = config.roles?.[role] ?? profile.harness
+  const registry = catalogHarnesses(context)
+  const harnesses = await Promise.all(Object.entries(registry).map(async ([id, harness]): Promise<HarnessInfo> => {
     let availability: { ok: boolean; reason?: string }
-    try { availability = await harness.available() }
+    try { availability = config.harnessOverrides?.[id]?.disabled ? { ok: false, reason: '本空间已停用' } : await harness.available() }
     catch (error) { onProbeError?.(); availability = { ok: false, reason: error instanceof Error ? error.message : String(error) } }
+    const custom = config.harnesses?.find(item => item.id === id)
+    const override = config.harnessOverrides?.[id]
+    const redact = createRedactor(collectSecrets({ prompt: '', cwd: context.stores.projectDir, env: { ...custom?.env, ...override?.env } }))
+    const command = harnessCommand(harness)
     return {
-      id, displayName: harness.displayName,
-      source: Object.hasOwn(context.plugins.harnesses, id) ? 'plugin' : id === 'native' ? 'native' : config.harnesses?.some((item) => item.id === id) ? 'cli' : 'builtin',
+      id, displayName: redact(harness.displayName),
+      source: Object.hasOwn(context.plugins.harnesses, id) ? 'plugin' : id === 'native' ? 'native' : custom?.kind ?? 'builtin',
       available: availability.ok,
-      ...(availability.reason ? { reason: redactRuntime(context, availability.reason) } : {}),
+      custom: !!custom,
+      ...(command ? { command: command.map(redact) } : {}),
+      ...(override ? { override: { ...override, ...(override.command ? { command: redact(override.command) } : {}),
+        ...(override.env ? { env: Object.fromEntries(Object.keys(override.env).map(name => [name, '[REDACTED]'])) } : {}) } } : {}),
+      ...(availability.reason ? { reason: redact(redactRuntime(context, availability.reason)) } : {}),
       capabilities: harness.capabilities ?? {},
       roles: Object.entries(roles).filter(([, selector]) => selector.harness === id).map(([role]) => role).sort(),
     }
@@ -36,10 +57,11 @@ export function runtimeModels(context: ProjectContext): ModelInfo[] {
   return Object.entries(config.models ?? {}).map(([alias, model]): ModelInfo => {
     const provider = config.providers![model.provider]!
     return {
+      kind: model.kind ?? 'chat',
       alias, id: model.id, provider: model.provider, protocol: provider.protocol,
       contextWindow: model.contextWindow,
       price: model.price ? { input: model.price.input, output: model.price.output } : undefined,
-      keyPresent: !provider.apiKeyEnv || !!process.env[provider.apiKeyEnv]?.trim(),
+      keyPresent: !provider.apiKeyEnv || !!resolveSecret(provider.apiKeyEnv),
     }
   })
 }
@@ -73,7 +95,10 @@ export function createRuntimeCatalog(options: {
     const entry: RuntimeEntry = {
       mtime: modified, expires: Infinity,
       promise: Promise.resolve().then(() => load(dir)).then((context) => {
-        validate(context)
+        context = { ...context, profiles: Object.fromEntries(Object.entries(context.profiles).map(([role, profile]) =>
+          [role, { ...profile, harness: context.stores.config.roles?.[role] ?? profile.harness }])) }
+        // 目录要能展示被停用的默认角色；执行注册表仍保持移除状态。
+        validate({ ...context, harnesses: catalogHarnesses(context) })
         entry.expires = now() + ttl
         return context
       }).catch((error: unknown) => {
@@ -114,7 +139,7 @@ export function createRuntimeCatalog(options: {
     return { harnesses, models }
   }
 
-  return { getHarnesses, getModels, getCatalog }
+  return { getHarnesses, getModels, getCatalog, invalidate: (projectDir: string) => { runtimes.delete(projectDir) } }
 }
 
 export const getRuntimeCatalog = createRuntimeCatalog().getCatalog

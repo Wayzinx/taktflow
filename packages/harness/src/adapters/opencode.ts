@@ -63,6 +63,7 @@ export function createOpenCodeParser(onEvent: EventSink = () => {}): StreamParse
 
 export function createOpenCodeHarness(options: OpenCodeOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
+    env: options.env,
     id: 'opencode', displayName: 'OpenCode', bin: options.bin ?? 'opencode',
     parser: createOpenCodeParser, capabilities: { cost: true, toolPhases: false },
     command: req => ({ args: ['run', '--format', 'json', promptWithInstructions(req),

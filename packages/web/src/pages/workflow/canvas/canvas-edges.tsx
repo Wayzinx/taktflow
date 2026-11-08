@@ -1,4 +1,6 @@
+import type { CSSProperties } from 'react'
 import { BaseEdge, EdgeLabelRenderer, getSmoothStepPath, useReactFlow, type EdgeProps } from '@xyflow/react'
+import { prefersReducedMotion } from '../../../lib/motion'
 import { X } from 'lucide-react'
 import type { EditorEdge } from './build-flow'
 
@@ -15,6 +17,13 @@ export function WfEdgeView(props: EdgeProps<EditorEdge>) {
   return (
     <>
       <BaseEdge path={path} markerEnd={markerEnd} className={`wf-edge e-${kind}${selected ? ' is-selected' : ''}`} interactionWidth={kind === 'need' ? 18 : 0} />
+      {/* 动效覆盖层（docs/design/27 §2.1）：入场信号从左到右扫过；和选中节点相连（is-hot）时沿方向流动，打回反向 */}
+      {!prefersReducedMotion() && (
+        <>
+          <path d={path} pathLength={1} className={`wf-sweep e-${kind}`} style={{ '--d': `${Math.round(Math.min(1100, Math.max(0, sourceX) * 0.45))}ms` } as CSSProperties} aria-hidden />
+          <path d={path} className={`wf-flow e-${kind}`} aria-hidden />
+        </>
+      )}
       {(label || removable) && (
         <EdgeLabelRenderer>
           <div className={`wf-edge-label e-${kind} nodrag nopan`} style={{ transform: `translate(-50%, -50%) translate(${lx}px, ${ly}px)` }}>

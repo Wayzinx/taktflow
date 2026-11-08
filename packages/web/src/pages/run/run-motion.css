@@ -147,3 +147,125 @@
     animation: drawer-fade 140ms linear reverse both !important;
   }
 }
+
+/* ---------- 边的信号（docs/design/27 §2.1） ----------
+ * 覆盖层都用 pathLength=1，按比例走：
+ * - 入场：一道短信号从源扫到目标，按源节点横向位置排先后（--d），只在挂载时播一次；
+ * - 悬停 / 选中：上下游的边沿方向流动，其余变淡；
+ * - 完成交接 / 回放：一颗彗星沿边送到下游。
+ * 减少动效时这些覆盖层不渲染（dag-edges.tsx），这里也只在 no-preference 下给动画。 */
+.edge-sweep,
+.edge-hl,
+.edge-comet {
+  fill: none;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+.edge-sweep {
+  stroke-width: 2.6;
+  stroke-dasharray: 0.14 2;
+  stroke-dashoffset: 0.14;
+  opacity: 0;
+}
+.edge-sweep.is-rework {
+  stroke: var(--st-stale);
+}
+.edge-hl {
+  stroke-width: 2;
+  stroke-dasharray: 5 7;
+}
+.edge-comet {
+  stroke-width: 3.2;
+  stroke-dasharray: 0.1 2;
+  stroke-dashoffset: 0.1;
+  opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .edge-sweep {
+    animation: edge-sweep 760ms var(--ease-in-out) var(--d, 0ms) both;
+  }
+  .edge-hl {
+    animation: edge-march var(--takt) linear infinite;
+  }
+  .edge-comet {
+    animation: edge-comet 620ms var(--ease-in-out) both;
+  }
+}
+@keyframes edge-comet {
+  0% {
+    stroke-dashoffset: 0.1;
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+
+/* 悬停：只留这个节点和它的直接上下游；选中（抽屉开着）时淡得轻一些，不妨碍看图 */
+.run-canvas .react-flow__edge,
+.run-canvas .react-flow__node-dag {
+  transition: opacity 200ms var(--ease);
+}
+.run-canvas.has-focus .react-flow__edge:not(.is-hl) {
+  opacity: 0.22;
+}
+.run-canvas.has-focus .react-flow__node-dag:not(.is-hl) {
+  opacity: 0.42;
+}
+.run-canvas.has-sel .react-flow__edge:not(.is-hl) {
+  opacity: 0.5;
+}
+.run-canvas .react-flow__edge.is-hl .react-flow__edge-path {
+  stroke-width: 2;
+}
+
+/* 回放：还没开始的节点退到背景，在跑的按拍放光环，刚完成的轻轻落定 */
+.run-canvas.is-replay .react-flow__edge:not(.rp-on) {
+  opacity: 0.2;
+}
+.run-canvas.is-replay .react-flow__node-dag.rp-wait .dag-node {
+  opacity: 0.32;
+  filter: saturate(0.25);
+}
+.run-canvas.is-replay .react-flow__node-dag .dag-node {
+  transition:
+    opacity 240ms var(--ease),
+    filter 240ms var(--ease);
+}
+.run-canvas.is-replay .react-flow__node-dag.rp-run .dag-node {
+  box-shadow: 0 0 0 1.5px var(--st-running), var(--shadow-sm);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .run-canvas.is-replay .react-flow__node-dag.rp-run .dag-node::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    box-shadow: 0 0 0 1.5px var(--st-running);
+    pointer-events: none;
+    opacity: 0;
+    animation: node-beat calc(var(--takt) / 2) var(--ease) infinite;
+  }
+  .run-canvas.is-replay .react-flow__node-dag.rp-done .dag-node {
+    animation: rp-settle 320ms var(--ease) both;
+  }
+}
+@keyframes rp-settle {
+  from {
+    transform: scale(1.03);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+/* 回放按钮：底边一条进度 */
+.dag-tools .btn[aria-pressed='true'] {
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-size: calc(var(--p, 0) * 100%) 2px;
+  background-position: left bottom;
+  background-repeat: no-repeat;
+}

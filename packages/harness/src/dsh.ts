@@ -3,7 +3,7 @@ import { ParseState, object, string, number, readUsage, addUsage, promptWithInst
 import type { EventSink, StreamParser } from './parse.js'
 import { finalizeResult, runProcess } from './process.js'
 
-export interface DshOptions { bin?: string; probeTimeoutMs?: number }
+export interface DshOptions { bin?: string; env?: Record<string, string>; probeTimeoutMs?: number }
 
 function sessionId(value: unknown): string | undefined {
   const session = object(value)
@@ -108,10 +108,12 @@ export function createDshHarness(options: DshOptions = {}): HarnessAdapter {
   let pending: { key: string; promise: Promise<Availability> } | undefined
 
   function candidates(req: HarnessRequest): string[] {
-    return [...new Set([options.bin ?? req.env?.DSH_BIN ?? process.env.DSH_BIN, 'dsh', APP_BIN].filter((bin): bin is string => Boolean(bin)))]
+    if (options.bin) return [options.bin]
+    return [...new Set([req.env?.DSH_BIN ?? process.env.DSH_BIN, 'dsh', APP_BIN].filter((bin): bin is string => Boolean(bin)))]
   }
 
   async function run(req: HarnessRequest, onEvent: EventSink): Promise<HarnessResult> {
+    if (options.env && Object.keys(options.env).length) req = { ...req, env: { ...options.env, ...req.env } }
     if (req.provider) {
       return finalizeResult(req, { ok: false, finalText: '', error: 'DeepSeek Harness does not support custom providers' }, { ok: true, stdout: '', stderr: '' })
     }
@@ -129,7 +131,7 @@ export function createDshHarness(options: DshOptions = {}): HarnessAdapter {
   }
 
   async function probe(): Promise<Availability> {
-    const result = await run({ prompt: 'Reply only OK.', cwd: process.cwd(), timeoutMs: options.probeTimeoutMs ?? 10_000 }, () => {})
+    const result = await run({ prompt: 'Reply only OK.', cwd: process.cwd(), env: options.env, timeoutMs: options.probeTimeoutMs ?? 10_000 }, () => {})
     if (result.ok) return { ok: true }
     const reason = result.error || 'DeepSeek Harness 不可用'
     return { ok: false, reason: reason.includes('ACCOUNT_SIGN_IN_REQUIRED') ? '需要先登录 DeepSeek 账号' : reason }

@@ -1,3 +1,4 @@
+import { resolveSecret } from '@taktflow/core'
 import type { ModelProvider, ProviderConfig } from '@taktflow/core'
 import { createOpenAIChatProvider } from './openai-chat.js'
 import { createAnthropicMessagesProvider } from './anthropic-messages.js'
@@ -13,6 +14,7 @@ export type { ProviderHttpOptions } from './http.js'
 export type { ModelProvider, ProviderConfig, ModelConfig, ChatRequest, ChatResponse, ChatMessage, ToolCall, ToolSpec } from '@taktflow/core'
 
 export function createProvider(id: string, config: ProviderConfig, options: ProviderHttpOptions = {}): ModelProvider {
+  options = { resolveSecret, ...options }
   const resolved = providerConfig(id, config)
   switch (resolved.protocol) {
     case 'openai-chat': return createOpenAIChatProvider(id, resolved, options)

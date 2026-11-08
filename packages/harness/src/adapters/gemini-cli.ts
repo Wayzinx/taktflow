@@ -45,6 +45,7 @@ export function createGeminiCliParser(onEvent: EventSink = () => {}): StreamPars
 
 export function createGeminiCliHarness(options: GeminiCliOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
+    env: options.env,
     id: 'gemini-cli', displayName: 'Gemini CLI', bin: options.bin ?? 'gemini', parser: createGeminiCliParser,
     command: req => ({ args: ['-p', promptWithInstructions(req), '--output-format', 'stream-json', '--yolo',
       ...(req.model ? ['--model', req.model] : [])] }),

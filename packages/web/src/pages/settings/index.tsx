@@ -27,7 +27,7 @@ const TAB_HINT: Record<Tab, string> = {
   workflows: '这个空间可用的流水线；新建需求时按需求内容自动选。',
   knowledge: '这个空间绑定的知识库，以及每个知识库给哪些角色用。',
   lessons: '从过往运行里沉淀下来的经验，Agent 在相似场景会参考。',
-  runtime: '可用的 Agent CLI 和模型；缺密钥或不可用会标出来。',
+  runtime: 'Harness、模型 API、模型别名和角色路由；改完不用重启，缺密钥或不可用会标出来。',
   quality: '缺陷、归因、样本与评测的权威日志：哈希链是否完整、锚点、各运行入账到哪里。',
 }
 

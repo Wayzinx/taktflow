@@ -137,6 +137,7 @@ export function createKimiCliParser(onEvent: EventSink = () => {}): StreamParser
 
 export function createKimiCliHarness(options: KimiCliOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
+    env: options.env,
     id: 'kimi-cli', displayName: 'Kimi CLI', bin: options.bin ?? 'kimi', parser: createKimiCliParser,
     command: req => ({ args: ['--print', '-p', promptWithInstructions(req), '--output-format=stream-json',
       ...(req.model ? ['--model', req.model] : [])] }),

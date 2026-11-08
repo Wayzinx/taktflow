@@ -1,4 +1,4 @@
-import { MarkerType, type Edge, type Node, type BuiltInEdge } from '@xyflow/react'
+import { MarkerType, type Edge, type Node } from '@xyflow/react'
 import type { FlowEdge, ReworkEdge } from './dag-edges'
 import type { Expansion, GraphEdge, GraphNode, StageDef, StageProgress, Usage } from '@taktflow/core'
 import { VERDICT } from '../../lib/status'
@@ -247,7 +247,11 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
     }
     drawn.push(e)
   }
-  const edges: (BuiltInEdge | FlowEdge | ReworkEdge)[] = []
+  const edges: (FlowEdge | ReworkEdge)[] = []
+  // 入场信号：按源节点的横向位置排先后，从入口扫到出口（docs/design/27 §2.1，总长 ≤ 1.2s）
+  let maxX = 1
+  for (const p of abs.values()) maxX = Math.max(maxX, p.x)
+  const delayOf = (x: number) => Math.round((Math.max(0, x) / maxX) * 1100)
   drawn.forEach((e, i) => {
     if (e.kind === 'dep' && routePairs.has(`${e.from}→${e.to}`)) return
     const s = abs.get(e.from)
@@ -307,9 +311,9 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
     }
     // 上下相邻的 b → t 边间距很小，默认 offset 会先下探再折回，画出一个驼峰
     // 打回边自己选路线、画 stale 色箭头；count 取目标节点上累计的重做次数
-    if (rework) edges.push({ ...common, type: 'rework', data: { live: target?.status === 'running', count: (target as { reworks?: number } | undefined)?.reworks } })
-    else if (flowing) edges.push({ ...common, type: 'flow', data: { offset, borderRadius: 12, color } })
-    else edges.push({ ...common, type: 'smoothstep', pathOptions: { borderRadius: 12, offset } })
+    const delay = delayOf(s.x)
+    if (rework) edges.push({ ...common, type: 'rework', data: { live: target?.status === 'running', count: (target as { reworks?: number } | undefined)?.reworks, delay } })
+    else edges.push({ ...common, type: 'flow', data: { offset, borderRadius: 12, color, live: flowing, delay } })
   })
 
   flow.push(...lanes, ...groups, ...leaves)
