@@ -1,21 +1,19 @@
-import { useState } from 'react'
-import { Activity, CircleCheckBig, Coins, Inbox, OctagonAlert } from 'lucide-react'
+import { useState, type CSSProperties } from 'react'
+import { Activity, CircleCheck, CircleCheckBig, Coins, Inbox, OctagonAlert } from 'lucide-react'
 import type { ProjectOverview, RequirementSummary } from '@taktflow/core'
 import { useAsync } from '../api'
 import { AttentionCard } from '../components/attention-card'
 import { useCrumbs } from '../components/layout'
 import { NewRequirementButton } from '../components/requirement-create/button'
-import { StatCard, StatStrip } from '../components/stat-card'
 import { CountUp, EmptyState, ErrorState, PageHeader, Segmented, Skeleton, SkeletonRows, useFlashRows, useStagger, useStewardSuggestions } from '../components/ui'
+import { StatTiles, type Tile } from '../components/viz'
 import { fmtCost, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
-import { QualityStat } from './overview-quality'
+import { qualityTile } from './overview-quality'
+import { RequirementLanes } from './overview-lanes'
 import { SinceBanner } from './overview-since'
 import { useRequirementRisks } from './requirements-risk'
-import { RequirementsTable } from './requirements-table'
 import './overview.css'
-
-/** 整数读数：过渡中途也按整数显示（CountUp 默认格式会在中途露出小数）。 */
 
 const SHARE_COLORS = ['var(--c-1)', 'var(--c-2)', 'var(--c-3)', 'var(--c-4)', 'var(--c-6)', 'var(--c-5)']
 
@@ -24,7 +22,7 @@ function TokenShare({ reqs }: { reqs: RequirementSummary[] }) {
   const total = items.reduce((s, r) => s + totalTokens(r.usage), 0)
   if (!total) return null
   return (
-    <div className="token-share" aria-label="按需求拆分">
+    <div className="share-bar" aria-label="按需求拆分">
       {items.map((r, i) => (
         <span key={r.id} title={`${r.id} ${r.title} · ${fmtTokens(totalTokens(r.usage))}`} style={{ flex: totalTokens(r.usage) / total, background: SHARE_COLORS[i % SHARE_COLORS.length] }} />
       ))}
@@ -32,81 +30,40 @@ function TokenShare({ reqs }: { reqs: RequirementSummary[] }) {
   )
 }
 
-function Stats({ p, filter, onFilter }: { p: ProjectOverview; filter: Filter; onFilter: (f: Filter) => void }) {
+/** 读数：进行中 / 阻塞 / 已交付可点（筛选下方泳道），Token 与质量只读。数字只在表达状态时着色。 */
+function tilesOf(p: ProjectOverview, risks: number, filter: Filter, onFilter: (f: Filter) => void): Tile[] {
   const running = p.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length
   const waiting = p.requirements.filter((r) => r.stages.some((s) => s.status === 'waiting_human')).length
   const tokens = totalTokens(p.totals.usage)
   const cacheRate = tokens ? Math.round(((p.totals.usage.cachedTokens ?? 0) / p.totals.usage.inputTokens) * 100) : 0
   const toggle = (f: Filter) => () => onFilter(filter === f ? 'all' : f)
-  return (
-    <StatStrip label="项目读数">
-      <StatCard
-        label="进行中"
-        icon={<Activity />}
-        value={<CountUp value={p.totals.active} from0 />}
-        foot={<><b>{running}</b> 个在跑 · <b>{waiting}</b> 个等人</>}
-        tone={running ? 'var(--st-running)' : undefined}
-        onClick={toggle('active')}
-        active={filter === 'active'}
-        hint="只看进行中的需求"
-      />
-      <StatCard
-        label="已交付"
-        icon={<CircleCheckBig />}
-        value={<CountUp value={p.totals.delivered} from0 />}
-        foot={<>共 <b>{p.totals.requirements}</b> 个需求 · <b>{p.totals.runs}</b> 次运行</>}
-        onClick={toggle('delivered')}
-        active={filter === 'delivered'}
-        hint="只看已交付的需求"
-      />
-      <StatCard
-        label="阻塞"
-        icon={<OctagonAlert />}
-        value={<CountUp value={p.totals.blocked} from0 />}
-        foot={<><b>{p.attention.length}</b> 项待办等人处理</>}
-        tone={p.totals.blocked ? 'var(--st-failed)' : undefined}
-        onClick={toggle('blocked')}
-        active={filter === 'blocked'}
-        hint="只看阻塞的需求"
-      />
-      <StatCard
-        label="本周 Token / 成本"
-        icon={<Coins />}
-        value={
-          <>
-            <CountUp value={tokens} from0 format={(v) => fmtTokens(Math.round(v))} />
-            <span className="stat-unit">
-              <CountUp value={p.totals.usage.costUsd ?? 0} from0 format={fmtCost} />
-            </span>
-          </>
-        }
-        foot={<>缓存命中 <b>{cacheRate}%</b> · 色段为各需求占比</>}
-      >
-        <TokenShare reqs={p.requirements} />
-      </StatCard>
-      <QualityStat totals={p.totals} requirements={p.requirements} />
-    </StatStrip>
-  )
+  return [
+    { key: 'active', label: '进行中', icon: <Activity />, value: <CountUp value={p.totals.active} from0 />, tone: running ? 'running' : undefined, hint: <><b>{running}</b> 在跑 · <b>{waiting}</b> 等人</>, onClick: toggle('active'), active: filter === 'active', title: '只看进行中的需求' },
+    { key: 'blocked', label: '阻塞', icon: <OctagonAlert />, value: <CountUp value={p.totals.blocked} from0 />, tone: p.totals.blocked ? 'failed' : undefined, hint: risks ? <><b>{risks}</b> 条风险</> : '没有风险', onClick: toggle('blocked'), active: filter === 'blocked', title: '只看阻塞的需求' },
+    { key: 'delivered', label: '已交付', icon: <CircleCheckBig />, value: <CountUp value={p.totals.delivered} from0 />, hint: <>共 <b>{p.totals.requirements}</b> 个 · <b>{p.totals.runs}</b> 次运行</>, onClick: toggle('delivered'), active: filter === 'delivered', title: '只看已交付的需求' },
+    { key: 'tokens', label: '累计 Token', icon: <Coins />, value: <CountUp value={tokens} from0 format={(v) => fmtTokens(Math.round(v))} />, unit: <CountUp value={p.totals.usage.costUsd ?? 0} from0 format={fmtCost} />, hint: <>缓存命中 <b>{cacheRate}%</b></>, children: <TokenShare reqs={p.requirements} />, title: '色段为各需求占比' },
+    qualityTile(p.totals, p.requirements),
+  ]
 }
 
 function OverviewSkeleton() {
   return (
     <>
-      <StatStrip label="项目读数">
+      <div className="tiles">
         {[0, 1, 2, 3, 4].map((i) => (
-          <div key={i} className="stat-cell stat-skeleton">
+          <div key={i} className="tile" style={{ '--n': 5 } as CSSProperties}>
             <Skeleton w={72} h={11} />
             <Skeleton w={56} h={26} />
             <Skeleton w={120} h={10} />
           </div>
         ))}
-      </StatStrip>
-      <div className="overview-grid">
+      </div>
+      <div className="ov-main">
         <div className="card">
-          <SkeletonRows rows={6} />
+          <SkeletonRows rows={5} />
         </div>
         <div className="card">
-          <SkeletonRows rows={3} gap={28} />
+          <SkeletonRows rows={2} gap={28} />
         </div>
       </div>
     </>
@@ -120,8 +77,6 @@ export function OverviewPage() {
   const [filter, setFilter] = useState<Filter>('all')
   useCrumbs([{ label: q.data?.name ?? '项目' }, { label: '总览' }], [q.data?.name])
   const attention = q.data?.attention ?? []
-  const stA = useStagger(Math.min(attention.length, 10))
-  const flashA = useFlashRows(attention.map((a) => a.requestId))
   if (q.error && !q.data) return <ErrorState error={q.error} onRetry={q.reload} />
   const p = q.data
   const rows = p ? p.requirements.filter((r) => filter === 'all' || r.status === filter) : []
@@ -132,7 +87,7 @@ export function OverviewPage() {
       <PageHeader
         eyebrow="总览"
         title={p?.name ?? <Skeleton w={160} h={20} />}
-        description={p ? describe(p, riskCount) : <Skeleton w={360} h={12} style={{ marginTop: 6 }} />}
+        description={p ? describe(p, riskCount) : <Skeleton w={200} h={12} style={{ marginTop: 6 }} />}
         actions={<NewRequirementButton />}
         suggestions={suggestions}
       />
@@ -151,12 +106,12 @@ export function OverviewPage() {
       ) : (
         <>
           <SinceBanner />
-          <Stats p={p} filter={filter} onFilter={setFilter} />
-          <div className="overview-grid">
-            <section className="card">
+          <StatTiles label="项目读数" tiles={tilesOf(p, riskCount, filter, setFilter)} />
+          <div className="ov-main">
+            <section className="card ov-lanes">
               <div className="card-head">
-                <span className="card-title">需求</span>
-                <span className="faint num">{p.requirements.length}</span>
+                <span className="card-title">交付泳道</span>
+                <span className="faint num">{rows.length}</span>
                 <span className="spacer" />
                 <Segmented<Filter>
                   value={filter}
@@ -167,32 +122,12 @@ export function OverviewPage() {
                 />
               </div>
               {rows.length ? (
-                <RequirementsTable rows={rows} risks={risks} />
+                <RequirementLanes rows={rows} risks={risks} />
               ) : (
                 <EmptyState compact icon={Inbox} title="这个状态下没有需求" body="换个筛选看看全部。" action={<button type="button" className="btn btn-sm" onClick={() => setFilter('all')}>看全部</button>} />
               )}
             </section>
-            <section className="card attention-panel">
-              <div className="card-head">
-                <span className="card-title">待办</span>
-                {attention.length > 0 && <span className="pending-pill num">{attention.length}</span>}
-                <span className="spacer" />
-                <Link to="/attention" className="btn btn-ghost btn-sm">
-                  全部
-                </Link>
-              </div>
-              {attention.length === 0 ? (
-                <EmptyState compact icon={Inbox} title="没有等你处理的事" body="审批、澄清问题、门禁裁决会出现在这里。" />
-              ) : (
-                <div className="attention-panel-list">
-                  {attention.map((a, i) => (
-                    <div key={a.requestId} className={`${stA(i).className ?? ''} ${flashA(a.requestId)}`} style={stA(i).style}>
-                      <AttentionCard item={a} reqTitle={titleOf(a.requirementId)} compact />
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            <Decisions attention={attention} titleOf={titleOf} />
           </div>
         </>
       )}
@@ -208,11 +143,43 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: 'delivered', label: '已交付' },
 ]
 
-/** 页头一句话：现在怎么样（而不是这页是什么）。 */
+/** 等你决定：审批、澄清、门禁裁决；没有时只占一行，不放大空状态。 */
+function Decisions({ attention, titleOf }: { attention: ProjectOverview['attention']; titleOf: (id: string) => string | undefined }) {
+  const st = useStagger(Math.min(attention.length, 10))
+  const flash = useFlashRows(attention.map((a) => a.requestId))
+  return (
+    <section className="card ov-decisions" data-empty={attention.length === 0 || undefined}>
+      <div className="card-head">
+        <span className="card-title">等你决定</span>
+        {attention.length > 0 && <span className="pending-pill num">{attention.length}</span>}
+        <span className="spacer" />
+        <Link to="/attention" className="btn btn-ghost btn-sm">
+          全部
+        </Link>
+      </div>
+      {attention.length === 0 ? (
+        <p className="ov-clear">
+          <CircleCheck aria-hidden />
+          都处理完了
+          <span className="faint">审批、澄清、门禁裁决会出现在这里</span>
+        </p>
+      ) : (
+        <div className="attention-panel-list">
+          {attention.map((a, i) => (
+            <div key={a.requestId} className={`${st(i).className ?? ''} ${flash(a.requestId)}`} style={st(i).style}>
+              <AttentionCard item={a} reqTitle={titleOf(a.requirementId)} compact />
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/** 页头一句话：只说需要注意的（数字已经在读数里）。 */
 function describe(p: ProjectOverview, risks: number): string {
-  const parts = [`${p.totals.requirements} 个需求，${p.totals.active} 个进行中`]
-  if (p.attention.length) parts.push(`${p.attention.length} 项等你处理`)
+  const parts: string[] = []
+  if (p.attention.length) parts.push(`${p.attention.length} 项等你决定`)
   if (risks) parts.push(`${risks} 条风险`)
-  if (!p.attention.length && !risks) parts.push('一切顺利')
-  return parts.join('，')
+  return parts.length ? parts.join(' · ') : '一切顺利'
 }

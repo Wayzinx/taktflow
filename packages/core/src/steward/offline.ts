@@ -69,7 +69,7 @@ export async function offlineAnswer(
     })
     return `已生成新建空间提案，请预览后批准${suffix(result)}。`
   }
-  if (/风险|risk|待办|todo|attention|进度|progress|status|卡在哪/i.test(text)) {
+  if (/(风险|risk|待办|todo|attention|进度|进展|progress|status|状态|卡在哪|处理什么|我要处理|验收还差)/i.test(text)) {
     const listed =
       !current && !prefs.watchedSpaces?.length ? await call('list_spaces', {}) : undefined
     const ids = current
@@ -82,36 +82,19 @@ export async function offlineAnswer(
     const answers: string[] = []
     for (const spaceId of spaces) {
       if (/风险|risk/i.test(text)) {
-        const result = await call('list_risks', { spaceId }),
-          risks = result.data as Array<{ title: string }>
-        answers.push(
-          `${spaceId} 有 ${risks.length} 条风险${risks.length ? `：${risks.map((r) => r.title).join('、')}` : ''}。${suffix(result)}`,
-        )
-      } else if (/待办|todo|attention/i.test(text)) {
-        const result = await call('list_attention', { spaceId }),
-          items = result.data as Array<{ ask: string }>
-        answers.push(
-          `${spaceId} 有 ${items.length} 条待办${items.length ? `：${items.map((r) => r.ask).join('；')}` : ''}。${suffix(result)}`,
-        )
+        const result = await call('show', { preset: [{ preset: 'risks', spaceId }] })
+        answers.push(`风险已整理成可视化卡片${suffix(result)}。`)
+      } else if (/待办|todo|attention|处理什么|我要处理/i.test(text)) {
+        const result = await call('show', { preset: [{ preset: 'attention', spaceId }] })
+        answers.push(`待办已整理成可勾选清单${suffix(result)}。`)
       } else if (req) {
-        const result = await call('requirement_status', { spaceId, requirementId: req.id }),
-          data = result.data as {
-            requirement: { title: string; status: string; stage?: string }
-            attention: unknown[]
-          }
-        answers.push(
-          `${data.requirement.title}：状态 ${data.requirement.status}，阶段 ${data.requirement.stage ?? '未开始'}，待办 ${data.attention.length} 条。${suffix(result)}`,
-        )
+        const result = await call('show', {
+          preset: [{ preset: 'requirement_progress', spaceId, requirementId: req.id }],
+        })
+        answers.push(`这条需求的进度已整理成阶段视图${suffix(result)}。`)
       } else {
-        const result = await call('space_overview', { spaceId }),
-          data = result.data as {
-            requirements: Array<{ status: string }>
-            runs: Array<{ status: string }>
-            attention: unknown[]
-          }
-        answers.push(
-          `${spaceId} 有 ${data.requirements.length} 条需求，其中 ${data.requirements.filter((r) => r.status === 'delivered').length} 条已交付，${data.runs.filter((r) => r.status === 'running').length} 个运行正在执行，${data.attention.length} 条待办。${suffix(result)}`,
-        )
+        const result = await call('show', { preset: [{ preset: 'space_progress', spaceId }] })
+        answers.push(`当前进度已整理成阶段视图${suffix(result)}。`)
       }
     }
     return answers.join('\n')

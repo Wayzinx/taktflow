@@ -1,8 +1,10 @@
-import type { StewardCitation, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
-import type { ToolSpec, RoomMessage, NodeKind, SnapshotNode } from '../types.js'
+import type { StewardBlock, StewardCitation, StewardContextRef, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
+import type { ToolSpec, RoomMessage, NodeKind, SnapshotNode, RunState, Usage, EventEnvelope } from '../types.js'
 import { createInsights } from '../insights/fs-insights.js'
 import { stageProgress } from '../insights/graph.js'
+import { deriveRequirementState } from '../insights/requirement.js'
 import { budgetStatus } from '../insights/budget.js'
+import { addUsage, summarizeUsage } from '../insights/usage.js'
 import { scorecards } from '../eval/scorecards.js'
 import { sha256 } from '../util/hash.js'
 import { validateSchema } from '../engine/schema.js'
@@ -19,6 +21,7 @@ import { readStewardFile, redactSecrets } from './files.js'
 import { StewardProposals } from './proposals.js'
 import { refreshRisks } from './risks.js'
 import { productMetrics } from './metrics.js'
+import { describeBlocks, normalizeBlocks } from './blocks.js'
 
 
 /** 界面上的工具名：description 是写给模型的长约束，不适合直接展示在工具卡片里。 */
@@ -41,6 +44,36 @@ const TOOL_LABELS: Record<string, string> = {
   propose: '生成提案',
   ask_lead: '转达 Lead',
   knowledge_search: '检索知识库',
+  show: '可视化',
+}
+const RISK_LEVEL: Record<string, string> = { high: '高', medium: '中' }
+const FORM_LABEL: Record<string, string> = { approve: '审批', answer: '回答', choice: '选择' }
+const compactTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n))
+const laneRank = (lane: { status: string; waiting: number }) => (lane.waiting ? 0 : lane.status === 'blocked' ? 1 : lane.status === 'active' ? 2 : lane.status === 'delivered' ? 4 : 3)
+/** 时间线只留人关心的事件，节点用标题而不是 id。 */
+function timelineItem(event: EventEnvelope, titles: Map<string, string>): { title: string; detail?: string; tone?: 'success' | 'failed' | 'waiting' | 'running' | 'stale' } | undefined {
+  const node = event.nodeId ? titles.get(event.nodeId) ?? event.nodeId : undefined
+  const payload = event.data as Record<string, unknown>
+  switch (event.type) {
+    case 'run.started':
+      return { title: '开始运行', tone: 'running' }
+    case 'run.finished':
+      return payload.status === 'succeeded' ? { title: '运行完成', tone: 'success' } : { title: `运行${payload.status === 'cancelled' ? '取消' : '结束'}`, detail: String(payload.status ?? ''), tone: 'failed' }
+    case 'node.finished':
+      return node ? { title: `${node} 完成`, tone: payload.status === 'succeeded' || payload.status === 'done' ? 'success' : undefined } : undefined
+    case 'node.failed':
+      return { title: `${node ?? '节点'} 失败`, detail: String(payload.error ?? '').slice(0, 60), tone: 'failed' }
+    case 'node.stale':
+      return { title: `${node ?? '节点'} 已过期`, tone: 'stale' }
+    case 'gate.result':
+      return { title: `${node ?? '门禁'} ${payload.pass ? '通过' : '未通过'}`, tone: payload.pass ? 'success' : 'failed' }
+    case 'human.requested':
+      return { title: `等你：${String(payload.ask ?? node ?? '')}`.slice(0, 60), tone: 'waiting' }
+    case 'human.answered':
+      return { title: `${node ?? '人工节点'} 已确认`, tone: 'success' }
+    default:
+      return undefined
+  }
 }
 export interface StewardToolResult {
   data: unknown
@@ -53,6 +86,7 @@ export interface ToolContext {
   proposals: string[]
   delegations: StewardDelegation[]
   onDelegation?: (delegation: StewardDelegation) => Promise<void>
+  onBlocks?: (blocks: StewardBlock[]) => Promise<void>
 }
 export class StewardTools {
   private readonly cleanups = new Set<() => void>()
@@ -228,6 +262,46 @@ export class StewardTools {
         },
       ],
     }
+    const contextRef = {
+      type: 'object',
+      required: ['type', 'id'],
+      properties: {
+        type: { type: 'string', enum: ['space', 'requirement', 'run', 'node', 'workflow', 'knowledge', 'file'] },
+        spaceId: str,
+        id: str,
+        parent: str,
+        label: str,
+      },
+    }
+    const tone = { type: 'string', enum: ['neutral', 'success', 'running', 'waiting', 'failed', 'stale'] }
+    const stageStatus = { type: 'string', enum: ['done', 'running', 'waiting', 'failed', 'todo', 'skipped'] }
+    const action = {
+      anyOf: [
+        { type: 'object', required: ['kind', 'label', 'text'], properties: { kind: { type: 'string', enum: ['ask'] }, label: str, text: str, primary: bool } },
+        { type: 'object', required: ['kind', 'label', 'ref'], properties: { kind: { type: 'string', enum: ['open'] }, label: str, ref: contextRef, primary: bool } },
+        { type: 'object', required: ['kind', 'label', 'commandId'], properties: { kind: { type: 'string', enum: ['command'] }, label: str, commandId: str, input: { type: 'object' }, primary: bool } },
+      ],
+    }
+    const block = {
+      anyOf: [
+        { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['stats'] }, title: str, items: { type: 'array', items: { type: 'object', required: ['label', 'value'], properties: { label: str, value: { anyOf: [str, { type: 'number' }] }, unit: str, tone, hint: str, ref: contextRef } } } } },
+        { type: 'object', required: ['type', 'rows'], properties: { type: { type: 'string', enum: ['lanes'] }, title: str, rows: { type: 'array', items: { type: 'object', required: ['title', 'stages'], properties: { title: str, ref: contextRef, stages: { type: 'array', items: { type: 'object', required: ['label', 'status'], properties: { label: str, status: stageStatus } } }, note: str, tone } } } } },
+        { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['bars'] }, title: str, unit: str, items: { type: 'array', items: { type: 'object', required: ['label', 'value'], properties: { label: str, value: { type: 'number' }, max: { type: 'number' }, tone, hint: str, ref: contextRef } } } } },
+        { type: 'object', required: ['type', 'columns', 'rows'], properties: { type: { type: 'string', enum: ['table'] }, title: str, columns: { type: 'array', items: { type: 'object', required: ['key', 'label'], properties: { key: str, label: str, align: { type: 'string', enum: ['start', 'end'] }, mono: bool } } }, rows: { type: 'array', items: { type: 'object' } }, refs: { type: 'array', items: { anyOf: [contextRef, { type: 'null' }] } } } },
+        { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['checklist'] }, title: str, items: { type: 'array', items: { type: 'object', required: ['label', 'done'], properties: { label: str, done: bool, hint: str, ref: contextRef } } } } },
+        { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['timeline'] }, title: str, items: { type: 'array', items: { type: 'object', required: ['at', 'title'], properties: { at: str, title: str, detail: str, tone, ref: contextRef } } } } },
+        { type: 'object', required: ['type', 'tone', 'title'], properties: { type: { type: 'string', enum: ['callout'] }, tone, title: str, body: str } },
+        { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['actions'] }, items: { type: 'array', items: action } } },
+      ],
+    }
+    const preset = {
+      anyOf: [
+        { type: 'object', required: ['preset', 'spaceId'], properties: { preset: { type: 'string', enum: ['space_progress'] }, spaceId: str } },
+        { type: 'object', required: ['preset', 'requirementId'], properties: { preset: { type: 'string', enum: ['requirement_progress'] }, spaceId: str, requirementId: str } },
+        { type: 'object', required: ['preset'], properties: { preset: { type: 'string', enum: ['risks'] }, spaceId: str } },
+        { type: 'object', required: ['preset'], properties: { preset: { type: 'string', enum: ['attention'] }, spaceId: str } },
+      ],
+    }
     const definitions: Array<[string, string, Record<string, unknown>, string[]]> = [
       ['list_spaces', '列出可见空间；给 query 时返回匹配质量，不能把低质量候选当成用户点名空间', { query: str }, []],
       ['resolve_space', '解析用户点名的空间。exact=false 时必须告诉用户没找到/可能无权限，并列出 candidates，不得代入其他空间回答', { name: str }, ['name']],
@@ -276,6 +350,12 @@ export class StewardTools {
         { spaceId: str, requirementId: str, message: str },
         ['spaceId', 'requirementId', 'message'],
       ],
+      [
+        'show',
+        '把结论改成 1-3 个可视化块。进度/状态优先用 preset，只有对比/用量等 preset 覆盖不了时才传 blocks；正文不要复述块里的数字。',
+        { blocks: { type: 'array', items: block }, preset: { type: 'array', items: preset, minItems: 1, maxItems: 3 } },
+        [],
+      ],
     ]
     for (const space of await this.deps.spaces())
       if ((await this.deps.open(space.id)).stores.kb) {
@@ -308,7 +388,13 @@ export class StewardTools {
       throw new StewardError(400, `工具参数错误，请修正：${String(error)}`)
     }
     const spaceId = typeof input.spaceId === 'string' ? stewardId(input.spaceId) : undefined
-    const space = spaceId ? await this.deps.open(spaceId) : undefined
+    // 已归档的空间打不开，但空间管理命令（恢复 / 删除）仍要能列出：list_commands 退回服务级命令
+    const space = spaceId
+      ? await this.deps.open(spaceId).catch((error: unknown) => {
+          if (name === 'list_commands' && (error as { status?: number }).status === 404) return undefined
+          throw error
+        })
+      : undefined
     const citations: StewardCitation[] = []
     let data: unknown
     const cite = (label: string, href: string, kind?: StewardCitation['kind']) =>
@@ -468,6 +554,41 @@ export class StewardTools {
           )
         break
       }
+      case 'show': {
+        const generated: StewardBlock[] = []
+        for (const item of Array.isArray(input.preset) ? input.preset : []) {
+          if (item && typeof item === 'object') {
+            const presetInput = item as { preset?: unknown; spaceId?: unknown; requirementId?: unknown }
+            const presetSpaceId = typeof presetInput.spaceId === 'string' ? stewardId(presetInput.spaceId) : spaceId
+            if (presetInput.preset === 'requirement_progress' && presetSpaceId && typeof presetInput.requirementId === 'string') {
+              const presetSpace = await this.deps.open(presetSpaceId)
+              const requirement = await presetSpace.stores.workspaces.getRequirement(stewardId(presetInput.requirementId))
+              cite(requirement?.title ?? String(presetInput.requirementId), links.requirement(presetSpaceId, String(presetInput.requirementId)), 'requirement')
+            } else if (presetInput.preset === 'attention' && presetSpaceId) {
+              cite('待办', links.attention(presetSpaceId), 'attention')
+            } else if (presetInput.preset === 'risks') {
+              cite('风险列表', presetSpaceId ? links.overview(presetSpaceId) : links.home, 'risk')
+            } else if (presetSpaceId) {
+              const presetSpace = await this.deps.open(presetSpaceId)
+              cite(presetSpace.name, links.overview(presetSpaceId), 'space')
+            }
+          }
+          generated.push(...(await this.presetBlocks(item, spaceId)))
+        }
+        if (Array.isArray(input.blocks)) generated.push(...(input.blocks as StewardBlock[]))
+        const current =
+          (await this.store.messages(context.threadId)).find(
+            (message) => message.id === context.messageId,
+          )?.blocks ?? []
+        const normalized = await normalizeBlocks([...current, ...generated], {
+          refVisible: (ref) => this.refVisible(ref),
+          commandExists: (commandId) => this.commandExists(commandId),
+        })
+        await context.onBlocks?.(normalized.blocks)
+        // 只回本次新增块的摘要（之前的块模型已经见过）
+        data = { shown: normalized.blocks.length, issues: normalized.issues, content: describeBlocks(normalized.blocks.slice(current.length)) }
+        break
+      }
       case 'propose': {
         const proposal = await this.proposals.create(
           context.threadId,
@@ -493,7 +614,10 @@ export class StewardTools {
     return {
       data,
       citations,
-      summary: `${TOOL_LABELS[name] ?? name}：返回 ${Array.isArray(data) ? data.length : data === undefined ? 0 : 1} 条`,
+      summary:
+        name === 'show'
+          ? `${TOOL_LABELS.show}：${(data as { shown: number }).shown} 个块`
+          : `${TOOL_LABELS[name] ?? name}：返回 ${Array.isArray(data) ? data.length : data === undefined ? 0 : 1} 条`,
     }
   }
   private resolveSpace(name: string, spaces: Awaited<ReturnType<StewardDeps['spaces']>>) {
@@ -530,6 +654,130 @@ export class StewardTools {
         ? '可以使用 requirement.id 继续查询。'
         : '未在该空间可见需求中找到用户点名的需求；请明确说明没找到或可能无权限，并列出 candidates，不要用其他需求代答。',
     }
+  }
+  private async presetBlocks(raw: unknown, currentSpaceId?: string): Promise<StewardBlock[]> {
+    if (!raw || typeof raw !== 'object' || !('preset' in raw)) return []
+    const input = raw as { preset?: unknown; spaceId?: unknown; requirementId?: unknown }
+    const preset = input.preset
+    const spaceId = typeof input.spaceId === 'string' && input.spaceId ? stewardId(input.spaceId) : currentSpaceId
+    if (preset === 'space_progress') return spaceId ? this.spaceProgressBlocks(spaceId) : []
+    if (preset === 'requirement_progress') {
+      if (!spaceId || typeof input.requirementId !== 'string') return []
+      return this.requirementProgressBlocks(spaceId, stewardId(input.requirementId))
+    }
+    if (preset === 'risks') return this.riskBlocks(spaceId)
+    if (preset === 'attention') return this.attentionBlocks(spaceId)
+    return []
+  }
+  /** 口径与总览一致：需求状态由最新流水线运行推导，Token 为全部需求累计。 */
+  private async spaceProgressBlocks(spaceId: string): Promise<StewardBlock[]> {
+    const space = await this.deps.open(spaceId),
+      requirements = (await space.stores.workspaces.listRequirements()).filter((req) => req.status !== 'archived'),
+      attention = await space.stores.attention.list({ pending: true }),
+      lanes = await Promise.all(requirements.map((req) => this.requirementLane(space, req.id, req.title, req.status)))
+    let usage: Usage = { inputTokens: 0, outputTokens: 0 }
+    for (const lane of lanes) usage = addUsage(usage, lane.usage)
+    const count = (status: string) => lanes.filter((lane) => lane.status === status).length
+    const blocked = count('blocked')
+    return [
+      {
+        type: 'stats',
+        title: '空间进度',
+        items: [
+          { label: '进行中', value: count('active'), tone: count('active') ? 'running' : 'neutral' },
+          { label: '等你', value: attention.length, tone: attention.length ? 'waiting' : 'neutral' },
+          { label: '阻塞', value: blocked, tone: blocked ? 'failed' : 'neutral' },
+          { label: '已交付', value: count('delivered'), tone: count('delivered') ? 'success' : 'neutral' },
+          { label: '累计 Token', value: compactTokens(usage.inputTokens + usage.outputTokens) },
+        ],
+      },
+      // 先看要处理的：等人 / 阻塞 / 进行中在前，已交付在后
+      { type: 'lanes', title: '交付泳道', rows: lanes.sort((a, b) => laneRank(a) - laneRank(b)).map((lane) => lane.row) },
+    ]
+  }
+  private async requirementProgressBlocks(spaceId: string, requirementId: string): Promise<StewardBlock[]> {
+    const space = await this.deps.open(spaceId),
+      req = await space.stores.workspaces.getRequirement(requirementId)
+    if (!req) return []
+    const lane = await this.requirementLane(space, req.id, req.title, req.status)
+    const blocks: StewardBlock[] = [{ type: 'lanes', title: '需求进度', rows: [lane.row] }]
+    const metrics = await createInsights(space.stores).metrics(req.id).catch(() => undefined)
+    if (metrics?.acCoverage?.length)
+      blocks.push({ type: 'checklist', title: '验收标准', items: metrics.acCoverage.map((ac) => ({ label: `${ac.ac} ${ac.title}`, done: ac.status === 'covered', hint: `${ac.passed}/${ac.cases} 已验证`, ref: { type: 'requirement', spaceId, id: req.id, label: req.title } })) })
+    const runs = (await space.stores.runs.list({ requirementId: req.id })).sort((a, b) => b.startedAt.localeCompare(a.startedAt))
+    const events = (
+      await Promise.all(
+        runs.slice(0, 3).map(async (run) => {
+          const titles = new Map((await space.stores.runs.getWorkflow(run.runId))?.nodes.map((node) => [node.id, node.title || node.id]) ?? [])
+          return (await space.stores.events.read(run.runId).catch(() => []))
+            .map((event) => ({ event, run, item: timelineItem(event, titles) }))
+            .filter((entry) => entry.item)
+        }),
+      )
+    )
+      .flat()
+      .sort((a, b) => b.event.ts.localeCompare(a.event.ts))
+      .slice(0, 6)
+    if (events.length)
+      blocks.push({ type: 'timeline', title: '最近动态', items: events.map(({ event, run, item }) => ({ at: event.ts, ...item!, ref: { type: 'run', spaceId, id: run.runId, label: run.runId } })) })
+    return blocks
+  }
+  private async riskBlocks(spaceId?: string): Promise<StewardBlock[]> {
+    const risks = (await refreshRisks(this.deps, this.store)).filter((risk) => risk.state === 'open' && (!spaceId || risk.spaceId === spaceId))
+    if (!risks.length) return [{ type: 'callout', tone: 'success', title: '暂无风险', body: '没有需要你处理的风险。' }]
+    return [{ type: 'table', title: '当前风险', columns: [{ key: 'risk', label: '风险' }, { key: 'level', label: '级别' }, { key: 'requirement', label: '需求', mono: true }, { key: 'suggestion', label: '建议' }], rows: risks.map((risk) => ({ risk: risk.title, level: RISK_LEVEL[risk.level] ?? risk.level, requirement: risk.requirementId ?? null, suggestion: risk.actions[0]?.label ?? risk.detail })), refs: risks.map((risk) => risk.requirementId ? { type: 'requirement', spaceId: risk.spaceId, id: risk.requirementId, label: risk.requirementId } : { type: 'space', id: risk.spaceId, label: risk.spaceId }) }]
+  }
+  private async attentionBlocks(spaceId?: string): Promise<StewardBlock[]> {
+    const spaces = spaceId ? [await this.deps.open(spaceId)] : await Promise.all((await this.deps.spaces()).map((space) => this.deps.open(space.id))),
+      items = (await Promise.all(spaces.map(async (space) => (await space.stores.attention.list({ pending: true })).map((item) => ({ ...item, spaceId: space.id }))))).flat()
+    if (!items.length) return [{ type: 'callout', tone: 'success', title: '没有待办', body: '暂时没有等你决定的事。' }]
+    return [
+      { type: 'checklist', title: '等你决定', items: items.map((item) => ({ label: item.ask, done: false, hint: `${item.requirementId} · ${FORM_LABEL[item.form] ?? item.form}`, ref: { type: 'requirement', spaceId: item.spaceId, id: item.requirementId, label: item.requirementId } })) },
+      ...(spaces[0] ? [{ type: 'actions' as const, items: [{ kind: 'open' as const, label: '去处理', ref: { type: 'space' as const, id: spaceId ?? spaces[0].id, label: '待办' }, primary: true }] }] : []),
+    ]
+  }
+  /** 与总览同一套推导：只看流水线运行（排除 Lead 任务），需求状态用 deriveRequirementState。 */
+  private async requirementLane(space: StewardSpace, requirementId: string, title: string, stored: string): Promise<{ row: Extract<StewardBlock, { type: 'lanes' }>['rows'][number]; status: string; waiting: number; usage: Usage }> {
+    const runs = (await space.stores.runs.list({ requirementId }))
+        .filter((run) => (run as RunState & { kind?: string }).kind !== 'task' && run.workflowId !== 'lead' && !run.workflowId.startsWith('task:'))
+        .sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
+      run = runs[0],
+      attention = await space.stores.attention.list({ requirementId, pending: true }),
+      ref = { type: 'requirement' as const, spaceId: space.id, id: requirementId, label: title },
+      note = attention[0] ? `等你：${attention[0].ask}` : undefined
+    let usage: Usage = { inputTokens: 0, outputTokens: 0 }
+    for (const item of runs) usage = addUsage(usage, await this.runUsage(space, item))
+    if (!run) return { row: { title, ref, stages: [], note: note ?? '尚未运行' }, status: stored, waiting: attention.length, usage }
+    const snapshot = await space.stores.runs.getWorkflow(run.runId),
+      derived = snapshot && stored !== 'archived' ? deriveRequirementState(snapshot, run) : undefined,
+      stages = snapshot ? stageProgress(snapshot, run).map((stage) => ({ label: stage.title, status: this.stageStatus(stage.status) })) : []
+    return { row: { title, ref, stages, note, tone: attention.length ? 'waiting' : this.runTone(run.status) }, status: derived?.status ?? stored, waiting: attention.length, usage }
+  }
+  private stageStatus(status: string): Extract<StewardBlock, { type: 'lanes' }>['rows'][number]['stages'][number]['status'] {
+    return status === 'done' ? 'done' : status === 'waiting_human' ? 'waiting' : status === 'failed' ? 'failed' : status === 'running' ? 'running' : 'todo'
+  }
+  private runTone(status: RunState['status']): Extract<StewardBlock, { type: 'lanes' }>['rows'][number]['tone'] {
+    return status === 'succeeded' ? 'success' : status === 'failed' || status === 'cancelled' ? 'failed' : status === 'waiting_human' ? 'waiting' : status === 'running' ? 'running' : 'neutral'
+  }
+  private async runUsage(space: StewardSpace, run: RunState): Promise<Usage> {
+    const events = await space.stores.events.read(run.runId).catch(() => [])
+    return events.length ? summarizeUsage(events) : Object.values(run.nodes).reduce((total, node) => node.usage ? addUsage(total, node.usage) : total, { inputTokens: 0, outputTokens: 0 })
+  }
+  private async refVisible(ref: StewardContextRef): Promise<boolean> {
+    if (ref.type === 'space') return (await this.deps.spaces()).some((space) => space.id === ref.id)
+    const spaceId = ref.spaceId
+    if (!spaceId) return false
+    const space = await this.deps.open(spaceId)
+    if (ref.type === 'requirement') return Boolean(await space.stores.workspaces.getRequirement(ref.id))
+    if (ref.type === 'run') return Boolean(await space.stores.runs.get(ref.id))
+    if (ref.type === 'workflow') return Boolean(await space.workflows.get(ref.id).then(() => true, () => false))
+    return true
+  }
+  private async commandExists(commandId: string): Promise<boolean> {
+    if ((this.deps.serverCommands?.list() ?? []).some((command) => command.id === commandId)) return true
+    for (const space of await this.deps.spaces())
+      if ((await this.deps.open(space.id)).commands.list().some((command) => command.id === commandId)) return true
+    return false
   }
   private matchRequirements(name: string, requirements: Array<{ id: string; title: string }>) {
     const query = name.trim().toLowerCase()

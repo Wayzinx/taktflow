@@ -219,21 +219,20 @@ p {
 /* ---------------------------------------------------------------- 卡片与表格 */
 .card {
   background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--elev-1);
 }
 
 .card-head {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 44px;
-  padding: 0 16px;
+  height: 48px;
+  padding: 0 20px;
   border-bottom: 1px solid var(--divider);
 }
 .card-title {
-  font-size: 13px;
+  font-size: var(--text-body);
   font-weight: 600;
   letter-spacing: -0.005em;
 }

@@ -1,8 +1,8 @@
 /**
  * 管家演示数据源（全局，不分空间）：会话、逐字流式回复（思考 → 工具卡逐个出现 → 正文逐字）、提案批准 / 拒绝 / 撤销、风险、汇报、动态。
- * 回复用确定性规则：说"风险"答风险，说"建 / 新建 + 需求"出新建需求提案，说"进度 / 处理 / 今天"答待办，其余给一段通用说明。
+ * 回复用确定性规则：说"风险"答风险，说"建 / 新建 + 需求"出新建需求提案，说"进度 / 处理 / 今天"答待办；进度、风险、待办附可视化块，其余给一段通用说明。
  */
-import type { Proposal, Risk, StewardFeedItem, StewardMessage, StewardStreamEvent, StewardThread, StewardToolCall } from '@taktflow/core'
+import type { Proposal, Risk, StewardBlock, StewardFeedItem, StewardMessage, StewardStreamEvent, StewardThread, StewardToolCall } from '@taktflow/core'
 import { DEFAULT_PREFS, DEFAULT_PROFILE, ME, PRODUCT_METRICS, seedDigest, seedFeed, seedMessages, seedProposals, seedRisks, seedThreads, STEWARD, SUGGESTIONS } from './mock-steward-seed'
 import type { StewardSource } from './source-m4'
 
@@ -20,22 +20,119 @@ interface Plan {
   text: string
   citations?: StewardMessage['citations']
   suggestions?: string[]
+  /** 正文之后追加的可视化块（docs/design/24），演示时逐块送达。 */
+  blocks?: StewardBlock[]
   proposal?: Omit<Proposal, 'id' | 'threadId' | 'createdAt' | 'createdBy' | 'hash' | 'status'>
 }
 
 const S = '/s/hello-delivery'
+const SPACE = 'hello-delivery'
+const req = (id: string, label: string) => ({ type: 'requirement' as const, spaceId: SPACE, id, label })
+const STAGE_TITLES = ['需求理解', '系分设计', '测分设计', '对齐冻结', '研发测试', '影响面', '质量报告']
+/** 一条泳道：前 done 格完成，第 done+1 格为 cur 状态，其余未开始。 */
+const lane = (done: number, cur?: 'running' | 'waiting' | 'failed') =>
+  STAGE_TITLES.map((label, i) => ({ label, status: i < done ? ('done' as const) : i === done && cur ? cur : ('todo' as const) }))
+
+const PROGRESS_BLOCKS: StewardBlock[] = [
+  {
+    type: 'stats',
+    items: [
+      { label: '等你', value: 3, tone: 'waiting', ref: { type: 'space', id: SPACE, label: '待办' } },
+      { label: '进行中', value: 3, tone: 'running' },
+      { label: '阻塞', value: 1, tone: 'failed' },
+      { label: '已交付', value: 1, tone: 'success' },
+    ],
+  },
+  {
+    type: 'lanes',
+    title: '交付泳道',
+    rows: [
+      { title: '登录页增加图形验证码', ref: req('REQ-003', 'REQ-003'), stages: lane(0, 'waiting'), note: 'PRD 审批 · 等你', tone: 'waiting' },
+      { title: '优惠券过期前 24 小时提醒', ref: req('REQ-004', 'REQ-004'), stages: lane(1, 'failed'), tone: 'failed' },
+      { title: '订单导出支持 CSV', ref: req('REQ-002', 'REQ-002'), stages: lane(4, 'running'), tone: 'running' },
+      { title: '搜索结果关键词高亮', ref: req('REQ-005', 'REQ-005'), stages: lane(2, 'running'), tone: 'running' },
+      { title: '问候语支持空名字', ref: req('REQ-001', 'REQ-001'), stages: lane(7), tone: 'success' },
+    ],
+  },
+  {
+    type: 'actions',
+    items: [
+      { kind: 'open', label: '去审批 REQ-003', ref: req('REQ-003', 'REQ-003'), primary: true },
+      { kind: 'ask', label: '为什么阻塞？', text: 'REQ-004 为什么阻塞？' },
+    ],
+  },
+]
+const RISK_BLOCKS: StewardBlock[] = [
+  {
+    type: 'table',
+    title: '未处理风险',
+    columns: [
+      { key: 'level', label: '级别' },
+      { key: 'req', label: '需求', mono: true },
+      { key: 'risk', label: '风险' },
+    ],
+    rows: [
+      { level: '高', req: 'REQ-004', risk: '系分门禁重复失败' },
+      { level: '高', req: 'REQ-003', risk: 'PRD 审批等了 5 小时' },
+      { level: '中', req: 'REQ-002', risk: '预算用到 84%' },
+      { level: '中', req: 'REQ-005', risk: '评审轮次超出常值' },
+    ],
+    refs: [req('REQ-004', 'REQ-004'), req('REQ-003', 'REQ-003'), req('REQ-002', 'REQ-002'), req('REQ-005', 'REQ-005')],
+  },
+  {
+    type: 'bars',
+    title: '预算用量',
+    unit: '%',
+    items: [
+      { label: 'REQ-002', value: 84, max: 100, tone: 'waiting' },
+      { label: 'REQ-004', value: 61, max: 100 },
+      { label: 'REQ-005', value: 38, max: 100 },
+      { label: 'REQ-003', value: 12, max: 100 },
+    ],
+  },
+  {
+    type: 'actions',
+    items: [
+      { kind: 'ask', label: '让 Lead 排查 REQ-004', text: '让 REQ-004 的 Lead 排查门禁失败', primary: true },
+      { kind: 'open', label: '看 REQ-002 用量', ref: req('REQ-002', 'REQ-002') },
+    ],
+  },
+]
+const ATTENTION_BLOCKS: StewardBlock[] = [
+  {
+    type: 'checklist',
+    title: '等你决定',
+    items: [
+      { label: 'REQ-003 PRD 审批', done: false, hint: '已等 5 小时 · 审批', ref: req('REQ-003', 'REQ-003') },
+      { label: 'REQ-002 测试方案确认', done: false, hint: '研发测试 · 选择', ref: req('REQ-002', 'REQ-002') },
+      { label: 'REQ-005 验收口径', done: false, hint: '系分设计 · 回答', ref: req('REQ-005', 'REQ-005') },
+      { label: 'REQ-001 上线确认', done: true, hint: '昨天已批准', ref: req('REQ-001', 'REQ-001') },
+    ],
+  },
+  {
+    type: 'timeline',
+    title: '今天',
+    items: [
+      { at: '10:42', title: 'REQ-002 进入研发测试', tone: 'running' },
+      { at: '09:15', title: 'REQ-004 系分门禁第 3 次失败', detail: '同一失败指纹', tone: 'failed' },
+      { at: '08:30', title: 'REQ-003 PRD 提交审批', tone: 'waiting' },
+    ],
+  },
+]
+
 function plan(text: string): Plan {
   if (/风险|卡住|延期/.test(text))
     return {
       thinking: '查风险引擎当前未处理的风险，按级别排序。',
       tools: [{ tool: 'risks.list', input: { state: 'open' }, ok: true, summary: '4 条未处理风险（2 高、2 中）', ms: 26 }],
-      text: '现在有 **2 条高风险**：REQ-004 系分门禁重复失败 [1]，REQ-003 的 PRD 审批等了 5 小时 [2]。另有 2 条中风险，主要是 REQ-002 预算用到 84% [3]。',
+      text: '有 **2 条高风险**，最急的是 REQ-004 门禁反复失败 [1]；REQ-003 审批已等 5 小时 [2]，REQ-002 预算接近上限 [3]。',
       citations: [
         { label: 'REQ-004 失败指纹', href: `${S}/run/run-20261104-0004?node=design-gate`, kind: 'risk' },
         { label: 'REQ-003 待审批', href: `${S}/attention`, kind: 'attention' },
         { label: 'REQ-002 预算', href: `${S}/req/REQ-002?tab=metrics`, kind: 'requirement' },
       ],
-      suggestions: ['让 REQ-004 的 Lead 排查', '把 REQ-002 预算提到 120%'],
+      suggestions: ['怎么处理门禁失败？', '预算还够吗？'],
+      blocks: RISK_BLOCKS,
     }
   const m = /(?:建|新建|创建)(?:一?个)?需求[：:\s]*(.+)?/.exec(text)
   if (m) {
@@ -56,18 +153,19 @@ function plan(text: string): Plan {
         { tool: 'requirements.list', input: { space: 'hello-delivery' }, ok: true, summary: '7 个需求：1 已交付、4 进行中', ms: 41 },
         { tool: 'attention.list', input: { pending: true }, ok: true, summary: '3 项待你处理', ms: 17 },
       ],
-      text: '有 **3 项**等你处理 [1]，最急的是 REQ-003 的 PRD 审批。进展方面，REQ-001 已交付 [2]，REQ-002 进入测试阶段。',
+      text: /待办|处理/.test(text) ? '有 **3 项**等你决定 [1]，最急的是 REQ-003 的 PRD 审批。' : '整体正常：1 条已交付 [2]，3 条在推进，REQ-004 卡在系分门禁，REQ-003 等你审批 [1]。',
       citations: [
         { label: '待办', href: `${S}/attention`, kind: 'attention' },
         { label: 'REQ-001', href: `${S}/req/REQ-001`, kind: 'requirement' },
       ],
-      suggestions: ['先帮我批掉 REQ-003 的 PRD', '总结一下这周的进展'],
+      suggestions: ['先批 REQ-003', '这周进展总结'],
+      blocks: /待办|处理/.test(text) ? ATTENTION_BLOCKS : PROGRESS_BLOCKS,
     }
   return {
     thinking: '这个问题没有对应的查询工具，先说明能做什么。',
     tools: [],
-    text: '我可以回答空间、需求、运行、待办、风险和知识库的问题，也可以替你新建需求、改 workflow、配知识库——写操作都会先给你一份提案确认。试试问"今天有什么要我处理的？"',
-    suggestions: ['今天有什么要我处理的？', '有哪些风险？'],
+    text: '我能查进度、风险、待办和知识库，也能新建需求、改流水线——改动都先出提案，你确认后才执行。',
+    suggestions: ['今天要处理什么？', '有什么风险？'],
   }
 }
 
@@ -122,6 +220,12 @@ export function createMockSteward(): StewardSource {
       msg.text += chunk
       emit(threadId, { type: 'delta', messageId: msg.id, text: chunk })
       await sleep(26)
+    }
+    // 可视化块逐块送达：每次发全量，界面按序号"组装"入场
+    for (let i = 1; i <= (p.blocks?.length ?? 0); i++) {
+      await sleep(i === 1 ? 160 : 90)
+      msg.blocks = clone(p.blocks!.slice(0, i))
+      emit(threadId, { type: 'blocks', messageId: msg.id, blocks: msg.blocks })
     }
     if (p.proposal) {
       const pr: Proposal = { ...clone(p.proposal), id: nid('pr'), threadId, hash: `sha256:${Math.random().toString(16).slice(2, 12)}`, status: 'pending', createdAt: now(), createdBy: STEWARD }

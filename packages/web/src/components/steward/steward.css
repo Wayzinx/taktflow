@@ -528,9 +528,41 @@ button.stw-thinking:hover {
   flex: 1;
   min-width: 0;
 }
+/* 欢迎页读数固定三格一行（停靠面板窄，不按容器换列） */
+.stw-brief .tile {
+  --cols: 3;
+}
+.stw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.stw-chip {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text);
+  font-size: var(--text-ui);
+  cursor: pointer;
+  animation: viz-rise var(--dur-item) var(--ease-out-soft) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms + 80ms);
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .stw-chip:hover {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1px var(--accent-ring);
+  }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .stw-in {
+  .stw-in,
+  .stw-chip {
     animation-name: fade-only-in !important;
   }
   .stw-chev {

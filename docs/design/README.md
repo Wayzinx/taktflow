@@ -28,6 +28,7 @@
 | 21 | [归因可信度加固](21-归因可信度加固.md) | 检查点与只读快照、调用身份与三层取值、问题键与逐键复查、观察与缺陷两层与漏检五条件、回放隔离、小样本统计与发布门槛、质量日志一致性 |
 | 22 | [管家与操作体验](22-管家与操作体验.md) | 全局管家 Agent（问答、主动汇报风险、变更提案由人把关）、需求与空间增删改、workflow 编辑兜底、转场 / 骨架 / 空状态等体验规范、每个功能的度量 |
 | 23 | [知识库体系](23-知识库体系.md) | 文档检索 / LLM Wiki / 数据库 / 接口 / 代码 / 历史六类知识库；页面上从零构建、检索测试、绑定到项目、召回评测与发布门槛 |
+| 24 | [可视化优先与生成式界面](24-可视化优先与生成式界面.md) | 每页一个视觉主角（读数格、交付泳道）、管家回答 = 不超过 3 句结论 + 可视化块（`show` 工具与服务端预设）、组件按容器宽度变形、字数预算与入场动效 |
 
 ## 参考资料
 
@@ -35,4 +36,5 @@
 - 视频：皮皮虾说《公司正式宣布开始 AI 自动化实现需求》（BV1Rex26dEWF）：物料仓库、spec → task → 门禁 DAG、全程留痕与度量。
 - 常见的需求协作平台：阶段条 + 公共产物分类 + 共享上下文的 Agent 任务。
 - [Metis](https://github.com/Wholiver/metis)：按改动形状分档、门禁由运行时记账、失败指纹、自学习软层；`docs/ale-metis-agent-failure-modes.md` 的失败分析。
+- 秘秘 Mimi super agent 功能先导（B 站 BV1vix26sEzR）与 intelligence-ui：回复是能勾选、能点的界面而不是长文；Agent 输出组件树、宿主校验修正后渲染。
 - [OpenBitFun](https://github.com/GCWing/OpenBitFun)：`docs/sdlc-harness/`、`docs/architecture/review-lifecycle.md`（评审记录 / 修订 / 正交状态）、`src/web-ui/MOTION_AUDIT.md`（动效审计）。

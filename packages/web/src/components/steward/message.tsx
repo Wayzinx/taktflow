@@ -4,6 +4,7 @@ import type { Proposal, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Menu, toast } from '../ui'
 import { hm } from './fmt'
+import { StewardBlocks } from './blocks'
 import { StewardText } from './citation'
 import { ProposalCard } from './proposal-card'
 import { ToolCard } from './tool-card'
@@ -131,6 +132,7 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
           </div>
         )}
         {m.text && <StewardText text={m.text} citations={m.citations} streaming={live} />}
+        {(m.blocks ?? []).length > 0 && <StewardBlocks blocks={m.blocks!} onAsk={onSuggest} />}
         {m.status === 'error' && (
           <p className="stw-msg-err">
             <CircleAlert aria-hidden />

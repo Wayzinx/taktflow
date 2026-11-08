@@ -136,10 +136,19 @@ async function main(): Promise<void> {
   try {
     results.push(await runScenario('进度与风险问答', async () => {
       const { message } = await ask(base, '作者版标准交付示例这个项目现在进度咋样了？有什么风险吗？')
-      assert.equal(message.status, 'done')
+      assert.equal(message.status, 'done', message.error)
       assert.match(message.text, /\[\d+\]/, message.text)
       assert.match(message.text, /风险|缺陷|进度|需求/, message.text)
-      assert(JSON.stringify(message.tools).includes('问候语支持空名字') || message.text.includes('问候语'), '未引用 standard-delivery 需求')
+      assert(JSON.stringify([message.tools, message.blocks]).includes('问候语支持空名字') || message.text.includes('问候语'), '未引用 standard-delivery 需求')
+      return { message }
+    }))
+    results.push(await runScenario('进度可视化', async () => {
+      const { message } = await ask(base, '作者版标准交付示例现在进度怎么样？')
+      assert.equal(message.status, 'done', message.error)
+      assert((message.text ?? '').length <= 200, `正文超过 200 字：${message.text}`)
+      const lanes = message.blocks?.find((block) => block.type === 'lanes')
+      assert(lanes && lanes.type === 'lanes', `回复缺少 lanes 块：${JSON.stringify(message.blocks)}`)
+      assert(lanes.rows.some((row) => row.ref?.type === 'requirement' && row.ref.spaceId === 'standard-delivery'), 'lanes 至少一行需要指向 standard-delivery 的需求')
       return { message }
     }))
     let workflowProposal: Proposal | undefined

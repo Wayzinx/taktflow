@@ -81,6 +81,9 @@ export function applyStreamEvent(cur: StewardMessage[], e: StewardStreamEvent): 
       })
     case 'delta':
       return patch(e.messageId, (m) => ({ ...m, text: m.text + e.text }))
+    case 'blocks':
+      // 每次给全量（docs/design/24）：直接替换
+      return patch(e.messageId, (m) => ({ ...m, blocks: e.blocks }))
     case 'proposal': {
       const live = [...cur].reverse().find((m) => m.status === 'streaming')
       if (!live || live.proposalIds?.includes(e.proposal.id)) return cur

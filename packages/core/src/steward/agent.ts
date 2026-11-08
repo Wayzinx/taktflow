@@ -191,6 +191,13 @@ export class StewardAgent {
       messageId: message.id,
       proposals: message.proposalIds!,
       delegations: message.delegations!,
+      onBlocks: async (blocks) => {
+        const saved = (await this.store.messages(message.threadId)).find((m) => m.id === message.id)
+        const target = saved?.status === 'done' ? saved : message
+        target.blocks = blocks
+        await this.store.saveMessage(target)
+        this.store.emit(message.threadId, { type: 'blocks', messageId: message.id, blocks })
+      },
       onDelegation: async (delegation) => {
         const saved = (await this.store.messages(message.threadId)).find((m) => m.id === message.id)
         const target = saved?.status === 'done' ? saved : message
@@ -342,6 +349,8 @@ export class StewardAgent {
           }
         }
       }
+      const storedBlocks = (await this.store.messages(message.threadId)).find((m) => m.id === message.id)?.blocks
+      if (storedBlocks) message.blocks = storedBlocks
       Object.assign(message, normalizeCitations(message.text, citations))
       // 出了提案时下一步就是批准或拒绝，不再塞后续建议；否则按消息上下文所在页面给建议
       const focus = user.context?.find((ref) => ['workflow', 'requirement', 'knowledge', 'run'].includes(ref.type))
@@ -354,7 +363,10 @@ export class StewardAgent {
               user.context?.find((ref) => ref.spaceId)?.spaceId,
               focus?.id,
             )
-          ).slice(0, 3)
+          )
+            // 刚问过的不再建议
+            .filter((s) => s.replace(/[？?。\s]/g, '') !== user.text.replace(/[？?。\s]/g, ''))
+            .slice(0, 3)
       message.status = 'done'
     } catch (error) {
       message.status = 'error'

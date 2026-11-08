@@ -900,7 +900,38 @@ export interface StewardMessage {
   error?: string
   /** 未配置模型时的规则回复。 */
   offline?: boolean
+  /** 可视化块（生成式界面，docs/design/24）：显示在正文之后；正文只留结论与解释。 */
+  blocks?: StewardBlock[]
 }
+
+/** 管家回答里的状态语气：与界面状态色一一对应。 */
+export type StewardTone = 'neutral' | 'success' | 'running' | 'waiting' | 'failed' | 'stale'
+/** 进度泳道上一格的状态。 */
+export type StewardStageStatus = 'done' | 'running' | 'waiting' | 'failed' | 'todo' | 'skipped'
+
+/**
+ * 按钮：只做"追问 / 跳转 / 打开预填的命令表单"三件事，写操作仍走命令表单或提案，按钮本身不执行。
+ */
+export type StewardAction =
+  | { kind: 'ask'; label: string; text: string; primary?: boolean }
+  | { kind: 'open'; label: string; ref: StewardContextRef; primary?: boolean }
+  | { kind: 'command'; label: string; commandId: string; input?: Record<string, unknown>; primary?: boolean }
+
+/**
+ * 管家的可视化块（一条消息最多 6 块，不嵌套）。模型用 show 工具给出，服务端 steward/blocks.ts 校验并修正：
+ * 超出上限截断、未知 tone / status 归一、ref 必须是调用者看得见的对象（看不见的去掉 ref 保留文字）、command 必须在命令表里。
+ * 上限：stats 6 项；lanes 12 行 × 12 格；bars 12 项；table 8 列 × 20 行；checklist 12 项；timeline 12 项；actions 4 个；
+ * 文本：label ≤ 40 字、title ≤ 60 字、单元格 ≤ 80 字、callout.body ≤ 240 字。
+ */
+export type StewardBlock =
+  | { type: 'stats'; title?: string; items: Array<{ label: string; value: string | number; unit?: string; tone?: StewardTone; hint?: string; ref?: StewardContextRef }> }
+  | { type: 'lanes'; title?: string; rows: Array<{ title: string; ref?: StewardContextRef; stages: Array<{ label: string; status: StewardStageStatus }>; note?: string; tone?: StewardTone }> }
+  | { type: 'bars'; title?: string; unit?: string; items: Array<{ label: string; value: number; max?: number; tone?: StewardTone; hint?: string; ref?: StewardContextRef }> }
+  | { type: 'table'; title?: string; columns: Array<{ key: string; label: string; align?: 'start' | 'end'; mono?: boolean }>; rows: Array<Record<string, string | number | null>>; refs?: Array<StewardContextRef | null> }
+  | { type: 'checklist'; title?: string; items: Array<{ label: string; done: boolean; hint?: string; ref?: StewardContextRef }> }
+  | { type: 'timeline'; title?: string; items: Array<{ at: string; title: string; detail?: string; tone?: StewardTone; ref?: StewardContextRef }> }
+  | { type: 'callout'; tone: StewardTone; title: string; body?: string }
+  | { type: 'actions'; items: StewardAction[] }
 
 export interface StewardPostRequest {
   text: string
@@ -914,6 +945,8 @@ export type StewardStreamEvent =
   | { type: 'delta'; messageId: string; text: string }
   | { type: 'thinking'; messageId: string; text: string }
   | { type: 'tool'; messageId: string; tool: StewardToolCall }
+  /** 本条消息的全部可视化块（每次给全量，前端直接替换）。 */
+  | { type: 'blocks'; messageId: string; blocks: StewardBlock[] }
   | { type: 'proposal'; proposal: Proposal }
   | { type: 'delegation'; messageId: string; delegation: StewardDelegation }
   | { type: 'done'; messageId: string }

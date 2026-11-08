@@ -6,12 +6,12 @@ import {
   useStagger,
   vtName,
 } from "../components/ui";
-import { StageBar } from "../components/stage-bar";
 import { TierGlyph, TIER_LABEL } from "../components/tier-glyph";
 import { fmtCost, fmtRelative, fmtTokens, totalTokens } from "../lib/format";
 import { navigate } from "../lib/router";
 import { REQ_STATUS } from "../lib/status";
 import { CurrentNodeCell } from "./requirements-current";
+import { StageCell } from "./overview-lanes";
 import { RiskMark, type RiskIndex } from "./requirements-risk";
 
 /**
@@ -42,7 +42,7 @@ export function RequirementsTable({
                 负责人
               </th>
             )}
-            <th style={{ width: full ? 188 : 250 }}>阶段</th>
+            <th style={{ width: full ? 168 : 220 }}>阶段</th>
             {full && (
               <th className="c-node" style={{ width: 148 }}>
                 当前节点
@@ -138,10 +138,7 @@ export function RequirementsTable({
                 </td>
               )}
               <td>
-                <StageBar
-                  stages={r.stages}
-                  empty={r.latestRunId ? "未分阶段" : "尚未运行"}
-                />
+                <StageCell r={r} />
               </td>
               {full && (
                 <td className="c-node">

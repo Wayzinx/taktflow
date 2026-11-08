@@ -1,0 +1,433 @@
+/* 可视化组件（docs/design/24）：读数格、泳道、条形、清单、时间线。全部按容器宽度变形。 */
+
+@keyframes viz-rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes viz-grow {
+  from {
+    /* motion-audit: ok 条形 / 泳道格从 0 长到值，表达数量，不是元素出现 */
+    transform: scaleX(0);
+  }
+}
+
+/* 可点的格 / 行是 <button>：去掉浏览器默认边框与底色 */
+.tile,
+.bar-row,
+.check-row,
+.tl-body {
+  border: 0;
+}
+.bar-row,
+.check-row,
+.tl-body {
+  background: none;
+}
+
+/* ---------------------------------------------------------------- 读数格 */
+.tiles {
+  container: tiles / inline-size;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.tile {
+  --cols: 2;
+  /* 最后一行的格子自动撑满：奇数个不会单独一格挂在下一行左边 */
+  flex: 1 1 calc((100% - (var(--cols) - 1) * var(--sp-3)) / var(--cols));
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--elev-1);
+  text-align: start;
+  color: var(--text);
+  animation: viz-rise var(--dur-item) var(--ease-out-soft) backwards;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+@container tiles (min-width: 300px) {
+  .tile {
+    --cols: var(--n-sm);
+  }
+}
+@container tiles (min-width: 520px) {
+  .tile {
+    --cols: var(--n-md);
+  }
+}
+@container tiles (min-width: 860px) {
+  .tile {
+    --cols: var(--n);
+  }
+}
+.tile-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.tile-label svg {
+  width: 14px;
+  height: 14px;
+}
+.tile-value {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+.tile.toned .tile-value,
+.tile.toned .tile-label svg {
+  color: var(--tile-tone);
+}
+.tile-unit {
+  font-size: var(--text-ui);
+  font-weight: 500;
+  color: var(--text-3);
+  letter-spacing: 0;
+}
+.tile-hint {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tile-hint b {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.tile-click {
+  cursor: pointer;
+  transition:
+    background-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .tile-click:hover {
+    background: var(--surface-hover);
+  }
+}
+.tile-click[aria-pressed='true'] {
+  box-shadow:
+    var(--elev-1),
+    inset 0 0 0 1.5px var(--accent-ring);
+}
+
+/* ---------------------------------------------------------------- 泳道 */
+.lane-track {
+  --h: 8px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  height: calc(var(--h) * 1.75);
+}
+.lane-track[data-size='sm'] {
+  --h: 6px;
+  gap: 2px;
+}
+.lane-cell {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 6px;
+  max-width: 28px;
+  height: var(--h);
+  border-radius: 2.5px;
+  background: var(--st-pending);
+  overflow: hidden;
+  transform-origin: left center;
+  transition:
+    background-color var(--dur) var(--ease),
+    opacity var(--dur) var(--ease);
+}
+.lane-track[data-animate] .lane-cell {
+  animation: viz-grow 260ms var(--ease-out-soft) backwards;
+  animation-delay: calc(min(var(--i), 12) * 18ms);
+}
+.lane-cell[data-st='done'] {
+  background: var(--st-success);
+  opacity: 0.82;
+}
+.lane-cell[data-st='running'] {
+  background: var(--st-running);
+}
+.lane-cell[data-st='failed'] {
+  background: var(--st-failed);
+}
+.lane-cell[data-st='waiting'] {
+  background: repeating-linear-gradient(135deg, var(--st-waiting) 0 2px, color-mix(in oklch, var(--st-waiting) 35%, transparent) 2px 4px);
+}
+.lane-cell[data-st='todo'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.lane-cell[data-st='skipped'] {
+  background: var(--st-skipped-soft);
+}
+/* 当前格：高一截，像节拍尺上的长刻度 */
+.lane-cell[data-cur] {
+  height: calc(var(--h) * 1.75);
+}
+.lane-cell[data-st='running']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: light-dark(oklch(1 0 0 / 0.55), oklch(1 0 0 / 0.4));
+  animation: lane-beat var(--takt) var(--ease-in-out) infinite;
+}
+@keyframes lane-beat {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0;
+  }
+}
+
+/* ---------------------------------------------------------------- 条形 */
+.bars {
+  container: bars / inline-size;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 36%) minmax(48px, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 4px;
+  border-radius: var(--r-sm);
+  font-size: var(--text-ui);
+  text-align: start;
+  color: var(--text);
+}
+.bar-click {
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .bar-click:hover {
+    background: var(--surface-hover);
+  }
+}
+.bar-label {
+  color: var(--text-2);
+}
+.bar-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--bar-tone);
+  transform: scaleX(var(--p));
+  transform-origin: left center;
+  animation: viz-grow 520ms var(--ease-out-soft) backwards;
+  animation-delay: calc(min(var(--i), 12) * 40ms);
+}
+.bar-value {
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  text-align: end;
+  white-space: nowrap;
+}
+@container bars (max-width: 300px) {
+  .bar-row {
+    grid-template-columns: 1fr auto;
+    row-gap: 4px;
+  }
+  .bar-track {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}
+
+/* ---------------------------------------------------------------- 清单 */
+.checklist {
+  display: grid;
+  gap: var(--sp-2);
+}
+.checklist-meter {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.checklist-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--st-success);
+  transform: scaleX(var(--p));
+  transform-origin: left center;
+  animation: viz-grow 520ms var(--ease-out-soft) backwards;
+}
+.checklist ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 4px;
+  border-radius: var(--r-sm);
+  text-align: start;
+  color: var(--text);
+  font-size: var(--text-ui);
+}
+.check-click {
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .check-click:hover {
+    background: var(--surface-hover);
+  }
+}
+.check-box {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1.5px var(--border-strong);
+  transition:
+    background-color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+.check-row[data-done] .check-box {
+  background: var(--st-success);
+  box-shadow: none;
+  color: var(--text-inverse);
+}
+.check-box svg {
+  width: 10px;
+  height: 10px;
+}
+.check-body {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.check-row[data-done] .check-label {
+  color: var(--text-2);
+}
+.check-hint {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+
+/* ---------------------------------------------------------------- 时间线 */
+.timeline {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.timeline li {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 8px;
+  padding-bottom: 10px;
+}
+.timeline li:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 6.5px;
+  top: 14px;
+  bottom: 0;
+  width: 1px;
+  background: var(--divider);
+}
+.tl-dot {
+  width: 9px;
+  height: 9px;
+  margin: 5px 0 0 2.5px;
+  border-radius: 50%;
+  background: var(--dot);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+.tl-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 1px 4px;
+  border-radius: var(--r-sm);
+  text-align: start;
+  color: var(--text);
+}
+.tl-click {
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .tl-click:hover {
+    background: var(--surface-hover);
+  }
+}
+.tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.tl-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-ui);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tl-at {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.tl-detail {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .lane-track[data-animate] .lane-cell,
+  .bar-fill,
+  .checklist-meter > span {
+    animation: none;
+  }
+  /* 运行中的格子静止但仍可辨认（实色 + 内高光） */
+  .lane-cell[data-st='running']::after {
+    animation: none;
+    opacity: 0.25;
+  }
+}

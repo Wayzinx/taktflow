@@ -7,7 +7,7 @@ import { createCommandRegistry } from '../commands/index.js'
 import { bindCrudServices } from '../commands/crud-commands.js'
 import type { CommandAudit, CommandSpec } from '../commands/contracts.js'
 import type { RoomMessage, ChatResponse, RunState } from '../types.js'
-import type { ProposalStep, WorkflowDocument, StewardDelegation } from '../api.js'
+import type { ProposalStep, WorkflowDocument, StewardBlock, StewardDelegation } from '../api.js'
 import { StewardAgent, normalizeCitations } from './agent.js'
 import { StewardStore } from './store.js'
 import { proposalHash } from './proposals.js'
@@ -22,6 +22,8 @@ import type { KnowledgeBase } from '../types.js'
 import type { KnowledgeStore } from '../interfaces.js'
 import { stewardSuggestions } from './suggestions.js'
 import { offlineAnswer } from './offline.js'
+import { normalizeBlocks } from './blocks.js'
+import { StewardError } from './contracts.js'
 
 const roots: string[] = [],
   agents: StewardAgent[] = []
@@ -41,10 +43,10 @@ it('W2：peek 汇报 ID 稳定且不写入已读、风险、指标', async () =>
 it('W5/W6：中文设置建议，显式空间覆盖默认空间', async () => {
   const f = await fixture()
   expect(await stewardSuggestions(f.deps, 'settings-knowledge', 'shop')).toEqual([
-    '帮我检查 商店 的知识库设置',
+    '检查知识库设置',
   ])
   expect(await stewardSuggestions(f.deps, 'settings-members', 'shop')).toEqual([
-    '帮我检查 商店 的成员设置',
+    '检查成员设置',
   ])
   const calls: string[] = []
   for (const name of ['shop', '商店'])
@@ -55,8 +57,9 @@ it('W5/W6：中文设置建议，显式空间覆盖默认空间', async () => {
       async (tool, input) => {
         if (tool === 'list_spaces')
           return { data: [{ id: 'shop', name: '商店' }], citations: [], summary: '' }
-        calls.push(String(input.spaceId))
-        return { data: { requirements: [], runs: [], attention: [] }, citations: [], summary: '' }
+        expect(tool).toBe('show')
+        calls.push(String((input.preset as Array<{ spaceId: string }>)[0]!.spaceId))
+        return { data: { shown: 1, issues: [] }, citations: [], summary: '' }
       },
     )
   expect(calls).toEqual(['shop', 'shop'])
@@ -65,6 +68,101 @@ afterEach(async () => {
   vi.useRealTimers()
   agents.splice(0).forEach((agent) => agent.close())
   await Promise.all(roots.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+})
+describe('可视化块', () => {
+  it('normalizeBlocks 截断上限、归一状态、隐藏 ref、丢弃未知命令且不抛', async () => {
+    const raw = [
+      {
+        type: 'lanes',
+        title: 'x'.repeat(80),
+        rows: [{ title: '需求', ref: { type: 'requirement', spaceId: 'shop', id: 'hidden' }, stages: [{ label: '阶段', status: 'ok' }] }],
+      },
+      { type: 'actions', items: [{ kind: 'command', label: '删', commandId: 'missing' }, { kind: 'ask', label: '问', text: '继续？' }] },
+      { type: 'stats', items: Array.from({ length: 8 }, (_, i) => ({ label: `L${i}`, value: i, tone: i ? 'bad' : 'success' })) },
+      null,
+      'bad',
+      { type: 'unknown' },
+      { type: 'callout', tone: 'success', title: '第七块' },
+    ]
+    const result = await normalizeBlocks(raw, { refVisible: async () => false, commandExists: async () => false })
+    expect(result.blocks).toHaveLength(3)
+    expect(result.blocks[0]).toMatchObject({ type: 'lanes', title: 'x'.repeat(60), rows: [{ stages: [{ status: 'todo' }] }] })
+    expect((result.blocks[0] as Extract<StewardBlock, { type: 'lanes' }>).rows[0]!.ref).toBeUndefined()
+    expect((result.blocks[1] as Extract<StewardBlock, { type: 'actions' }>).items).toHaveLength(1)
+    expect((result.blocks[2] as Extract<StewardBlock, { type: 'stats' }>).items).toHaveLength(6)
+    expect(result.issues.join('\n')).toContain('blocks[0].rows[0].stages[0].status')
+    await expect(normalizeBlocks('garbage')).resolves.toMatchObject({ blocks: [] })
+  })
+
+  it('show preset 追加块、限制 6 块并发出 blocks 流事件', async () => {
+    const f = await fixture()
+    const first = await f.stores.workspaces.createRequirement({ title: '问候语支持空名字' })
+    const second = await f.stores.workspaces.createRequirement({ title: '导出支持月份' })
+    for (const [index, req] of [first, second].entries()) {
+      const run: RunState = {
+        runId: `run-${index + 1}`,
+        requirementId: req.id,
+        workflowId: 'flow',
+        workflowVersion: '1',
+        status: index === 0 ? 'running' : 'waiting_human',
+        startedAt: `2026-11-06T10:0${index}:00.000Z`,
+        args: {},
+        expansions: [],
+        nodes: { review: { id: 'review', status: index === 0 ? 'running' : 'waiting_human', attempts: 1, outputs: [] } },
+      }
+      await f.stores.runs.create(run, { id: 'flow', title: '交付流程', version: '1', stages: [{ id: 'review', title: '评审' }], nodes: [{ id: 'review', kind: 'review', title: '评审', stage: 'review', needs: [] }] })
+    }
+    const message = { id: 'm-blocks', threadId: f.thread.id, role: 'steward' as const, at: '2026-11-06T10:00:00.000Z', text: '', blocks: Array.from({ length: 4 }, (_, i) => ({ type: 'callout' as const, tone: 'neutral' as const, title: `旧${i}` })) }
+    await f.agent.store.saveMessage(message)
+    const events: Array<{ type: string; blocks?: StewardBlock[] }> = []
+    f.agent.store.onThread(f.thread.id, (event) => events.push(event as { type: string; blocks?: StewardBlock[] }))
+    const result = await f.agent.tools.call('show', { preset: [{ preset: 'space_progress', spaceId: 'shop' }] }, { threadId: f.thread.id, messageId: message.id, proposals: [], delegations: [], onBlocks: async (blocks) => { message.blocks = blocks; await f.agent.store.saveMessage(message); f.agent.store.emit(f.thread.id, { type: 'blocks', messageId: message.id, blocks }) } })
+    expect(result.data).toMatchObject({ shown: 6 })
+    // 回给模型的是本次新增块的文字摘要，结论据此写
+    expect((result.data as { content: string[] }).content.join('\n')).toContain('问候语支持空名字')
+    const saved = (await f.agent.store.messages(f.thread.id)).find((item) => item.id === message.id)!
+    expect(saved.blocks).toHaveLength(6)
+    const lanes = saved.blocks!.find((block): block is Extract<StewardBlock, { type: 'lanes' }> => block.type === 'lanes')
+    expect(lanes?.rows).toHaveLength(2)
+    expect(lanes?.rows[0]?.ref).toMatchObject({ type: 'requirement', spaceId: 'shop', id: first.id })
+    expect(events.some((event) => event.type === 'blocks' && event.blocks?.length === 6)).toBe(true)
+  })
+
+  it('进度预设与总览同口径：阻塞按需求推导，时间线只留关键事件并用节点标题', async () => {
+    const f = await fixture()
+    const req = await f.stores.workspaces.createRequirement({ title: '导出支持月份' })
+    const run: RunState = { runId: 'run-x', requirementId: req.id, workflowId: 'flow', workflowVersion: '1', status: 'failed', startedAt: '2026-11-06T10:00:00.000Z', args: {}, expansions: [], nodes: { review: { id: 'review', status: 'failed', attempts: 1, outputs: [] } } }
+    await f.stores.runs.create(run, { id: 'flow', title: '交付流程', version: '1', stages: [{ id: 'review', title: '评审' }], nodes: [{ id: 'review', kind: 'review', title: '代码评审', stage: 'review', needs: [] }] })
+    const actor = { type: 'system' as const, id: 'engine' }
+    await f.stores.events.append('run-x', { type: 'harness.message', actor, nodeId: 'review', data: { role: 'assistant', text: '噪音' } })
+    await f.stores.events.append('run-x', { type: 'node.failed', actor, nodeId: 'review', data: { error: 'boom', attempt: 1 } })
+    const call = async (preset: Record<string, string>) => {
+      const blocks: StewardBlock[][] = []
+      await f.agent.tools.call('show', { preset: [preset] }, { threadId: f.thread.id, messageId: `m-${preset.preset}`, proposals: [], delegations: [], onBlocks: async (b) => void blocks.push(b) })
+      return blocks.at(-1) ?? []
+    }
+    const space = await call({ preset: 'space_progress', spaceId: 'shop' })
+    const stats = space.find((b): b is Extract<StewardBlock, { type: 'stats' }> => b.type === 'stats')!
+    expect(stats.items.find((i) => i.label === '阻塞')?.value).toBe(1)
+    expect(stats.items.map((i) => i.label)).toContain('累计 Token')
+    const detail = await call({ preset: 'requirement_progress', spaceId: 'shop', requirementId: req.id })
+    const timeline = detail.find((b): b is Extract<StewardBlock, { type: 'timeline' }> => b.type === 'timeline')!
+    expect(timeline.items.map((i) => i.title)).toEqual(['代码评审 失败'])
+  })
+
+  it('离线进度和风险返回一句话并带 preset 块', async () => {
+    const calls: Array<{ tool: string; input: Record<string, unknown> }> = []
+    const call = async (tool: string, input: Record<string, unknown>) => {
+      calls.push({ tool, input })
+      return tool === 'list_spaces'
+        ? { data: [{ id: 'shop', name: '商店' }], citations: [], summary: '' }
+        : { data: { shown: 1, issues: [] }, citations: [], summary: '' }
+    }
+    expect(await offlineAnswer('现在进度怎么样', [{ type: 'space', id: 'shop' }], { trust: 'confirm', digestTimes: [] }, call)).toContain('阶段视图')
+    expect(calls.at(-1)).toMatchObject({ tool: 'show', input: { preset: [{ preset: 'space_progress', spaceId: 'shop' }] } })
+    expect(await offlineAnswer('有什么风险', [{ type: 'space', id: 'shop' }], { trust: 'confirm', digestTimes: [] }, call)).toContain('风险')
+    expect(calls.at(-1)).toMatchObject({ tool: 'show', input: { preset: [{ preset: 'risks', spaceId: 'shop' }] } })
+  })
 })
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), 'takt-steward-'))
@@ -166,7 +264,7 @@ async function fixture() {
     dataDir: (user) => join(root, '.steward', stewardId(user)),
     spaces: async () => [{ id: 'shop', name: '商店', requirements: 0, active: 0 }, ...serverSpaces],
     open: async (id) => {
-      if (id !== 'shop') throw new Error('空间不存在')
+      if (id !== 'shop') throw new StewardError(404, '空间不存在，请刷新空间列表')
       return space
     },
     now: () => now,
@@ -234,6 +332,13 @@ async function fixture() {
   }
 }
 describe('提案生命周期', () => {
+  it('list_commands 对已归档（打不开）的空间退回服务级命令，其它工具照常报 404', async () => {
+    const f = await fixture(),
+      ctx = { threadId: f.thread.id, messageId: 'm-cmd', proposals: [], delegations: [] }
+    const result = await f.agent.tools.call('list_commands', { spaceId: 'shop@20261107-195504' }, ctx)
+    expect((result.data as Array<{ id: string }>).map((c) => c.id)).toContain('space.archive')
+    await expect(f.agent.tools.call('space_overview', { spaceId: 'shop@20261107-195504' }, ctx)).rejects.toMatchObject({ status: 404 })
+  })
   it('空间管理命令忽略 spaceId：归档空间不在活跃列表里也能出提案并执行', async () => {
     const f = await fixture(),
       step: ProposalStep = { kind: 'command', spaceId: 'shop@20261107-195504', commandId: 'space.archive', input: { id: 'shop@20261107-195504' } }

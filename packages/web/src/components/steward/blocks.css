@@ -1,0 +1,195 @@
+/* 管家可视化块（docs/design/24）：正文之后逐块组装入场；块是浅底圆角面，读数 / 提示 / 按钮不套底。 */
+.vb-stack {
+  container: vb / inline-size;
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.vb {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--divider);
+  animation: viz-rise 220ms var(--ease-out-soft) backwards;
+  animation-delay: calc(var(--i, 0) * 60ms);
+}
+.vb-bare {
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.vb-title {
+  margin-bottom: 8px;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.vb-bare > .vb-title {
+  margin-bottom: 6px;
+}
+.tiles-sm {
+  gap: var(--sp-2);
+}
+.tiles-sm .tile {
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+}
+.tiles-sm .tile-value {
+  font-size: 20px;
+}
+
+.vb-click {
+  cursor: pointer;
+}
+@media (hover: hover) and (pointer: fine) {
+  .vb-click:hover {
+    background: var(--surface-hover);
+  }
+}
+
+.vb-lanes {
+  display: grid;
+  gap: 2px;
+  margin: 0 -6px;
+  padding: 0;
+  list-style: none;
+}
+.vb-lane {
+  border: 0;
+  background: none;
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 6px;
+  border-radius: 8px;
+  text-align: start;
+  color: var(--text);
+}
+.vb-lane-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.vb-lane-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+.vb-lane-cur {
+  flex: none;
+  max-width: 50%;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vb-lane-cur[data-tone='running'] {
+  color: var(--st-running);
+}
+.vb-lane-cur[data-tone='waiting'] {
+  color: var(--st-waiting);
+  font-weight: 600;
+}
+.vb-lane-cur[data-tone='failed'] {
+  color: var(--st-failed);
+  font-weight: 600;
+}
+.vb-lane-cur[data-tone='success'] {
+  color: var(--st-success);
+}
+
+.vb-table-wrap {
+  margin: 0 -4px;
+  overflow-x: auto;
+}
+.vb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-meta);
+}
+.vb-table th {
+  padding: 0 4px 6px;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+  text-align: start;
+  white-space: nowrap;
+}
+.vb-table td {
+  padding: 7px 4px;
+  border-top: 1px solid var(--divider);
+  color: var(--text);
+  vertical-align: top;
+}
+.vb-table [data-align='end'] {
+  text-align: end;
+  white-space: nowrap;
+}
+.vb-table tr.vb-click:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+
+.vb-callout {
+  --tone: var(--st-running);
+  --tone-soft: var(--st-running-soft);
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--tone-soft);
+}
+.vb-callout[data-tone='success'] {
+  --tone: var(--st-success);
+  --tone-soft: var(--st-success-soft);
+}
+.vb-callout[data-tone='failed'] {
+  --tone: var(--st-failed);
+  --tone-soft: var(--st-failed-soft);
+}
+.vb-callout[data-tone='waiting'] {
+  --tone: var(--st-waiting);
+  --tone-soft: var(--st-waiting-soft);
+}
+.vb-callout[data-tone='stale'] {
+  --tone: var(--st-stale);
+  --tone-soft: var(--st-stale-soft);
+}
+.vb-callout[data-tone='neutral'] {
+  --tone: var(--text-2);
+  --tone-soft: var(--surface-2);
+}
+.vb-callout > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--tone);
+}
+.vb-callout-title {
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.vb-callout-body {
+  margin: 2px 0 0;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+
+.vb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vb {
+    animation-name: fade-only-in;
+  }
+}

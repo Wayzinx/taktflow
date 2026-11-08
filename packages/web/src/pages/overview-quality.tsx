@@ -1,9 +1,7 @@
 import { ShieldCheck } from 'lucide-react'
 import type { ProjectOverview, QualityMetrics, RequirementSummary } from '@taktflow/core'
-import { StatCard } from '../components/stat-card'
 import { CountUp } from '../components/ui'
-
-/** 整数读数：过渡中途也按整数显示（CountUp 默认格式会在中途露出小数）。 */
+import type { Tile } from '../components/viz'
 
 type Source = keyof QualityMetrics['interceptedBy']
 
@@ -23,50 +21,30 @@ function sumBy(reqs: RequirementSummary[]): Record<Source, number> {
 }
 
 /**
- * 总览 KPI"已校验 / 已拦截"（D 组）：总览读数条（StatStrip）里的一格。
- * 拦截按来源拆分取各需求的 quality 合计（totals 只有总数）；色段宽度是静态的 flex 比例，不做动画。
+ * 总览读数"已校验 / 拦截"：拦截按来源拆分取各需求的 quality 合计（totals 只有总数）；色段宽度是静态 flex 比例。
  */
-export function QualityStat({ totals, requirements }: { totals: ProjectOverview['totals']; requirements?: RequirementSummary[] }) {
-  const verified = totals.verified ?? 0
-  const intercepted = totals.intercepted ?? 0
-  const by = requirements ? sumBy(requirements) : undefined
-  const parts = by ? INTERCEPT_SOURCES.filter((s) => by[s.key] > 0) : []
-  const total = parts.reduce((n, s) => n + by![s.key], 0)
-  return (
-    <StatCard
-      label="已校验 / 已拦截"
-      icon={<ShieldCheck />}
-      value={
-        <>
-          <CountUp value={verified} from0 />
-          <span className="stat-unit">
-            / <b className="stat-unit-strong"><CountUp value={intercepted} from0 /></b> 拦截
-          </span>
-        </>
-      }
-      foot={
-        parts.length ? (
-          <span className="quality-legend">
-            {parts.slice(0, 3).map((s) => (
-              <span key={s.key}>
-                <i style={{ background: s.color }} aria-hidden />
-                {s.label} <b>{by![s.key]}</b>
-              </span>
-            ))}
-            {parts.length > 3 && <span>等 {parts.length} 类</span>}
-          </span>
-        ) : (
-          <>交付前被拦下的问题</>
-        )
-      }
-    >
-      {total > 0 && (
-        <div className="token-share quality-share" aria-label="拦截按来源拆分">
+export function qualityTile(totals: ProjectOverview['totals'], requirements: RequirementSummary[]): Tile {
+  const by = sumBy(requirements)
+  const parts = INTERCEPT_SOURCES.filter((s) => by[s.key] > 0)
+  const total = parts.reduce((n, s) => n + by[s.key], 0)
+  return {
+    key: 'quality',
+    label: '已校验 / 拦截',
+    icon: <ShieldCheck />,
+    value: <CountUp value={totals.verified ?? 0} from0 />,
+    unit: (
+      <>
+        / <CountUp value={totals.intercepted ?? 0} from0 /> 拦截
+      </>
+    ),
+    hint: parts.length ? parts.slice(0, 3).map((s) => `${s.label} ${by[s.key]}`).join(' · ') : '交付前被拦下的问题',
+    children:
+      total > 0 ? (
+        <div className="share-bar" aria-label="拦截按来源拆分">
           {parts.map((s) => (
-            <span key={s.key} title={`${s.label}（${s.hint}）· ${by![s.key]}`} style={{ flex: by![s.key] / total, background: s.color }} />
+            <span key={s.key} title={`${s.label}（${s.hint}）· ${by[s.key]}`} style={{ flex: by[s.key] / total, background: s.color }} />
           ))}
         </div>
-      )}
-    </StatCard>
-  )
+      ) : undefined,
+  }
 }

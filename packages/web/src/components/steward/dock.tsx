@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
-import { Bot, CornerDownRight, History, Maximize2, MessageSquarePlus, MessagesSquare } from 'lucide-react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import { Bot, History, Maximize2, MessageSquarePlus, MessagesSquare } from 'lucide-react'
 import type { StewardContextRef } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { Drawer, Menu, useStewardSuggestions, withShortcut } from '../ui'
+import { StatTiles, type Tile } from '../viz'
 import { fmtRelative } from '../../lib/format'
 import { navigate, useLocation } from '../../lib/router'
 import { closeSteward, useStewardDock } from '../../lib/ui-store'
@@ -12,12 +13,33 @@ import './steward.css'
 
 const keyOf = (c: StewardContextRef) => `${c.type}:${c.id}`
 
-/** 停靠面板的空状态：本页建议（点了直接问）+ 最近的会话。 */
+const greeting = (h: number) => (h < 5 ? '夜深了' : h < 11 ? '早上好' : h < 13 ? '中午好' : h < 18 ? '下午好' : '晚上好')
+const WEEK = '日一二三四五六'
+
+/** 欢迎页的读数：当前空间的等你 / 阻塞 / 进行中，点一下就问对应的问题（回答是可视化块）。 */
+function Brief({ onAsk }: { onAsk: (t: string) => void }) {
+  const q = useAsync((ds) => ds.project(), [])
+  if (!q.data) return null
+  const { totals, attention } = q.data
+  const tiles: Tile[] = [
+    { key: 'wait', label: '等你', value: attention.length, tone: attention.length ? 'waiting' : undefined, onClick: () => onAsk('我有哪些待办？') },
+    { key: 'blocked', label: '阻塞', value: totals.blocked, tone: totals.blocked ? 'failed' : undefined, onClick: () => onAsk('有什么风险？') },
+    { key: 'active', label: '进行中', value: totals.active, tone: totals.active ? 'running' : undefined, onClick: () => onAsk('进度怎么样？') },
+  ]
+  return <StatTiles className="tiles-sm stw-brief" label="空间读数" tiles={tiles} />
+}
+
+/** 停靠面板的空状态：问候 + 空间读数（点了直接问）+ 本页短建议 + 最近会话（同名只留最新）。 */
 function DockWelcome({ onAsk, onResume }: { onAsk: (t: string) => void; onResume: (id: string) => void }) {
   const { path } = useLocation()
   const page = pageKeyOf(path)
   const suggestions = useStewardSuggestions(page.page, page.id)
+  // ux-audit: ok 最近会话是欢迎页的可选一节，没有会话时整节不显示
   const threads = useAsync((ds) => ds.stewardThreads(), [])
+  const now = new Date()
+  const recent = [...new Map((threads.data ?? []).map((t) => [t.title, t] as const)).values()]
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 3)
   return (
     <div className="stw-welcome">
       <div className="stw-welcome-head">
@@ -25,28 +47,30 @@ function DockWelcome({ onAsk, onResume }: { onAsk: (t: string) => void; onResume
           <Bot />
         </span>
         <div>
-          <h3 className="stw-welcome-title">想让我做点什么？</h3>
-          <p className="stw-welcome-body">我会带上这一页的上下文。查询直接回答，改动先给你一份提案确认。</p>
+          <h3 className="stw-welcome-title">{greeting(now.getHours())}</h3>
+          <p className="stw-welcome-body num">
+            {now.getMonth() + 1} 月 {now.getDate()} 日 · 周{WEEK[now.getDay()]}
+          </p>
         </div>
       </div>
+      {page.page !== 'spaces' && <Brief onAsk={onAsk} />}
       {suggestions.length > 0 && (
         <div className="stw-welcome-sec">
-          <div className="section-label">这一页可以问</div>
-          <div className="stw-welcome-list">
-            {suggestions.map((s) => (
-              <button key={s} type="button" className="stw-welcome-item pressable" onClick={() => onAsk(s)}>
-                <CornerDownRight aria-hidden />
-                <span>{s}</span>
+          <div className="section-label">可以问</div>
+          <div className="stw-chips">
+            {suggestions.map((s, i) => (
+              <button key={s} type="button" className="stw-chip pressable" style={{ '--i': i } as CSSProperties} onClick={() => onAsk(s)}>
+                {s}
               </button>
             ))}
           </div>
         </div>
       )}
-      {(threads.data ?? []).length > 0 && (
+      {recent.length > 0 && (
         <div className="stw-welcome-sec">
           <div className="section-label">接着聊</div>
           <div className="stw-welcome-list">
-            {threads.data!.slice(0, 3).map((t) => (
+            {recent.map((t) => (
               <button key={t.id} type="button" className="stw-welcome-item pressable" onClick={() => onResume(t.id)}>
                 <MessagesSquare aria-hidden />
                 <span className="truncate">{t.title}</span>
@@ -73,6 +97,7 @@ export function StewardDock() {
   const [threadId, setThreadId] = useState<string>()
   const [history, setHistory] = useState(false)
   const historyBtn = useRef<HTMLButtonElement>(null)
+  // ux-audit: ok 历史会话是下拉菜单的选项，没有时菜单不打开
   const threads = useAsync((ds) => (history ? ds.stewardThreads() : Promise.resolve([])), [history])
   const pageKey = pageCtx.map(keyOf).join('|')
 
@@ -105,7 +130,7 @@ export function StewardDock() {
       width={440}
       className="stw-dock"
       title="管家"
-      description="查询直接回答；改动先出提案，你批准后才执行"
+      description="改动先出提案，批准后才执行"
       headerActions={
         <>
           <button type="button" className="btn btn-ghost btn-icon btn-sm" title="新会话" aria-label="新会话" onClick={fresh}>

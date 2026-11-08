@@ -2,35 +2,76 @@
   max-width: 1480px;
   margin: 0 auto;
 }
-.token-share {
+/* 读数格里的占比条（各需求 Token、拦截来源） */
+.share-bar {
   display: flex;
   gap: 2px;
   height: 4px;
-  margin-top: var(--sp-3);
+  margin-top: 2px;
   border-radius: var(--radius-pill);
   overflow: hidden;
 }
-.token-share span {
+.share-bar span {
   min-width: 3px;
   transition: opacity var(--dur) var(--ease);
 }
-.token-share span:hover {
+.share-bar span:hover {
   opacity: 0.75;
 }
 
-.overview-grid {
+/* 总览主区：交付泳道 + 等你决定。按页面容器宽度排：宽时两列；窄时（停靠面板打开）上下叠，有待决定的事时决定在前。 */
+.overview {
+  container: ov / inline-size;
+}
+.overview > .tiles {
+  margin-bottom: var(--sp-4);
+}
+.ov-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-4);
   align-items: start;
 }
-.attention-panel {
-  position: sticky;
-  top: calc(var(--topbar-h) + 16px);
+/* 宽容器：泳道 + 右侧"等你决定"吸顶；窄容器：泳道在前（视觉主角不被长待办挤到首屏外），决定在后 */
+@container ov (min-width: 900px) {
+  .ov-main {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+  .ov-decisions {
+    position: sticky;
+    top: calc(var(--topbar-h) + 16px);
+    /* 吸顶时整列不能比视口高，否则最后几条待办永远滚不到 */
+    max-height: calc(100dvh - var(--topbar-h) - 32px);
+  }
+}
+@container ov (min-width: 1200px) {
+  .ov-main {
+    grid-template-columns: minmax(0, 1fr) 340px;
+  }
+}
+.ov-decisions {
   display: flex;
   flex-direction: column;
-  /* 吸顶时整列不能比视口高，否则最后几条待办永远滚不到 */
-  max-height: calc(100dvh - var(--topbar-h) - 32px);
+}
+.ov-clear {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin: 0;
+  padding: 14px 20px 18px;
+  font-size: var(--text-ui);
+  color: var(--text-2);
+}
+.ov-clear svg {
+  width: 16px;
+  height: 16px;
+  color: var(--st-success);
+}
+.ov-clear .faint {
+  flex-basis: 100%;
+  padding-left: 24px;
+  font-size: var(--text-meta);
 }
 .attention-panel-list {
   min-height: 0;
@@ -109,15 +150,6 @@
   box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--st-waiting) 22%, transparent);
 }
 
-@media (max-width: 1180px) {
-  .overview-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .attention-panel {
-    position: static;
-    max-height: none;
-  }
-}
 .req-table {
   table-layout: fixed;
 }
@@ -152,25 +184,6 @@
 }
 
 /* ---------------------------------------------------------------- 读数条：已校验 / 已拦截 */
-.stat-unit-strong {
-  color: var(--text);
-  font-weight: 600;
-}
-.quality-legend {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px 10px;
-}
-.quality-legend > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.quality-legend i {
-  width: 7px;
-  height: 7px;
-  border-radius: var(--radius-xs);
-}
 
 /* ---------------------------------------------------------------- 需求表：档位与当前节点 */
 .req-id-cell {
@@ -436,5 +449,161 @@
   }
   .since-chevron {
     transition: none;
+  }
+}
+
+/* ---------------------------------------------------------------- 交付泳道（总览） */
+.req-lanes {
+  container: lanes / inline-size;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 4px 8px 10px;
+  list-style: none;
+}
+.req-lane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'main side'
+    'progress progress';
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 12px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease);
+}
+@media (hover: hover) and (pointer: fine) {
+  .req-lane:hover {
+    background: var(--surface-hover);
+  }
+}
+.req-lane:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: -2px;
+}
+.rl-main {
+  grid-area: main;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rl-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.rl-title {
+  min-width: 0;
+  font-size: var(--text-body);
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rl-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 16px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rl-meta .mono {
+  color: var(--text-2);
+}
+.rl-tier,
+.rl-owner {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.rl-owner {
+  max-width: 140px;
+}
+.rl-progress {
+  grid-area: progress;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding-left: 16px;
+}
+.rl-progress .lane-track {
+  flex: 1 1 auto;
+  max-width: 320px;
+}
+.rl-cur {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.stage-cell {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.stage-cell .rl-cur {
+  display: block;
+  min-width: 0;
+}
+.rl-cur[data-tone='running'] {
+  color: var(--st-running);
+}
+.rl-cur[data-tone='waiting'] {
+  color: var(--st-waiting);
+  font-weight: 600;
+}
+.rl-cur[data-tone='failed'] {
+  color: var(--st-failed);
+  font-weight: 600;
+}
+.rl-cur[data-tone='success'] {
+  color: var(--st-success);
+}
+.rl-side {
+  grid-area: side;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: end;
+}
+.rl-wait {
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--st-waiting);
+  background: var(--st-waiting-soft);
+  white-space: nowrap;
+}
+.rl-tokens {
+  min-width: 36px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  text-align: end;
+}
+/* 宽容器：标题 | 泳道 + 当前 | 等你 / Token 三列 */
+@container lanes (min-width: 680px) {
+  .req-lane {
+    grid-template-columns: minmax(0, 1fr) minmax(200px, 0.8fr) auto;
+    grid-template-areas: 'main progress side';
+  }
+  .rl-progress {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding-left: 0;
+  }
+  .rl-progress .lane-track {
+    max-width: none;
   }
 }

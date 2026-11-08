@@ -37,10 +37,10 @@
   --sp-16: 64px;
   /* M4：布局一律按 8px 网格（8 / 16 / 24 / 32 / 48）；4 / 12 只用于控件内部的微调 */
 
-  /* ---------------------------------------------------------------- 圆角：M4 刻度 6 / 10 / 14（docs/dev/m4-web.md 体验基线 8） */
+  /* ---------------------------------------------------------------- 圆角：M4.5 刻度 6 / 14 / 18（docs/design/24：面板更柔和、少硬框） */
   --r-sm: 6px; /* 按钮、输入、标签、菜单项 */
-  --r-md: 10px; /* 卡片、表格容器、面板 */
-  --r-lg: 14px; /* 浮层：对话框、抽屉、⌘K、toast */
+  --r-md: 14px; /* 卡片、表格容器、面板、读数格 */
+  --r-lg: 18px; /* 浮层：对话框、抽屉、⌘K、toast */
   --radius-xs: 4px; /* 角标、行内代码 */
   --radius-sm: var(--r-sm);
   --radius: var(--r-md);
@@ -150,7 +150,8 @@
    * 浅色靠细阴影区分；深色靠亮度 + 描边（阴影在深底上几乎看不见，所以浮层更亮、描边更实）。 */
   --surface-raised: light-dark(oklch(0.995 0.002 80), oklch(0.228 0.007 75));
   --surface-overlay: light-dark(oklch(0.998 0.002 80), oklch(0.245 0.007 75));
-  --elev-1: inset 0 1px 0 var(--edge-light), 0 1px 2px light-dark(oklch(0.25 0.01 70 / 0.06), oklch(0 0 0 / 0.22)), 0 0 0 1px var(--border);
+  /* 静止卡片：一圈极淡描边 + 很轻的环境阴影，浮在页面底上，不再是硬框（docs/design/24） */
+  --elev-1: inset 0 1px 0 var(--edge-light), 0 0 0 1px light-dark(oklch(0.3 0.01 75 / 0.07), oklch(0.95 0.01 80 / 0.075)), 0 1px 2px light-dark(oklch(0.25 0.01 70 / 0.04), oklch(0 0 0 / 0.2)), 0 8px 24px -14px light-dark(oklch(0.25 0.01 70 / 0.14), oklch(0 0 0 / 0.5));
   --elev-2: inset 0 1px 0 var(--edge-light), 0 8px 20px -8px light-dark(oklch(0.25 0.01 70 / 0.14), oklch(0 0 0 / 0.5)), 0 2px 4px -2px light-dark(oklch(0.25 0.01 70 / 0.08), oklch(0 0 0 / 0.3)), 0 0 0 1px var(--border-strong);
   --elev-3: inset 0 1px 0 var(--edge-light), 0 28px 56px -16px light-dark(oklch(0.25 0.01 70 / 0.24), oklch(0 0 0 / 0.62)), 0 10px 20px -10px light-dark(oklch(0.25 0.01 70 / 0.1), oklch(0 0 0 / 0.4)), 0 0 0 1px var(--border-strong);
   /* 新行闪烁 / 刚变化的值：节拍橙的极淡底（实时状态才用强调色） */
