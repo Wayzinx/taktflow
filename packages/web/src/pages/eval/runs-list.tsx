@@ -3,7 +3,7 @@ import { ChevronRight, FlaskConical } from 'lucide-react'
 import { EmptyState, SkeletonRows, StatusBadge, useFlashRows, useStagger } from '../../components/ui'
 import { actorName, durationBetween, fmtDuration, fmtRelative } from '../../lib/format'
 import { Link } from '../../lib/router'
-import { Check, LoaderCircle, X } from 'lucide-react'
+import { Ban, Check, LoaderCircle, X } from 'lucide-react'
 import { RUN_STATE, targetLabel, variantPair, VERDICT_META } from './labels'
 
 /** 候选变体的名称：有 comparison 时就是它的 candidate，否则是基线之外的全部。 */
@@ -12,7 +12,7 @@ const candidates = (r: EvalRun): string[] => {
   return r.comparison ? (candidate ? [candidate.label] : []) : r.variants.filter((v) => v !== baseline).map((v) => v.label)
 }
 
-const STATE_ICON = { running: LoaderCircle, done: Check, failed: X }
+const STATE_ICON = { running: LoaderCircle, done: Check, failed: X, refused: Ban }
 
 export function VerdictBadge({ v }: { v?: EvalRun['comparison'] }) {
   if (!v) return <span className="faint">—</span>

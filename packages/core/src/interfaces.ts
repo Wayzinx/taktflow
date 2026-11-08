@@ -6,6 +6,13 @@
  */
 import type {
   Actor,
+  Defect,
+  DefectAttribution,
+  DefectMergeSuggestion,
+  HumanTimebox,
+  Observation,
+  QualityLogEntry,
+  QualityLogKind,
   ArtifactComment,
   ArtifactKind,
   ArtifactRecord,
@@ -126,14 +133,24 @@ export interface AttentionItem {
    */
   decision?: string
   answer?: string
-  /** 待办类别：缺省为节点的审批 / 回答；其余由引擎在预算、重复失败、路由改档时产生。 */
-  kind?: 'node' | 'budget' | 'retry' | 'route' | 'workflow_change'
+  /**
+   * 待办类别：缺省为节点的审批 / 回答；其余由引擎在预算、重复失败、路由改档时产生。
+   * assumption：无人回答时按假设推进了，等人确认或改答（docs/design/26 §3）；不阻塞运行。
+   */
+  kind?: 'node' | 'budget' | 'retry' | 'route' | 'workflow_change' | 'assumption'
   /** 审批对象的产物版本；产物之后有新版本时 stale 为 true（由读模型计算）。 */
   boundTo?: ArtifactRef[]
   stale?: boolean
   /** 节点 owner（职责标签）与据此派给的空间成员 id。 */
   owner?: string
   assignees?: string[]
+  /** 等人限时（docs/design/26 §3）：生效的时限、提醒记录、是否已按假设交还。 */
+  timebox?: HumanTimebox
+  assumption?: string
+  remindedAt?: string[]
+  handedBack?: boolean
+  /** kind 为 assumption 时：被按假设作答的原待办。 */
+  assumedFor?: string
 }
 
 export interface AttentionStore {
@@ -197,6 +214,41 @@ export interface ProjectStores {
   lessons?: LessonStore
   /** 知识库（docs/design/23）；未接入时不传，引擎退回旧知识源。 */
   kb?: KnowledgeStore
+  /** 质量日志与读模型（docs/design/21 §7）；未接入时缺陷沿用 M3 的存放区文件。 */
+  quality?: QualityStore
+}
+
+/**
+ * 质量日志：.takt/quality/log.jsonl 是唯一权威记录（哈希链 + 锚点），缺陷 / 归因 / 样本 / 评测是可重建的读模型（.takt/quality/views/）。
+ * 写入在同一把提交锁里完成：查重（幂等键）→ 检查 baseRevision → 追加 → 更新锚点。人工结论不会被自动结果覆盖。
+ */
+export interface QualityStore {
+  /** 追加；同 key 已存在的跳过。baseRevision 不一致时抛 QualityConflictError（server 映射为 409）。 */
+  append(entries: Array<{ kind: QualityLogKind; key: string; requirementId?: RequirementId; data: unknown; actor: Actor }>, options?: { baseRevision?: { defectId: string; revision: number } }): Promise<{ appended: QualityLogEntry[]; skipped: string[] }>
+  /** 从运行事件入账观察：从游标继续，提交成功才推进游标；不传 runId 则处理全部运行。 */
+  sync(runId?: RunId): Promise<{ observations: number; runs: number }>
+  observations(filter?: { requirementId?: RequirementId; source?: Observation['source']; runId?: RunId }): Promise<Observation[]>
+  defects(requirementId?: RequirementId): Promise<Array<Defect & { attribution?: DefectAttribution }>>
+  mergeSuggestions(requirementId?: RequirementId): Promise<DefectMergeSuggestion[]>
+  /** 链与锚点校验；anchorBehind：链完整但锚点落后（可 repair）。 */
+  status(): Promise<QualityStatus>
+  /** 只补锚点并记 recovery；链被篡改或截断时拒绝（抛错，交给人）。 */
+  repair(by: Actor, reason: string): Promise<QualityStatus>
+  /** 删除并从日志重建读模型。 */
+  rebuild(): Promise<void>
+}
+
+export interface QualityStatus {
+  ok: boolean
+  entries: number
+  anchor?: { seq: number; hash: string }
+  anchorBehind?: boolean
+  brokenAt?: number
+  /** 每个运行已入账到的事件序号。 */
+  cursors: Record<RunId, number>
+  lastSyncAt?: string
+  /** M3 存放区缺陷是否已导入。 */
+  importedM3?: boolean
 }
 
 /** 经验库存储：每条经验一个带 frontmatter 的 Markdown 文件，修改记 space-events。 */

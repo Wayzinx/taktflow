@@ -60,6 +60,7 @@ export const RUN_STATE: Record<EvalRun['status'], { label: string; tone: Tone }>
   running: { label: '运行中', tone: 'running' },
   done: { label: '完成', tone: 'success' },
   failed: { label: '失败', tone: 'failed' },
+  refused: { label: '拒绝启动', tone: 'waiting' },
 }
 
 export const CASE_SOURCE: Record<EvalCase['source']['kind'], string> = {

@@ -72,6 +72,28 @@
  * | POST | /api/requirements/:id/defects/:defectId/attribute | 无请求体 → DefectDetail（预检 + 归因 Agent，后台执行） |
  * | POST | /api/requirements/:id/defects/:defectId/confirm   | 请求体 DefectConfirmRequest → DefectDetail |
  *
+ * —— 归因可信度（docs/design/21）——
+ * | GET  | /api/runs/:runId/snapshots/:checkpointId           | SnapshotManifest |
+ * | GET  | /api/runs/:runId/snapshots/:checkpointId/file?path= | ArtifactContent（快照里的文件；path 防穿越） |
+ * | GET  | /api/requirements/:id/observations?source=&run=   | Observation[] |
+ * | PATCH| /api/requirements/:id/defects/:defectId           | 请求体 DefectUpdateRequest → DefectDetail（baseRevision 不一致 409） |
+ * | GET  | /api/requirements/:id/defects/merge-suggestions   | DefectMergeSuggestion[] |
+ * | POST | /api/requirements/:id/defects/merge-suggestions/:sid | 请求体 { decision: 'accept' \| 'reject' \| 'undo', reason } → DefectMergeSuggestion |
+ * | POST | /api/requirements/:id/defects/:defectId/checkpoints/:checkpointId | 请求体 MissDecisionRequest → DefectDetail（人改判 / 确认某个检查点的漏检结论） |
+ * | POST | /api/eval/samples                               | 请求体 EvalSampleRequest → EvalCase（从确认的漏检或人确认无问题的评审调用生成样本） |
+ * | POST | /api/eval/samples/:caseId/retire                | 请求体 { reason } → EvalCase |
+ * | GET  | /api/quality/status                             | QualityStatus |
+ * | POST | /api/quality/sync                               | 请求体 { runId?, reason } → QualityStatus |
+ * | POST | /api/quality/repair                             | 请求体 { reason } → QualityStatus（只补锚点；链被篡改 409） |
+ *
+ * —— 运行透明与回退（docs/design/26）——
+ * | GET  | /api/runs/:runId/timeline                       | RunTimeline |
+ * | GET  | /api/runs/:runId/nodes/:nodeId/changes          | NodeChanges |
+ * | GET  | /api/runs/:runId/nodes/:nodeId/diff?path=       | { patch }（统一 diff；不给 path 为整个节点） |
+ * | POST | /api/runs/:runId/nodes/:nodeId/rewind/preview   | 无请求体 → RewindPreview |
+ * | POST | /api/runs/:runId/nodes/:nodeId/rewind           | 请求体 RewindRequest → RewindResult（token 与当前状态不符 409） |
+ * | POST | /api/steward/delegations/:messageId/resend      | 请求体 { reason } → StewardDelegation（只允许 uncertain / expired） |
+ *
  * —— 需求与空间增删改（docs/design/22）——
  * | GET  | /api/server                                    | ServerInfo（是否多空间、管家是否已配置模型） |
  * | POST | /api/requirements                              | 请求体 RequirementCreateRequest → RequirementCreateResponse |
@@ -148,6 +170,21 @@
 import type { AttentionItem, KnowledgeCaller } from './interfaces.js'
 import type {
   Actor,
+  Checkpoint,
+  DefectMergeSuggestion,
+  DelegationStatus,
+  EvalGate,
+  EvalReport,
+  GateCheckResult,
+  Invocation,
+  InvocationEnd,
+  MissAssessment,
+  MissVerdict,
+  Observation,
+  ReviewIssueEntry,
+  ReviewRecord,
+  RewindPoint,
+  SnapshotManifest,
   AgentProfile,
   CompletionCheck,
   Defect,
@@ -337,6 +374,16 @@ export interface GraphNode {
   reworks?: number
   goal?: string
   summary?: string
+  /** 运行中在干什么（docs/design/26 §1）：server 从最近的 harness 事件推导；web 按 since 计时、按工具名归动词。 */
+  activity?: NodeActivity
+}
+
+export interface NodeActivity {
+  state: 'thinking' | 'tool' | 'compacting' | 'waiting_tool'
+  /** state 为 tool / waiting_tool 时：工具名与输入（web 用动词表转成动作行）。 */
+  tool?: string
+  input?: string
+  since: string
 }
 
 export interface GraphEdge {
@@ -393,6 +440,98 @@ export interface NodeDetail {
   completionChecks?: CompletionCheck[]
   failures?: FailureRecord[]
   events: EventEnvelope[]
+  /** 检查点（docs/design/21 §1）：含没执行的；按调度顺序。 */
+  checkpoints?: CheckpointDetail[]
+  /** 本节点的全部调用（docs/design/21 §2）。 */
+  invocations?: Invocation[]
+  /** review 节点的问题台账（按系统键）。 */
+  issues?: ReviewIssueEntry[]
+  /** 本节点改了什么（docs/design/26 §5）。 */
+  changes?: NodeChanges
+}
+
+export interface CheckpointDetail extends Checkpoint {
+  status: 'scheduled' | 'done' | 'error' | 'skipped'
+  error?: string
+  endedAt?: string
+  snapshot?: SnapshotManifest
+  invocations: string[]
+  /** 评审者 / 裁决者：结论与职责条目逐条结论。 */
+  record?: ReviewRecord
+  /** 门禁检查项：三态结果。 */
+  gate?: GateCheckResult
+}
+
+/** 时间泳道（docs/design/26 §2）。时间都是 ISO 字符串；进行中的段 end 缺省。 */
+export interface RunTimeline {
+  start: string
+  end?: string
+  lanes: Array<{
+    nodeId: string
+    title: string
+    kind: NodeKind
+    stage?: string
+    parent?: string
+    segments: Array<{
+      kind: 'queue' | 'run' | 'wait' | 'tool' | 'compact'
+      start: string
+      end?: string
+      /** tool：工具名与输入；wait：待办 requestId。 */
+      tool?: string
+      input?: string
+      ok?: boolean
+      requestId?: string
+      invocationId?: string
+      /** ≥ 15 秒的工具步骤。 */
+      long?: boolean
+    }>
+    /** Agent 节点的调用（fallback 换 harness 时能看见）。 */
+    invocations?: Array<{ id: string; harness: string; model?: string; start: string; end?: string; outcome?: InvocationEnd['outcome'] }>
+  }>
+  /** 上下文曲线：每轮输入 token（含缓存）。 */
+  context: Array<{ nodeId: string; window?: number; points: Array<{ at: string; tokens: number }>; compactions: Array<{ at: string; before: number; after: number }> }>
+}
+
+/** 节点改动卡（docs/design/26 §5）。 */
+export interface NodeChanges {
+  files: Array<{
+    path: string
+    scope: 'repo' | 'workspace'
+    repo?: string
+    status: 'added' | 'modified' | 'deleted' | 'renamed'
+    add: number
+    del: number
+    /** 存放区产物：本节点写之前 / 之后的版本。 */
+    from?: number
+    to?: number
+    oldPath?: string
+  }>
+  add: number
+  del: number
+  rewindPoint?: RewindPoint
+  /** 不能回退时写明原因（按钮置灰并显示它）。 */
+  rewindBlocked?: string
+}
+
+export interface RewindPreview {
+  nodeId: string
+  files: NodeChanges['files']
+  /** 会因此过期、需要重跑的节点（含本节点）。 */
+  stale: Array<{ runId: string; nodeId: string; title?: string }>
+  /** 有值时不能执行（运行中 / 下游在运行 / 工作树有外部未提交改动 / 没有回退点）。 */
+  blocked?: string
+  /** 预览时的状态指纹；执行时带回，状态变了返回 409。 */
+  token: string
+}
+
+export interface RewindRequest {
+  token: string
+  reason: string
+}
+
+export interface RewindResult {
+  files: RewindPreview['files']
+  stale: RewindPreview['stale']
 }
 
 // ------------------------------------------------------------ 项目空间
@@ -729,15 +868,44 @@ export interface EvalRunRequest {
   /** 判分用的模型（rubric / 参考对比）；缺省用 evaluator 角色的默认 harness。 */
   judge?: HarnessSelector
   reason?: string
+  /** 每个样本每个变体重复次数（缺省 TaktConfig.eval.repeats，再缺省 3）。 */
+  repeats?: number
 }
 
 export interface DefectDetail extends Defect {
   attribution?: DefectAttribution
   /** 归因任务进行中。 */
   attributing?: boolean
+  /** 创建它的观察（展开后的）。 */
+  observationsDetail?: Observation[]
+}
+
+export interface DefectUpdateRequest {
+  validity?: Defect['validity']
+  resolution?: Defect['resolution']
+  duplicateOf?: string
+  baseRevision: number
+  reason: string
+}
+
+export interface MissDecisionRequest {
+  verdict: MissVerdict
+  conditions?: MissAssessment['conditions']
+  note?: string
+}
+
+export interface EvalSampleRequest {
+  kind: 'must_catch' | 'clean'
+  checkpointId: string
+  /** must_catch：期望提出的问题（缺陷标题或问题键）。 */
+  expectIssue?: string
+  defectId?: string
+  reason: string
 }
 
 export interface DefectReportRequest {
+  /** 从这些观察创建（可多选）；直接录入外部问题时不给。 */
+  observations?: string[]
   title: string
   description: string
   severity: Defect['severity']
@@ -754,6 +922,8 @@ export interface DefectConfirmRequest {
 }
 
 export type { Defect, DefectAttribution, EvalCase, EvalRun, NodeRecipe }
+export type { Checkpoint, DefectMergeSuggestion, EvalGate, EvalReport, Invocation, MissAssessment, MissVerdict, Observation, ReviewIssueEntry, SnapshotManifest }
+export type { QualityStatus } from './interfaces.js'
 
 
 // ------------------------------------------------------------ 需求与空间增删改（docs/design/22）
@@ -894,7 +1064,8 @@ export interface StewardDelegation {
   requirementId: RequirementId
   /** 群聊里管家发出的那条消息。 */
   messageId: string
-  status: 'sent' | 'answered' | 'failed'
+  /** M5 起用 DelegationStatus（docs/design/26 §4）；answered / failed 为旧数据，读时分别按 replied / uncertain 显示。 */
+  status: DelegationStatus | 'answered' | 'failed'
   reply?: string
   at: string
 }

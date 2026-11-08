@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowUpRight, Check, CornerDownLeft, FileClock, Gauge, GitBranch, History, MessageSquareText, RefreshCcwDot, ShieldAlert, UserRound, UserRoundCheck, Workflow, X } from 'lucide-react'
+import { ArrowUpRight, Check, CornerDownLeft, FileClock, Gauge, GitBranch, History, Lightbulb, MessageSquareText, RefreshCcwDot, ShieldAlert, UserRound, UserRoundCheck, Workflow, X } from 'lucide-react'
 import type { AttentionItem } from '@taktflow/core'
 import { invalidate, useSource } from '../api'
 import { actorName, fmtRelative } from '../lib/format'
@@ -19,6 +19,7 @@ const KIND_META = {
   retry: { label: '重复失败', icon: RefreshCcwDot },
   route: { label: '改档', icon: GitBranch },
   workflow_change: { label: '流程变更', icon: Workflow },
+  assumption: { label: '待确认假设', icon: Lightbulb },
 } as const
 
 const artifactHref = (r: NonNullable<AttentionItem['boundTo']>[number]) => `/req/${r.workspace}?tab=artifacts&path=${encodeURIComponent(r.path)}${r.version ? `&v=${r.version}` : ''}`

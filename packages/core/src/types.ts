@@ -20,7 +20,8 @@ export type NodeId = string
 /** 谁做的事：人、某个角色的 agent、或系统本身。审计里的每一条记录都带 actor。 */
 export type Actor =
   | { type: 'human'; id: string }
-  | { type: 'agent'; role: string; harness: string; model?: string }
+  /** invocationId：产出这条记录的那次调用（docs/design/21 §2）；同一节点 fallback 的每个候选各是一次调用。 */
+  | { type: 'agent'; role: string; harness: string; model?: string; invocationId?: string }
   | { type: 'system'; id: string }
 
 export interface Usage {
@@ -102,7 +103,7 @@ export interface ArtifactVersion {
   reason?: string
   /** 溯源：这个版本是基于哪些产物版本产出的。 */
   derivedFrom: ArtifactRef[]
-  producedBy?: { runId: RunId; nodeId: NodeId }
+  producedBy?: { runId: RunId; nodeId: NodeId; invocationId?: string }
 }
 
 export interface ArtifactRecord {
@@ -272,6 +273,9 @@ export type GateCheck =
 export interface GateCheckResult {
   id: string
   pass: boolean
+  /** 三态（docs/design/21 §4）：error 是检查本身出错（流程问题），不算产物缺陷；pass 仍按 fail-closed（error 时为 false）。 */
+  status?: 'pass' | 'fail' | 'error'
+  checkpointId?: string
   /** 0–100，可选。 */
   score?: number
   message?: string
@@ -291,6 +295,16 @@ export interface HumanNodeDef extends BaseNodeDef {
   ask: string
   form: 'approve' | 'answer' | 'choice'
   choices?: string[]
+  /** 等人限时（docs/design/26 §3）；缺省用 TaktConfig.human。 */
+  timebox?: HumanTimebox
+  /** form 为 answer 时的默认假设：到交还时限无人回答就按它继续（审批与选择永不自动作答）。 */
+  assumption?: string
+}
+
+/** 时长写法：'30m' / '2h' / '1d'。 */
+export interface HumanTimebox {
+  remindAfter?: string
+  handbackAfter?: string
 }
 
 /** 判决类别：执行失败的根因归属。 */
@@ -414,6 +428,8 @@ export interface ReviewNodeDef extends BaseNodeDef {
   stopAfterNoProgress?: number
   /** 裁决者：只在评审者结论冲突时调用（有人通过、有人要求修改且含 blocker）。 */
   arbiter?: ReviewerSpec
+  /** 比较依据（存放区 glob，docs/design/21 §1）：与被评审对象一起物化进只读快照，例如系分评审带 PRD。 */
+  references?: string[]
 }
 
 export type ReviewVerdict = 'approve' | 'request_changes' | 'reject'
@@ -432,6 +448,13 @@ export interface ReviewIssue {
   groupKey?: string
   /** 引擎计算：位置、严重度、描述的指纹；groupKey 相同但指纹变了 = 问题有变化。 */
   fingerprint?: string
+  /**
+   * 系统问题键 ISS-<n>（docs/design/21 §3）：同一运行同一 review 节点内跨修订有效。
+   * 评审者在输出里引用已有键表示同一问题；不引用即新问题，由引擎分配，模型不能自造。
+   */
+  key?: string
+  /** 对应的职责条目（checklist 原文）。 */
+  duty?: string
 }
 
 export interface ReviewRecord {
@@ -446,6 +469,35 @@ export interface ReviewRecord {
   at: Timestamp
   /** 裁决者的记录（只在冲突时出现，决定本轮是否通过）。 */
   arbiter?: boolean
+  checkpointId?: string
+  invocationId?: string
+  /** 职责条目逐条结论；issue 时列出对应问题的 id。 */
+  checklist?: Array<{ item: string; status: 'ok' | 'issue' | 'na'; issues?: string[]; note?: string }>
+  /** 对上一轮仍未关闭的问题逐键复查：只有 resolved 才算"已验证修复"。 */
+  previous?: Array<{ key: string; status: 'resolved' | 'still_open' | 'not_checked'; note?: string }>
+}
+
+/** 问题台账：一个 review 节点里每个系统问题键的当前状态与经过（引擎维护，读模型展示）。 */
+export interface ReviewIssueEntry {
+  key: string
+  title: string
+  severity: ReviewIssue['severity']
+  location?: string
+  /** claimed_fixed：作者声称已修；verified_fixed：评审者复查给出 resolved；dismissed / waived：人工不采纳 / 放行。 */
+  status: 'open' | 'claimed_fixed' | 'verified_fixed' | 'dismissed' | 'waived'
+  raisedBy: string
+  groupKey?: string
+  duty?: string
+  first: { revision: number; round: number; checkpointId?: string }
+  last: { revision: number; round: number; checkpointId?: string }
+  history: Array<{
+    revision: number
+    round: number
+    action: 'raised' | 'reobserved' | 'claimed_fixed' | 'verified_fixed' | 'still_open' | 'not_checked' | 'dismissed' | 'waived' | 'reopened'
+    by: string
+    note?: string
+    at: Timestamp
+  }>
 }
 
 /** 系统对问题的观察：与上一轮相比。只由引擎计算，不代表问题已解决。 */
@@ -477,6 +529,8 @@ export interface ReviewDisposition {
 export interface ReviewResponse {
   round: number
   issueId: string
+  /** 系统问题键（引擎按 issueId 回填）。 */
+  key?: string
   reviewer: string
   action: 'fixed' | 'declined' | 'deferred'
   note: string
@@ -715,8 +769,11 @@ export interface RunState {
   expansions: Expansion[]
   /** workflow：流水线运行；task：Lead 派发的临时任务。 */
   kind?: 'workflow' | 'task'
-  /** 临时任务的来源。 */
-  origin?: { kind: 'chat'; messageId: string; by: Actor; title: string }
+  /**
+   * 临时任务的来源。hops：派发链的跳数（人发起为 0，任务的产出再派任务 +1，docs/design/26 §4）；
+   * chain：上游任务运行 id，从最早到最近。
+   */
+  origin?: { kind: 'chat'; messageId: string; by: Actor; title: string; hops?: number; chain?: RunId[] }
   route?: RouteDecision
   /** 生效的预算（配置 < workflow 默认 < 启动参数）。 */
   budget?: RunBudget
@@ -728,7 +785,8 @@ export interface EventPayloads {
   'run.started': { workflowId: string; workflowVersion: string; args: Record<string, unknown> }
   'run.finished': { status: RunStatus }
   'node.ready': Record<string, never>
-  'node.started': { attempt: number; iteration?: number }
+  /** rewindPoint：节点开始前的文件状态（docs/design/26 §5），回退用。 */
+  'node.started': { attempt: number; iteration?: number; rewindPoint?: RewindPoint }
   'node.finished': { status: NodeStatus; outputs: ArtifactRef[]; result?: unknown; usage?: Usage }
   'node.failed': { error: string; attempt: number }
   'node.stale': { cause: ArtifactRef }
@@ -738,12 +796,21 @@ export interface EventPayloads {
   'artifact.untracked': { path: string; sha256: string }
   'gate.result': { pass: boolean; checks: GateCheckResult[] }
   'judge.verdict': { verdicts: JudgeVerdict[]; routed: Array<{ subject: string; to: string }> }
-  'human.requested': { requestId: string; ask: string; form: HumanNodeDef['form']; choices?: string[] }
+  'human.requested': { requestId: string; ask: string; form: HumanNodeDef['form']; choices?: string[]; assumption?: string; timebox?: HumanTimebox }
+  /** 到提醒时限（docs/design/26 §3）：round 从 1 开始，第 2 次起加上 owner。 */
+  'human.reminded': { requestId: string; to: string[]; round: number }
+  /** 到交还时限、按假设作答（只限 form answer 且有 assumption）。 */
+  'human.handed_back': { requestId: string; assumption: string }
   /** boundTo：回答 / 审批时看到的产物版本；之后产物有新版本，这次确认即过期。 */
   'human.answered': { requestId: string; decision?: string; answer?: string; boundTo?: ArtifactRef[] }
-  'harness.started': { harness: string; model?: string; sessionId?: string }
+  /** model 为 harness 回报的实际模型；contextWindow 来自模型配置（上下文曲线的上限）；skills 为 harness 能证明已加载的技能。 */
+  'harness.started': { harness: string; model?: string; sessionId?: string; contextWindow?: number; skills?: string[] }
   'harness.message': { role: 'assistant' | 'user' | 'system'; text: string }
-  'harness.tool_call': { tool: string; input: string; output?: string; ok?: boolean }
+  /**
+   * phase：能报开始的 harness 先发 start（无 output）再发 end，用 callId 配对；只报一拍的 harness 不带 phase（视为 end）。
+   * durationMs：end 时的耗时（docs/design/26 §1）。
+   */
+  'harness.tool_call': { tool: string; input: string; output?: string; ok?: boolean; phase?: 'start' | 'end'; callId?: string; durationMs?: number }
   'harness.usage': Usage
   'context.assembled': ContextSnapshot
   'context.compacted': CompactionRecord
@@ -780,6 +847,21 @@ export interface EventPayloads {
   'route.decided': RouteDecision
   /** 节点本次执行的配方（docs/design/20）：成绩单按 recipeKey 分组。 */
   'node.recipe': NodeRecipe
+  // —— 归因可信度（docs/design/21）——
+  /** 调度时分配检查点身份；没执行的检查点也有这一条。 */
+  'checkpoint.scheduled': Checkpoint
+  'checkpoint.finished': { id: string; status: 'done' | 'error' | 'skipped'; error?: string }
+  /** 只读快照已物化（评审者只读这里）。 */
+  'snapshot.created': SnapshotManifest
+  'invocation.started': InvocationStart
+  'invocation.finished': InvocationEnd
+  /** 单个评审者（或裁决者）完成即写，不等本轮其他人。 */
+  'review.result': { checkpointId: string; revision: number; round: number; record: ReviewRecord }
+  /** 问题台账变化：一次一个键。 */
+  'review.issue': { key: string; action: ReviewIssueEntry['history'][number]['action']; revision: number; round: number; by: string; checkpointId?: string; note?: string; entry: Omit<ReviewIssueEntry, 'history'> }
+  // —— 运行透明与回退（docs/design/26）——
+  /** 节点回退到开始前：恢复的文件、因此过期的下游。 */
+  'node.rewound': { files: Array<{ path: string; scope: 'repo' | 'workspace'; repo?: string; version?: number }>; stale: Array<{ runId: RunId; nodeId: NodeId }>; reason: string }
   'lesson.recalled': { ids: string[]; holdout: boolean; tokens: number }
   'lesson.learned': { id: string; title: string; source: Lesson['source'] }
   'lesson.updated': { id: string; status: Lesson['status']; reason: string; stats: Lesson['stats'] }
@@ -873,13 +955,16 @@ export interface HarnessRequest {
   sandbox?: Sandbox
   /** native harness 的工具约束：写权限（glob，相对 cwd）与是否允许 bash。 */
   tools?: { writeScope?: string[]; allowBash?: boolean }
+  /** 只读调用（回放评测、评审者）：声明了 capabilities.readOnly 的 harness 不加载写工具和 shell。 */
+  readOnly?: boolean
   signal?: AbortSignal
 }
 
 export type HarnessEvent =
-  | { type: 'started'; sessionId?: string; model?: string }
+  /** model：实际使用的模型（能拿到时）；effort / skills：harness 能证明的实际值（docs/design/21 §2 的 reported）。 */
+  | { type: 'started'; sessionId?: string; model?: string; effort?: string; skills?: string[] }
   | { type: 'message'; role: 'assistant' | 'user' | 'system'; text: string }
-  | { type: 'tool_call'; tool: string; input: string; output?: string; ok?: boolean }
+  | { type: 'tool_call'; tool: string; input: string; output?: string; ok?: boolean; phase?: 'start' | 'end'; callId?: string; durationMs?: number }
   | { type: 'usage'; usage: Usage }
   | { type: 'compacted'; record: Omit<CompactionRecord, 'nodeId'> }
 
@@ -910,6 +995,13 @@ export interface HarnessCapabilities {
   requiresProvider?: boolean
   sandbox?: boolean
   mcp?: boolean
+  /** 能按请求只读运行（不加载写工具与 shell）。 */
+  readOnly?: boolean
+  /** 工具调用分开始 / 结束两拍上报。 */
+  toolPhases?: boolean
+  /** 能按请求覆盖模型 / effort；为 false 时引擎在 invocation 里记 applied: false，不把请求值当实际值。 */
+  modelOverride?: boolean
+  effortOverride?: boolean
 }
 
 export interface HarnessAdapter {
@@ -1289,7 +1381,12 @@ export interface RoomMessage {
   refs?: { artifacts?: ArtifactRef[]; runId?: RunId; nodeId?: NodeId; taskRunId?: RunId; requestId?: string }
   /** kind 为 route 时：路由卡内容。 */
   route?: RouteDecision
+  /** kind 为 task 时：派发回执（docs/design/26 §4）。 */
+  receipt?: { status: DelegationStatus; hops?: number; chain?: RunId[]; note?: string }
 }
+
+/** 转达 / 派发的回执状态；uncertain：发送过程出错、可能已送达，不自动重发。 */
+export type DelegationStatus = 'sent' | 'taken' | 'started' | 'done' | 'replied' | 'refused' | 'expired' | 'uncertain'
 
 /** Lead 当前在做什么（服务端按回合与运行状态推导，供状态灯显示）。 */
 export interface LeadPresence {
@@ -1365,8 +1462,12 @@ export interface TaktConfig {
   /** 目录约定；不写时新空间用顶层 agents/ workflows/ skills/ knowledge/ requirements/，旧项目沿用 .takt/ 下的目录。 */
   paths?: { agents?: string; workflows?: string; skills?: string; knowledge?: string; requirements?: string; evals?: string }
   sandbox?: { provider: 'local' | 'bwrap' | 'docker' | (string & {}); image?: string; network?: SandboxSpec['network'] }
-  /** 需求群的 Lead Agent。 */
-  lead?: { harness?: HarnessSelector; progressUpdates?: boolean }
+  /** 需求群的 Lead Agent。maxHops：任务派任务的跳数上限（默认 10）。 */
+  lead?: { harness?: HarnessSelector; progressUpdates?: boolean; maxHops?: number }
+  /** 等人的默认时限（节点可覆盖，docs/design/26 §3）。 */
+  human?: HumanTimebox
+  /** 回放评测（docs/design/21 §6）：每个样本每个变体重复次数（默认 3）、发布门槛。 */
+  eval?: { repeats?: number; gate?: EvalGate }
   /** 路由器：用哪个模型判档；没有合适流程时的兜底流程。 */
   route?: { harness?: HarnessSelector; defaultWorkflow?: string }
   /** 默认预算（workflow 与启动参数可覆盖）。 */
@@ -1446,6 +1547,14 @@ export interface Defect {
   links?: ExternalLink[]
   evidence?: string[]
   status: 'open' | 'attributed' | 'confirmed' | 'closed'
+  /** 由哪些观察创建（docs/design/21 §4）。 */
+  observations?: string[]
+  /** 有效性与处理状态分开记；缺省按 M3 的 status 推断。 */
+  validity?: 'unconfirmed' | 'valid' | 'not_defect' | 'duplicate'
+  resolution?: 'open' | 'claimed_fixed' | 'verified_fixed' | 'accepted_risk' | 'reopened'
+  duplicateOf?: string
+  /** 读模型版本：更新时带 baseRevision，不一致返回 409。 */
+  revision?: number
 }
 
 /** 归因：在哪引入、哪里漏检、怎么改。归因 Agent 给候选，人确认后才计入成绩单。 */
@@ -1460,6 +1569,8 @@ export interface DefectAttribution {
   by: Actor
   at: Timestamp
   confirmed?: { by: Actor; at: Timestamp; note?: string; edited: boolean }
+  /** 逐检查点的漏检结论（docs/design/21 §4，替代 missedBy 的 reason；missedBy 保留兼容）。 */
+  checkpoints?: MissAssessment[]
 }
 
 export type EvalTarget = { kind: 'node'; workflowId: string; nodeId: string } | { kind: 'skill'; name: string }
@@ -1487,6 +1598,11 @@ export interface EvalCase {
     mustNotIntroduce?: string[]
   }
   createdAt: Timestamp
+  /**
+   * 检查点样本（docs/design/21 §6）：must_catch 来自确认的漏检（期望提出某个问题），
+   * clean 来自人确认无问题的评审调用（不应提出 blocker / major）。缺省为 M3 的节点用例。
+   */
+  sample?: { kind: 'must_catch' | 'clean'; checkpointId: string; snapshot: string; expectIssue?: string; retiredAt?: Timestamp }
 }
 
 /** 被比较的版本：在基线配方上覆盖哪些项。 */
@@ -1539,7 +1655,14 @@ export interface EvalRun {
   target: EvalTarget
   variants: EvalVariant[]
   caseIds: string[]
-  status: 'running' | 'done' | 'failed'
+  /** refused：隔离校验不通过，没有启动（原因见 isolation.reasons）。 */
+  status: 'running' | 'done' | 'failed' | 'refused'
+  /** 隔离校验（docs/design/21 §5）：simulated 只用于 mock harness，报告里显式标注。 */
+  isolation?: { ok: boolean; mode?: 'sandbox' | 'harness_readonly' | 'simulated'; reasons?: string[] }
+  /** 变体 id → 不可变候选包 id（.takt/quality/candidates/<id>/）。 */
+  candidates?: Record<string, string>
+  repeats?: number
+  report?: EvalReport
   startedAt: Timestamp
   endedAt?: Timestamp
   by: Actor
@@ -1547,6 +1670,233 @@ export interface EvalRun {
   comparison?: EvalComparison
 }
 
+
+// ============================================================ 归因可信度（docs/design/21）
+
+/** 检查点在调用里的分工。 */
+export type CheckpointRole = 'producer' | 'author' | 'reviewer' | 'arbiter' | 'rubric' | 'acceptance' | 'command' | 'judge' | 'planner' | 'auditor' | 'evaluator'
+
+/**
+ * 检查点：评审者 / 作者修改 / 裁决者 / 门禁检查项 / auditor / evaluator 的一次判断。
+ * 调度时分配身份（checkpoint.scheduled），没执行（出错、被跳过）的也能在归因里引用。
+ */
+export interface Checkpoint {
+  /** `<runId>:<nodeId>:<attempt>:<修订>.<轮>:<评审者或检查项>`；没有修订 / 轮的节点写 1.1。 */
+  id: string
+  runId: RunId
+  nodeId: NodeId
+  attempt: number
+  revision?: number
+  round?: number
+  role: CheckpointRole
+  /** 评审者角色名或检查项 id。 */
+  subject: string
+  /** 职责条目：评审者 checklist、rubric 条目、检查项标题。 */
+  duties?: string[]
+  scheduledAt: Timestamp
+}
+
+/** 检查点的只读快照清单（.takt/snapshots/<runId>/<检查点安全名>/manifest.json）。 */
+export interface SnapshotManifest {
+  checkpointId: string
+  /** 相对 .takt/ 的快照目录。 */
+  dir: string
+  files: Array<{
+    /** 快照内的相对路径。 */
+    path: string
+    /** target：被评审对象；reference：比较依据。 */
+    role: 'target' | 'reference'
+    /** artifact：存放区产物版本；diff：仓库改动；file：仓库文件。 */
+    source: 'artifact' | 'diff' | 'file'
+    ref?: ArtifactRef
+    repo?: string
+    commit?: string
+    sha256: string
+    size: number
+  }>
+  duties: string[]
+  /** 只读如何保证：沙箱只读挂载 / 文件权限 / 做不到（如实记录，归因只能声称"提供了这些版本"）。 */
+  readOnly: 'sandbox' | 'permissions' | 'none'
+  createdAt: Timestamp
+}
+
+/** 模型 / effort 的三层取值：配方请求、引擎解析、harness 回报；applied 为 false 表示适配器不支持覆盖。 */
+export interface ResolvedValue<T> {
+  requested?: T
+  resolved?: T
+  reported?: T
+  applied?: boolean
+}
+
+/** 一次 HarnessAdapter.run 尝试（fallback 的每个候选各一次；harness 内部多轮请求只计用量；健康探测不记）。 */
+export interface InvocationStart {
+  id: string
+  nodeId: NodeId
+  attempt: number
+  checkpointId?: string
+  role: CheckpointRole
+  /** 角色档案名。 */
+  agentRole?: string
+  /** fallback 链里的序号（0 为首选）。 */
+  fallbackIndex: number
+  recipeKey?: string
+  harness: string
+  model: ResolvedValue<string>
+  effort: ResolvedValue<string>
+  /** declared：角色声明；providedHash：实际同步进 harness 技能目录的内容哈希；confirmed：harness 事件能证明加载。 */
+  skills: Array<{ name: string; providedHash?: string; confirmed: 'yes' | 'no' | 'unknown' }>
+  readOnly?: boolean
+  at: Timestamp
+}
+
+export interface InvocationEnd {
+  id: string
+  outcome: 'ok' | 'error' | 'cancelled'
+  error?: string
+  usage?: Usage
+  sessionId?: string
+  /** harness 回报的实际值（补进 InvocationStart 的 reported 与 skills.confirmed）。 */
+  reported?: { model?: string; effort?: string; skills?: string[] }
+  durationMs: number
+}
+
+export type Invocation = InvocationStart & Partial<Omit<InvocationEnd, 'id'>>
+
+/** 观察的来源与种类（docs/design/21 §4）。 */
+export type ObservationSource = 'review' | 'judge' | 'gate' | 'human' | 'external'
+export type ObservationKind =
+  | 'finding' // 评审提出问题
+  | 'claimed_fixed' // 作者声称已修
+  | 'verified_fixed' // 评审者复查 resolved
+  | 'declined' // 作者不采纳
+  | 'waived' // 人工放行
+  | 'failure' // 判决：某个对象失败
+  | 'ignored' // 判决路由为 ignore
+  | 'flaky' // 判决：不稳定
+  | 'gate_fail'
+  | 'gate_error' // 检查本身出错：流程问题，不算产物缺陷
+  | 'report' // 人工 / 外部缺陷单
+
+/** 观察：不可变，"某个来源在某个时刻对某个对象说了什么"；按源事件幂等入账。 */
+export interface Observation {
+  /** 幂等键 `<来源>:<runId>:<seq>:<序号>`（人工 / 外部为 `<来源>:<uuid>`）。 */
+  id: string
+  source: ObservationSource
+  kind: ObservationKind
+  requirementId: RequirementId
+  runId?: RunId
+  nodeId?: NodeId
+  checkpointId?: string
+  invocationId?: string
+  /** 问题键 / 用例 id / 检查项 id。 */
+  subject?: string
+  severity?: ReviewIssue['severity'] | Defect['severity']
+  title: string
+  detail?: string
+  artifacts?: ArtifactRef[]
+  /** 已被哪些缺陷引用（读模型计算）。 */
+  defects?: string[]
+  at: Timestamp
+  by: Actor
+}
+
+/** 漏检判定（替代 M3 的 MissReason）。 */
+export type MissVerdict =
+  | 'should_have_caught' // 本该拦住：五项条件同时满足
+  | 'caught_but_waived' // 拦住了但被不采纳 / 人工放行
+  | 'material_missing' // 相关材料不在快照清单里
+  | 'not_executed' // 检查点没执行或出错
+  | 'out_of_scope' // 职责条目明确不包含
+  | 'undetermined' // 以上都证明不了
+
+export interface MissAssessment {
+  checkpointId: string
+  runId: RunId
+  nodeId: NodeId
+  verdict: MissVerdict
+  /** 五项条件：①缺陷当时已存在 ②材料在快照里 ③在职责内 ④执行完成 ⑤输出没提出；undefined = 证明不了。 */
+  conditions: { existed?: boolean; materialProvided?: boolean; inDuty?: boolean; executed?: boolean; notRaised?: boolean }
+  evidence: string[]
+  /** precheck：确定性算出（②④ 与没给材料 / 没执行）；auditor：建议；human：人改判。 */
+  by: 'precheck' | 'auditor' | 'human'
+  confirmed?: { by: Actor; at: Timestamp; note?: string }
+}
+
+/** 合并建议：只给建议，人确认，可撤销。 */
+export interface DefectMergeSuggestion {
+  id: string
+  defects: string[]
+  reason: string
+  status: 'suggested' | 'accepted' | 'rejected' | 'undone'
+  decidedBy?: Actor
+  at: Timestamp
+}
+
+/** 发布门槛（预先规定，报告按它给结论；不允许事后改规则复用旧报告：报告里存门槛快照）。 */
+export interface EvalGate {
+  minSamples: number
+  minRepeats: number
+  /** 允许的通过率下降（0–1）。 */
+  maxPassRateDrop: number
+  /** 允许增加的误报次数。 */
+  maxFalsePositiveIncrease: number
+  regressionsMustPass: boolean
+}
+
+/** 检查点回放报告：每次结论为通过 / 失败 / 证据不足（环境错误、无法回放、评委判不了都算证据不足，不算通过）。 */
+export interface EvalReport {
+  samples: Array<{
+    caseId: string
+    kind: 'must_catch' | 'clean' | 'node'
+    variants: Record<string, { pass: number; fail: number; insufficient: number; falsePositives: number; runs: Array<{ outcome: 'pass' | 'fail' | 'insufficient'; reason?: string; falsePositive?: boolean; invocationId?: string }> }>
+  }>
+  /** 通过率与 Wilson 95% 区间（分母 = 通过 + 失败，不含证据不足）。 */
+  passRate: Record<string, { rate: number; low: number; high: number; n: number }>
+  falsePositives: Record<string, number>
+  insufficient: Record<string, number>
+  /** 样本数或重复次数低于门槛：只作探索，不作发布依据。 */
+  exploratory: boolean
+  gate?: { verdict: 'pass' | 'fail' | 'not_applicable'; reasons: string[]; config: EvalGate }
+  /** 评委配方与是否盲评（隐藏组别、按哈希打乱顺序）。 */
+  judge?: { recipeKey?: string; blind: boolean }
+}
+
+/** 质量日志（.takt/quality/log.jsonl）：缺陷、归因、样本、评测的唯一权威记录，复用事件存储的哈希链与锚点。 */
+export type QualityLogKind =
+  | 'observation.recorded'
+  | 'defect.created'
+  | 'defect.updated'
+  | 'attribution.recorded'
+  | 'attribution.confirmed'
+  | 'merge.suggested'
+  | 'merge.decided'
+  | 'sample.added'
+  | 'sample.retired'
+  | 'eval.started'
+  | 'eval.finished'
+  | 'recovery'
+
+export interface QualityLogEntry {
+  seq: number
+  ts: Timestamp
+  kind: QualityLogKind
+  /** 幂等键：同键只入账一次。 */
+  key: string
+  requirementId?: RequirementId
+  data: unknown
+  actor: Actor
+  prevHash: string
+  hash: string
+}
+
+// ============================================================ 运行透明与回退（docs/design/26）
+
+/** 节点开始前的文件状态：仓库 worktree HEAD 与将要写的产物的当前版本。 */
+export interface RewindPoint {
+  repos?: Array<{ repo: string; path: string; head: string }>
+  artifacts?: ArtifactRef[]
+  at: Timestamp
+}
 
 // ============================================================ 知识库（docs/design/23）
 
