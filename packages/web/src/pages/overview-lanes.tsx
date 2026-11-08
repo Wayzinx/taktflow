@@ -1,7 +1,7 @@
 import type { RequirementSummary } from '@taktflow/core'
 import { Avatar, StatusDot, useFlashRows, useStagger, vtName } from '../components/ui'
 import { TierGlyph, TIER_LABEL } from '../components/tier-glyph'
-import { LANE_LABEL, LaneTrack, cellsOf, currentCell } from '../components/viz'
+import { LANE_LABEL, LaneTrack, RunBars, cellsOf, currentCell } from '../components/viz'
 import { fmtRelative, fmtTokens, totalTokens } from '../lib/format'
 import { navigate } from '../lib/router'
 import { REQ_STATUS } from '../lib/status'
@@ -90,7 +90,8 @@ export function RequirementLanes({ rows, risks }: { rows: RequirementSummary[]; 
             </span>
             <span className="rl-side">
               {r.pendingAttention > 0 && <span className="rl-wait num">等你 {r.pendingAttention}</span>}
-              <span className="rl-tokens mono num" title="Token 用量">
+              {(r.recentRuns?.length ?? 0) > 1 && <RunBars runs={r.recentRuns!} />}
+              <span className="rl-tokens mono num" title="累计 Token">
                 {tokens ? fmtTokens(tokens) : '—'}
               </span>
             </span>

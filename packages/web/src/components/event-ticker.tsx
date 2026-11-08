@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { Pause, Radio } from 'lucide-react'
-import type { EventEnvelope } from '@taktflow/core'
+import type { EventEnvelope, EventPayloads } from '@taktflow/core'
 import { useSource } from '../api'
 import { fmtTime } from '../lib/format'
 import { describe, toneColor } from './event-timeline'
-import { KEEP, mergeRecent } from './event-ticker.merge'
+import { groupActions, toolAction } from '../lib/actions'
+import { ActionText } from './action-row'
+import { KEEP, mergeRecent, tickerRows, type TickerRow } from './event-ticker.merge'
 import './event-ticker.css'
 
-/** 噪声大、单独看没有意义的事件不上滚动条。 */
-const QUIET = new Set<EventEnvelope['type']>(['harness.usage', 'context.assembled', 'node.ready'])
+/** 噪声大、单独看没有意义的事件不上滚动条（配方是机器读的记录）。 */
+const QUIET = new Set<EventEnvelope['type']>(['harness.usage', 'context.assembled', 'node.ready', 'node.recipe'])
 /** 引擎把机器读的记录（如配方输入 `{"kind":"node.recipe.inputs",…}`）写成 log 行，人看不懂，也不上滚动条。 */
 const machineLog = (e: EventEnvelope) => e.type === 'log' && /^\s*\{"kind":"/.test(String((e.data as { message?: unknown }).message ?? ''))
-const onTicker = (e: EventEnvelope) => !QUIET.has(e.type) && !machineLog(e)
+/** 发给 Agent 的提示词（user / system 消息）动辄几千字，滚动条只放 Agent 自己说的话；完整内容在节点"过程"里。 */
+const promptMessage = (e: EventEnvelope) => e.type === 'harness.message' && (e.data as EventPayloads['harness.message']).role !== 'assistant'
+const onTicker = (e: EventEnvelope) => !QUIET.has(e.type) && !machineLog(e) && !promptMessage(e)
 
 /**
  * 运行页底部实时事件滚动条：最近 N 条事件（新的在左），等宽时间戳，悬停暂停（暂停期间新事件攒着、显示条数），
@@ -73,16 +77,24 @@ export function EventTicker({ runId, live, liveTick, onLocate }: { runId: string
       </span>
       <ol className="ticker-list" aria-live={live && !paused ? 'polite' : 'off'}>
         {shown.length === 0 && <li className="ticker-empty">还没有事件</li>}
-        {shown.map((e) => (
-          <TickerItem key={e.seq} e={e} fresh={e.seq >= freshFrom} onLocate={onLocate} />
+        {tickerRows(shown).map((row) => (
+          // 以最早一条的 seq 作 key：新调用并进同一行时只是 ×N 加一，不重新入场
+          <TickerItem key={row.items[row.items.length - 1]!.seq} row={row} fresh={row.items[row.items.length - 1]!.seq >= freshFrom} onLocate={onLocate} />
         ))}
       </ol>
     </div>
   )
 }
 
-function TickerItem({ e, fresh, onLocate }: { e: EventEnvelope; fresh: boolean; onLocate(nodeId: string): void }) {
+const toolActionOf = (e: EventEnvelope) => {
+  const x = e.data as EventPayloads['harness.tool_call']
+  return toolAction(x.tool, x.input, x.output, x.ok)
+}
+
+function TickerItem({ row, fresh, onLocate }: { row: TickerRow; fresh: boolean; onLocate(nodeId: string): void }) {
+  const e = row.e
   const info = describe(e)
+  const merged = row.items.length > 1 ? groupActions([...row.items].reverse(), toolActionOf)[0]!.action : undefined
   const Icon = info.icon
   const body = (
     <>
@@ -91,13 +103,13 @@ function TickerItem({ e, fresh, onLocate }: { e: EventEnvelope; fresh: boolean; 
       </time>
       <Icon className="ticker-icon" aria-hidden strokeWidth={2.2} />
       {e.nodeId && <span className="mono ticker-node">{e.nodeId}</span>}
-      <span className="ticker-text">{e.type === 'harness.message' ? tickerMessage((e.data as { text?: string }).text) : info.title}</span>
+      <span className="ticker-text">{merged ? <ActionText key={row.items.length} action={merged} count={row.items.length} /> : e.type === 'harness.message' ? tickerMessage((e.data as { text?: string }).text) : info.title}</span>
     </>
   )
   return (
     <li className={`ticker-item${fresh ? ' fresh' : ''}`} style={{ '--ev-tone': toneColor(info.tone) } as CSSProperties}>
       {e.nodeId ? (
-        <button type="button" className="ticker-hit" onClick={() => onLocate(e.nodeId!)} title={`定位到节点 ${e.nodeId} · #${e.seq}`}>
+        <button type="button" className="ticker-hit" onClick={() => onLocate(e.nodeId!)} title={`定位到节点 ${e.nodeId} · #${e.seq}${row.items.length > 1 ? `（合并 ${row.items.length} 条）` : ''}`}>
           {body}
         </button>
       ) : (

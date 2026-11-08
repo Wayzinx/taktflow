@@ -20,6 +20,8 @@ import { createMockLessons } from './mock-lessons'
 import { attentionView, budgetStatus, decorateAttentions, enrichM3, qualityOf, sumQuality } from './mock-m3-runs'
 import { previewRoute } from './mock-route'
 import { addUsage, ZERO, type MockDb, type MockRun } from './mock-data'
+import { mockDaily, mockHistory } from './mock-history'
+import { totalTokens } from '../lib/format'
 import { createMockReviews } from './mock-reviews'
 import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
 import type { WorkflowApi } from './mock-workflows'
@@ -122,6 +124,10 @@ export function createProjectMock(db: MockDb): ProjectSource {
       current: latest && pick ? { runId: latest.state.runId, nodeId: pick.id, title: pick.title, status: pick.status } : undefined,
       tier: latest?.state.route?.tier,
       quality: runs.length ? sumQuality(runs.map(qualityOf)) : undefined,
+      recentRuns: [
+        ...mockHistory(id),
+        ...[...runs].reverse().map((r) => ({ runId: r.state.runId, status: r.state.status, startedAt: r.state.startedAt, tokens: totalTokens(runUsage(r)), kind: r.state.workflowId === 'task' || r.state.kind === 'task' ? ('task' as const) : ('workflow' as const) })),
+      ].slice(-12),
     }
   }
 
@@ -157,6 +163,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
           usage: requirements.reduce<Usage>((acc, r) => addUsage(acc, r.usage), ZERO),
           verified: requirements.reduce((s, r) => s + (r.quality?.verified ?? 0), 0),
           intercepted: requirements.reduce((s, r) => s + (r.quality?.intercepted ?? 0), 0),
+          daily: mockDaily(requirements.flatMap((r) => r.recentRuns ?? [])),
         },
       })
     },

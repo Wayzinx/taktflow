@@ -546,6 +546,13 @@
   color: var(--text-3);
   white-space: nowrap;
 }
+/* Token 格：最近运行的迷你柱 + 累计数 */
+.tok-cell {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .stage-cell {
   display: grid;
   gap: 2px;

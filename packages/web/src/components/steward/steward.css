@@ -63,19 +63,9 @@
   grid-template-columns: 28px minmax(0, 1fr);
   gap: var(--sp-3);
 }
+/* 管家头像 = Agent 形象（节拍橙）：回复中睁眼眨眼，回完眯眼笑，出错 ✕ */
 .stw-avatar {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-sm);
-  background: var(--ink);
-  color: var(--text-inverse);
-  --live-color: var(--accent);
-}
-.stw-avatar svg {
-  width: 16px;
-  height: 16px;
+  align-self: start;
 }
 .stw-msg-main {
   display: grid;
@@ -245,85 +235,14 @@ button.stw-thinking:hover {
   transform: rotate(90deg);
 }
 
-/* 工具卡 */
+/* 动作清单（样式在 components/action-row.css） */
 .stw-tools {
-  display: grid;
-  gap: var(--sp-1);
+  margin-block: 2px;
 }
-.stw-tool {
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: var(--surface-2);
-}
-.stw-tool-head {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  width: 100%;
-  height: 32px;
-  padding: 0 var(--sp-2);
-  border: 0;
-  background: none;
-  color: var(--text-2);
+.stw-tool-err {
+  margin: 0;
   font-size: var(--text-meta);
-  text-align: left;
-  cursor: pointer;
-  border-radius: var(--r-sm);
-  transition: background var(--dur-fast) var(--ease);
-}
-.stw-tool-head:hover:not(:disabled) {
-  background: var(--surface-hover);
-}
-.stw-tool-head:disabled {
-  cursor: default;
-}
-.stw-tool-dot {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--st-success-soft);
-  color: var(--st-success);
-}
-.stw-tool-dot svg {
-  width: 11px;
-  height: 11px;
-}
-.stw-tool[data-state='running'] .stw-tool-dot {
-  background: var(--st-running-soft);
-  color: var(--st-running);
-}
-.stw-tool[data-state='failed'] .stw-tool-dot {
-  background: var(--st-failed-soft);
   color: var(--st-failed);
-}
-.stw-tool-name {
-  flex: none;
-  color: var(--text);
-}
-.stw-tool-sum {
-  flex: 1;
-  min-width: 0;
-}
-.stw-tool-sum.shimmer-text {
-  --shimmer-base: var(--text-3);
-}
-.stw-tool-ms {
-  flex: none;
-  color: var(--text-3);
-}
-.stw-tool-head .stw-chev {
-  width: 13px;
-  height: 13px;
-  flex: none;
-  color: var(--text-3);
-}
-.stw-tool-body {
-  display: grid;
-  gap: var(--sp-1);
-  padding: var(--sp-1) var(--sp-3) var(--sp-3);
 }
 .stw-pre {
   max-height: 220px;
@@ -468,20 +387,7 @@ button.stw-thinking:hover {
   display: flex;
   gap: var(--sp-3);
 }
-.stw-welcome-icon {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  flex: none;
-  border-radius: var(--r-md);
-  background: var(--ink);
-  color: var(--text-inverse);
-}
-.stw-welcome-icon svg {
-  width: 18px;
-  height: 18px;
-}
+
 .stw-welcome-title {
   font-size: var(--text-title);
   font-weight: 600;
@@ -576,6 +482,4 @@ button.stw-thinking:hover {
 .stw-msgs {
   grid-template-columns: minmax(0, 1fr);
 }
-.stw-tool-body {
-  grid-template-columns: minmax(0, 1fr);
-}
+

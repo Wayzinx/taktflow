@@ -124,7 +124,7 @@ function plan(text: string): Plan {
   if (/风险|卡住|延期/.test(text))
     return {
       thinking: '查风险引擎当前未处理的风险，按级别排序。',
-      tools: [{ tool: 'risks.list', input: { state: 'open' }, ok: true, summary: '4 条未处理风险（2 高、2 中）', ms: 26 }],
+      tools: [{ tool: 'list_risks', input: { spaceId: 'hello-delivery' }, ok: true, summary: '风险：返回 4 条', ms: 26 }],
       text: '有 **2 条高风险**，最急的是 REQ-004 门禁反复失败 [1]；REQ-003 审批已等 5 小时 [2]，REQ-002 预算接近上限 [3]。',
       citations: [
         { label: 'REQ-004 失败指纹', href: `${S}/run/run-20261104-0004?node=design-gate`, kind: 'risk' },
@@ -139,7 +139,7 @@ function plan(text: string): Plan {
     const title = (m[1] ?? '新需求').replace(/[，。,.].*$/, '').trim() || '新需求'
     return {
       thinking: '先做一次路由预览，确定流程档位，再生成新建需求的提案。',
-      tools: [{ tool: 'route.preview', input: { title }, ok: true, summary: '建议 T1 快速修复：只动一处前端', ms: 58 }],
+      tools: [{ tool: 'propose', input: { title: `新建需求「${title}」` }, ok: true, summary: '生成提案：返回 1 条', ms: 58 }],
       text: `我准备在 hello-delivery 新建需求 **${title}** [1]，路由建议走快速修复。确认后创建，默认不启动。`,
       citations: [{ label: '路由预览', href: `${S}/requirements`, kind: 'requirement' }],
       suggestions: ['顺便补全验收标准'],
@@ -150,8 +150,8 @@ function plan(text: string): Plan {
     return {
       thinking: '查需求阶段与待办；数字以工具结果为准。',
       tools: [
-        { tool: 'requirements.list', input: { space: 'hello-delivery' }, ok: true, summary: '7 个需求：1 已交付、4 进行中', ms: 41 },
-        { tool: 'attention.list', input: { pending: true }, ok: true, summary: '3 项待你处理', ms: 17 },
+        { tool: 'list_requirements', input: { spaceId: 'hello-delivery' }, ok: true, summary: '需求列表：返回 7 条', ms: 41 },
+        { tool: 'list_attention', input: { spaceId: 'hello-delivery' }, ok: true, summary: '待办：返回 3 条', ms: 17 },
       ],
       text: /待办|处理/.test(text) ? '有 **3 项**等你决定 [1]，最急的是 REQ-003 的 PRD 审批。' : '整体正常：1 条已交付 [2]，3 条在推进，REQ-004 卡在系分门禁，REQ-003 等你审批 [1]。',
       citations: [

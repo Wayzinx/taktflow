@@ -10,7 +10,6 @@ import {
   GitBranch,
   FileWarning,
   Flag,
-  Hammer,
   History,
   Layers,
   MessageSquare,
@@ -34,6 +33,8 @@ import type { EventEnvelope, EventPayloads, ReviewResponse, ReviewVerdict } from
 import { actorName, fmtDate, fmtTime, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
 import { NODE_STATUS, VERDICT, toneVar, type Tone } from '../lib/status'
+import { toolAction } from '../lib/actions'
+import { ActionText, actionIcon } from './action-row'
 import { describeM3 } from './event-timeline-m3'
 import './event-timeline.css'
 
@@ -146,15 +147,19 @@ export function describe(e: EventEnvelope): Described {
     }
     case 'harness.tool_call': {
       const x = d(e, 'harness.tool_call')
+      const a = toolAction(x.tool, x.input, x.output, x.ok)
       return {
-        icon: Hammer,
+        icon: actionIcon(a),
         tone: x.ok === false ? 'failed' : 'neutral',
-        title: (
+        title: <ActionText action={a} />,
+        detail: (
           <>
-            <span className="ev-tool">{x.tool}</span> <span className="mono">{x.input}</span>
+            <div className="ev-tool-raw">
+              <span className="ev-tool">{x.tool}</span> <span className="mono">{x.input}</span>
+            </div>
+            {x.output && <pre className="ev-pre">{x.output}</pre>}
           </>
         ),
-        detail: x.output && <pre className="ev-pre">{x.output}</pre>,
       }
     }
     case 'harness.usage': {

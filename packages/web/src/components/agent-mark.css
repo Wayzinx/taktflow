@@ -1,0 +1,111 @@
+/* Agent 形象（docs/design/25 §2）：只有"干活 / 求助"会动；减少动态时全部静止，形状照样区分状态。 */
+
+.amark {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  color: var(--amark-hue);
+}
+.amark svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.amark-head {
+  fill: color-mix(in oklch, var(--amark-hue) 16%, var(--surface));
+  stroke: color-mix(in oklch, var(--amark-hue) 70%, var(--text));
+  stroke-width: 1.5;
+}
+.amark-tick {
+  stroke: color-mix(in oklch, var(--amark-hue) 70%, var(--text));
+  stroke-width: 1.6;
+}
+.amark-eyes {
+  stroke: color-mix(in oklch, var(--amark-hue) 35%, var(--text));
+  transform-box: fill-box;
+  transform-origin: center;
+}
+/* 待命：整体退后一点 */
+.amark[data-state='idle'] .amark-head {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+}
+.amark[data-state='idle'] .amark-tick,
+.amark[data-state='idle'] .amark-eyes {
+  stroke: var(--text-3);
+}
+/* 干活：头顶刻度亮成节拍橙 */
+.amark[data-state='work'] .amark-tick {
+  stroke: var(--accent);
+}
+.amark[data-state='failed'] .amark-eyes {
+  stroke: var(--st-failed);
+}
+
+.amark-sign {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 2px;
+  border-radius: 6px;
+  background: var(--st-waiting);
+  box-shadow: 0 0 0 1.5px var(--surface);
+  font: 700 8.5px/1 var(--font-sans);
+  color: var(--surface);
+}
+.amark-sign[data-sign='✕'] {
+  background: var(--st-failed);
+  font-size: 7px;
+}
+.amark-sign[data-sign='z'] {
+  background: var(--text-3);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 每 4 拍眨一次眼 */
+  .amark[data-state='work'] .amark-eyes {
+    animation: amark-blink calc(var(--takt) * 4) linear infinite;
+  }
+  /* 随节拍轻微起伏 */
+  .amark[data-state='work'] .amark-body {
+    animation: amark-bob var(--takt) var(--ease-in-out) infinite;
+  }
+  /* 求助：符号每 2 拍轻跳一次 */
+  .amark[data-state='ask'] .amark-sign {
+    animation: amark-hop calc(var(--takt) * 2) var(--ease-out-soft) infinite;
+  }
+}
+@keyframes amark-blink {
+  0%,
+  90%,
+  100% {
+    transform: none;
+  }
+  94% {
+    transform: scaleY(0.15);
+  }
+}
+@keyframes amark-bob {
+  0%,
+  100% {
+    transform: none;
+  }
+  50% {
+    transform: translateY(-0.6px);
+  }
+}
+@keyframes amark-hop {
+  0%,
+  30%,
+  100% {
+    transform: none;
+  }
+  12% {
+    transform: translateY(-2px);
+  }
+}

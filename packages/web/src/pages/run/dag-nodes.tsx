@@ -1,6 +1,7 @@
 import type { CSSProperties } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Network } from 'lucide-react'
+import { AgentMark, harnessHue, markOf } from '../../components/agent-mark'
 import { KindIcon } from '../../components/ui'
 import { fmtTokens, totalTokens } from '../../lib/format'
 import { NODE_KIND, NODE_STATUS, STAGE_STATUS, toneSoftVar, toneVar } from '../../lib/status'
@@ -36,7 +37,7 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
     >
       <Handles />
       <div className="dag-row">
-        <KindIcon kind={n.kind} size={22} />
+        {n.kind === 'agent' ? <AgentMark {...markOf(n.status)} hue={harnessHue(n.harness)} size={22} label={`${n.harness ?? 'Agent'} · ${meta.label}`} /> : <KindIcon kind={n.kind} size={22} />}
         <span className="dag-title truncate">{data.label.title}</span>
         <span className="dag-status" title={meta.label}>
           <StatusIcon className={meta.spin ? 'spin' : undefined} strokeWidth={2.6} />

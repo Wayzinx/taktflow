@@ -29,6 +29,7 @@
 | 22 | [管家与操作体验](22-管家与操作体验.md) | 全局管家 Agent（问答、主动汇报风险、变更提案由人把关）、需求与空间增删改、workflow 编辑兜底、转场 / 骨架 / 空状态等体验规范、每个功能的度量 |
 | 23 | [知识库体系](23-知识库体系.md) | 文档检索 / LLM Wiki / 数据库 / 接口 / 代码 / 历史六类知识库；页面上从零构建、检索测试、绑定到项目、召回评测与发布门槛 |
 | 24 | [可视化优先与生成式界面](24-可视化优先与生成式界面.md) | 每页一个视觉主角（读数格、交付泳道）、管家回答 = 不超过 3 句结论 + 可视化块（`show` 工具与服务端预设）、组件按容器宽度变形、字数预算与入场动效 |
+| 25 | [运行态可读与回访](25-运行态与回访.md) | 动作行先说动词（跨 harness 动词表、同类合并 ×N）、Agent 原创形象四态、读数与需求行迷你趋势、标签页待办数与运行结束卡 / 系统通知、隐藏即停与条形 clip-path 动效 |
 
 ## 参考资料
 
@@ -37,4 +38,5 @@
 - 常见的需求协作平台：阶段条 + 公共产物分类 + 共享上下文的 Agent 任务。
 - [Metis](https://github.com/Wholiver/metis)：按改动形状分档、门禁由运行时记账、失败指纹、自学习软层；`docs/ale-metis-agent-failure-modes.md` 的失败分析。
 - 秘秘 Mimi super agent 功能先导（B 站 BV1vix26sEzR）与 intelligence-ui：回复是能勾选、能点的界面而不是长文；Agent 输出组件树、宿主校验修正后渲染。
+- [MeowCode](https://github.com/MuLiuSaMa/MeowCode)（GPL-3.0，只借思路）：动词开头的动作清单、回合改动卡、检查点与回退；[Agent HUD](https://github.com/jazzenchen/agent-hud-open)：每个 Agent 一个有状态的形象、渐进展开、"有新回复"卡、会话页迷你图、Agent 互发消息的回执与跳数上限。
 - [OpenBitFun](https://github.com/GCWing/OpenBitFun)：`docs/sdlc-harness/`、`docs/architecture/review-lifecycle.md`（评审记录 / 修订 / 正交状态）、`src/web-ui/MOTION_AUDIT.md`（动效审计）。

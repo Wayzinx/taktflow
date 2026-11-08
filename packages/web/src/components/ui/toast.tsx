@@ -14,6 +14,8 @@ export interface ToastOptions {
   undoLabel?: string
   /** 其他动作（"查看"）。 */
   action?: { label: string; onClick: () => void }
+  /** 多个去处（"看运行""回到需求"），最多 2 个，排在 action 之后。 */
+  actions?: Array<{ label: string; onClick: () => void }>
   /** 毫秒，默认 5000；悬停时暂停。 */
   duration?: number
 }
@@ -118,18 +120,19 @@ export function Toaster() {
                 {t.undoLabel ?? '撤销'}
               </button>
             )}
-            {t.action && (
+            {[...(t.action ? [t.action] : []), ...(t.actions ?? []).slice(0, 2)].map((a) => (
               <button
+                key={a.label}
                 type="button"
                 className="toast-btn"
                 onClick={() => {
                   leave(t.id)
-                  t.action!.onClick()
+                  a.onClick()
                 }}
               >
-                {t.action.label}
+                {a.label}
               </button>
-            )}
+            ))}
             <button type="button" className="toast-close" onClick={() => leave(t.id)} aria-label="关闭提示">
               <X aria-hidden />
             </button>

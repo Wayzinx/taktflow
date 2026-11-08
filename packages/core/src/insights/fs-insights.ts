@@ -28,8 +28,9 @@ export class FsInsights implements Insights {
     }
     const batches = await Promise.all(runs.map(async (run) => {
       const [events, snapshot] = await Promise.all([this.stores.events.read(run.runId), this.stores.runs.getWorkflow(run.runId)])
-      return { events, counts: eventMetrics(events, run, snapshot), usage: summarizeUsage(events) }
+      return { runId: run.runId, events, counts: eventMetrics(events, run, snapshot), usage: summarizeUsage(events) }
     }))
+    metrics.runUsage = Object.fromEntries(batches.map((batch) => [batch.runId, batch.usage]))
     let total = 0
     let passed = 0
     for (const { counts, usage } of batches) {

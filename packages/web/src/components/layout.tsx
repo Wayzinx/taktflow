@@ -15,6 +15,7 @@ import { TaktBeat } from './takt'
 import { StatusDot } from './ui'
 import './layout.css'
 import './topbar.css'
+import { usePulse } from './pulse'
 
 // ---------------------------------------------------------------- 面包屑：页面声明，顶栏渲染
 
@@ -227,6 +228,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const collapsed = useSidebarCollapsed()
   const dockOpen = useStewardDock().open
   useStewardUnreadSync()
+  usePulse()
   useEffect(() => setNavOpen(false), [path])
   // 切换空间：所有查询按新空间重新拉取
   const lastSpace = useRef(spaceId)

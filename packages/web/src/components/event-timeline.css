@@ -92,6 +92,12 @@
   background: var(--surface-hover);
   border: 1px solid var(--border);
 }
+/* 工具调用的标题是动作行，原始工具名与输入放进展开详情 */
+.ev-tool-raw {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+  color: var(--text-3);
+}
 .ev-msg {
   color: var(--text-2);
 }

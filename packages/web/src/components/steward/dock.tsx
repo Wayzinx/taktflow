@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
-import { Bot, History, Maximize2, MessageSquarePlus, MessagesSquare } from 'lucide-react'
+import { History, Maximize2, MessageSquarePlus, MessagesSquare } from 'lucide-react'
+import { AgentMark } from '../agent-mark'
 import type { StewardContextRef } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { Drawer, Menu, useStewardSuggestions, withShortcut } from '../ui'
@@ -43,9 +44,7 @@ function DockWelcome({ onAsk, onResume }: { onAsk: (t: string) => void; onResume
   return (
     <div className="stw-welcome">
       <div className="stw-welcome-head">
-        <span className="stw-welcome-icon" aria-hidden>
-          <Bot />
-        </span>
+        <AgentMark className="stw-welcome-icon" state="done" hue="var(--accent)" size={36} />
         <div>
           <h3 className="stw-welcome-title">{greeting(now.getHours())}</h3>
           <p className="stw-welcome-body num">

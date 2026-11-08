@@ -321,6 +321,13 @@
     skeleton-sweep 1.6s linear infinite;
 }
 
+/* 隐藏即停（docs/design/25 §5）：标签页在后台时所有动画暂停，回来接着走 */
+:root[data-tab-hidden] *,
+:root[data-tab-hidden] *::before,
+:root[data-tab-hidden] *::after {
+  animation-play-state: paused !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-old(page),
   ::view-transition-new(page) {

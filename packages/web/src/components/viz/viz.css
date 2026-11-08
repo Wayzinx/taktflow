@@ -6,6 +6,12 @@
     transform: translateY(4px);
   }
 }
+/* 从左打开：只裁切不缩放，圆角与文字不变形 */
+@keyframes viz-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+}
 @keyframes viz-grow {
   from {
     /* motion-audit: ok 条形 / 泳道格从 0 长到值，表达数量，不是元素出现 */
@@ -49,6 +55,8 @@
   color: var(--text);
   animation: viz-rise var(--dur-item) var(--ease-out-soft) backwards;
   animation-delay: calc(var(--i, 0) * 40ms);
+  container: tile / inline-size;
+  position: relative;
 }
 @container tiles (min-width: 300px) {
   .tile {
@@ -85,6 +93,19 @@
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.015em;
+}
+/* 迷你趋势在右上角、与标签同一行，不占数字的位置；格子窄到放不下就不画 */
+.tile-spark {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  display: flex;
+  pointer-events: none;
+}
+@container tile (max-width: 150px) {
+  .tile-spark {
+    display: none;
+  }
 }
 .tile.toned .tile-value,
 .tile.toned .tile-label svg {
@@ -153,7 +174,7 @@
     opacity var(--dur) var(--ease);
 }
 .lane-track[data-animate] .lane-cell {
-  animation: viz-grow 260ms var(--ease-out-soft) backwards;
+  animation: viz-reveal 260ms var(--ease-out-soft) backwards;
   animation-delay: calc(min(var(--i), 12) * 18ms);
 }
 .lane-cell[data-st='done'] {
@@ -239,21 +260,29 @@
   background: var(--bg-sunken);
   overflow: hidden;
 }
+/* 条形用 clip-path 从左打开（docs/design/25 §5）：不缩放，圆角不变形 */
 .bar-fill {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--bar-tone);
-  transform: scaleX(var(--p));
-  transform-origin: left center;
-  animation: viz-grow 520ms var(--ease-out-soft) backwards;
+  clip-path: inset(0 calc((1 - var(--p)) * 100%) 0 0 round 3px);
+  animation: bar-reveal 520ms var(--ease-out-soft) backwards;
   animation-delay: calc(min(var(--i), 12) * 40ms);
 }
+@keyframes bar-reveal {
+  from {
+    clip-path: inset(0 100% 0 0 round 3px);
+  }
+}
+/* 读数在条形长到大半之后再淡入 */
 .bar-value {
   font-size: var(--text-meta);
   color: var(--text-2);
   text-align: end;
   white-space: nowrap;
+  animation: fade-only-in 160ms var(--ease-out-soft) backwards;
+  animation-delay: calc(min(var(--i), 12) * 40ms + 360ms);
 }
 @container bars (max-width: 300px) {
   .bar-row {
@@ -418,7 +447,70 @@
   color: var(--text-3);
 }
 
+/* ---------------------------------------------------------------- 迷你趋势 */
+.spark {
+  flex: none;
+  overflow: visible;
+  color: var(--tile-tone, var(--c-1));
+}
+.spark-area {
+  fill: currentColor;
+  opacity: 0.1;
+}
+.spark-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  animation: spark-draw 400ms var(--ease-out-soft) backwards;
+}
+@keyframes spark-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+.spark-dot {
+  fill: currentColor;
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  animation: fade-only-in 160ms var(--ease-out-soft) 360ms backwards;
+}
+.run-bars {
+  flex: none;
+  overflow: visible;
+}
+.run-bar {
+  animation: run-bar-reveal 320ms var(--ease-out-soft) backwards;
+  animation-delay: calc(var(--i) * 24ms);
+}
+.run-bar[data-task] {
+  opacity: 0.45;
+}
+@keyframes run-bar-reveal {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .run-bar[data-live] {
+    animation:
+      run-bar-reveal 320ms var(--ease-out-soft) backwards,
+      run-bar-beat var(--takt) var(--ease-in-out) infinite;
+  }
+}
+@keyframes run-bar-beat {
+  50% {
+    opacity: 0.45;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .bar-value,
+  .spark-line,
+  .spark-dot,
+  .run-bar,
   .tile,
   .lane-track[data-animate] .lane-cell,
   .bar-fill,

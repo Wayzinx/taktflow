@@ -1130,6 +1130,8 @@ export interface RequirementMetrics {
   humanInterventions: number
   verdicts: Partial<Record<VerdictCategory, number>>
   usage: Usage
+  /** 每次运行的用量（与 usage 同口径，来自事件），需求行迷你柱与每日活动用。 */
+  runUsage?: Record<RunId, Usage>
   leadTimeHours?: number
   /** 验收标准覆盖：每条 AC 有没有用例、用例过没过。 */
   acCoverage?: Array<{ ac: string; title: string; cases: number; passed: number; failed: number; status: 'covered' | 'partial' | 'uncovered' }>

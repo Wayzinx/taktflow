@@ -1,4 +1,4 @@
-import { recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunState, type SnapshotNode, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
+import { recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type DailyActivity, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunSpark, type RunState, type SnapshotNode, type Usage, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
 import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
@@ -20,33 +20,68 @@ export async function workflow(stores: ProjectStores, id: string): Promise<Workf
 }
 
 export async function summary(stores: ProjectStores, item: Requirement): Promise<RequirementSummary> {
+  return (await summaryWithRuns(stores, item)).summary
+}
+
+/** 需求摘要，外加它全部运行与每次运行的用量（总览算每日活动用，避免再读一遍事件）。 */
+async function summaryWithRuns(stores: ProjectStores, item: Requirement) {
   const [runs, attention, metrics] = await Promise.all([
     stores.runs.list({ requirementId: item.id }),
     stores.attention.list({ pending: true, requirementId: item.id }),
     createInsights(stores).metrics(item.id),
   ])
-  const latest = runs.filter((run) => (run as RunState & { kind?: string }).kind !== 'task' && run.workflowId !== 'lead' && !run.workflowId.startsWith('task:'))
-    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.runId.localeCompare(b.runId)).at(-1)
+  const latest = runs.filter((run) => !isTaskRun(run)).sort(byStart).at(-1)
   const snapshot = latest ? await workflow(stores, latest.runId) : undefined
   const records = latest ? await loadRunGraph(stores, latest.runId) : []
   const graph = latest && snapshot ? buildRunGraph(snapshot, latest, records) : undefined
   const derived = latest && snapshot && item.status !== 'archived' ? deriveRequirementState(snapshot, latest) : {}
-  return { ...item, ...derived, stages: latest && snapshot ? stageProgress(snapshot, latest, records) : [], latestRunId: latest?.runId, pendingAttention: attention.length, usage: metrics.usage, quality: metrics.quality, tier: latest?.route?.tier, current: latest && graph ? currentNode(latest, graph) : undefined }
+  const value: RequirementSummary = { ...item, ...derived, stages: latest && snapshot ? stageProgress(snapshot, latest, records) : [], latestRunId: latest?.runId, pendingAttention: attention.length, usage: metrics.usage, quality: metrics.quality, tier: latest?.route?.tier, current: latest && graph ? currentNode(latest, graph) : undefined, recentRuns: recentRuns(runs, metrics.runUsage ?? {}) }
+  return { summary: value, runs, runUsage: metrics.runUsage ?? {} }
+}
+
+/** Lead 自己的运行与它派发的任务不算流水线运行。 */
+const isTaskRun = (run: RunState) => run.kind === 'task' || run.workflowId === 'lead' || run.workflowId.startsWith('task:')
+const tokensOf = (usage?: Usage) => (usage ? usage.inputTokens + usage.outputTokens : 0)
+const byStart = (a: RunState, b: RunState) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.runId.localeCompare(b.runId)
+
+/** 最近 12 次运行（含任务运行），需求行的迷你柱用。 */
+function recentRuns(runs: RunState[], usage: Record<string, Usage>): RunSpark[] {
+  return [...runs].sort(byStart).slice(-12).map((run) => ({ runId: run.runId, status: run.status, startedAt: run.startedAt, tokens: tokensOf(usage[run.runId]), kind: isTaskRun(run) ? 'task' : 'workflow' }))
+}
+
+const localDay = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
+/** 最近 14 天每天开始的运行数与其 Token（无活动的天补 0），读数格迷你折线用。 */
+export function dailyActivity(runs: RunState[], usage: Record<string, Usage>, now = new Date(), days = 14): DailyActivity[] {
+  const series = Array.from({ length: days }, (_, i) => ({ day: localDay(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1 - i))), runs: 0, tokens: 0 }))
+  const index = new Map(series.map((entry) => [entry.day, entry]))
+  for (const run of runs) {
+    const entry = index.get(localDay(new Date(run.startedAt)))
+    if (entry) { entry.runs++; entry.tokens += tokensOf(usage[run.runId]) }
+  }
+  return series
 }
 
 export async function summaries(stores: ProjectStores, archived = false): Promise<RequirementSummary[]> {
-  return Promise.all((await stores.workspaces.listRequirements()).filter((item) => archived || item.status !== 'archived').map((item) => summary(stores, item)))
+  return (await withRuns(stores, archived)).map((item) => item.summary)
+}
+
+async function withRuns(stores: ProjectStores, archived = false) {
+  return Promise.all((await stores.workspaces.listRequirements()).filter((item) => archived || item.status !== 'archived').map((item) => summaryWithRuns(stores, item)))
 }
 
 export async function overview(stores: ProjectStores): Promise<ProjectOverview> {
-  const [requirements, attention, runs] = await Promise.all([summaries(stores), stores.attention.list({ pending: true }), stores.runs.list()])
+  const [visible, attention, runs] = await Promise.all([withRuns(stores), stores.attention.list({ pending: true }), stores.runs.list()])
+  const requirements = visible.map((item) => item.summary)
+  // 每日活动只算看得见的需求（与 totals.usage 同口径）
+  const daily = dailyActivity(visible.flatMap((item) => item.runs), Object.assign({}, ...visible.map((item) => item.runUsage)))
   const usage = requirements.reduce((total, item) => addUsage(total, item.usage), { inputTokens: 0, outputTokens: 0 })
   const quality = requirements.reduce((sum, item) => {
     sum.verified += item.quality?.verified ?? 0; sum.intercepted += item.quality?.intercepted ?? 0
     for (const key of Object.keys(sum.interceptedBy) as Array<keyof typeof sum.interceptedBy>) sum.interceptedBy[key] += item.quality?.interceptedBy[key] ?? 0
     return sum
   }, { verified: 0, intercepted: 0, interceptedBy: { gate: 0, review: 0, judge: 0, completion: 0, fingerprint: 0 } })
-  return { ...stores.config.project, requirements, attention: await withAttentionStaleness(stores, attention.filter((item) => requirements.some((req) => req.id === item.requirementId))), totals: { requirements: requirements.length, active: requirements.filter((r) => r.status === 'active').length, delivered: requirements.filter((r) => r.status === 'delivered').length, blocked: requirements.filter((r) => r.status === 'blocked').length, runs: runs.length, usage, ...quality } }
+  return { ...stores.config.project, requirements, attention: await withAttentionStaleness(stores, attention.filter((item) => requirements.some((req) => req.id === item.requirementId))), totals: { requirements: requirements.length, active: requirements.filter((r) => r.status === 'active').length, delivered: requirements.filter((r) => r.status === 'delivered').length, blocked: requirements.filter((r) => r.status === 'blocked').length, runs: runs.length, usage, ...quality, daily } }
 }
 
 function definitions(nodes: SnapshotNode[], prefix = ''): Map<string, SnapshotNode> {

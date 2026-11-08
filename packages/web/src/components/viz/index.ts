@@ -4,3 +4,4 @@ export { LaneTrack, cellsOf, currentCell, LANE_LABEL, type LaneCell, type LaneSt
 export { StatTiles, type Tile } from './tiles'
 export { Bars, Checklist, Timeline, type BarItem, type CheckItem, type TimelineItem } from './lists'
 export { refPath } from './ref'
+export { RunBars, Sparkline } from './spark'

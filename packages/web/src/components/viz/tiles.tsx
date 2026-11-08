@@ -12,6 +12,8 @@ export interface Tile {
   icon?: ReactNode
   /** 数字下方的小图（占比条、迷你泳道）。 */
   children?: ReactNode
+  /** 右上角的迷你趋势（Sparkline），与标签同一行；格子太窄时隐藏。 */
+  spark?: ReactNode
   onClick?: () => void
   active?: boolean
   title?: string
@@ -33,6 +35,7 @@ export function StatTiles({ tiles, label, className }: { tiles: Tile[]; label: s
               {t.icon}
               {t.label}
             </span>
+            {t.spark && <span className="tile-spark">{t.spark}</span>}
             <span className="tile-value num">
               {t.value}
               {t.unit && <span className="tile-unit">{t.unit}</span>}

@@ -6,7 +6,7 @@ import { AttentionCard } from '../components/attention-card'
 import { useCrumbs } from '../components/layout'
 import { NewRequirementButton } from '../components/requirement-create/button'
 import { CountUp, EmptyState, ErrorState, PageHeader, Segmented, Skeleton, SkeletonRows, useFlashRows, useStagger, useStewardSuggestions } from '../components/ui'
-import { StatTiles, type Tile } from '../components/viz'
+import { Sparkline, StatTiles, type Tile } from '../components/viz'
 import { fmtCost, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
 import { qualityTile } from './overview-quality'
@@ -37,11 +37,16 @@ function tilesOf(p: ProjectOverview, risks: number, filter: Filter, onFilter: (f
   const tokens = totalTokens(p.totals.usage)
   const cacheRate = tokens ? Math.round(((p.totals.usage.cachedTokens ?? 0) / p.totals.usage.inputTokens) * 100) : 0
   const toggle = (f: Filter) => () => onFilter(filter === f ? 'all' : f)
+  // 14 天趋势：只在最近有过活动时画（全是 0 的平线没有信息）
+  const daily = p.totals.daily ?? []
+  const active = daily.some((d) => d.runs > 0)
+  const runSpark = active ? <Sparkline values={daily.map((d) => d.runs)} label={`近 ${daily.length} 天每日运行次数：${daily.map((d) => d.runs).join(' / ')}`} /> : undefined
+  const tokenSpark = active ? <Sparkline values={daily.map((d) => d.tokens)} label={`近 ${daily.length} 天每日 Token（按运行开始日）`} /> : undefined
   return [
-    { key: 'active', label: '进行中', icon: <Activity />, value: <CountUp value={p.totals.active} from0 />, tone: running ? 'running' : undefined, hint: <><b>{running}</b> 在跑 · <b>{waiting}</b> 等人</>, onClick: toggle('active'), active: filter === 'active', title: '只看进行中的需求' },
+    { key: 'active', label: '进行中', icon: <Activity />, value: <CountUp value={p.totals.active} from0 />, tone: running ? 'running' : undefined, hint: <><b>{running}</b> 在跑 · <b>{waiting}</b> 等人</>, spark: runSpark, onClick: toggle('active'), active: filter === 'active', title: '只看进行中的需求' },
     { key: 'blocked', label: '阻塞', icon: <OctagonAlert />, value: <CountUp value={p.totals.blocked} from0 />, tone: p.totals.blocked ? 'failed' : undefined, hint: risks ? <><b>{risks}</b> 条风险</> : '没有风险', onClick: toggle('blocked'), active: filter === 'blocked', title: '只看阻塞的需求' },
     { key: 'delivered', label: '已交付', icon: <CircleCheckBig />, value: <CountUp value={p.totals.delivered} from0 />, hint: <>共 <b>{p.totals.requirements}</b> 个 · <b>{p.totals.runs}</b> 次运行</>, onClick: toggle('delivered'), active: filter === 'delivered', title: '只看已交付的需求' },
-    { key: 'tokens', label: '累计 Token', icon: <Coins />, value: <CountUp value={tokens} from0 format={(v) => fmtTokens(Math.round(v))} />, unit: <CountUp value={p.totals.usage.costUsd ?? 0} from0 format={fmtCost} />, hint: <>缓存命中 <b>{cacheRate}%</b></>, children: <TokenShare reqs={p.requirements} />, title: '色段为各需求占比' },
+    { key: 'tokens', label: '累计 Token', icon: <Coins />, value: <CountUp value={tokens} from0 format={(v) => fmtTokens(Math.round(v))} />, unit: <CountUp value={p.totals.usage.costUsd ?? 0} from0 format={fmtCost} />, hint: <>缓存命中 <b>{cacheRate}%</b></>, spark: tokenSpark, children: <TokenShare reqs={p.requirements} />, title: '色段为各需求占比' },
     qualityTile(p.totals, p.requirements),
   ]
 }

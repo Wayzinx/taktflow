@@ -7,6 +7,7 @@ import {
   vtName,
 } from "../components/ui";
 import { TierGlyph, TIER_LABEL } from "../components/tier-glyph";
+import { RunBars } from "../components/viz";
 import { fmtCost, fmtRelative, fmtTokens, totalTokens } from "../lib/format";
 import { navigate } from "../lib/router";
 import { REQ_STATUS } from "../lib/status";
@@ -51,7 +52,7 @@ export function RequirementsTable({
             <th className="r" style={{ width: 56 }}>
               待办
             </th>
-            <th className="r" style={{ width: 76 }}>
+            <th className="r" style={{ width: full ? 124 : 76 }}>
               Token
             </th>
             {full && (
@@ -154,7 +155,10 @@ export function RequirementsTable({
               </td>
               <td className="r mono num">
                 {totalTokens(r.usage) ? (
-                  fmtTokens(totalTokens(r.usage))
+                  <span className="tok-cell">
+                    {full && (r.recentRuns?.length ?? 0) > 1 && <RunBars runs={r.recentRuns!} height={14} />}
+                    {fmtTokens(totalTokens(r.usage))}
+                  </span>
                 ) : (
                   <span className="faint">—</span>
                 )}

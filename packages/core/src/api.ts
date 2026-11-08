@@ -234,6 +234,24 @@ export interface RequirementSummary extends Requirement {
   /** 最近一次流水线运行的档位。 */
   tier?: Tier
   quality?: QualityMetrics
+  /** 最近 12 次运行（含 Lead 派发的任务），按开始时间升序；需求行的迷你柱用（docs/design/25 §3）。 */
+  recentRuns?: RunSpark[]
+}
+
+export interface RunSpark {
+  runId: string
+  status: RunState['status']
+  startedAt: string
+  tokens: number
+  kind?: RunState['kind']
+}
+
+/** 一天的活动量，按运行开始日（服务端本地时区）计。 */
+export interface DailyActivity {
+  /** YYYY-MM-DD */
+  day: string
+  runs: number
+  tokens: number
 }
 
 export interface ProjectOverview {
@@ -252,6 +270,8 @@ export interface ProjectOverview {
     verified?: number
     intercepted?: number
     interceptedBy?: QualityMetrics['interceptedBy']
+    /** 最近 14 天（含今天、无活动的天补 0），读数格迷你折线用。 */
+    daily?: DailyActivity[]
   }
 }
 

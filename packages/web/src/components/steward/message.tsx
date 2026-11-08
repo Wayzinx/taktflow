@@ -1,13 +1,14 @@
 import { useRef, useState } from 'react'
-import { Bot, Brain, ChevronRight, CircleAlert, Copy, CornerDownRight, Forward, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Brain, ChevronRight, CircleAlert, Copy, CornerDownRight, Forward, ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Proposal, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
+import { AgentMark } from '../agent-mark'
 import { Menu, toast } from '../ui'
 import { hm } from './fmt'
 import { StewardBlocks } from './blocks'
 import { StewardText } from './citation'
 import { ProposalCard } from './proposal-card'
-import { ToolCard } from './tool-card'
+import { ToolList } from './tool-card'
 
 const DOWN_REASONS = [
   { id: 'wrong', label: '答错了' },
@@ -114,9 +115,7 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
   const delegations = m.delegations ?? []
   return (
     <article className={`stw-msg stw-msg-steward${animate ? ' stw-in' : ''}`} data-steward-anchor={m.id} aria-busy={live}>
-      <div className="stw-avatar" aria-hidden>
-        <Bot />
-      </div>
+      <AgentMark className="stw-avatar" state={live ? 'work' : m.status === 'error' ? 'failed' : 'done'} hue="var(--accent)" size={28} />
       <div className="stw-msg-main">
         <div className="stw-msg-meta">
           <span className="stw-msg-who">管家</span>
@@ -125,11 +124,7 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
         </div>
         <Thinking text={m.thinking} live={live && !m.text} />
         {(m.tools ?? []).length > 0 && (
-          <div className="stw-tools">
-            {m.tools!.map((t) => (
-              <ToolCard key={t.id} tool={t} animate={live} />
-            ))}
-          </div>
+          <ToolList tools={m.tools!} animate={live} />
         )}
         {m.text && <StewardText text={m.text} citations={m.citations} streaming={live} />}
         {(m.blocks ?? []).length > 0 && <StewardBlocks blocks={m.blocks!} onAsk={onSuggest} />}

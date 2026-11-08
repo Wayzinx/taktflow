@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
-import { Bot } from 'lucide-react'
+import { AgentMark } from '../agent-mark'
 import type { StewardContextRef, StewardThread } from '@taktflow/core'
 import { ErrorState, Skeleton, SkeletonText } from '../ui'
 import { Composer } from './composer'
@@ -105,9 +105,7 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
             ))}
             {t.waiting && (
               <div className="stw-msg stw-msg-steward stw-in" aria-label="管家正在回复">
-                <div className="stw-avatar live-ring" aria-hidden>
-                  <Bot />
-                </div>
+                <AgentMark className="stw-avatar" state="work" hue="var(--accent)" size={28} />
                 <div className="stw-msg-main">
                   <div className="stw-thinking">
                     <span className="shimmer-text">正在读你的问题</span>

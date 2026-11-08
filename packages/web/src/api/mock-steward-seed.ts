@@ -32,9 +32,9 @@ export function seedMessages(): StewardMessage[] {
       status: 'done',
       thinking: '先查空间里所有需求的阶段与待办，再看风险引擎的结果；数字都以工具结果为准。',
       tools: [
-        { id: 't1', tool: 'requirements.list', input: { space: 'hello-delivery' }, ok: true, summary: '7 个需求：1 已交付、4 进行中、1 卡住、1 草稿', ms: 42, output: { total: 7, delivered: 1, active: 4, blocked: 1, draft: 1 } },
-        { id: 't2', tool: 'attention.list', input: { pending: true }, ok: true, summary: '3 项待你处理，最久的等了 5 小时', ms: 18, output: [{ id: 'att-3', requirementId: 'REQ-003', ask: 'PRD 审批' }] },
-        { id: 't3', tool: 'risks.list', input: { state: 'open' }, ok: true, summary: '4 条未处理风险（2 高、2 中）', ms: 25 },
+        { id: 't1', tool: 'list_requirements', input: { spaceId: 'hello-delivery' }, ok: true, summary: '需求列表：返回 7 条', ms: 42, output: { total: 7, delivered: 1, active: 4, blocked: 1, draft: 1 } },
+        { id: 't2', tool: 'list_attention', input: { spaceId: 'hello-delivery' }, ok: true, summary: '待办：返回 3 条', ms: 18, output: [{ id: 'att-3', requirementId: 'REQ-003', ask: 'PRD 审批' }] },
+        { id: 't3', tool: 'list_risks', input: { spaceId: 'hello-delivery' }, ok: true, summary: '风险：返回 4 条', ms: 25 },
       ],
       text: '这周 **1 个需求已交付**（REQ-001）[1]，4 个在跑。要你处理的有 3 项，最急的是 REQ-003 的 PRD 审批，已经等了 5 小时 [2]。\n\n风险方面：REQ-004 的系分门禁连续两次同一个失败指纹，已被暂停 [3]；REQ-002 预算用到 84% [4]。\n\n另外按你上周说的，我把"测试之后加一道交叉评审"做成了 workflow 提案，等你确认。',
       citations: [
@@ -54,7 +54,7 @@ export function seedMessages(): StewardMessage[] {
       at: ago(6),
       author: STEWARD,
       status: 'done',
-      tools: [{ id: 't4', tool: 'route.preview', input: { title: '购物车支持批量删除' }, ok: true, summary: '建议 T1 快速修复：只动 shop-web 一处', ms: 63 }],
+      tools: [{ id: 't4', tool: 'propose', input: { title: '新建需求「购物车支持批量删除」' }, ok: true, summary: '生成提案：返回 1 条', ms: 63 }],
       text: '已经帮你建了 **REQ-008 购物车支持批量删除**（草稿，未启动）[1]。路由预览建议走快速修复（T1）[2]，启动时可以再改。',
       citations: [
         { label: 'REQ-008', href: `${S}/req/REQ-008`, kind: 'requirement' },
@@ -64,9 +64,9 @@ export function seedMessages(): StewardMessage[] {
       suggestions: ['帮 REQ-008 补全验收标准', '现在启动 REQ-008'],
     },
     { id: 'm-k1', threadId: 'th-kb', role: 'user', at: ago(26 * 60), author: ME, text: '帮我从 shop-docs 仓库的 docs/ 建一个文档知识库' },
-    { id: 'm-k2', threadId: 'th-kb', role: 'steward', at: ago(25 * 60), author: STEWARD, status: 'done', tools: [{ id: 't5', tool: 'knowledge.build', input: { id: 'shop-docs' }, ok: true, summary: '解析 214 个文档，切块 1,892，用时 3 分 12 秒', ms: 192000 }], text: '构建完成，Recall@10 为 0.86 [1]，可以发布了。', citations: [{ label: '商城文档 · 评测', href: `${S}/knowledge/shop-docs?tab=eval`, kind: 'knowledge' }], suggestions: ['发布并绑定到 hello-delivery'] },
+    { id: 'm-k2', threadId: 'th-kb', role: 'steward', at: ago(25 * 60), author: STEWARD, status: 'done', tools: [{ id: 't5', tool: 'knowledge_search', input: { spaceId: 'hello-delivery', text: '商城文档 构建与评测' }, ok: true, summary: '检索知识库：返回 1 条', ms: 192000 }], text: '构建完成，Recall@10 为 0.86 [1]，可以发布了。', citations: [{ label: '商城文档 · 评测', href: `${S}/knowledge/shop-docs?tab=eval`, kind: 'knowledge' }], suggestions: ['发布并绑定到 hello-delivery'] },
     { id: 'm-r1', threadId: 'th-req4', role: 'user', at: ago(3 * 24 * 60), author: ME, text: 'REQ-004 为什么卡住了？' },
-    { id: 'm-r2', threadId: 'th-req4', role: 'steward', at: ago(3 * 24 * 60 - 8), author: STEWARD, status: 'done', tools: [{ id: 't6', tool: 'run.failures', input: { runId: 'run-20261104-0004' }, ok: true, summary: '系分门禁 2 次失败，同一指纹', ms: 31 }], text: '系分门禁同一个失败指纹出现了 2 次 [1]，已暂停自动重试。我已经在需求群里请 Lead 看一下设计里的接口契约。', citations: [{ label: '失败指纹', href: `${S}/run/run-20261104-0004?node=design-gate`, kind: 'run' }], delegations: [{ spaceId: 'hello-delivery', requirementId: 'REQ-004', messageId: 'chat-steward-1', status: 'answered', reply: '契约里缺少过期时间的时区说明，已补上并重跑门禁。', at: ago(3 * 24 * 60 - 30) }] },
+    { id: 'm-r2', threadId: 'th-req4', role: 'steward', at: ago(3 * 24 * 60 - 8), author: STEWARD, status: 'done', tools: [{ id: 't6', tool: 'run_status', input: { spaceId: 'hello-delivery', runId: 'run-20261104-0004' }, ok: true, summary: '运行状态：返回 1 条', ms: 31 }], text: '系分门禁同一个失败指纹出现了 2 次 [1]，已暂停自动重试。我已经在需求群里请 Lead 看一下设计里的接口契约。', citations: [{ label: '失败指纹', href: `${S}/run/run-20261104-0004?node=design-gate`, kind: 'run' }], delegations: [{ spaceId: 'hello-delivery', requirementId: 'REQ-004', messageId: 'chat-steward-1', status: 'answered', reply: '契约里缺少过期时间的时区说明，已补上并重跑门禁。', at: ago(3 * 24 * 60 - 30) }] },
   ]
 }
 

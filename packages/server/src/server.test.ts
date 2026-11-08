@@ -777,6 +777,10 @@ it('loop 多轮用量在列表、运行图、需求详情和 metrics 一致，�
     expect(requirement.runs[0].usage).toEqual(expected)
     expect(metrics.usage).toEqual(expected)
     expect(project.totals.usage).toEqual(expected)
+    // 迷你柱与每日活动与总量同口径（来自事件，不读节点状态里的 usage）
+    const tokens = expected.inputTokens + expected.outputTokens
+    expect(project.requirements[0].recentRuns).toEqual([expect.objectContaining({ runId, tokens, kind: 'workflow' })])
+    expect(project.totals.daily).toHaveLength(14)
   }
   await assertTotals(total)
   const detail = await getJson<RunDetail>(`${server.url}/api/runs/${runId}`)
