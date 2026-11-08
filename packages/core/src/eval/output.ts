@@ -11,6 +11,12 @@ const maxBytes = 200 * 1024
 export async function getEvalOutput(stores: ProjectStores, id: string, caseId: string, variant: string): Promise<{ files: Array<{ path: string; content: string }> }> {
   evalId(caseId); evalId(variant)
   const run = await getEvalRun(stores, id)
+  const evidence = run.replayEvidence
+  if (evidence) {
+    const rows = evidence.filter(row => row.caseId === caseId && row.variant === variant)
+    if (!rows.length) throw new Error('评测输出不存在；请核对样本与变体')
+    return { files: rows.map(row => ({ path: `repeat-${row.repeat + 1}.json`, content: JSON.stringify({ output: row.output, verdict: row.verdict }, null, 2) })) }
+  }
   const result = run.results.find((row) => row.caseId === caseId && row.variant === variant)
   if (!result?.outputDir) throw new Error('评测输出不存在')
   const root = join(stores.taktDir, 'evals', 'runs', evalId(id), caseId, variant)

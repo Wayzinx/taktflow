@@ -1,4 +1,4 @@
-import { requireRole, type SpaceMember } from '@taktflow/core'
+import { QualityConflictError, RewindConflictError, requireRole, type SpaceMember } from '@taktflow/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { assertArtifactPath, assertNodeId, assertRequirementId, assertRunId, type Actor, type ProjectStores, type Viewer } from '@taktflow/core'
 
@@ -12,6 +12,7 @@ export function json(response: ServerResponse, value: unknown, status = 200): vo
 }
 
 export function fail(response: ServerResponse, error: unknown): void {
+  if (error instanceof QualityConflictError || error instanceof RewindConflictError) error = new HttpError(409, error.message)
   if (response.headersSent) { response.destroy(); return }
   json(response, { error: error instanceof HttpError ? error.message : '服务器内部错误' }, error instanceof HttpError ? error.status : 500)
 }

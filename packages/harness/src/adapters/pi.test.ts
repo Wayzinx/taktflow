@@ -37,7 +37,7 @@ const fixtures = streamFixtures(text => jsonl(
 ), {
   started: { type: 'started', sessionId: 'pi-session' },
   message: { type: 'message', role: 'assistant', text: '最终回答' },
-  toolCall: { type: 'tool_call', tool: 'read', input: '{"path":"a.ts"}',
+  toolCall: { type: 'tool_call', phase: 'end', callId: 'call-1', tool: 'read', input: '{"path":"a.ts"}',
     output: '{"content":[{"type":"text","text":"source"}]}', ok: true },
   usage: { inputTokens: 140, outputTokens: 20, cachedTokens: 30, costUsd: 0.05 }, finalText: '最终回答',
 }, '按 Pi 官方 JSON Event Stream、Message Types 文档合成，非 CLI 实录')
@@ -98,10 +98,10 @@ describe('Pi JSONL 协议', () => {
     send({ type: 'tool_execution_end', toolCallId: 'two', result: 'second', isError: true },
       { type: 'tool_execution_end', toolCallId: 'one', result: 'first', isError: false })
     expect(events.filter(event => event.type === 'tool_call')).toEqual([
-      { type: 'tool_call', tool: 'read', input: '{"path":"one"}' },
-      { type: 'tool_call', tool: 'read', input: '{"path":"two"}' },
-      { type: 'tool_call', tool: 'read', input: '{"path":"two"}', output: 'second', ok: false },
-      { type: 'tool_call', tool: 'read', input: '{"path":"one"}', output: 'first', ok: true },
+      { type: 'tool_call', phase: 'start', callId: 'one', tool: 'read', input: '{"path":"one"}' },
+      { type: 'tool_call', phase: 'start', callId: 'two', tool: 'read', input: '{"path":"two"}' },
+      { type: 'tool_call', phase: 'end', callId: 'two', durationMs: expect.any(Number), tool: 'read', input: '{"path":"two"}', output: 'second', ok: false },
+      { type: 'tool_call', phase: 'end', callId: 'one', durationMs: expect.any(Number), tool: 'read', input: '{"path":"one"}', output: 'first', ok: true },
     ])
   })
 

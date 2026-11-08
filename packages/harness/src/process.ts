@@ -12,6 +12,7 @@ export { extractJsonBlock } from '@taktflow/core'
 export interface ProcessOptions {
   stdin?: string
   onLine?: (line: string) => void
+  onJsonLine?: (line: string) => void
 }
 
 export interface ProcessResult {
@@ -113,7 +114,19 @@ export async function runProcess(
         })
         child.stdout!.setEncoding('utf8')
         child.stderr!.setEncoding('utf8')
-        child.stdout!.on('data', (chunk: string) => { rawStdout += chunk })
+        let jsonBuffer = '', jsonFailed = false
+        const emitJsonLine = (line: string) => {
+          if (jsonFailed) return
+          try { options.onJsonLine?.(redact(line.endsWith('\r') ? line.slice(0, -1) : line)) }
+          catch (error) { jsonFailed = true; stop(`JSONL 事件处理失败，请检查适配器回调：${errorText(error)}`) }
+        }
+        child.stdout!.on('data', (chunk: string) => {
+          rawStdout += chunk
+          if (!options.onJsonLine) return
+          jsonBuffer += chunk
+          let end: number
+          while ((end = jsonBuffer.indexOf('\n')) >= 0) { emitJsonLine(jsonBuffer.slice(0, end)); jsonBuffer = jsonBuffer.slice(end + 1) }
+        })
         child.stderr!.on('data', (chunk: string) => { rawStderr += chunk })
         child.stdout!.on('error', error => stop(`Stdout failed: ${errorText(error)}`))
         child.stderr!.on('error', error => stop(`Stderr failed: ${errorText(error)}`))
@@ -140,6 +153,7 @@ export async function runProcess(
         })
         lines.on('error', error => stop(`Readline failed: ${errorText(error)}`))
         child.on('close', (code, signal) => {
+          if (jsonBuffer) emitJsonLine(jsonBuffer)
           closed = true
           lines.close()
           if (code !== null) result.exitCode = code

@@ -28,6 +28,7 @@ export interface CliOptions {
   target?: string
   defects?: boolean
   variant?: string[]
+  repeats?: string
   judge?: string
   title?: string
   desc?: string
@@ -113,8 +114,16 @@ export const HELP = `用法：takt <命令> [选项]
   chat ls <REQ> | chat post <REQ> "<text>"
   eval scorecards [--by node|recipe|skill] [--workflow <id>]
   eval collect [--target node:<workflow>/<node>|skill:<name>] [--defects]
-  eval run <target> --variant '<json>'... [--judge '<model|json>'] [--mock <file>]
+  eval run <target> --variant '<json>'... [--judge '<model|json>'] [--repeats N] [--mock <file>]
   eval show <evalId>
+  eval sample --input '<EvalSampleRequest JSON>' --reason <text>
+  eval retire <caseId> --reason <text>
+  quality sync [--req <runId>] --reason <text> | quality verify | quality repair --reason <text>
+  attention tick [--no-resume] --reason <text>
+  defect observations <REQ> | defect merges <REQ> --reason <text>
+  defect merge <REQ> <suggestionId> --input '{"decision":"accept"}' --reason <text>
+  defect miss <REQ> <defectId> <checkpointId> --input '<MissDecisionRequest JSON>' --reason <text>
+  defect update <REQ> <defectId> --input '<DefectUpdateRequest JSON>' --reason <text>
   defect report <REQ> --title <text> --desc <text> --severity critical|major|minor
     [--ac AC-1]... [--evidence <path>]... [--link <url>]... [--reason <text>]
   defect attribute <REQ> <defectId> [--mock <file>]
@@ -165,6 +174,7 @@ const OPTIONS = {
   wait: { type: 'boolean' }, force: { type: 'boolean' }, off: { type: 'boolean' }, start: { type: 'boolean' },
   'dry-run': { type: 'boolean' },
   by: { type: 'string' }, workflow: { type: 'string' }, target: { type: 'string' }, defects: { type: 'boolean' },
+  repeats: { type: 'string' },
   variant: { type: 'string', multiple: true }, judge: { type: 'string' },
   title: { type: 'string' }, desc: { type: 'string' }, severity: { type: 'string' }, note: { type: 'string' },
   hint: { type: 'string' }, tier: { type: 'string' }, input: { type: 'string' }, state: { type: 'string' },
@@ -223,7 +233,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     noResume: values['no-resume'] === true,
     link: values.link?.[0], links: values.link, ac: values.ac, evidence: values.evidence,
   }
-  for (const key of ['by', 'workflow', 'target', 'judge', 'title', 'desc', 'severity', 'note', 'hint', 'tier', 'input', 'state', 'project', 'name', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {
+  for (const key of ['repeats', 'by', 'workflow', 'target', 'judge', 'title', 'desc', 'severity', 'note', 'hint', 'tier', 'input', 'state', 'project', 'name', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {
     const value = values[key]
     if (value !== undefined) options[key] = value
   }

@@ -67,7 +67,7 @@ export async function collectOutputs(stores: ProjectStores, state: RunState, nod
       if (path.endsWith('.json') && output.schema) validateSchema(JSON.parse(content.toString()), output.schema)
       const ref = await stores.workspaces.writeArtifact({
         ref: { workspace: state.requirementId, path }, content, kind: output.kind, author: actor,
-        reason: node.title, derivedFrom: ns.inputs ?? [], producedBy: { runId: state.runId, nodeId: node.id },
+        reason: node.title, derivedFrom: ns.inputs ?? [], producedBy: { runId: state.runId, nodeId: node.id, invocationId: actor.type === 'agent' ? actor.invocationId : undefined },
       })
       collected.set(path, ref)
       await emit('artifact.written', { ref, kind: output.kind, sha256: sha256(content) }, node.id, actor)

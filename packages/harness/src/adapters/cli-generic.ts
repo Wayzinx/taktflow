@@ -18,7 +18,7 @@ const NON_MESSAGE_TYPE = /^(?:usage|tokens?|metrics?|init|started|session|metada
 const DELTA_TYPE = /(?:^|[._-])delta(?:$|[._-])/i
 
 export interface CliParserOptions {
-  /** started 事件携带的模型名（来自 HarnessRequest.model）。 */
+  /** 兼容旧调用参数；请求模型不作为 started 的实际模型回报。 */
   model?: string
 }
 
@@ -83,10 +83,10 @@ export function createCliParser(config: CliHarnessConfig, onEvent: EventSink = (
     if (session !== undefined && session !== '' && session !== result.sessionId) {
       result.sessionId = session
       started = true
-      onEvent({ type: 'started', sessionId: session, model: options.model })
+      onEvent({ type: 'started', sessionId: session, model: typeof data.model === 'string' ? data.model : undefined })
     } else if (!started) {
       started = true
-      onEvent({ type: 'started', sessionId: result.sessionId, model: options.model })
+      onEvent({ type: 'started', sessionId: result.sessionId, model: typeof data.model === 'string' ? data.model : undefined })
     }
 
     const type = readText(dotGet(data, events?.type))
@@ -151,6 +151,8 @@ export function inferCliCapabilities(config: CliHarnessConfig): HarnessCapabilit
   const supportsResume = [...config.command, ...(config.resume?.args ?? [])].some(arg => arg.includes('{{sessionId}}'))
   // 显式声明只能关闭能力，不能把未实现的映射或原生功能声明为可用。
   return {
+    toolPhases: false, readOnly: false, effortOverride: false,
+    modelOverride: Boolean(config.model?.flag || config.model?.env || config.command.some(arg => arg.includes('{{model}}'))),
     resume: supportsResume && config.capabilities?.resume !== false,
     structuredOutput: false,
     toolEvents: Boolean(events?.tool) && config.capabilities?.toolEvents !== false,

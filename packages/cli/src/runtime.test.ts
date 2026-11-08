@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { openProject, type TaktConfig } from '@taktflow/core'
+import { openProject, type TaktConfig, type EventPayloads } from '@taktflow/core'
 import { createHarnesses } from '@taktflow/harness'
 import { main } from './index.js'
 import { createRunEngine, loadRuntime, resolveWorkflow, withMock } from './project.js'
@@ -78,7 +78,11 @@ it('本地 TS 插件经 CLI runtime/native 真正执行 provider 工具往返，
   expect(state.nodes.work?.usage).toMatchObject({ inputTokens: 30, outputTokens: 15 })
   expect(state.nodes.work?.usage?.costUsd).toBeCloseTo(0.00012, 10)
   const events = await context.stores.events.read(state.runId)
-  expect(events.filter((event) => event.type === 'harness.tool_call')).toHaveLength(2)
+  const tools = events.filter(event => event.type === 'harness.tool_call').map(event => event.data as EventPayloads['harness.tool_call'])
+  const ended = tools.filter(tool => tool.phase === 'end')
+  expect(ended).toHaveLength(2)
+  expect(ended).toMatchObject([{ callId: 'outside', ok: false }, { callId: 'inside', ok: true }])
+  expect(tools.filter(tool => tool.phase === 'start').map(tool => tool.callId)).toEqual(ended.map(tool => tool.callId))
   expect(await context.stores.events.verify(state.runId)).toEqual({ ok: true })
   expect((await cli(dir, ['kb', 'query', 'fixture', '--intent', 'fact'])).data).toEqual([expect.objectContaining({ sourceId: 'plugin-knowledge' })])
 })

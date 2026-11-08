@@ -1,5 +1,5 @@
 import { join } from 'node:path'
-import { createCommandRegistry, evalCommandSpecs, createLessonStore, routeRequirement, setReviewDisposition, answerOrRead, validateAnswer, type CommandHandlers, type EngineDeps, type ProjectStores } from '@taktflow/core'
+import { reconcileAssumptions, createCommandRegistry, evalCommandSpecs, createLessonStore, routeRequirement, setReviewDisposition, answerOrRead, validateAnswer, type CommandHandlers, type EngineDeps, type ProjectStores } from '@taktflow/core'
 import { auditSpace, workflowStore } from './space.js'
 import { configuredRouteModel } from './knowledge-runtime.js'
 import { serialize } from './stale.js'
@@ -40,7 +40,9 @@ export function answerAttention(stores: ProjectStores, input: { requestId: strin
     const current = (await stores.attention.list()).find((item) => item.requestId === input.requestId)
     if (!current) throw new Error('待办不存在')
     validateAnswer(current, input)
-    return answerOrRead(stores, current, { ...input, by })
+    const answered = await answerOrRead(stores, current, { ...input, by })
+    if (answered.kind === 'assumption') await reconcileAssumptions(stores)
+    return answered
   })
 }
 

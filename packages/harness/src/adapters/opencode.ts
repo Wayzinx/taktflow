@@ -29,9 +29,9 @@ export function createOpenCodeParser(onEvent: EventSink = () => {}): StreamParse
         state.completed = false
         const tool = object(part.state)
         const name = string(part.tool) ?? 'tool_use'
-        state.tool(part.callID, name, tool.input)
+        // CLI 的完成快照不能证明工具何时开始。
         if (tool.status === 'completed' || tool.status === 'error') {
-          state.toolResult(part.callID, tool.output ?? tool.error, tool.status === 'completed', data)
+          onEvent({ type: 'tool_call', tool: name, input: JSON.stringify(tool.input) ?? '', output: String(tool.output ?? tool.error ?? ''), ok: tool.status === 'completed' })
         }
         break
       }
@@ -64,7 +64,7 @@ export function createOpenCodeParser(onEvent: EventSink = () => {}): StreamParse
 export function createOpenCodeHarness(options: OpenCodeOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
     id: 'opencode', displayName: 'OpenCode', bin: options.bin ?? 'opencode',
-    parser: createOpenCodeParser, capabilities: { cost: true },
+    parser: createOpenCodeParser, capabilities: { cost: true, toolPhases: false },
     command: req => ({ args: ['run', '--format', 'json', promptWithInstructions(req),
       ...(req.model ? ['--model', req.model] : [])] }),
   })

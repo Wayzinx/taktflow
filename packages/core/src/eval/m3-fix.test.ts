@@ -30,16 +30,15 @@ it.each([
   { tested: undefined, judge: { harness: 'other' }, allowed: true },
   { tested: 'tested', judge: { harness: 'other' }, allowed: false },
   { tested: 'tested', judge: { harness: 'other', model: 'tested' }, allowed: false },
-])('判分独立性：被测=$tested judge=$judge allowed=$allowed', async ({ tested, judge, allowed }) => {
+])('M5：旧整节点用例在判分之前拒绝（被测=$tested judge=$judge）', async ({ tested, judge, allowed }) => {
   const { stores, deps, value } = await setup()
   deps.profiles.dev.harness = { harness: 'mock', model: tested }
   await saveEvalCase(stores, { ...value, grading: { rubric: { text: '核验输出', threshold: 80 } } })
   deps.harnesses.mock.run = async () => ({ ok: true, finalText: '', structured: { checks: [], score: 90, reason: '独立核验', rubric: { score: 90, reason: '评分证据' } } })
   const runtime = { ...deps, harnesses: { ...deps.harnesses, other: { ...deps.harnesses.mock, id: 'other' } } }
   const pending = runEval(runtime, { target: value.target, variants: [{ id: 'baseline', label: '基线' }], judge })
-  if (!allowed) { await expect(pending).rejects.toThrow('不同'); return }
   const started = await pending
-  expect((await waitEvalRun(stores, started.id)).results[0]).toMatchObject({ pass: true, rubric: { score: 90 } })
+  expect(await waitEvalRun(stores, started.id)).toMatchObject({ status: 'refused', results: [], isolation: { reasons: expect.arrayContaining([expect.stringContaining('整节点')]) } })
 })
 
 it('m3-fix 1/26：命令拒绝绝对、穿越及符号链接路径，错误不泄漏路径', async () => {
@@ -58,7 +57,7 @@ it('m3-fix 1/26：命令拒绝绝对、穿越及符号链接路径，错误不�
   await expect(readFile(join(stores.taktDir, 'evals/runs'))).rejects.toThrow()
 })
 
-it.each(['schema', 'completion', 'pass'])('m3-fix 8/10：冻结原模板、schema 和 completion，回放只组装一次 (%s)', async (mode) => {
+it.each(['schema', 'completion', 'pass'])('M5：保留旧模板、schema 与 completion 可读，拒绝整节点执行 (%s)', async (mode) => {
   const { stores, deps } = await setup()
   const requirement = await stores.workspaces.createRequirement({ title: '冻结输入' })
   await stores.workspaces.writeArtifact({ ref: { workspace: requirement.id, path: 'input.txt' }, content: 'UNIQUE_INPUT', kind: 'input', author: { type: 'human', id: 'tester' }, reason: '冻结输入' })
@@ -81,10 +80,6 @@ it.each(['schema', 'completion', 'pass'])('m3-fix 8/10：冻结原模板、schem
   await saveEvalCase(stores, { ...frozen, id: 'case', title: '冻结', source: { kind: 'manual', runId: original.runId, nodeId: 'a' }, target: { kind: 'node', workflowId: 'flow', nodeId: 'a' }, grading: {}, createdAt: new Date().toISOString() })
   replay = true
   const run = await runEval(deps, { target: { kind: 'node', workflowId: 'flow', nodeId: 'a' }, variants: [{ id: 'baseline', label: '基线' }] })
-  const result = (await waitEvalRun(stores, run.id)).results[0]!
-  expect(prompts[1]?.prompt.match(/UNIQUE_INPUT/g)).toHaveLength(1)
-  expect(prompts[1]?.prompt.match(/RAW_TEMPLATE/g)).toHaveLength(1)
-  expect(result.pass, result.error).toBe(mode === 'pass')
-  if (mode === 'schema') expect(result.error).toContain('valid')
-  if (mode === 'completion') expect(result.error).toContain('完成标准未满足')
+  expect(await waitEvalRun(stores, run.id)).toMatchObject({ status: 'refused', results: [] })
+  expect(prompts).toHaveLength(1)
 })

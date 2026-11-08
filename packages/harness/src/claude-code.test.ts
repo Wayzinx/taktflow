@@ -79,8 +79,8 @@ describe('Claude stream parser', () => {
       usage: { inputTokens: 100, outputTokens: 20, cachedTokens: 30, costUsd: 0.12 } })
     expect(events).toContainEqual({ type: 'started', sessionId: 'claude-s', model: 'opus' })
     expect(events).toContainEqual({ type: 'message', role: 'assistant', text: '读取文件' })
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'Bash', input: '{"command":"false"}', output: 'exit 1', ok: false })
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'Read', input: '{"file_path":"a.ts"}', output: '[{"type":"text","text":"file body"}]', ok: true })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'Bash', input: '{"command":"false"}', output: 'exit 1', ok: false })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'Read', input: '{"file_path":"a.ts"}', output: '[{"type":"text","text":"file body"}]', ok: true })
     expect(events).toContainEqual({ type: 'usage', usage: parser.result().usage })
   })
 

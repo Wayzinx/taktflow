@@ -150,6 +150,6 @@ describe('existing adapter capabilities', () => {
     [createDshHarness(), { resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false }],
     [createMockHarness({ steps: [] }), { resume: false, structuredOutput: false, toolEvents: true, usage: true, cost: true, compactionEvents: true, customProvider: false, sandbox: false, mcp: false }],
   ])('$id 只声明当前实现支持的能力', (harness, capabilities) => {
-    expect(harness.capabilities).toEqual(capabilities)
+    expect(harness.capabilities).toEqual({ ...capabilities, toolPhases: harness.id !== 'mock', readOnly: false, modelOverride: ['claude-code', 'codex'].includes(harness.id), effortOverride: harness.id === 'codex' })
   })
 })

@@ -1,5 +1,7 @@
+import { attributeDefectCheckpoints, type AttributionWriteOptions } from './checkpoint-attribution.js'
 import { structuredLog } from '../util/structured-log.js'
 import { join } from 'node:path'
+import { randomUUID } from 'node:crypto'
 import { stringify } from 'yaml'
 import type { EngineDeps, ProjectStores } from '../interfaces.js'
 import type { DefectConfirmRequest, DefectDetail, DefectReportRequest } from '../api.js'
@@ -7,6 +9,7 @@ import type { Actor, Defect, DefectAttribution } from '../types.js'
 import { parseFrontmatter } from '../util/frontmatter.js'
 import { sha256 } from '../util/hash.js'
 import { withLock } from '../store/locks.js'
+import { withFileLock } from '../store/file-lock.js'
 import { assertRequirementId } from '../store/paths.js'
 import { validateSchema } from '../engine/schema.js'
 import { snapshotNodes } from '../engine/recipe.js'
@@ -14,7 +17,9 @@ import { readOnlyModel } from '../eval/model.js'
 import { defectCases, saveEvalCase, validateEvalCase } from '../eval/cases.js'
 import { attributionSchema } from './schema.js'
 import { precheckDefect } from './precheck.js'
+import { QualityConflictError } from '../quality/index.js'
 export { precheckDefect } from './precheck.js'
+export { QualityConflictError } from '../quality/index.js'
 export type { DefectPrecheck } from './precheck.js'
 
 const system: Actor = { type: 'system', id: 'defects' }
@@ -26,6 +31,27 @@ async function requireReq(stores: ProjectStores, req: string) {
   if (!await stores.workspaces.getRequirement(req)) throw new Error(`需求不存在：${req}`)
 }
 async function write(stores: ProjectStores, defect: Defect, actor: Actor, reason: string, attribution?: DefectAttribution) {
+  if (stores.quality) {
+    const current = (await stores.quality.defects(defect.requirementId)).find((item) => item.id === defect.id)
+    if (current && defect.revision === undefined) throw new QualityConflictError(`缺陷 ${defect.id} 已由另一写入者创建；请重新读取后重试`)
+    const requestId = randomUUID()
+    const entries: Parameters<typeof stores.quality.append>[0] = [{ kind: current ? 'defect.updated' : 'defect.created',
+      key: `defect:${requestId}`, requirementId: defect.requirementId, data: { ...defect, reason }, actor }]
+    if (attribution) entries.push({ kind: attribution.confirmed ? 'attribution.confirmed' : 'attribution.recorded',
+      key: `attribution:${requestId}`, requirementId: defect.requirementId, data: { ...attribution, reason }, actor })
+    await stores.quality.append(entries, current ? { baseRevision: { defectId: defect.id, revision: defect.revision ?? current.revision ?? 0 } } : undefined)
+    // 日志是权威；投影失败不回滚日志，下次读缺陷仍能找到已经提交的记录。
+    await withFileLock(join(stores.taktDir, 'quality', 'defect-projections'), async () => {
+      const saved = (await stores.quality!.defects(defect.requirementId)).find((item) => item.id === defect.id)!
+      const { attribution: savedAttribution, ...savedDefect } = saved
+      Object.assign(defect, savedDefect)
+      await project(stores, savedDefect, actor, reason, savedAttribution)
+    })
+    return
+  }
+  await project(stores, defect, actor, reason, attribution)
+}
+async function project(stores: ProjectStores, defect: Defect, actor: Actor, reason: string, attribution?: DefectAttribution) {
   const contents: Array<[string, string]> = []
   if (attribution) contents.push([`defects/${defect.id}.attribution.json`, JSON.stringify(attribution, null, 2)])
   contents.push([`defects/${defect.id}.md`, `---\n${stringify(defect)}---\n\n${defect.description}\n`])
@@ -39,6 +65,8 @@ async function write(stores: ProjectStores, defect: Defect, actor: Actor, reason
 }
 export async function listDefects(stores: ProjectStores, requirementId: string): Promise<DefectDetail[]> {
   await requireReq(stores, requirementId)
+  if (stores.quality) return (await stores.quality.defects(requirementId)).map((defect) => ({ ...defect,
+    ...(pending.has(key(stores, requirementId, defect.id)) ? { attributing: true } : {}) }))
   const result: DefectDetail[] = []
   for (const artifact of await stores.workspaces.listArtifacts(requirementId)) {
     const match = /^defects\/(D-\d+)\.md$/.exec(artifact.path)
@@ -48,6 +76,11 @@ export async function listDefects(stores: ProjectStores, requirementId: string):
 }
 export async function getDefect(stores: ProjectStores, req: string, id: string): Promise<DefectDetail> {
   await requireReq(stores, req); defectId(id)
+  if (stores.quality) {
+    const defect = (await stores.quality.defects(req)).find((item) => item.id === id)
+    if (!defect) throw new Error(`缺陷不存在：${req}/${id}`)
+    return { ...defect, ...(pending.has(key(stores, req, id)) ? { attributing: true } : {}) }
+  }
   const content = await stores.workspaces.readArtifact({ workspace: req, path: `defects/${id}.md` })
   if (!content) throw new Error(`缺陷不存在：${req}/${id}`)
   const defect = parseFrontmatter(content.toString()).data as unknown as Defect
@@ -58,7 +91,7 @@ export async function reportDefect(stores: ProjectStores, requirementId: string,
   await requireReq(stores, requirementId)
   if (!request.title?.trim() || !request.description?.trim() || !['critical', 'major', 'minor'].includes(request.severity)) throw new Error('缺陷必须有标题、描述和有效 severity')
   if (request.acs?.some((ac) => !/^AC-\d+(?:-\d+)?$/.test(ac))) throw new Error('AC id 不合法')
-  return withLock(join(stores.workspaces.dir(requirementId), 'defects'), async () => {
+  return withFileLock(join(stores.workspaces.dir(requirementId), 'defects'), async () => {
     const existing = await listDefects(stores, requirementId)
     const id = `D-${Math.max(0, ...existing.map((item) => Number(item.id.slice(2)))) + 1}`
     const defect: Defect = { title: request.title, description: request.description, severity: request.severity, acs: request.acs, links: request.links, evidence: request.evidence,
@@ -110,11 +143,11 @@ export async function attributeDefect(deps: EngineDeps, req: string, id: string)
     return { ...defect, attribution }
   })
 }
-export async function startDefectAttribution(deps: EngineDeps, req: string, id: string): Promise<DefectDetail> {
+export async function startDefectAttribution(deps: EngineDeps, req: string, id: string, options?: AttributionWriteOptions): Promise<DefectDetail> {
   const current = await getDefect(deps.stores, req, id), identity = key(deps.stores, req, id)
   if (!pending.has(identity)) {
     if (current.status === 'confirmed' || current.status === 'closed') throw new Error('已确认缺陷不能重新归因')
-    const task = attributeDefect(deps, req, id).then(() => {}, async (error: unknown) => {
+    const task = (options ? attributeDefectCheckpoints(deps, req, id, options) : attributeDefect(deps, req, id)).then(() => {}, async (error: unknown) => {
       await deps.stores.events.append(`defect-${req}`, { type: 'log', actor: system, data: { level: 'error', message: `${id} 归因失败：${error instanceof Error ? error.message : String(error)}` } })
     }).finally(() => pending.delete(identity))
     pending.set(identity, task)

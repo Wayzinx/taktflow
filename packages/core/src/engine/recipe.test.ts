@@ -54,6 +54,10 @@ it('m3-fix 7/23：fallback 配方记录实际后继 harness 与模型，读取�
   expect(recipeOf(events, 'a')).toMatchObject({ harness: 'second', model: 'two' })
   const { scorecards } = await import('../eval/scorecards.js')
   const cards = await scorecards(stores, { by: 'recipe' })
-  expect(cards).toHaveLength(1)
-  expect(cards[0]?.key.recipeKey).toBe(recipeOf(events, 'a')?.recipeKey)
+  // doc 21 §2：每个 fallback 候选是一条真实调用，配方成绩不能丢掉失败的首选。
+  const starts = events.filter(event => event.type === 'invocation.started').map(event => event.data as import('../types.js').InvocationStart)
+  expect(starts.map(value => [value.harness, value.attempt, value.fallbackIndex])).toEqual([['first', 1, 0], ['second', 1, 1]])
+  expect(cards).toHaveLength(2)
+  expect(cards.map(card => card.key.recipeKey).sort()).toEqual(starts.map(value => value.recipeKey).sort())
+  expect(await scorecards(stores, { by: 'node' })).toHaveLength(1)
 })

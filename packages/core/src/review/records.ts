@@ -34,7 +34,7 @@ export async function readReviewRounds(stores: ProjectStores, runId: string, nod
   // 相同内容跨运行会复用产物版本；运行日志仍保留当前运行的评审身份。
   const journal = await readJsonFile<{ reviews?: Record<string, ReviewProgress> }>(join(runDir(stores.taktDir, runId), 'engine.json'))
   const progress = journal?.reviews?.[nodeId]
-  if (progress) return normalizeRounds([...(progress.history ?? []), ...progress.rounds])
+  if (progress) return normalizeRounds([...(progress.history ?? []), ...progress.rounds, ...(progress.pending ? [progress.pending] : [])])
   return rounds
 }
 

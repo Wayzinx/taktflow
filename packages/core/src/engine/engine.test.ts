@@ -397,7 +397,7 @@ describe('core-engine：简报六类基本验收', () => {
     for (const [file, nodeId] of [['spec/clarify.md', 'clarify'], ['spec/spec.md', 'spec']] as const) {
       const versions = records.find((record) => record.path === file)?.versions
       expect(versions).toHaveLength(1)
-      expect(versions?.[0]?.producedBy).toEqual({ runId: paused.runId, nodeId })
+      expect(versions?.[0]?.producedBy).toEqual({ runId: paused.runId, nodeId, invocationId: expect.any(String) })
     }
     const events = await reopened.events.read(paused.runId)
     expect(eventsOf(events, 'human.requested').map((event) => event.nodeId)).toEqual(['answer-clarify', 'review-spec'])

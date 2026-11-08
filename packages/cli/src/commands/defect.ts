@@ -24,7 +24,12 @@ export async function runDefectCommand(cli: EvalCli): Promise<number> {
   } else if (sub === 'confirm') {
     expectPositionals('defect confirm', args, 2, 2)
     result = await executeCommand(stores, projectCommands(stores), 'defect.confirm', { requirementId: args[0], defectId: args[1], note: options.note }, options.reason)
-  } else throw new UsageError('defect 子命令：report | attribute | confirm')
+  } else if (['observations', 'merges', 'merge', 'miss', 'update'].includes(sub ?? '')) {
+    const count = sub === 'miss' ? 3 : ['merge', 'update'].includes(sub!) ? 2 : 1
+    expectPositionals(`defect ${sub}`, args, count)
+    const input = { ...JSON.parse(options.input ?? '{}'), requirementId: args[0], ...(sub === 'merge' ? { suggestionId: args[1] } : { defectId: args[1] }), ...(sub === 'miss' ? { checkpointId: args[2] } : {}) }
+    result = await executeCommand(stores, projectCommands(stores), sub === 'merges' ? 'defect.suggest-merges' : `defect.${sub}`, input, options.reason)
+  } else throw new UsageError('defect 子命令：report | attribute | confirm | observations | merges | merge | miss | update')
   const printer = createPrinter(options.json)
   if (options.json) printer.data(result)
   else printer.text(JSON.stringify(result, null, 2))

@@ -2,7 +2,7 @@ import { cliActor } from '../actor.js'
 import { routingWorkflows } from '@taktflow/server'
 import { createProjectLead, leadEvents } from '../lead.js'
 import { isAbsolute, resolve } from 'node:path'
-import { startRouted } from '@taktflow/core'
+import { syncQuality, startRouted } from '@taktflow/core'
 import type { EventStore, ProjectStores, RunState } from '@taktflow/core'
 import { createPrinter, type Printer } from '../output.js'
 import type { ParsedCli } from '../args.js'
@@ -111,11 +111,14 @@ export async function resumeOnce(context: ProjectContext, runId: string, options
     harness,
     autoApprove: options.autoApprove,
   })
-  return engine.resume(runId, workflow)
+  const resumed = await engine.resume(runId, workflow)
+  await syncQuality(context.stores, runId)
+  return resumed
 }
 
 /** 打印状态摘要 / 待办；--json 时输出单个 RunState。failed/cancelled 用非零退出码。 */
 export async function finishOutput(context: ProjectContext, printer: Printer, state: RunState): Promise<number> {
+  await syncQuality(context.stores, state.runId)
   const pending = pendingFor(await context.stores.attention.list({ pending: true }), state.runId)
   if (printer.json) printer.data({ ...state, attention: pending })
   else printRunSummary(printer, state, pending)

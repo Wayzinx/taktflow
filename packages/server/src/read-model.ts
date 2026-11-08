@@ -1,4 +1,4 @@
-import { recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type DailyActivity, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunSpark, type RunState, type SnapshotNode, type Usage, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
+import { nodeQuality, nodeChanges, recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type DailyActivity, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunSpark, type RunState, type SnapshotNode, type Usage, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
 import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
@@ -126,7 +126,8 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
   context.snapshots.sort((a, b) => a.at.localeCompare(b.at))
   context.compactions.sort((a, b) => a.at.localeCompare(b.at))
   const verdicts = events.filter((event) => event.type === 'judge.verdict').flatMap((event) => (event.data as EventPayloads['judge.verdict']).verdicts)
-  const gate = events.filter((event) => event.type === 'gate.result').at(-1)?.data as EventPayloads['gate.result'] | undefined
+  const recordedGate = events.filter((event) => event.type === 'gate.result').at(-1)?.data as EventPayloads['gate.result'] | undefined
+  const gate = recordedGate ? { ...recordedGate, checks: recordedGate.checks.map(check => ({ ...check, status: check.status ?? (check.pass ? 'pass' as const : 'fail' as const) })) } : undefined
   const outputs: NodeDetail['outputs'] = []
   for (const ref of node.outputs) {
     const records = ref.workspace === state.requirementId ? artifacts : await stores.workspaces.listArtifacts(ref.workspace)
@@ -135,7 +136,9 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
     if (version === undefined) throw new Error(`节点输出缺少版本：${nodeId}/${ref.path}`)
     outputs.push({ path: ref.path, version, kind: record?.kind ?? 'other' })
   }
-  return { state: node, recipe: recipeOf(events, nodeId), goal: snapshots.get(nodeId)?.goal, summary: node.summary, completion: snapshots.get(nodeId)?.completion, completionChecks: node.checks, failures: node.failures, kind: graphNode.kind, title: graphNode.title, stage: graphNode.stage, role: graphNode.role, checks: snapshots.get(nodeId)?.checks, prompt, inputs: (node.inputs ?? []).map(({ path, version }) => ({ path, version })), outputs, context, review: await reviewDetail(stores, runId, nodeId), ...(verdicts.length ? { verdicts } : {}), ...(gate ? { gate } : {}), events }
+  const quality = await nodeQuality(stores, runId, nodeId)
+  const changes = await nodeChanges(stores, runId, nodeId)
+  return { ...quality, changes, state: node, recipe: recipeOf(events, nodeId), goal: snapshots.get(nodeId)?.goal, summary: node.summary, completion: snapshots.get(nodeId)?.completion, completionChecks: node.checks, failures: node.failures, kind: graphNode.kind, title: graphNode.title, stage: graphNode.stage, role: graphNode.role, checks: snapshots.get(nodeId)?.checks, prompt, inputs: (node.inputs ?? []).map(({ path, version }) => ({ path, version })), outputs, context, review: await reviewDetail(stores, runId, nodeId), ...(verdicts.length ? { verdicts } : {}), ...(gate ? { gate } : {}), events }
 }
 
 export async function runSummaries(stores: ProjectStores, states: RunState[]) {

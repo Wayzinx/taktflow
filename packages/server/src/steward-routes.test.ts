@@ -4,18 +4,18 @@ import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { initProject } from '../../core/src/store/project.js'
-import { registerStewardRoutes, createStewardDeps } from './steward-routes.js'
+import { registerStewardRoutes, createStewardDeps, type StewardRouteDeps } from './steward-routes.js'
 import { createRouter } from './router.js'
 import { fail, json } from './http.js'
 import { STREAMING, type Handler } from './routes.js'
 import type { StewardMessage } from '../../core/src/api.js'
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn() })
-async function fixture() {
+async function fixture(onLeadMention?: StewardRouteDeps['onLeadMention']) {
   const root = await mkdtemp(join(tmpdir(), 'takt-steward-http-')); cleanup.push(() => rm(root, { recursive: true, force: true }))
   const stores = await initProject(root, { name: '商店' })
   const router = createRouter<Handler>(), registered: string[] = [], connections = new Set<() => void>()
-  const registration = registerStewardRoutes((method, path, handler) => { registered.push(`${method} ${path}`); router.add(method, path, handler) }, { projectDir: root, connections })
+  const registration = registerStewardRoutes((method, path, handler) => { registered.push(`${method} ${path}`); router.add(method, path, handler) }, { projectDir: root, connections, onLeadMention })
   const server = createServer((request, response) => {
     const url = new URL(request.url!, 'http://localhost')
     try {
@@ -30,8 +30,8 @@ async function fixture() {
   const request = (path: string, user = 'alice', method = 'GET', value?: unknown) => fetch(`${base}/api/steward${path}`, { method, headers: { 'x-takt-user': user, ...(method === 'GET' ? {} : { 'content-type': 'application/json' }) }, ...(value === undefined ? {} : { body: JSON.stringify(value) }) })
   return { root, stores, registered, registration, base, request, connections }
 }
-it('实现协议中的全部 22 条路由，用户会话/提案/偏好/反馈隔离', async () => {
-  const f = await fixture(); expect(f.registered).toHaveLength(22)
+it('实现协议中的管家路由与重发，用户会话/提案/偏好/反馈隔离', async () => {
+  const f = await fixture(); expect(f.registered).toContain('POST /api/steward/delegations/:messageId/resend')
   const response = await f.request('/threads', 'alice', 'POST', { text: '你好' }); expect(response.status).toBe(200)
   const created = await response.json() as { thread: { id: string } }
   expect(await (await f.request('/threads', 'bob')).json()).toEqual([])
@@ -104,4 +104,28 @@ it('真实命令表创建需求并撤销；新文件撤销后恢复不存在状�
   expect(await readFile(join(f.root, 'agents/new.md'), 'utf8')).toBe('new')
   expect(await (await f.request(`/proposals/${file.id}/undo`, 'alice', 'POST', {})).json()).toMatchObject({ status: 'reverted' })
   await expect(readFile(join(f.root, 'agents/new.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('M5 重发路由按用户隔离并保留理由，返回正式 replied 回执', async () => {
+  const { openProject, sha256 } = await import('@taktflow/core')
+  const f = await fixture(async (dir, id, message) => {
+    const stores = await openProject(dir)
+    await stores.chat.post(id, { author: { type: 'agent', role: 'lead', harness: 'mock' }, kind: 'text', text: '已收到重发', replyTo: message.id, receipt: { status: 'replied' } })
+  })
+  const req = await f.stores.workspaces.createRequirement({ title: '重发' })
+  await f.request('/threads')
+  const agent = f.registration.agents.get('alice')!, at = new Date().toISOString()
+  const thread = await agent.store.createThread('转达', at)
+  const space = (await agent.deps.spaces())[0]!
+  const id = 'uncertain-original'
+  await agent.store.write(`delegations/${sha256(id)}.json`, { delegation: { spaceId: space.id, requirementId: req.id, messageId: id, status: 'uncertain', at }, threadId: thread.id, text: '核对后重发', sentAt: at })
+  expect((await f.request(`/delegations/${id}/resend`, 'alice', 'POST', {})).status).toBe(400)
+  expect((await f.request(`/delegations/${id}/resend`, 'bob', 'POST', { reason: '其他人' })).status).toBe(409)
+  const response = await f.request(`/delegations/${id}/resend`, 'alice', 'POST', { reason: '人工核对后重发' })
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  expect(result).toMatchObject({ status: 'replied', reply: '已收到重发' })
+  expect(result.messageId).not.toBe(id)
+  expect(await agent.store.lines('delegation-audit.jsonl')).toContainEqual(expect.objectContaining({ messageId: id, newMessageId: result.messageId, reason: '人工核对后重发' }))
+  expect((await f.request(`/delegations/${result.messageId}/resend`, 'alice', 'POST', { reason: '已回复不得重发' })).status).toBe(409)
 })

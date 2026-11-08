@@ -23,6 +23,7 @@ function structured(text: string): unknown {
 
 export function createNativeHarness(options: NativeHarnessOptions): HarnessAdapter {
   const capabilities: HarnessCapabilities = {
+    toolPhases: true, readOnly: true, modelOverride: true, effortOverride: false,
     resume: false, structuredOutput: true, toolEvents: true, usage: true, cost: true,
     compactionEvents: true, customProvider: true, sandbox: true, mcp: false,
     // 插件已实例化的 provider 自己实现协议；配置工厂仍只内置这两种协议。
@@ -65,9 +66,9 @@ export function createNativeHarness(options: NativeHarnessOptions): HarnessAdapt
         emit({ type: 'message', role: 'user', text: req.prompt })
         let compacted = false
         let finalizing = false
-        const allowBash = req.tools?.allowBash === true && await sandboxAvailable()
-        if (req.tools?.allowBash && !allowBash) emit({ type: 'message', role: 'system', text: 'bash disabled: requires macOS sandbox-exec or usable Linux bwrap' })
-        const tools = toolSpecs(allowBash)
+        const allowBash = !req.readOnly && req.tools?.allowBash === true && await sandboxAvailable()
+        if (!req.readOnly && req.tools?.allowBash && !allowBash) emit({ type: 'message', role: 'system', text: 'bash disabled: requires macOS sandbox-exec or usable Linux bwrap' })
+        const tools = toolSpecs(allowBash).filter(tool => !req.readOnly || !['write_file', 'edit_file', 'bash'].includes(tool.name))
         for (let round = 0; round < 50; round++) {
           checkAbort(signal)
           if (!compacted && selected.contextWindow) compacted = compact(messages, selected.contextWindow, emit)
@@ -97,13 +98,18 @@ export function createNativeHarness(options: NativeHarnessOptions): HarnessAdapt
             if (new Set(calls.map((call) => call.id)).size !== calls.length || calls.some((call) => !call.id)) throw new Error('Provider returned invalid tool call IDs')
             for (const call of calls) {
               checkAbort(signal)
+              const started = Date.now()
+              emit({ type: 'tool_call', tool: call.name, input: call.arguments, callId: call.id, phase: 'start' })
               let output: string
               let ok = true
-              try { output = await abortable(executeTool(call, paths, allowBash), signal) }
+              try {
+                if (req.readOnly && !tools.some(tool => tool.name === call.name)) throw new Error(`工具不可用：${call.name}，请使用已提供的只读工具`)
+                output = await abortable(executeTool(call, paths, allowBash), signal)
+              }
               catch (error) { checkAbort(signal); output = `Tool error: ${error instanceof Error ? error.message : String(error)}`; ok = false }
               // 事件和工具回包分别脱敏，不改写 assistant 原始参数，防止破坏精确替换等工具调用。
               messages.push({ role: 'tool', toolCallId: call.id, content: redact(output) })
-              emit({ type: 'tool_call', tool: call.name, input: call.arguments, output, ok })
+              emit({ type: 'tool_call', tool: call.name, input: call.arguments, output, ok, callId: call.id, phase: 'end', durationMs: Date.now() - started })
             }
             continue
           }

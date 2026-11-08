@@ -61,7 +61,7 @@
  * | PATCH| /api/space/repos/:repoId                       | 请求体 RepoUpdateRequest → SpaceDetail |
  * | --- 评测与归因（docs/design/20） | | |
  * | GET  | /api/eval/scorecards?by=node|recipe|skill&workflow= | NodeScorecard[] |
- * | GET  | /api/eval/cases?target=                        | EvalCase[]（target 形如 node:<workflow>/<node> 或 skill:<name>） |
+ * | GET  | /api/eval/cases?target=&retired=1              | EvalCase[]（target 形如 node:<workflow>/<node> 或 skill:<name>；默认不含已退役样本，retired=1 时一并返回） |
  * | POST | /api/eval/cases/collect                        | 请求体 EvalCollectRequest → { added: string[] }（从历史与已确认缺陷生成用例） |
  * | GET  | /api/eval/runs                                 | EvalRun[]（不含 results 明细时 results 为空数组） |
  * | GET  | /api/eval/runs/:id                             | EvalRun |
@@ -93,6 +93,7 @@
  * | POST | /api/runs/:runId/nodes/:nodeId/rewind/preview   | 无请求体 → RewindPreview |
  * | POST | /api/runs/:runId/nodes/:nodeId/rewind           | 请求体 RewindRequest → RewindResult（token 与当前状态不符 409） |
  * | POST | /api/steward/delegations/:messageId/resend      | 请求体 { reason } → StewardDelegation（只允许 uncertain / expired） |
+ * | POST | /api/requirements/:id/room/tasks/:messageId/resend | 请求体 { reason } → RoomMessage（新的 task 消息；只允许 receipt 为 uncertain / expired，派发链与跳数沿用原任务） |
  *
  * —— 需求与空间增删改（docs/design/22）——
  * | GET  | /api/server                                    | ServerInfo（是否多空间、管家是否已配置模型） |
@@ -426,7 +427,8 @@ export interface NodeDetail {
   outputs: Array<{ path: string; version: number; kind: string }>
   context: { snapshots: ContextSnapshot[]; compactions: CompactionRecord[] }
   verdicts?: JudgeVerdict[]
-  gate?: { pass: boolean; checks: Array<{ id: string; pass: boolean; score?: number; message?: string }> }
+  /** 检查项带三态 status（docs/design/21 §4）；M4 之前的记录没有 status，按 pass 推断。 */
+  gate?: { pass: boolean; checks: GateCheckResult[] }
   /** gate 节点的检查定义（来自快照，含 rubric 阈值）。 */
   checks?: SnapshotNode['checks']
   /** review 节点：配置与每轮记录（含历史修订）、正交状态与人工处置。 */
@@ -486,7 +488,7 @@ export interface RunTimeline {
       long?: boolean
     }>
     /** Agent 节点的调用（fallback 换 harness 时能看见）。 */
-    invocations?: Array<{ id: string; harness: string; model?: string; start: string; end?: string; outcome?: InvocationEnd['outcome'] }>
+    invocations?: Array<{ id: string; harness: string; model?: string; start: string; end?: string; outcome?: InvocationEnd['outcome']; attempt?: number; fallbackIndex?: number }>
   }>
   /** 上下文曲线：每轮输入 token（含缓存）。 */
   context: Array<{ nodeId: string; window?: number; points: Array<{ at: string; tokens: number }>; compactions: Array<{ at: string; before: number; after: number }> }>
@@ -530,7 +532,8 @@ export interface RewindRequest {
 }
 
 export interface RewindResult {
-  files: RewindPreview['files']
+  /** version：存放区产物回退后写出的新版本；仓库文件与保留的新建产物（from 为空）没有。 */
+  files: Array<RewindPreview['files'][number] & { version?: number }>
   stale: RewindPreview['stale']
 }
 
@@ -892,6 +895,9 @@ export interface MissDecisionRequest {
   verdict: MissVerdict
   conditions?: MissAssessment['conditions']
   note?: string
+  /** 改判原因（进质量日志）；baseRevision 为读到的缺陷 revision，不一致返回 409。 */
+  reason: string
+  baseRevision?: number
 }
 
 export interface EvalSampleRequest {
@@ -900,6 +906,8 @@ export interface EvalSampleRequest {
   /** must_catch：期望提出的问题（缺陷标题或问题键）。 */
   expectIssue?: string
   defectId?: string
+  /** must_catch：读到的缺陷 revision；缺陷之后被改过返回 409。 */
+  baseRevision?: number
   reason: string
 }
 

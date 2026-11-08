@@ -23,8 +23,8 @@ describe('Gemini CLI 合成协议', () => {
     expect(parser.result()).toEqual({ ok: true, finalText: '完成', sessionId: 'g1', usage: { inputTokens: 10, outputTokens: 3, cachedTokens: 2 } })
     expect(events).toContainEqual({ type: 'started', sessionId: 'g1', model: 'gemini-test' })
     expect(events).toContainEqual({ type: 'message', role: 'assistant', text: '成' })
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'read_file', input: '{"path":"a"}', output: 'body', ok: true })
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'shell', input: '{"command":"false"}', output: 'exit 1', ok: false })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'read_file', input: '{"path":"a"}', output: 'body', ok: true })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'shell', input: '{"command":"false"}', output: 'exit 1', ok: false })
     expect(events).toContainEqual({ type: 'usage', usage: parser.result().usage })
   })
 

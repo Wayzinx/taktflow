@@ -120,6 +120,7 @@ describe('命令与运行参数', () => {
   it('capabilities 按实际映射推断，显式声明只能关闭能力', () => {
     const minimal: CliHarnessConfig = { id: 'min', kind: 'cli', command: ['min'], output: { format: 'text' } }
     expect(inferCliCapabilities(minimal)).toEqual({
+      toolPhases: false, readOnly: false, modelOverride: false, effortOverride: false,
       resume: false, structuredOutput: false, toolEvents: false, usage: false,
       cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false,
     })
@@ -182,7 +183,7 @@ describe('jsonl 输出映射', () => {
     const { events, onEvent } = collectEvents()
     const result = await createCliHarness(config).run(await request({ model: 'cli-1' }), onEvent)
     expect(result).toMatchObject({ ok: true, finalText: 'final answer', sessionId: 's-9' })
-    expect(events.some(event => event.type === 'started' && event.model === 'cli-1')).toBe(true)
+    expect(events.some(event => event.type === 'started' && event.model === undefined)).toBe(true)
     expect(events.some(event => event.type === 'tool_call')).toBe(true)
   })
 

@@ -47,6 +47,18 @@ async function setup(turns: Array<LeadTurn | Record<string, unknown>>, hooks: { 
 }
 const task = (overrides: Partial<TaskSpec> = {}): TaskSpec => ({ role: 'pm', title: '修改 AC-2', instructions: '修改 PRD AC-2', inputs: ['spec/prd.md'], outputs: [{ path: 'spec/prd.md', kind: 'spec' }], writeScope: ['requirements/**/spec/**'], ...overrides })
 
+it.each([true, false])('request_human 透传假设与时限，动作时限优先于空间默认：%s', async override => {
+  const timebox = { remindAfter: '5m', handbackAfter: '10m' }
+  const { stores, send } = await setup([{ reply: '请确认', actions: [{ type: 'request_human', to: 'alice', ask: '使用默认方案？', form: 'answer', assumption: '默认方案', ...(override ? { timebox } : {}) }] }])
+  stores.config.human = { remindAfter: '1h', handbackAfter: '2h' }
+  const turn = await send()
+  expect(turn!.results[0]!.ok).toBe(true)
+  const item = (await stores.attention.list())[0]!
+  const expected = { assumption: '默认方案', timebox: override ? timebox : stores.config.human }
+  expect(item).toMatchObject({ ...expected, assignees: ['alice'] })
+  expect((await stores.events.read(item.runId, { types: ['human.requested'] }))[0]!.data).toMatchObject(expected)
+})
+
 it('同需求回合串行；私聊可触发；普通消息和 Lead 自己的消息不触发', async () => {
   let release!: () => void
   const gate = new Promise<void>((resolve) => { release = resolve })
@@ -257,6 +269,7 @@ it('临时任务评审进入人工裁决后，重建运行时可从保存的 Tas
   const runId = result.results[0]!.refs!.taskRunId!
   const before = await stores.runs.get(runId)
   expect(before!.status).toBe('waiting_human')
+  expect((await stores.chat.list(requirement.id)).filter(message => message.refs?.taskRunId === runId).at(-1)!.receipt?.status).toBe('started')
   const item = (await stores.attention.list({ pending: true })).find((item) => item.runId === runId)!
   const answered = await stores.attention.answer(item.requestId, { decision: 'choice', answer: '放行', by: { type: 'human', id: 'alice' } })
   const restarted = createLeadRuntime(options)
@@ -483,3 +496,27 @@ function memoryEvents(): EventStore {
     async verify() { throw new Error('内存替身不提供持久化校验') },
   }
 }
+
+it('M5：任务回执 sent → started → done，来源人类为零跳', async () => {
+  const { send, lead, stores, requirement } = await setup([{ reply: '派发', actions: [{ type: 'dispatch_task', task: task({ inputs: [], outputs: [], review: false }) }] }])
+  const turn = await send(); await lead.drain()
+  const runId = turn!.results[0]!.refs!.taskRunId!
+  expect((await stores.runs.get(runId))!.origin).toMatchObject({ hops: 0, chain: [] })
+  expect((await stores.chat.list(requirement.id)).filter(message => message.refs?.taskRunId === runId).map(message => message.receipt?.status)).toEqual(['sent', 'started', 'done'])
+})
+it('M5：上游 agent 派活增加跳数，超限拒绝且留下链路回执', async () => {
+  const { stores, requirement, lead, send } = await setup([{ reply: '派发', actions: [{ type: 'dispatch_task', task: task({ inputs: [], outputs: [], review: false }) }] }])
+  const initial = await send(); await lead.drain()
+  const parentId = initial!.results[0]!.refs!.taskRunId!
+  const message = await stores.chat.post(requirement.id, { author: { type: 'agent', role: 'pm', harness: 'mock' }, kind: 'text', text: '@lead 继续', refs: { taskRunId: parentId } })
+  stores.config.lead!.maxHops = 0
+  const denied = await lead.executeAction({ type: 'dispatch_task', task: task({ inputs: [], outputs: [], review: false }) }, requirement.id, message, undefined, 0)
+  expect(denied.ok).toBe(false)
+  expect(denied.message).toContain(parentId)
+  expect((await stores.chat.list(requirement.id)).find(item => item.receipt?.status === 'refused')!.receipt).toMatchObject({ hops: 1, chain: [parentId] })
+  stores.config.lead!.maxHops = 1
+  const allowed = await lead.executeAction({ type: 'dispatch_task', task: task({ inputs: [], outputs: [], review: false }) }, requirement.id, message, undefined, 0)
+  await lead.drain()
+  expect(allowed.ok).toBe(true)
+  expect((await stores.runs.get(allowed.refs!.taskRunId!))!.origin).toMatchObject({ hops: 1, chain: [parentId] })
+})

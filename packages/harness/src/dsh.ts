@@ -139,6 +139,7 @@ export function createDshHarness(options: DshOptions = {}): HarnessAdapter {
     id: 'dsh',
     displayName: 'DeepSeek Harness',
     capabilities: {
+      toolPhases: true, readOnly: false, modelOverride: false, effortOverride: false,
       resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false,
       compactionEvents: false, customProvider: false, sandbox: false, mcp: false,
     },

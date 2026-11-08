@@ -1,0 +1,6 @@
+export { createQualityDefect, updateQualityDefect, readQualityDefect } from './quality-service.js'
+export { suggestDefectMerges, decideDefectMerge } from './merge-suggestions.js'
+export { precheckCheckpoint, precheckDefectCheckpoints, assessCheckpoint, missVerdict } from './checkpoint-assessment.js'
+export type { CheckpointEvidence } from './checkpoint-assessment.js'
+export { attributeDefectCheckpoints, decideCheckpointMiss, checkpointAttributionSchema } from './checkpoint-attribution.js'
+export type { AttributionWriteOptions } from './checkpoint-attribution.js'

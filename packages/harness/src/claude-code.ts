@@ -11,7 +11,7 @@ export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamPar
   let completed = false
   return state.parser(data => {
     if (data.type === 'system' && data.subtype === 'init') {
-      state.started(data.session_id, data.model)
+      state.started(data.session_id, data.model, data.effort, data.skills)
     } else if (data.type === 'assistant' || data.type === 'user') {
       const message = object(data.message)
       const blocks = Array.isArray(message.content) ? message.content : []
@@ -49,6 +49,7 @@ export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamPar
 export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): HarnessAdapter {
   const bin = options.bin ?? 'claude'
   const capabilities: HarnessCapabilities = {
+    toolPhases: true, readOnly: false, modelOverride: true, effortOverride: false,
     resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true,
     compactionEvents: false, customProvider: true, sandbox: false, mcp: true,
     providerProtocols: ['anthropic-messages'],

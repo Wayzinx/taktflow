@@ -11,6 +11,7 @@ import type { AgentProfile, HarnessAdapter, HarnessRequest, NodeDef, ReviewNodeD
 import { setReviewDisposition, listReviewDispositions } from '../review/dispositions.js'
 import { withAttentionStaleness } from '../insights/attention.js'
 import { markArtifactEdited } from '../store/artifact-edits.js'
+import { recordIssues, replayIssues } from './issues.js'
 import { reviewPassed } from './nodes/review-schema.js'
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
@@ -272,7 +273,7 @@ it.each([2, 0])('重复重大问题按配置早停，0 关闭（%s）', async (s
   let round = 0
   const f = await fixture(async (req) => req.env!.TAKT_ROLE === 'author'
     ? { responses: [{ round, reviewer: 'r1', issueId: 'I1', action: 'fixed', note: '已修' }] }
-    : (++round, changes))
+    : (++round, { ...changes, issues: changes.issues.map(issue => ({ ...issue, ...(round > 1 ? { key: 'ISS-1' } : {}) })) }))
   const state = await createEngine(f.deps).start({ requirementId: f.requirementId,
     workflow: def([f.write, reviewNode({ maxRounds: 5, stopAfterNoProgress })]) })
   expect(state.status).toBe('failed')
@@ -353,6 +354,10 @@ it('问题需人工处置，指纹变化后重新打开；审计、处置历史�
   changed.category = 'major'; changed.severity = 'blocker'
   await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'reviews/review/r1-round-2.json' },
     content: JSON.stringify(next), kind: 'review', author: { type: 'system', id: 'test' }, producedBy: { runId: state.runId, nodeId: 'review' } })
+  const ledger = replayIssues(await f.stores.events.read(state.runId, { nodeId: 'review' }))
+  await recordIssues({ timestamp: () => new Date().toISOString(), emit: async (type, data, nodeId) => {
+    await f.stores.events.append(state.runId, { type, data, nodeId, actor: { type: 'system', id: 'test' } })
+  } }, 'review', ledger, next.records[0]!, 1)
   await rm(join(f.stores.taktDir, 'runs', state.runId, 'engine.json'))
   expect((await reviewDetail(f.stores, state.runId, 'review'))?.facets?.open.blocker).toBe(1)
 })

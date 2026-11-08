@@ -7,7 +7,7 @@ import { cp, mkdir, mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { reportDefect, precheckDefect, attributeDefect, confirmDefect, listDefects, listEvalCases, scorecards, createEngine, initProject, qualityMetrics, listReviews, listSkills, loadProfiles, openProject, reviewDetail, type EventEnvelope, type EventType } from '@taktflow/core'
+import { createQualityDefect, updateQualityDefect, addEvalSample, decideCheckpointMiss, nodeQuality, snapshotMaterials, syncQuality, verifyQuality, precheckDefect, attributeDefectCheckpoints, confirmDefect, listDefects, listEvalCases, scorecards, createEngine, initProject, qualityMetrics, listReviews, listSkills, loadProfiles, openProject, reviewDetail, type EventEnvelope, type EventType } from '@taktflow/core'
 import { createMockHarness, loadMockScript } from '@taktflow/harness'
 import workflow from './workflows/taktflow-standard.workflow.js'
 
@@ -104,28 +104,54 @@ assert.notEqual(reproduction.actual, expected)
 const actor = { type: 'human', id: 'demo-owner' } as const
 const escapeEvidence = await reopened.workspaces.writeArtifact({ ref: { workspace: req.id, path: 'evidence/TC-GREET-ESCAPE/result.json' },
   content: JSON.stringify({ ...reproduction, expected, status: 'failed' }), kind: 'evidence', author: actor, reason: '交付后独立检查未覆盖输入' })
-const defect = await reportDefect(reopened, req.id, { title: '演示逃逸缺陷：非空名字两侧空格被删除',
+const defect = await createQualityDefect(reopened, req.id, { title: '演示逃逸缺陷：非空名字两侧空格被删除',
   description: 'src/greet.js 的 name.trim() 删除了非空名字两侧空格，违反 PRD 保持现有行为、不做 trim 的约束。',
-  severity: 'major', acs: ['AC-1'], evidence: [escapeEvidence.path] }, actor)
+  severity: 'major', acs: ['AC-1'], evidence: [escapeEvidence.path], reason: '真实复现 trim 错误，人工录入' }, actor)
 const precheck = await precheckDefect(reopened, defect)
 assert.equal(precheck.acCovered, true)
 assert(precheck.cases?.includes('TC-GREET-001'))
 assert(precheck.codeNodes?.includes('dev-test-loop/fix-code'))
 assert(precheck.gates?.includes('delivery-check'))
-const candidate = await attributeDefect({ stores: reopened, profiles, harnesses: { mock }, knowledge: [], skillsDir: reopened.paths.skills }, req.id, defect.id)
+const candidate = await attributeDefectCheckpoints({ stores: reopened, profiles, harnesses: { mock }, knowledge: [], skillsDir: reopened.paths.skills }, req.id, defect.id, { baseRevision: defect.revision!, reason: '独立 auditor 检查冻结材料' })
 assert.equal(candidate.status, 'attributed')
 assert.equal(candidate.attribution?.confirmed, undefined)
 assert((await scorecards(reopened, { by: 'node' })).every((card) => card.escapes === 0))
-await confirmDefect(reopened, req.id, defect.id, { note: '已核对实际复现、修复 diff 与用例覆盖，确认引入和漏检节点' }, actor)
+const repair = artifacts.find(a => a.path === 'tasks/repair.diff')!.versions[0]!
+await confirmDefect(reopened, req.id, defect.id, { note: '核对实际复现与冻结修复 diff，确认引入点',
+  attribution: { ...candidate.attribution!, introducedAt: { ...candidate.attribution!.introducedAt,
+    artifact: { workspace: req.id, path: 'tasks/repair.diff', version: repair.version } } } }, actor)
 const persisted = await openProject(root)
-assert.equal((await listDefects(persisted, req.id))[0]?.status, 'confirmed')
-const regressions = (await listEvalCases(persisted)).filter((test) => test.source.kind === 'defect' && test.source.defectId === defect.id)
-assert.equal(regressions.length, 2)
-for (const nodeId of ['dev-test-loop/fix-code', 'test-design']) {
-  assert(regressions.some((test) => test.source.runId === state.runId && test.source.nodeId === nodeId))
-  const card = (await scorecards(persisted, { by: 'node' })).find((card) => card.key.workflowId === workflow.id && card.key.nodeId === nodeId)!
-  assert.equal(card.escapes, nodeId === 'dev-test-loop/fix-code' ? 1 : 0)
-  if (nodeId === 'test-design') assert.equal(card.detection?.missed, 1)
+let confirmed = (await listDefects(persisted, req.id))[0]!
+assert.equal(confirmed.status, 'confirmed')
+assert.equal((await listEvalCases(persisted)).length, 0, '旧节点归因不能自动生成整节点样本')
+confirmed = await updateQualityDefect(persisted, req.id, defect.id, { validity: 'valid', baseRevision: confirmed.revision!, reason: '人确认实际复现为产品缺陷' }, actor)
+const missed = (await nodeQuality(persisted, state.runId, 'dev-test-loop/review-fix')).checkpoints.find(p => p.role === 'reviewer')!
+assert(missed.snapshot)
+const material = await snapshotMaterials(persisted.taktDir, missed.snapshot)
+assert(material.some(file => file.ref?.path === 'tasks/repair.diff' && file.content.toString().includes('trim')))
+assert(material.some(file => file.ref?.path === 'spec/prd.md' && file.content.toString().includes('trim')))
+confirmed = await decideCheckpointMiss(persisted, req.id, defect.id, missed.id, {
+  verdict: 'should_have_caught', conditions: { existed: true, materialProvided: true, executed: true, inDuty: true, notRaised: true },
+  note: '修复 diff 已含 trim，PRD 明确不 trim；属于回归范围职责，评审完成却未提出该问题',
+}, actor, { baseRevision: confirmed.revision!, reason: '逐项核对漏检五条件' })
+const mustCatch = await addEvalSample(persisted, { kind: 'must_catch', checkpointId: missed.id, defectId: defect.id,
+  baseRevision: confirmed.revision!, expectIssue: '非空名字两侧空格被 trim 删除', reason: '人确认漏检作为回归样本' }, actor)
+const cleanPoint = (await nodeQuality(persisted, state.runId, 'review-prd')).checkpoints.filter(p => p.role === 'reviewer' && p.subject === 'architect' && p.record?.verdict === 'approve').at(-1)!
+const clean = await addEvalSample(persisted, { kind: 'clean', checkpointId: cleanPoint.id, reason: '人核对修订 PRD 完整且明确不 trim，不存在 blocker/major' }, actor)
+assert.deepEqual((await listEvalCases(persisted)).map(c => c.sample!.kind).sort(), ['clean', 'must_catch'])
+for (const sample of [mustCatch, clean]) {
+  assert(sample.sample?.checkpointId && sample.sample.snapshot)
+  assert(sample.inputs.length > 0)
 }
+const issueEvents = ofType('review.issue', 'review-prd').filter(e => e.data.key === 'ISS-1')
+assert(issueEvents.some(e => e.data.action === 'claimed_fixed'))
+assert(issueEvents.some(e => e.data.action === 'verified_fixed'))
+assert(issueEvents.findIndex(e => e.data.action === 'claimed_fixed') < issueEvents.findIndex(e => e.data.action === 'verified_fixed'))
+for (const event of ofType('snapshot.created')) assert((await snapshotMaterials(persisted.taktDir, event.data)).length > 0)
+assert(ofType('checkpoint.scheduled').length > 0 && ofType('invocation.started').length > 0)
+await syncQuality(persisted, state.runId)
+assert.equal((await verifyQuality(persisted)).ok, true)
+assert.equal((await scorecards(persisted, { by: 'node' })).find(c => c.key.nodeId === 'dev-test-loop/fix-code')!.escapes, 1)
+assert.equal((await scorecards(persisted, { by: 'node' })).find(c => c.key.nodeId === 'dev-test-loop/review-fix')!.detection?.missed, 1)
 assert.deepEqual(await persisted.events.verify(`defect-${req.id}`), { ok: true })
-console.log(`PASS 逃逸归因：真实复现两侧空格丢失 → 确定性预检 → mock 独立归因 → 人工确认 → 2 条冻结回归用例；引入节点 escapes=1，漏检节点 detection.missed=1。缺陷：${defect.id}`)
+console.log(`PASS M5：检查点与只读快照完整；ISS-1 claimed → verified；实际 trim 复现 → 人确认五条件 → must_catch / clean 两类检查点样本；质量日志可校验。mock 归因不代表真实模型验收。缺陷：${defect.id}`)

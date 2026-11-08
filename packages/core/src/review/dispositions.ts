@@ -1,3 +1,4 @@
+import { issueAction, replayIssues } from '../engine/issues.js'
 import { join } from 'node:path'
 import type { ProjectStores } from '../interfaces.js'
 import type { Actor, ReviewDisposition } from '../types.js'
@@ -34,7 +35,7 @@ export async function setReviewDisposition(stores: ProjectStores, runId: string,
     if (!run) throw new Error(`运行不存在：${runId}`)
     const rounds = await readReviewRounds(stores, runId, nodeId)
     const issue = rounds.flatMap((round) => round.records.flatMap((record) => record.issues))
-      .filter((issue) => issue.groupKey === input.groupKey).at(-1)
+      .filter((issue) => issue.key === input.groupKey || issue.groupKey === input.groupKey).at(-1)
     if (!issue) throw new Error(`评审问题不存在：${input.groupKey}`)
     const disposition: ReviewDisposition = { ...input, at: new Date().toISOString(), fingerprint: issue.fingerprint }
     const entries = [...await history(stores, runId, nodeId), disposition]
@@ -42,6 +43,12 @@ export async function setReviewDisposition(stores: ProjectStores, runId: string,
       content: JSON.stringify(entries, null, 2), kind: 'review', author: input.by, reason: input.reason,
       producedBy: { runId, nodeId } })
     await stores.events.append(runId, { type: 'review.disposition', actor: input.by, nodeId, data: disposition })
+    if (issue.key) {
+      const ledger = replayIssues(await stores.events.read(runId, { nodeId }))
+      const entry = ledger.find(item => item.key === issue.key)
+      if (entry) await issueAction({ timestamp: () => disposition.at, emit: async (type, data, target) => { await stores.events.append(runId, { type, data, nodeId: target, actor: input.by }) } },
+        nodeId, entry, input.state === 'dismissed' ? 'dismissed' : input.state === 'resolved' ? 'waived' : 'reopened', input.by.type === 'human' ? input.by.id : 'human', entry.last.revision, entry.last.round, entry.last.checkpointId, input.reason)
+    }
     return disposition
   })
 }

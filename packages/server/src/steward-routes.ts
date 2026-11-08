@@ -279,6 +279,7 @@ export function registerStewardRoutes(
         throw error
       }
     })
+  route('POST', '/delegations/:messageId/resend', async ({ params, request }, { agent }) => agent.tools.resendDelegation(params.messageId!, text((await body(request)).reason, 'reason')))
   route('GET', '/threads', async ({ url }, { store }) =>
     store.threads(url.searchParams.get('q') ?? url.searchParams.get('search') ?? ''),
   )

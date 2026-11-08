@@ -69,7 +69,7 @@ async function fixture(requirementId = 'REQ-001') {
   return { root, stores, deps, run, requests, setBadEvidence: () => { badEvidence = true } }
 }
 
-it('完整交付 → AC-2 预检 → 独立归因 → 人确认 → 两条回归用例 → 成绩单 → A/B better', async () => {
+it('M5：旧归因仍可确认，但没有人工确认的检查点漏检五条件不自动生成样本', async () => {
   const { stores, deps, run, requests } = await fixture()
   const defect = await reportDefect(stores, 'REQ-001', { title: '异常路径缺失', description: 'AC-2 没有用例覆盖，代码未实现', severity: 'major', acs: ['AC-2'] }, person)
   expect(defect.id).toBe('D-1')
@@ -83,50 +83,31 @@ it('完整交付 → AC-2 预检 → 独立归因 → 人确认 → 两条回归
   await expect(confirmDefect(stores, 'REQ-001', defect.id, {}, { type: 'agent', role: 'auditor', harness: 'mock' })).rejects.toThrow('由人确认')
   await confirmDefect(stores, 'REQ-001', defect.id, { note: '核对了 AC-2 与实际代码' }, person)
   const cases = await listEvalCases(stores)
-  expect(cases).toHaveLength(2)
-  expect(cases.every((value) => value.source.kind === 'defect')).toBe(true)
-  const testCard = (await scorecards(stores, { by: 'node' })).find((card) => card.key.nodeId === 'test-plan')!
-  expect(testCard).toMatchObject({ executions: 1, escapes: 0, detection: { caught: 0, missed: 1, rate: 0 } })
-  expect((await scorecards(stores, { by: 'node' })).find((card) => card.key.nodeId === 'impl')?.escapes).toBe(1)
+  expect(cases).toHaveLength(0)
   expect((await getDefect(stores, 'REQ-001', defect.id)).attribution?.confirmed?.by).toEqual(person)
-  expect((await stores.events.verify('defect-REQ-001')).ok).toBe(true)
-  expect((await stores.workspaces.listArtifacts('REQ-001')).find((a) => a.path === 'defects/D-1.attribution.json')!.versions.at(-1)?.reason).toContain('AC-2')
-  const implementation = cases.find((value) => value.source.nodeId === 'impl')!
-  for (let i = 1; i <= 2; i++) await saveEvalCase(stores, { ...implementation, id: `manual-${i}`, source: { kind: 'manual' } })
-  const started = await runEval(deps, { target: implementation.target, variants: [{ id: 'candidate', label: '改进模型', harness: { harness: 'mock', model: 'improved-model' } }] }, person)
-  expect(started.status).toBe('running')
-  const finished = await waitEvalRun(stores, started.id)
-  expect(finished.status).toBe('done')
-  expect(finished.results.map((row) => row.error)).toEqual(Array(6).fill(undefined))
-  expect(finished.comparison).toMatchObject({ verdict: 'better', wins: 3, losses: 0, ties: 0, regressionsFailed: [], passRate: { baseline: 0, candidate: 1 } })
-  expect((await getEvalRun(stores, started.id)).results).toHaveLength(6)
-  expect((await listEvalRuns(stores))[0]?.results).toEqual([])
-  expect((await stores.runs.list())).toHaveLength(1)
   expect((await stores.workspaces.readArtifact({ workspace: 'REQ-001', path: 'code/change.md' }))!.toString()).toContain('BAD')
-  expect(recipeOf(await stores.events.read(run.runId), 'impl')).toMatchObject({ model: 'tested-model', kind: 'agent', role: 'dev' })
   expect(await collectCases(stores, { includeDefects: true })).toEqual({ added: [] })
 })
 
-it('回放独立模型与证据校验；路径越界拒绝；少于三例不宣称提升', async () => {
+it('M5：旧写节点回放拒绝，不执行评分或宣称提升；路径越界仍拒绝', async () => {
   const { stores, deps, setBadEvidence } = await fixture()
   const value: EvalCase = { id: 'case-1', target: { kind: 'node', workflowId: 'delivery', nodeId: 'impl' }, title: '回放', source: { kind: 'manual' },
     node: { id: 'impl', kind: 'agent', title: '实现', role: 'dev', needs: [], outputs: [{ path: 'code/change.md', kind: 'code-change' }] }, prompt: '实现 AC-2', inputs: [], grading: { checks: ['AC-2 已实现'], commands: ['test -f code/change.md'], rubric: { text: '覆盖率', threshold: 80 }, reference: { path: 'code/change.md', content: 'GOOD' } }, createdAt: new Date().toISOString() }
   await saveEvalCase(stores, value)
   await expect(saveEvalCase(stores, { ...value, id: '../escape' })).rejects.toThrow('非法')
   await expect(saveEvalCase(stores, { ...value, inputs: [{ path: '../escape', content: 'x' }] })).rejects.toThrow('非法')
-  await expect(runEval(deps, { target: value.target, variants: [{ id: 'candidate', label: '模型', harness: { harness: 'mock', model: 'tested-model' } }], judge: { harness: 'mock', model: 'tested-model' } })).rejects.toThrow('不同')
-  setBadEvidence()
   const started = await runEval(deps, { target: value.target, variants: [{ id: 'candidate', label: '模型', harness: { harness: 'mock', model: 'improved-model' } }] })
   const finished = await waitEvalRun(stores, started.id)
-  expect(finished.comparison?.verdict).toBe('inconclusive')
-  expect(finished.results.every((result) => !result.pass && result.error?.includes('缺少有效证据'))).toBe(true)
+  expect(finished).toMatchObject({ status: 'refused', results: [] })
+  expect(finished.comparison).toBeUndefined()
+
 })
 
-it('注册表暴露六个命令并拒绝 Agent 确认；并发录入不覆盖序号', async () => {
+it('注册表暴露 M5 命令并拒绝 Agent 确认；并发录入不覆盖序号', async () => {
   const { stores, deps } = await fixture()
   stores.config.members = [{ id: 'tester', name: 'tester', role: 'owner' }]
   const registry = createCommandRegistry({ stores, audit: async () => {}, extensions: evalCommandSpecs(deps) })
-  expect(registry.list().filter((item) => item.id.startsWith('eval.') || item.id.startsWith('defect.'))).toHaveLength(6)
+  expect(registry.list().map(item => item.id)).toEqual(expect.arrayContaining(['eval.sample', 'eval.retire', 'defect.miss', 'defect.merge', 'quality.verify', 'attention.tick']))
   const request = { title: '缺陷', description: 'AC-2', severity: 'major' as const }
   const defects = await Promise.all([reportDefect(stores, 'REQ-001', request, person), reportDefect(stores, 'REQ-001', request, person)])
   expect(defects.map((item) => item.id).sort()).toEqual(['D-1', 'D-2'])
@@ -149,17 +130,12 @@ it('A/B 以 pass 优先，分差 5 分为胜负，回归失败禁止 better', ()
   expect(compareEval(cases, results.slice(0, 4), 'a', 'b').cases).toHaveLength(2)
 })
 
-it('m3-fix 11：带点需求 ID 能确认并生成回归用例，冻结失败时不写 confirmed', async () => {
+it('M5：带点需求 ID 旧归因可以确认，没有检查点不生成回放样本', async () => {
   const { stores, deps } = await fixture('REQ-1.2')
   const defect = await reportDefect(stores, 'REQ-1.2', { title: 'AC-2', description: '缺陷', severity: 'major', acs: ['AC-2'] }, person)
   await attributeDefect(deps, 'REQ-1.2', defect.id)
-  const getWorkflow = stores.runs.getWorkflow.bind(stores.runs)
-  stores.runs.getWorkflow = async () => undefined
-  await expect(confirmDefect(stores, 'REQ-1.2', defect.id, {}, person)).rejects.toThrow('找不到节点定义')
-  expect((await getDefect(stores, 'REQ-1.2', defect.id)).status).toBe('attributed')
-  expect(await listEvalCases(stores)).toEqual([])
-  stores.runs.getWorkflow = getWorkflow
   await confirmDefect(stores, 'REQ-1.2', defect.id, {}, person)
   expect((await getDefect(stores, 'REQ-1.2', defect.id)).status).toBe('confirmed')
-  expect(await listEvalCases(stores)).toHaveLength(2)
+  expect(await listEvalCases(stores)).toEqual([])
+
 })

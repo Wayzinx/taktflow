@@ -11,20 +11,20 @@ export function identifyIssue(issue: ReviewIssue): ReviewIssue & { groupKey: str
 export function reviewContinuity(round: ReviewRound, prior?: ReviewRound): ReviewContinuity[] {
   const previous = new Map((prior?.records ?? []).flatMap((record) => record.issues.map((issue) => {
     const identified = identifyIssue(issue)
-    return [identified.groupKey, { issue: identified, reviewer: record.reviewer }] as const
+    return [identified.key ?? identified.groupKey, { issue: identified, reviewer: record.reviewer }] as const
   })))
   const observed = new Set<string>()
   const result: ReviewContinuity[] = []
   for (const record of round.records) {
     record.issues = record.issues.map(identifyIssue)
     for (const issue of record.issues) {
-      const before = previous.get(issue.groupKey!)
+      const before = previous.get(issue.key ?? issue.groupKey!)
       const observation = !before ? 'new' : before.issue.fingerprint === issue.fingerprint ? 'repeated' : 'changed'
       const fixed = before && prior?.responses.some((response) => response.reviewer === before.reviewer
         && response.issueId === before.issue.id && response.action === 'fixed')
-      result.push({ groupKey: issue.groupKey!, issueId: issue.id, reviewer: record.reviewer,
+      result.push({ groupKey: issue.key ?? issue.groupKey!, issueId: issue.id, reviewer: record.reviewer,
         prevIssueId: before?.issue.id, observation, ...(observation === 'repeated' && fixed ? { regressed: true } : {}) })
-      observed.add(issue.groupKey!)
+      observed.add(issue.key ?? issue.groupKey!)
     }
   }
   for (const [groupKey, before] of previous) if (!observed.has(groupKey)) {

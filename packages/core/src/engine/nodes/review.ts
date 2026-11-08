@@ -1,10 +1,10 @@
 import type { AttentionItem } from '../../interfaces.js'
-import type { AgentNodeDef, ArtifactRef, NodeContext, ReviewNodeDef, ReviewRecord, ReviewResponse, ReviewRound } from '../../types.js'
+import type { AgentNodeDef, ArtifactRef, NodeContext, ReviewNodeDef, ReviewRecord, ReviewResponse, ReviewRound, ReviewIssueEntry, Checkpoint, ReviewerSpec, EventPayloads, SnapshotManifest } from '../../types.js'
 import type { Entry } from '../graph.js'
 import type { Runtime } from '../runtime.js'
-import { saveWorktreeDiff } from '../execution.js'
+import { safeNodeName, saveWorktreeDiff } from '../execution.js'
 import { callHarness } from '../harness.js'
-import { collectOutputs } from '../artifacts.js'
+import { collectOutputs, resolveInputs } from '../artifacts.js'
 import { addUsage } from '../../insights/usage.js'
 import { sha256 } from '../../util/hash.js'
 import { system } from '../actor.js'
@@ -12,8 +12,16 @@ import { assertResponses, REVIEW_SCHEMA, RESPONSES_SCHEMA, reviewPassed } from '
 import { reviewTargets, targetFingerprint } from './review-target.js'
 import { noReviewProgress, reviewContinuity } from './review-continuity.js'
 import { normalizeRounds } from '../../review/records.js'
+import { scheduleCheckpoint, finishCheckpoint, type CaptureContext } from '../checkpoints.js'
+import { createSnapshot, artifactMaterials, codeMaterials, snapshotPrompt, snapshotMaterials, type SnapshotMaterial } from '../snapshots.js'
+import { replayIssues, recordIssues, recordResponses, issuePrompt } from '../issues.js'
 
 export interface ReviewProgress {
+  issues?: ReviewIssueEntry[]
+  pending?: ReviewRound
+  pendingTargets?: ArtifactRef[]
+  pendingSnapshot?: SnapshotManifest
+  references?: ArtifactRef[]
   history?: ReviewRound[]
   humanFeedback?: string
   restartAfterRevision?: boolean
@@ -21,14 +29,14 @@ export interface ReviewProgress {
   phase: 'review' | 'revise' | 'signoff' | 'exhausted' | 'decision' | 'done'
 }
 
-async function saveArtifact(host: Runtime, node: ReviewNodeDef, path: string, content: string, inputs: ArtifactRef[]): Promise<void> {
+async function saveArtifact(host: Runtime, node: ReviewNodeDef, path: string, content: string, inputs: ArtifactRef[], actor = system): Promise<void> {
   const ref = await host.guard.system(host.workspacePaths([path]), () => host.deps.stores.workspaces.writeArtifact({
-    ref: { workspace: host.state.requirementId, path }, content, kind: 'review', author: system,
-    reason: node.title, derivedFrom: inputs, producedBy: { runId: host.state.runId, nodeId: node.id },
+    ref: { workspace: host.state.requirementId, path }, content, kind: 'review', author: actor,
+    reason: node.title, derivedFrom: inputs, producedBy: Object.assign({ runId: host.state.runId, nodeId: node.id }, actor.type === 'agent' ? { invocationId: actor.invocationId } : {}),
   }))
   const ns = host.state.nodes[node.id]!
   ns.outputs = [...ns.outputs.filter((output) => output.path !== path), ref]
-  await host.emit('artifact.written', { ref, kind: 'review', sha256: sha256(content) }, node.id)
+  await host.emit('artifact.written', { ref, kind: 'review', sha256: sha256(content) }, node.id, actor)
 }
 
 async function persist(host: Runtime, node: ReviewNodeDef, progress: ReviewProgress): Promise<void> {
@@ -54,7 +62,7 @@ async function persist(host: Runtime, node: ReviewNodeDef, progress: ReviewProgr
   await host.persistGraph()
 }
 
-async function invoke(host: Runtime, node: ReviewNodeDef, ctx: NodeContext, role: string, harness: AgentNodeDef['harness'], prompt: string, schema: Record<string, unknown>, writeScope?: string[]): Promise<unknown> {
+async function invoke(host: Runtime, node: ReviewNodeDef, ctx: NodeContext, role: string, harness: AgentNodeDef['harness'], prompt: string, schema: Record<string, unknown>, writeScope?: string[], capture?: CaptureContext): ReturnType<typeof callHarness> {
   const ns = host.state.nodes[node.id]!
   // 每个角色使用独立临时状态，绝不把上一位评审者的 sessionRef 传给下一位。
   const sources = !Array.isArray(node.target) ? Object.values(host.state.nodes).filter((state) => state.worktree?.repo === (node.target as { code: { repo: string } }).code.repo
@@ -62,10 +70,10 @@ async function invoke(host: Runtime, node: ReviewNodeDef, ctx: NodeContext, role
   const session = { ...ns, worktree: undefined, sessionRef: undefined, usage: undefined }
   if (sources[0]?.worktree) ctx = { ...ctx, projectDir: sources[0].worktree.path }
   if (sources.length > 1) prompt += `\n工作树：${JSON.stringify(sources.map((state) => ({ nodeId: state.id, ...state.worktree })))}`
-  const result = await callHarness(host, { ...node, kind: 'agent', role, harness, prompt, resultSchema: schema, session: 'fresh', writeScope }, ctx, session, true, sources.map((state) => state.worktree!.path))
-  if (writeScope === undefined) for (const source of sources) await saveWorktreeDiff(host, source.id, source)
+  const result = await callHarness(host, { ...node, kind: 'agent', role, harness, prompt, resultSchema: schema, session: 'fresh', writeScope }, ctx, session, true, sources.map((state) => state.worktree!.path), capture)
+  if (writeScope === undefined) for (const source of sources) await saveWorktreeDiff(host, source.id, source, undefined, result.actor)
   if (session.usage) ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, session.usage)
-  return result.data
+  return result
 }
 
 export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promise<void> {
@@ -73,6 +81,7 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
   if (node.kind !== 'review') throw new Error('内部错误：不是 review')
   const ns = host.state.nodes[node.id]!
   const progress = host.reviews[node.id] ??= { rounds: [], phase: 'review' }
+  progress.issues = replayIssues(await host.deps.stores.events.read(ctx.runId, { nodeId: node.id }))
   const normalized = normalizeRounds([...(progress.history ?? []), ...progress.rounds])
   const historyCount = progress.history?.length ?? 0
   progress.history = normalized.slice(0, historyCount)
@@ -83,39 +92,105 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
     if (ns.status === 'stale') return
     if (progress.phase === 'done') { await persist(host, node, progress); return }
     if (progress.phase === 'review') {
-      const artifacts = await reviewTargets(host, node, ctx)
-      ns.inputs = [...new Map([...(ns.inputs ?? []), ...artifacts].map((ref) => [ref.path, ref])).values()]
+      let artifacts: ArtifactRef[]
+      try {
+        artifacts = progress.pendingTargets ?? await reviewTargets(host, node, ctx)
+        if (!progress.pending) progress.references = await host.guard.system(host.workspacePaths(node.references ?? []), () => resolveInputs(host.deps.stores, host.state, { ...node, inputs: (node.references ?? []).map(path => ({ path })) }, host.emit))
+      } catch (error) {
+        for (const [index, reviewer] of node.reviewers.entries()) {
+          const point = await scheduleCheckpoint(host, node.id, 'reviewer', reviewer.role, reviewer.checklist, ns.revision, progress.rounds.length + 1)
+          await finishCheckpoint(host, point, index === 0 ? 'error' : 'skipped', error)
+        }
+        throw error
+      }
+      ns.inputs = [...new Map([...(ns.inputs ?? []), ...artifacts, ...(progress.references ?? [])].map((ref) => [ref.path, ref])).values()]
       const prior = progress.rounds.at(-1) ?? progress.history?.at(-1)
-      const round: ReviewRound = { round: progress.rounds.length + 1, revision: ns.revision, seq: (prior?.seq ?? 0) + 1,
+      const round: ReviewRound = progress.pending ?? { round: progress.rounds.length + 1, revision: ns.revision, seq: (prior?.seq ?? 0) + 1,
         targetFingerprint: await targetFingerprint(host.deps.stores.workspaces, artifacts, !Array.isArray(node.target)),
         passed: false, records: [], responses: [], revised: [] }
       ns.round = round.round
-      await host.save()
-      for (const reviewer of node.reviewers) {
-        const prompt = [`评审第 ${round.round} 轮。只读产物，不修改文件。`,
-          `被评审对象：${JSON.stringify(node.target)}；路径与版本：${JSON.stringify(artifacts)}`,
-          `focus：${reviewer.focus ?? ''}`, `checklist：${JSON.stringify(reviewer.checklist ?? [])}`, `rubric：${node.rubric ?? ''}`,
-          prior ? `上一轮该评审者的问题与作者回应：${JSON.stringify({ issues: prior.records.find((record) => record.reviewer === reviewer.role)?.issues ?? [], responses: prior.responses.filter((response) => response.reviewer === reviewer.role) })}` : '',
-        ].filter(Boolean).join('\n')
-        const value = await invoke(host, node, ctx, reviewer.role, reviewer.harness, prompt, REVIEW_SCHEMA, []) as Pick<ReviewRecord, 'verdict' | 'score' | 'summary' | 'issues'>
-        if (value.score !== undefined && !Number.isFinite(value.score)) throw new Error('评审分数必须是有限数值')
-        if (value.issues.some((issue) => !issue.id.trim()) || new Set(value.issues.map((issue) => issue.id)).size !== value.issues.length) throw new Error('评审问题 ID 必须非空且唯一')
-        round.records.push({ ...value, round: round.round, reviewer: reviewer.role, artifacts, at: host.timestamp() })
+      progress.pending = round
+      progress.pendingTargets = artifacts
+      await host.persistGraph()
+      const recovered = await host.deps.stores.events.read(ctx.runId, { nodeId: node.id, types: ['review.result'] })
+      for (const event of recovered) {
+        const result = event.data as EventPayloads['review.result']
+        if (result.revision !== round.revision || result.round !== round.round) continue
+        if (!round.records.some(record => record.reviewer === result.record.reviewer && record.arbiter === result.record.arbiter)) round.records.push(result.record)
+        const record = result.record
+        const path = `reviews/${node.id}/r${round.revision ?? 1}-round-${round.round}/${safeNodeName(record.reviewer)}${record.arbiter ? '-arbiter' : ''}.json`
+        if (!await host.deps.stores.workspaces.readArtifact({ workspace: ctx.requirementId, path })) await saveArtifact(host, node, path, JSON.stringify(record, null, 2), record.artifacts, event.actor)
+        const finished = await host.deps.stores.events.read(ctx.runId, { nodeId: node.id, types: ['checkpoint.finished'] })
+        if (!finished.some(event => (event.data as EventPayloads['checkpoint.finished']).id === result.checkpointId)) {
+          await host.emit('checkpoint.finished', { id: result.checkpointId, status: 'done' }, node.id)
+        }
       }
-      round.passed = reviewPassed(round.records, node.pass)
-      const conflict = round.records.some((record) => record.verdict === 'approve')
-        && round.records.some((record) => record.verdict !== 'approve' && record.issues.some((issue) => issue.severity === 'blocker'))
+      const scheduled: Array<{ reviewer: ReviewerSpec; point: Checkpoint }> = []
+      for (const reviewer of node.reviewers) {
+        if (round.records.some(record => !record.arbiter && record.reviewer === reviewer.role)) continue
+        scheduled.push({ reviewer, point: await scheduleCheckpoint(host, node.id, 'reviewer', reviewer.role, reviewer.checklist, round.revision, round.round) })
+      }
+      let materials: SnapshotMaterial[]
+      try {
+        materials = progress.pendingSnapshot ? await snapshotMaterials(host.deps.stores.taktDir, progress.pendingSnapshot) : [...await artifactMaterials(host, artifacts, 'target'), ...await artifactMaterials(host, progress.references ?? [], 'reference')]
+        if (!progress.pendingSnapshot && !Array.isArray(node.target)) {
+          const target = node.target.code
+          for (const source of Object.values(host.state.nodes).filter(state => state.worktree?.repo === target.repo && (!ctx.item || host.graph.get(state.id)?.item?.key === ctx.item.key))) {
+            materials.push(...await codeMaterials(source.worktree!.path, target.repo, target.base ?? source.worktree!.base))
+          }
+        }
+      } catch (error) {
+        for (const [index, item] of scheduled.entries()) await finishCheckpoint(host, item.point, index === 0 ? 'error' : 'skipped', error)
+        throw error
+      }
+      const reviewOne = async (reviewer: ReviewerSpec, point: Checkpoint, arbiter = false) => {
+        try {
+          const snapshot = await createSnapshot(host, point, materials)
+          progress.pendingSnapshot ??= snapshot
+          await host.persistGraph()
+          const prompt = [`${arbiter ? '裁决' : '评审'}第 ${round.round} 轮。只读产物，不修改文件。`,
+            snapshotPrompt(host.deps.stores.taktDir, snapshot), !Array.isArray(node.target) ? `代码范围：${JSON.stringify(node.target.code)}` : '', `版本清单：${JSON.stringify(snapshot.files)}`,
+            `focus：${reviewer.focus ?? ''}`, `checklist：${JSON.stringify(reviewer.checklist ?? [])}`, `rubric：${node.rubric ?? ''}`,
+            issuePrompt(progress.issues ?? []), arbiter ? `全部评审记录：${JSON.stringify(round.records)}` : '',
+            prior ? `上一轮作者回应：${JSON.stringify(prior.responses)}` : '',
+          ].filter(Boolean).join('\n')
+          const result = await invoke(host, node, ctx, reviewer.role, reviewer.harness, prompt, REVIEW_SCHEMA, [], { role: arbiter ? 'arbiter' : 'reviewer', checkpointId: point.id, snapshot })
+          const value = structuredClone(result.data) as ReviewRecord
+          if (value.score !== undefined && !Number.isFinite(value.score)) throw new Error('评审分数必须是有限数值')
+          if (value.issues.some(issue => !issue.id.trim()) || new Set(value.issues.map(issue => issue.id)).size !== value.issues.length) throw new Error('评审问题 ID 必须非空且唯一')
+          const record: ReviewRecord = { ...value, round: round.round, reviewer: reviewer.role, artifacts, at: host.timestamp(),
+            arbiter: arbiter || undefined, checkpointId: point.id, invocationId: result.actor.type === 'agent' ? result.actor.invocationId : undefined }
+          await recordIssues(host, node.id, progress.issues ??= [], record, round.revision ?? 1)
+          await host.emit('review.result', { checkpointId: point.id, revision: round.revision ?? 1, round: round.round, record }, node.id, result.actor)
+          round.records.push(record)
+          await saveArtifact(host, node, `reviews/${node.id}/r${round.revision ?? 1}-round-${round.round}/${safeNodeName(reviewer.role)}${arbiter ? '-arbiter' : ''}.json`, JSON.stringify(record, null, 2), artifacts, result.actor)
+          await host.persistGraph()
+          await finishCheckpoint(host, point, 'done')
+          return record
+        } catch (error) { await finishCheckpoint(host, point, 'error', error); throw error }
+      }
+      for (const [index, item] of scheduled.entries()) {
+        try { await reviewOne(item.reviewer, item.point) }
+        catch (error) {
+          for (const rest of scheduled.slice(index + 1)) await finishCheckpoint(host, rest.point, 'skipped', '前一评审者出错；等待重试')
+          await saveArtifact(host, node, `reviews/${node.id}/r${round.revision ?? 1}-round-${round.round}.json`, JSON.stringify(round, null, 2), artifacts)
+          await host.persistGraph()
+          throw error
+        }
+      }
+      round.passed = reviewPassed(round.records.filter(record => !record.arbiter), node.pass)
+      const conflict = round.records.some(record => !record.arbiter && record.verdict === 'approve')
+        && round.records.some(record => !record.arbiter && record.verdict !== 'approve' && record.issues.some(issue => issue.severity === 'blocker'))
       if (node.arbiter && conflict) {
         const arbiter = node.arbiter
-        const value = await invoke(host, node, ctx, arbiter.role, arbiter.harness,
-          `裁决第 ${round.round} 轮评审冲突。只读产物，不修改文件。\n目标：${JSON.stringify(artifacts)}\n全部评审记录：${JSON.stringify(round.records)}\nfocus：${arbiter.focus ?? ''}\nchecklist：${JSON.stringify(arbiter.checklist ?? [])}\nrubric：${node.rubric ?? ''}`,
-          REVIEW_SCHEMA, []) as Pick<ReviewRecord, 'verdict' | 'score' | 'summary' | 'issues'>
-        if (value.score !== undefined && !Number.isFinite(value.score)) throw new Error('评审分数必须是有限数值')
-        if (value.issues.some((issue) => !issue.id.trim()) || new Set(value.issues.map((issue) => issue.id)).size !== value.issues.length) throw new Error('评审问题 ID 必须非空且唯一')
-        round.records.push({ ...value, round: round.round, reviewer: arbiter.role, artifacts, at: host.timestamp(), arbiter: true })
-        round.passed = value.verdict === 'approve'
-        await host.emit('review.arbitrated', { round: round.round, arbiter: arbiter.role, verdict: value.verdict, conflict: '评审者通过与含 blocker 的修改 / 拒绝意见冲突' }, node.id)
+        let record = round.records.find(record => record.arbiter && record.reviewer === arbiter.role)
+        if (!record) record = await reviewOne(arbiter, await scheduleCheckpoint(host, node.id, 'arbiter', `arbiter:${arbiter.role}`, arbiter.checklist, round.revision, round.round), true)
+        round.passed = record.verdict === 'approve'
+        await host.emit('review.arbitrated', { round: round.round, arbiter: arbiter.role, verdict: record.verdict, conflict: '评审者通过与含 blocker 的修改 / 拒绝意见冲突' }, node.id)
       }
+      delete progress.pending
+      delete progress.pendingTargets
+      delete progress.pendingSnapshot
       round.continuity = reviewContinuity(round, prior)
       progress.rounds.push(round)
       if (noReviewProgress(progress.rounds, node.stopAfterNoProgress)) round.stopReason = 'no_progress'
@@ -126,19 +201,26 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
       const round = progress.rounds.at(-1)!
       const extra = typeof node.author.prompt === 'function' ? await node.author.prompt(ctx) : node.author.prompt
       const prompt = `按第 ${round.round} 轮意见修改产物，每个问题恰好一条 responses，保留 reviewer、issueId、round。\n${JSON.stringify(round.records)}\n${extra ?? ''}\n人工意见：${progress.humanFeedback ?? ''}`
-      const value = await invoke(host, node, ctx, node.author.role, node.author.harness, prompt, RESPONSES_SCHEMA) as { responses: ReviewResponse[] }
-      assertResponses(round.records, value.responses, round.round)
-      round.responses = value.responses
-      const targets = [...new Map(round.records.flatMap((record) => record.artifacts).map((ref) => [ref.path, ref])).values()]
-      const records = await host.deps.stores.workspaces.listArtifacts(ctx.requirementId)
-      const outputs = targets.map((ref) => ({ path: ref.path, kind: records.find((record) => record.path === ref.path)!.kind }))
-      const revisedState = { ...ns, outputs: [] }
-      await host.guard.system(host.workspacePaths(targets.map((ref) => ref.path)), () => collectOutputs(host.deps.stores, host.state, { ...node, outputs }, revisedState,
-        { type: 'agent', role: node.author.role, harness: node.author.harness?.harness ?? host.deps.profiles[node.author.role]!.harness.harness }, host.emit))
-      round.revised = revisedState.outputs
-      progress.phase = 'review'
-      await persist(host, node, progress)
-      await host.emit('review.response', { round: round.round, responses: round.responses, revised: round.revised }, node.id)
+      const point = await scheduleCheckpoint(host, node.id, 'author', `author:${node.author.role}`, ['按评审意见逐条回应并修改产物'], round.revision, round.round)
+      let result: Awaited<ReturnType<typeof invoke>>
+      try {
+        result = await invoke(host, node, ctx, node.author.role, node.author.harness, prompt, RESPONSES_SCHEMA, undefined, { role: 'author', checkpointId: point.id })
+        const value = result.data as { responses: ReviewResponse[] }
+        assertResponses(round.records, value.responses, round.round)
+        round.responses = value.responses
+        await recordResponses(host, node.id, progress.issues ??= [], round.records, round.responses, round.revision ?? 1, point.id)
+        const targets = [...new Map(round.records.flatMap((record) => record.artifacts).map((ref) => [ref.path, ref])).values()]
+        const records = await host.deps.stores.workspaces.listArtifacts(ctx.requirementId)
+        const outputs = targets.map((ref) => ({ path: ref.path, kind: records.find((record) => record.path === ref.path)!.kind }))
+        const revisedState = { ...ns, outputs: [] }
+        await host.guard.system(host.workspacePaths(targets.map((ref) => ref.path)), () => collectOutputs(host.deps.stores, host.state, { ...node, outputs }, revisedState,
+          result.actor, host.emit))
+        round.revised = revisedState.outputs
+        progress.phase = 'review'
+        await persist(host, node, progress)
+        await host.emit('review.response', { round: round.round, responses: round.responses, revised: round.revised }, node.id)
+        await finishCheckpoint(host, point, 'done')
+      } catch (error) { await finishCheckpoint(host, point, 'error', error); throw error }
       if (progress.restartAfterRevision) {
         progress.history = [...(progress.history ?? []), ...progress.rounds]
         progress.rounds = []; ns.revision = (ns.revision ?? 1) + 1; ns.round = 0; delete progress.restartAfterRevision

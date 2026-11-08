@@ -3,3 +3,5 @@
 /.takt/runs/
 /.takt/objects/
 /.takt/chat/
+/.takt/snapshots/
+/.takt/quality/

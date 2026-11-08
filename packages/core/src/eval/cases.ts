@@ -3,35 +3,39 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProjectStores } from '../interfaces.js'
 import type { EvalCollectRequest } from '../api.js'
-import type { Defect, DefectAttribution, EvalCase, EvalTarget, EventPayloads, RunState, SnapshotNode } from '../types.js'
+import type { Defect, DefectAttribution, EvalCase, EvalTarget, EventPayloads, RunState } from '../types.js'
 import { readReviewRounds } from '../insights/review-rounds.js'
 import { readRecipeContext, readRecipeInputs, type FrozenNode } from '../engine/recipe-record.js'
 import { snapshotNodes } from '../engine/recipe.js'
 import { assertArtifactPath } from '../store/paths.js'
-import { assertNoSymlinks, fileExists, isEnoent } from '../store/fs-utils.js'
-import { parseFrontmatter } from '../util/frontmatter.js'
-import { sha256 } from '../util/hash.js'
-import { evalId, evalRoot, jsonFiles, jsonWrite, targetName, targetSlug } from './storage.js'
+import { assertNoSymlinks, isEnoent } from '../store/fs-utils.js'
+import { canonicalJson, sha256 } from '../util/hash.js'
+import { evalId, evalRoot, jsonFiles, targetName } from './storage.js'
+import { appendEvalObject, evalView, qualityStore, type EvalWriteOptions } from './quality-access.js'
+import { checkpointCase, confirmedMiss, replaySource } from './samples.js'
 
 export function validateEvalCase(value: EvalCase): void {
   evalId(value.id); targetName(value.target)
   if (!value.node || !Array.isArray(value.inputs) || !value.grading || !value.source) throw new Error('评测用例缺少 node / inputs / grading / source')
   for (const input of value.inputs) { assertArtifactPath(input.path); if (typeof input.content !== 'string') throw new Error('冻结输入必须包含内容') }
   for (const output of value.node.outputs ?? []) assertArtifactPath(output.path)
+  if (value.sample) {
+    if (!['must_catch', 'clean'].includes(value.sample.kind) || !value.sample.checkpointId?.trim()) throw new Error('检查点样本分类或身份无效；请重新创建样本')
+    assertArtifactPath(value.sample.snapshot)
+    if (value.sample.kind === 'must_catch' && !value.sample.expectIssue?.trim()) throw new Error('必须拦住样本缺少期望问题；请填写 expectIssue')
+  }
   for (const key of ['checks', 'commands', 'mustFind', 'mustNotIntroduce'] as const) {
     const values = value.grading[key]
     if (values !== undefined && (!Array.isArray(values) || values.some((item) => typeof item !== 'string' || !item.trim()))) throw new Error(`grading.${key} 必须是非空字符串数组`)
   }
   if (value.grading.rubric && (!Number.isFinite(value.grading.rubric.threshold) || value.grading.rubric.threshold < 0 || value.grading.rubric.threshold > 100 || !value.grading.rubric.text)) throw new Error('rubric 阈值必须在 0–100 之间')
 }
-export async function saveEvalCase(stores: ProjectStores, value: EvalCase): Promise<boolean> {
+export async function saveEvalCase(stores: ProjectStores, value: EvalCase, options: EvalWriteOptions = {}): Promise<boolean> {
   validateEvalCase(value)
-  const root = evalRoot(stores), file = join(root, targetSlug(value.target), `${evalId(value.id)}.json`)
-  const exists = await fileExists(file)
-  await jsonWrite(root, file, value)
-  return !exists
+  if (value.sample?.kind === 'clean') throw new Error('无缺陷样本需要人工确认；请通过 addEvalSample 创建')
+  return appendEvalObject(stores, 'sample.added', value, { reason: '保存冻结评测用例', ...options })
 }
-export async function listEvalCases(stores: ProjectStores, target?: EvalTarget): Promise<EvalCase[]> {
+export async function listEvalCases(stores: ProjectStores, target?: EvalTarget, options: { includeRetired?: boolean } = {}): Promise<EvalCase[]> {
   const root = evalRoot(stores)
   let entries: Dirent[]
   try { entries = await readdir(root, { withFileTypes: true }) } catch (error) { if (!isEnoent(error)) throw error; entries = [] }
@@ -49,7 +53,21 @@ export async function listEvalCases(stores: ProjectStores, target?: EvalTarget):
     await assertNoSymlinks(stores.paths.skills, dir)
     for (const value of await jsonFiles<EvalCase>(dir)) cases.push({ ...value, target: { kind: 'skill', name: skill.name }, source: { ...value.source, kind: 'skill' } })
   }
-  const found = cases.filter((value) => !target || targetName(value.target) === targetName(target))
+  const persisted = await evalView<EvalCase>(stores, 'samples')
+  const known = new Set(persisted.map(value => value.id))
+  const legacyIds = new Map<string, EvalCase>()
+  for (const value of cases) {
+    const previous = legacyIds.get(value.id)
+    if (previous && canonicalJson(previous) !== canonicalJson(value)) throw new Error(`旧评测用例 id 冲突：${value.id}；请为不同用例分配唯一 id`)
+    legacyIds.set(value.id, value)
+    const current = persisted.find(row => row.id === value.id)
+    if (current && targetName(current.target) !== targetName(value.target)) throw new Error(`评测用例 id 跨目标冲突：${value.id}；请为不同目标分配唯一 id`)
+  }
+  for (const value of cases) if (!known.has(value.id)) {
+    await saveEvalCase(stores, value, { reason: '导入旧评测或技能自带用例；仅可读取，执行仍需检查点隔离校验' })
+    known.add(value.id)
+  }
+  const found = (await evalView<EvalCase>(stores, 'samples')).filter(value => options.includeRetired || !value.sample?.retiredAt).filter((value) => !target || targetName(value.target) === targetName(target))
   const ids = new Set<string>()
   for (const value of found) {
     validateEvalCase(value)
@@ -84,25 +102,12 @@ export async function freezeNode(stores: ProjectStores, run: RunState, nodeId: s
 }
 
 export async function defectCases(stores: ProjectStores, defect: Defect, attribution: DefectAttribution): Promise<EvalCase[]> {
-  if (!attribution.confirmed || defect.status !== 'confirmed') return []
-  const targets = [attribution.introducedAt, ...attribution.missedBy].filter((item): item is typeof item & { nodeId: string } => !!item.nodeId)
-  const runs = await stores.runs.list({ requirementId: defect.requirementId })
   const cases: EvalCase[] = []
-  const seen = new Set<string>()
-  for (const item of targets) {
-    const matches = runs.filter((run) => item.runId ? run.runId === item.runId : !!run.nodes[item.nodeId])
-    if (matches.length !== 1) throw new Error(`归因节点必须有唯一 runId：${item.nodeId}`)
-    const run = matches[0]!, key = `${run.runId}/${item.nodeId}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    const frozen = await freezeNode(stores, run, item.nodeId)
-    const introduced = item === attribution.introducedAt
-    cases.push({ ...frozen, id: `defect-${sha256(defect.requirementId).slice(0, 16)}-${defect.id}-${sha256(key).slice(0, 12)}`,
-      target: { kind: 'node', workflowId: run.workflowId, nodeId: item.nodeId }, title: `${defect.title} · ${item.nodeId}`,
-      source: { kind: 'defect', runId: run.runId, nodeId: item.nodeId, defectId: defect.id },
-      grading: { checks: frozen.node.completion, ...(introduced ? { mustNotIntroduce: [defect.description] } : { mustFind: [defect.description] }) },
-      createdAt: attribution.confirmed.at,
-    })
+  for (const item of attribution.checkpoints ?? []) {
+    if (!confirmedMiss(defect, attribution, item.checkpointId)) continue
+    const source = await replaySource(stores, item.checkpointId, item.runId, item.nodeId)
+    if (source.run.requirementId !== defect.requirementId) throw new Error('缺陷与检查点不属于同一需求；请核对归因')
+    cases.push(await checkpointCase(stores, source, 'must_catch', defect))
   }
   return cases
 }
@@ -111,7 +116,7 @@ export async function collectCases(stores: ProjectStores, request: EvalCollectRe
   const added: string[] = []
   const accept = async (value: EvalCase) => {
     if (request.target && targetName(value.target) !== targetName(request.target)) return
-    if (await fileExists(join(evalRoot(stores), targetSlug(value.target), `${evalId(value.id)}.json`))) return
+    if ((await evalView<EvalCase>(stores, 'samples')).some(row => row.id === value.id)) return
     if (await saveEvalCase(stores, value)) added.push(value.id)
   }
   for (const run of await stores.runs.list()) {
@@ -169,15 +174,8 @@ export async function collectCases(stores: ProjectStores, request: EvalCollectRe
         grading: { checks: frozen.node.completion, reference: { path: output.path, content: content.toString() } }, createdAt: run.endedAt ?? run.startedAt })
     }
   }
-  if (request.includeDefects) for (const requirement of await stores.workspaces.listRequirements()) {
-    for (const artifact of await stores.workspaces.listArtifacts(requirement.id)) {
-      if (!/^defects\/D-\d+\.md$/.test(artifact.path)) continue
-      const content = await stores.workspaces.readArtifact({ workspace: requirement.id, path: artifact.path })
-      if (!content) continue
-      const defect = parseFrontmatter(content.toString()).data as unknown as Defect
-      const bytes = await stores.workspaces.readArtifact({ workspace: requirement.id, path: `defects/${defect.id}.attribution.json` })
-      if (bytes) for (const value of await defectCases(stores, defect, JSON.parse(bytes.toString()) as DefectAttribution)) await accept(value)
-    }
+  if (request.includeDefects) for (const defect of await qualityStore(stores).defects()) {
+    if (defect.attribution) for (const value of await defectCases(stores, defect, defect.attribution)) await accept(value)
   }
   return { added }
 }

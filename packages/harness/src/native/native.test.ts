@@ -77,7 +77,7 @@ describe('native loop', () => {
     expect(requests.at(-1)?.tools).toBeUndefined()
     expect(requests.at(-1)?.responseSchema).toEqual(schema)
     expect(requests.at(-1)?.messages.filter((message) => message.role === 'tool').map((message) => message.toolCallId)).toEqual(['read', 'edit', 'list', 'grep'])
-    expect(events.filter((event) => event.type === 'tool_call')).toHaveLength(4)
+    expect(events.filter((event) => event.type === 'tool_call' && event.phase === 'end')).toHaveLength(4)
     expect(events.filter((event) => event.type === 'usage')).toHaveLength(6)
   })
 
@@ -206,7 +206,7 @@ describe('scope and paths', () => {
     const { harness } = setup([tool('write_file', { path: 'new/child.txt', content: 'bad' }), end()])
     const events: HarnessEvent[] = []
     await harness.run({ ...await request(cwd), tools: {} }, (event) => events.push(event))
-    expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ ok: false, output: expect.stringContaining('writeScope') })
+    expect(events.find((event) => event.type === 'tool_call' && event.phase === 'end')).toMatchObject({ ok: false, output: expect.stringContaining('writeScope') })
     await expect(access(join(cwd, 'new'))).rejects.toThrow()
   })
 
@@ -222,7 +222,7 @@ describe('scope and paths', () => {
     const { harness } = setup([...calls, tool('read_file', { path: 'allowed/external/target' }), end()])
     const events: HarnessEvent[] = []
     await harness.run({ ...await request(cwd), tools: { writeScope: ['allowed/**'] } }, (event) => events.push(event))
-    expect(events.filter((event) => event.type === 'tool_call').every((event) => !event.ok)).toBe(true)
+    expect(events.filter((event) => event.type === 'tool_call' && event.phase === 'end').every((event) => !event.ok)).toBe(true)
     expect(await readFile(join(outside, 'target'), 'utf8')).toBe('original')
     await expect(access(join(cwd, 'denied', 'new'))).rejects.toThrow()
     await expect(access(join(outside, 'new'))).rejects.toThrow()
@@ -233,7 +233,7 @@ describe('scope and paths', () => {
     const { harness } = setup([tool('write_file', { path: 'denied/new', content: 'bad' }), end()])
     const events: HarnessEvent[] = []
     await harness.run({ ...await request(cwd), tools: { writeScope: ['allowed/**'] } }, (event) => events.push(event))
-    expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ ok: false })
+    expect(events.find((event) => event.type === 'tool_call' && event.phase === 'end')).toMatchObject({ ok: false })
     await expect(access(join(cwd, 'allowed', 'new'))).rejects.toThrow()
   })
 
@@ -242,7 +242,7 @@ describe('scope and paths', () => {
     const { harness } = setup(['', 'absent', 'aa'].map((old_string) => tool('edit_file', { path: 'file', old_string, new_string: 'bad' })))
     const events: HarnessEvent[] = []
     await harness.run(await request(cwd), (event) => events.push(event))
-    expect(events.filter((event) => event.type === 'tool_call').every((event) => !event.ok)).toBe(true)
+    expect(events.filter((event) => event.type === 'tool_call' && event.phase === 'end').every((event) => !event.ok)).toBe(true)
     expect(await readFile(join(cwd, 'file'), 'utf8')).toBe('aaa')
   })
 
@@ -252,7 +252,7 @@ describe('scope and paths', () => {
     const events: HarnessEvent[] = []
     await harness.run(req, (event) => events.push(event))
     expect(requests[0]!.tools?.some((item) => item.name === 'bash')).toBe(false)
-    expect(events.find((event) => event.type === 'tool_call')).toMatchObject({ ok: false, output: expect.stringContaining('disabled') })
+    expect(events.find((event) => event.type === 'tool_call' && event.phase === 'end')).toMatchObject({ ok: false, output: expect.stringContaining('disabled') })
     await expect(access(join(req.cwd, 'escaped'))).rejects.toThrow()
   })
 })
@@ -304,4 +304,24 @@ describe('resume and model routing', () => {
     expect(result.ok).toBe(true)
     expect(String(fetch.mock.calls[0]?.[0])).toBe('https://override.invalid/api/v3/chat/completions')
   })
+})
+
+it('只读请求不注册写入与 bash，恶意调用也不执行；工具仍有两拍', async () => {
+  const cwd = await temp()
+  await writeFile(join(cwd, 'a.txt'), 'before')
+  const { harness, requests } = setup([
+    tool('write_file', { path: 'a.txt', content: 'after' }, 'write'),
+    tool('bash', { command: 'touch forbidden' }, 'shell'),
+    tool('read_file', { path: 'a.txt' }, 'read'), end(),
+  ])
+  const events: HarnessEvent[] = []
+  expect((await harness.run({ ...await request(cwd), readOnly: true, tools: { allowBash: true, writeScope: ['**'] } }, event => events.push(event))).ok).toBe(true)
+  expect(harness.capabilities).toMatchObject({ readOnly: true, toolPhases: true, modelOverride: true, effortOverride: false })
+  for (const request of requests) expect(request.tools?.map(tool => tool.name)).not.toEqual(expect.arrayContaining(['write_file']))
+  expect(requests[0]!.tools?.map(tool => tool.name)).toEqual(['read_file', 'list', 'grep'])
+  const tools = events.filter(event => event.type === 'tool_call')
+  expect(tools.map(event => [event.callId, event.phase])).toEqual([['write', 'start'], ['write', 'end'], ['shell', 'start'], ['shell', 'end'], ['read', 'start'], ['read', 'end']])
+  expect(tools.filter(event => event.phase === 'end').map(event => event.ok)).toEqual([false, false, true])
+  expect(await readFile(join(cwd, 'a.txt'), 'utf8')).toBe('before')
+  await expect(access(join(cwd, 'forbidden'))).rejects.toThrow()
 })

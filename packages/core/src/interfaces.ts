@@ -5,6 +5,8 @@
  * git 友好，可以随项目一起审阅。布局见 docs/design/06-追溯与审计.md。
  */
 import type {
+  EvalCase,
+  EvalRun,
   Actor,
   Defect,
   DefectAttribution,
@@ -77,7 +79,8 @@ export interface WorkspaceStore {
     author: Actor
     reason?: string
     derivedFrom?: ArtifactRef[]
-    producedBy?: { runId: RunId; nodeId: NodeId }
+    /** invocationId：哪一次 harness 调用写的（docs/design/21 §2），与 ArtifactVersion.producedBy 一致。 */
+    producedBy?: { runId: RunId; nodeId: NodeId; invocationId?: string }
     title?: string
     tags?: string[]
   }): Promise<ArtifactRef & { version: number }>
@@ -223,13 +226,22 @@ export interface ProjectStores {
  * 写入在同一把提交锁里完成：查重（幂等键）→ 检查 baseRevision → 追加 → 更新锚点。人工结论不会被自动结果覆盖。
  */
 export interface QualityStore {
-  /** 追加；同 key 已存在的跳过。baseRevision 不一致时抛 QualityConflictError（server 映射为 409）。 */
-  append(entries: Array<{ kind: QualityLogKind; key: string; requirementId?: RequirementId; data: unknown; actor: Actor }>, options?: { baseRevision?: { defectId: string; revision: number } }): Promise<{ appended: QualityLogEntry[]; skipped: string[] }>
+  /**
+   * 追加；同 key 已存在的跳过。baseRevision 不一致时抛 QualityConflictError（server 映射为 409）。
+   * 缺陷按 revision 序号比较；样本 / 评测按对象内容哈希（canonicalJson 后 sha256）比较，在同一提交锁内检查。
+   */
+  append(
+    entries: Array<{ kind: QualityLogKind; key: string; requirementId?: RequirementId; data: unknown; actor: Actor }>,
+    options?: { baseRevision?: { defectId: string; revision: number } | { objectKind: 'sample' | 'evaluation'; objectId: string; revision: string } },
+  ): Promise<{ appended: QualityLogEntry[]; skipped: string[] }>
   /** 从运行事件入账观察：从游标继续，提交成功才推进游标；不传 runId 则处理全部运行。 */
   sync(runId?: RunId): Promise<{ observations: number; runs: number }>
   observations(filter?: { requirementId?: RequirementId; source?: Observation['source']; runId?: RunId }): Promise<Observation[]>
   defects(requirementId?: RequirementId): Promise<Array<Defect & { attribution?: DefectAttribution }>>
   mergeSuggestions(requirementId?: RequirementId): Promise<DefectMergeSuggestion[]>
+  /** 评测样本（含已退役，看 sample.retiredAt）与评测运行，均从日志重建。 */
+  samples(): Promise<EvalCase[]>
+  evaluations(): Promise<EvalRun[]>
   /** 链与锚点校验；anchorBehind：链完整但锚点落后（可 repair）。 */
   status(): Promise<QualityStatus>
   /** 只补锚点并记 recovery；链被篡改或截断时拒绝（抛错，交给人）。 */

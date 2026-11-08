@@ -1,3 +1,4 @@
+import { scheduleCheckpoint, finishCheckpoint, withCapture } from '../checkpoints.js'
 import type { NodeContext } from '../../types.js'
 import type { Entry } from '../graph.js'
 import type { NodeHost } from './host.js'
@@ -15,9 +16,17 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   if (!Array.isArray(failures)) throw new Error('judge target.failures 必须是数组')
   let verdicts: JudgeVerdict[] = []
   if (failures.length) {
-    const value = await host.model(entry, ctx, node.role, `判断以下失败的根因。输出 { verdicts: JudgeVerdict[] }，每个 subject 恰好一个判决：\n${JSON.stringify(failures)}`, JUDGE_SCHEMA) as { verdicts: JudgeVerdict[] }
+    const point = await scheduleCheckpoint(host, node.id, 'judge', node.role, [node.title])
+    let value: { verdicts: JudgeVerdict[] }
+    try {
+      value = await withCapture(host, node.id, { role: 'judge', checkpointId: point.id }, () => host.model(entry, ctx, node.role, `判断以下失败的根因。输出 { verdicts: JudgeVerdict[] }，每个 subject 恰好一个判决：\n${JSON.stringify(failures)}`, JUDGE_SCHEMA)) as { verdicts: JudgeVerdict[] }
+      assertVerdictsCover(failures, value.verdicts)
+      await finishCheckpoint(host, point, 'done')
+    } catch (error) { await finishCheckpoint(host, point, 'error', error); throw error }
     verdicts = value.verdicts
-    assertVerdictsCover(failures, verdicts)
+  } else {
+    const point = await scheduleCheckpoint(host, node.id, 'judge', node.role, [node.title])
+    await finishCheckpoint(host, point, 'skipped', '没有失败对象，无需判决')
   }
   const routed: Record<string, string[]> = {}
   const routing: Array<{ subject: string; to: string }> = []

@@ -1,6 +1,7 @@
+import { serialize } from './stale.js'
 import { join } from 'node:path'
 import { access } from 'node:fs/promises'
-import { listReviews, type RoomMember, type RoomMessage } from '@taktflow/core'
+import { assertTaskResendable, TaskResendConflictError, listReviews, type RoomMember, type RoomMessage } from '@taktflow/core'
 import { authorize, actor, body, jsonBody, HttpError, integer, text } from './http.js'
 import { atomicWrite, auditSpace, changeConfig, members, repoBinding, repoManager, spaceDetail, spaceFile } from './space.js'
 import { requirement } from './read-model.js'
@@ -10,6 +11,27 @@ import { STREAMING, type Handler } from './routes.js'
 
 export type LeadMention = (requirementId: string, message: RoomMessage) => void | Promise<void>
 export function spaceRoutes(add: (method: string, path: string, handler: Handler) => void, connections: Set<() => void>, onLeadMention?: LeadMention, options: M3Callbacks = {}) {
+  add('POST', '/api/requirements/:id/room/tasks/:messageId/resend', async ({ stores, params, request }) => {
+    await requirement(stores, params.id!)
+    const reason = text((await body(request)).reason, 'reason')
+    return serialize(stores.projectDir, async () => {
+      const messages = await stores.chat.list(params.id!)
+      const original = messages.find(message => message.id === params.messageId)
+      if (!original || original.kind !== 'task') throw new HttpError(404, '任务消息不存在；请刷新群聊')
+      let message: RoomMessage | undefined
+      try {
+        assertTaskResendable(messages, original)
+        message = await options.resendTask?.(stores.projectDir, params.id!, original, reason)
+      } catch (error) {
+        if (error instanceof TaskResendConflictError) throw new HttpError(409, error.message)
+        throw error
+      }
+      if (!message) throw new HttpError(409, '当前服务没有可用的 Lead，未重发任务；请使用启用 Lead 的 takt serve 启动此空间后重试')
+      await auditSpace(stores, actor(request, stores), reason, JSON.stringify({ action: 'room.task.resend', original: original.id, messageId: message.id,
+        oldTaskRunId: original.refs?.taskRunId, newTaskRunId: message.refs?.taskRunId, hops: message.receipt?.hops, chain: message.receipt?.chain }))
+      return message
+    })
+  })
   add('GET', '/api/space', ({ stores }) => spaceDetail(stores))
   add('PUT', '/api/space/members', async ({ stores, request }) => {
     authorize(request, stores, 'owner')

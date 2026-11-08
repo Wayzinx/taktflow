@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { StewardBlock, StewardCitation, StewardContextRef, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
 import type { ToolSpec, RoomMessage, NodeKind, SnapshotNode, RunState, Usage, EventEnvelope } from '../types.js'
 import { createInsights } from '../insights/fs-insights.js'
@@ -75,6 +76,14 @@ function timelineItem(event: EventEnvelope, titles: Map<string, string>): { titl
       return undefined
   }
 }
+export function delegationStatus(status: StewardDelegation['status']): import('../types.js').DelegationStatus {
+  return status === 'answered' ? 'replied' : status === 'failed' ? 'uncertain' : status
+}
+export function resendDelegation(tools: StewardTools, messageId: string, reason: string): Promise<StewardDelegation> {
+  return tools.resendDelegation(messageId, reason)
+}
+interface DelegationRecord { delegation: StewardDelegation; threadId: string; text: string; sentAt: string }
+
 export interface StewardToolResult {
   data: unknown
   citations: StewardCitation[]
@@ -101,71 +110,24 @@ export class StewardTools {
     this.cleanups.clear()
   }
   async restoreDelegations(): Promise<void> {
-    for (const thread of await this.store.threads())
-      for (const message of await this.store.messages(thread.id)) {
-        for (const delegation of message.delegations ?? []) {
-          if (delegation.status !== 'sent') continue
-          let space: StewardSpace
-          try {
-            space = await this.deps.open(delegation.spaceId)
-          } catch (error) {
-            if (!(error instanceof StewardError) || ![403, 404].includes(error.status)) throw error
-            delegation.status = 'failed'
-            delegation.reply = '原空间已不可访问，请检查权限或空间是否已归档'
-            await this.store.saveMessage(message)
-            continue
-          }
-          let answered = false
-          const receive = (reply: RoomMessage) => {
-            if (
-              answered ||
-              reply.replyTo !== delegation.messageId ||
-              reply.author.type !== 'agent' ||
-              reply.author.role !== 'lead'
-            )
-              return
-            answered = true
-            cleanup()
-            void this.store
-              .serial(async () => {
-                const latest = (await this.store.messages(thread.id)).find(
-                  (item) => item.id === message.id,
-                )!
-                const current = latest.delegations?.find(
-                  (item) => item.messageId === delegation.messageId,
-                )
-                if (!current || current.status !== 'sent') return
-                Object.assign(current, { status: 'answered', reply: reply.text, at: reply.at })
-                await this.store.saveMessage(latest)
-                this.store.emit(thread.id, {
-                  type: 'delegation',
-                  messageId: message.id,
-                  delegation: current,
-                })
-                await this.store.feed({
-                  type: 'delegation',
-                  at: timestamp(this.deps),
-                  threadId: thread.id,
-                  delegation: current,
-                })
-              })
-              .catch((error: unknown) => {
-                this.store.emit(thread.id, {
-                  type: 'error',
-                  messageId: message.id,
-                  error: `转达回填失败，请刷新会话：${String(error)}`,
-                })
-              })
-          }
-          const off = space.onChat(delegation.requirementId, receive)
-          const cleanup = () => {
-            off()
-            this.cleanups.delete(cleanup)
-          }
-          this.cleanups.add(cleanup)
-          for (const reply of await space.stores.chat.list(delegation.requirementId)) receive(reply)
-        }
-      }
+    const delegations = await this.refreshDelegations()
+    for (const delegation of delegations) {
+      if (!['sent', 'taken', 'uncertain'].includes(delegationStatus(delegation.status))) continue
+      const space = await this.deps.open(delegation.spaceId)
+      let updates = Promise.resolve()
+      const off = space.onChat(delegation.requirementId, message => {
+        if (message.replyTo !== delegation.messageId) return
+        updates = updates.then(async () => {
+          const current = (await this.refreshDelegations()).find(item => item.messageId === delegation.messageId)
+          if (current && ['replied', 'refused', 'expired'].includes(current.status)) cleanup()
+        }).catch(() => cleanup())
+      })
+      const timer = setTimeout(() => { void this.refreshDelegations().finally(cleanup).catch(() => {}) },
+        Math.max(1, 30 * 60_000 - (Date.parse(timestamp(this.deps)) - Date.parse(delegation.at))))
+      timer.unref()
+      const cleanup = () => { off(); clearTimeout(timer); this.cleanups.delete(cleanup) }
+      this.cleanups.add(cleanup)
+    }
   }
   private specCache?: { until: number; specs: ToolSpec[] }
   async specs(useCache = false): Promise<ToolSpec[]> {
@@ -875,90 +837,120 @@ export class StewardTools {
         : undefined,
     }
   }
-  private async askLead(
-    spaceId: string,
-    requirementId: string,
-    text: string,
-    context: ToolContext,
-  ): Promise<StewardDelegation> {
-    const space = await this.deps.open(spaceId)
-    if (!(await space.stores.workspaces.getRequirement(requirementId)))
-      throw new StewardError(404, '需求不存在，请检查引用')
-    const delegation: StewardDelegation = {
-      spaceId,
-      requirementId,
-      messageId: '',
-      status: 'sent',
-      at: timestamp(this.deps),
+  private delegationFile(messageId: string): string { return `delegations/${sha256(messageId)}.json` }
+
+  private async saveDelegation(record: DelegationRecord, context?: ToolContext): Promise<void> {
+    await this.store.write(this.delegationFile(record.delegation.messageId), record)
+    if (context) await context.onDelegation?.({ ...record.delegation })
+    for (const message of await this.store.messages(record.threadId)) {
+      if (!message.delegations?.some(item => item.messageId === record.delegation.messageId)) continue
+      message.delegations = message.delegations.map(item => item.messageId === record.delegation.messageId ? { ...record.delegation } : item)
+      await this.store.saveMessage(message)
+      this.store.emit(record.threadId, { type: 'delegation', messageId: message.id, delegation: { ...record.delegation } })
     }
-    let settled = false,
-      resolveWait: (value: StewardDelegation) => void = () => {},
-      timer: ReturnType<typeof setTimeout> | undefined
-    const wait = new Promise<StewardDelegation>((resolve) => {
-      resolveWait = resolve
-    })
-    const pending: RoomMessage[] = []
-    const receive = (message: RoomMessage) => {
-      if (!delegation.messageId) {
-        pending.push(message)
-        return
+    await this.store.feed({ type: 'delegation', at: timestamp(this.deps), threadId: record.threadId, delegation: { ...record.delegation } })
+  }
+
+  async refreshDelegations(): Promise<StewardDelegation[]> {
+    // 把旧消息里的 answered / failed 归一化；旧消息仍可用于显式重发。
+    for (const thread of await this.store.threads()) for (const message of await this.store.messages(thread.id)) {
+      for (const delegation of message.delegations ?? []) if (!(await this.store.read(this.delegationFile(delegation.messageId)))) {
+        const space = await this.deps.open(delegation.spaceId)
+        const original = (await space.stores.chat.list(delegation.requirementId)).find(item => item.id === delegation.messageId)
+        await this.store.write(this.delegationFile(delegation.messageId), { delegation: { ...delegation }, threadId: thread.id, text: original?.text ?? '', sentAt: delegation.at } satisfies DelegationRecord)
       }
-      if (
-        settled ||
-        message.author.type !== 'agent' ||
-        message.author.role !== 'lead' ||
-        message.replyTo !== delegation.messageId
-      )
-        return
-      settled = true
-      cleanup()
-      delegation.status = 'answered'
-      delegation.reply = message.text
-      delegation.at = message.at
-      void (async () => {
-        await context.onDelegation?.(delegation)
-        await this.store.feed({
-          type: 'delegation',
-          at: timestamp(this.deps),
-          threadId: context.threadId,
-          delegation,
-        })
-        resolveWait(delegation)
-      })().catch((error: unknown) => {
-        delegation.status = 'failed'
-        delegation.reply = `回填失败：${String(error)}`
-        resolveWait(delegation)
+    }
+    const results: StewardDelegation[] = []
+    for (const record of await this.store.list<DelegationRecord>('delegations')) {
+      const before = JSON.stringify(record.delegation)
+      const delegation = record.delegation
+      delegation.status = delegationStatus(delegation.status)
+      const space = await this.deps.open(delegation.spaceId)
+      for (const message of await space.stores.chat.list(delegation.requirementId)) {
+        if (message.replyTo !== delegation.messageId || message.author.type !== 'agent' || message.author.role !== 'lead') continue
+        if (message.receipt?.status === 'taken' && ['sent', 'uncertain', 'expired'].includes(delegation.status)) {
+          delegation.status = 'taken'; delegation.at = message.at
+        } else if (message.receipt?.status === 'replied' || !message.receipt && message.kind === 'text') {
+          delegation.status = 'replied'; delegation.reply = message.text; delegation.at = message.at
+        } else if (message.receipt?.status === 'refused') {
+          delegation.status = 'refused'; delegation.reply = message.text; delegation.at = message.at
+        }
+      }
+      if (delegation.status === 'sent' && Date.parse(timestamp(this.deps)) - Date.parse(record.sentAt) >= 30 * 60_000) {
+        delegation.status = 'expired'; delegation.at = timestamp(this.deps)
+      }
+      if (before !== JSON.stringify(delegation)) await this.saveDelegation(record)
+      results.push({ ...delegation })
+    }
+    return results
+  }
+
+  async resendDelegation(messageId: string, reason: string): Promise<StewardDelegation> {
+    if (!reason.trim()) throw new StewardError(400, '重发必须填写原因，请补充后重试')
+    await this.refreshDelegations()
+    const record = await this.store.read<DelegationRecord>(this.delegationFile(messageId))
+    if (!record || !['uncertain', 'expired'].includes(delegationStatus(record.delegation.status))) throw new StewardError(409, '仅不确定或已过期的转达可重发，请刷新回执')
+    if (!record.text) throw new StewardError(409, '旧转达缺少原文，请人工重新发起')
+    const result = await this.askLead(record.delegation.spaceId, record.delegation.requirementId, record.text,
+      { threadId: record.threadId, messageId: randomUUID(), proposals: [], delegations: [] })
+    await this.store.append('delegation-audit.jsonl', { action: 'resend', messageId, newMessageId: result.messageId, reason, at: timestamp(this.deps) })
+    return result
+  }
+
+  private async askLead(spaceId: string, requirementId: string, text: string, context: ToolContext): Promise<StewardDelegation> {
+    const space = await this.deps.open(spaceId)
+    if (!(await space.stores.workspaces.getRequirement(requirementId))) throw new StewardError(404, '需求不存在，请检查引用')
+    const delegation: StewardDelegation = { spaceId, requirementId, messageId: `uncertain-${randomUUID()}`, status: 'sent', at: timestamp(this.deps) }
+    const record: DelegationRecord = { delegation, threadId: context.threadId, text, sentAt: delegation.at }
+    context.delegations.push(delegation)
+    let resolveWait!: (delegation: StewardDelegation) => void
+    const wait = new Promise<StewardDelegation>(resolve => { resolveWait = resolve })
+    let sent = false, finished = false
+    let waitTimer: ReturnType<typeof setTimeout> | undefined, expiryTimer: ReturnType<typeof setTimeout> | undefined
+    const pending: RoomMessage[] = []
+    let updates = Promise.resolve()
+    const receive = (message: RoomMessage) => {
+      if (!sent) { pending.push(message); return }
+      if (message.replyTo !== delegation.messageId || message.author.type !== 'agent' || message.author.role !== 'lead') return
+      updates = updates.then(async () => {
+        if (finished) return
+        if (message.receipt?.status === 'taken') { delegation.status = 'taken'; clearTimeout(expiryTimer) }
+        else if (message.receipt?.status === 'replied' || !message.receipt && message.kind === 'text') {
+          delegation.status = 'replied'; delegation.reply = message.text; finished = true
+        } else if (message.receipt?.status === 'refused') { delegation.status = 'refused'; delegation.reply = message.text; finished = true }
+        else return
+        delegation.at = message.at
+        await this.saveDelegation(record, context)
+        if (finished) { cleanup(); resolveWait(delegation) }
+      }).catch(error => {
+        delegation.status = 'uncertain'; delegation.reply = `回执保存失败：${String(error)}`
+        cleanup(); resolveWait(delegation)
       })
     }
     const unsubscribe = space.onChat(requirementId, receive)
-    const cleanup = () => {
-      unsubscribe()
-      clearTimeout(timer)
-      this.cleanups.delete(cleanup)
-    }
+    const cleanup = () => { unsubscribe(); clearTimeout(waitTimer); clearTimeout(expiryTimer); this.cleanups.delete(cleanup) }
     this.cleanups.add(cleanup)
     try {
-      delegation.messageId = await space.postToLead(
-        requirementId,
-        `${text}\n\n来源：/steward?thread=${context.threadId}`,
-      )
+      delegation.messageId = await space.postToLead(requirementId, `${text}\n\n来源：/steward?thread=${context.threadId}`)
+      sent = true
     } catch (error) {
+      delegation.status = 'uncertain'; delegation.reply = `发送结果不确定：${String(error)}；请检查群聊后决定是否重发`
+      await this.saveDelegation(record, context)
       cleanup()
-      throw error
+      return delegation
     }
-    context.delegations.push(delegation)
-    try {
-      await context.onDelegation?.({ ...delegation })
-    } catch (error) {
-      cleanup()
-      throw error
-    }
+    await this.saveDelegation(record, context)
     for (const message of pending) receive(message)
-    if (!settled)
-      timer = setTimeout(
-        () => resolveWait(delegation),
-        Math.min(60000, this.deps.leadTimeoutMs ?? 60000),
-      )
+    waitTimer = setTimeout(() => resolveWait(delegation), Math.min(60000, this.deps.leadTimeoutMs ?? 60000))
+    expiryTimer = setTimeout(() => {
+      updates = updates.then(async () => {
+        if (delegation.status !== 'sent') return
+        delegation.status = 'expired'; delegation.at = timestamp(this.deps)
+        await this.saveDelegation(record, context)
+        cleanup(); resolveWait(delegation)
+      }).catch(() => { cleanup(); resolveWait(delegation) })
+    }, 30 * 60_000)
+    expiryTimer.unref()
     return wait
   }
 }

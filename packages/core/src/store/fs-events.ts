@@ -4,12 +4,11 @@ import { open, stat } from 'node:fs/promises'
 import { subscribeJsonLines } from './jsonl-tail.js'
 import type { EventStore } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
-import { canonicalJson, sha256 } from '../util/hash.js'
+import { chainHash, verifyChain, ZERO_HASH } from '../quality/chain.js'
 import { appendLine, isEnoent, readFileIfExists } from './fs-utils.js'
 import { withFileLock } from './file-lock.js'
 import { eventsFile } from './paths.js'
 
-const ZERO_HASH = '0'.repeat(64)
 // 用 Record 穷举：协议里新增事件类型而这里漏写时编译报错，不会在回读时才发现
 const EVENT_TYPE_TABLE: Record<EventType, true> = {
   'run.started': true, 'run.finished': true, 'node.ready': true, 'node.started': true, 'node.finished': true, 'node.failed': true, 'node.stale': true,
@@ -58,25 +57,11 @@ function hashPayload(envelope: EventEnvelope): Record<string, unknown> {
 }
 
 function verifyContent(buf: Buffer, runId: string): { ok: boolean; brokenAt?: number } {
-    let prevHash = ZERO_HASH
-    let seq = 0
-    for (const line of buf.toString('utf8').split('\n')) {
-      if (line.trim() === '') continue
-      seq += 1
-      let envelope: unknown
-      try {
-        envelope = JSON.parse(line)
-      } catch {
-        return { ok: false, brokenAt: seq }
-      }
-      if (!isEnvelope(envelope, runId) || envelope.seq !== seq || envelope.prevHash !== prevHash) {
-        return { ok: false, brokenAt: seq }
-      }
-      const expected = sha256(prevHash + canonicalJson(hashPayload(envelope)))
-      if (envelope.hash !== expected) return { ok: false, brokenAt: seq }
-      prevHash = envelope.hash
-    }
-    return { ok: true }
+  // 旧事件日志允许空行、无末尾换行和额外信封字段，保持既有 verify 语义。
+  const { brokenAt } = verifyChain(buf.toString('utf8'), (value): value is EventEnvelope => isEnvelope(value, runId), {
+    payload: hashPayload, ignoreBlankLines: true, requireFinalNewline: false,
+  })
+  return brokenAt === undefined ? { ok: true } : { ok: false, brokenAt }
 }
 
 interface AppendTail { size: number; ino: number; mtimeMs: number; ctimeMs: number; seq: number; hash: string; start: number }
@@ -85,7 +70,7 @@ const appendTails = new Map<string, AppendTail>()
 function checkedLine(line: string, runId: string): EventEnvelope {
   let value: unknown
   try { value = JSON.parse(line) } catch { throw new Error(`事件日志尾部不是合法 JSON：${runId}`) }
-  if (!isEnvelope(value, runId) || value.hash !== sha256(value.prevHash + canonicalJson(hashPayload(value)))
+  if (!isEnvelope(value, runId) || value.hash !== chainHash(value, hashPayload(value))
     || (value.seq === 1 && value.prevHash !== ZERO_HASH)) throw new Error(`事件日志尾部哈希或结构损坏：${runId}`)
   return value
 }
@@ -169,7 +154,7 @@ export class FsEventStore implements EventStore {
         hash: '',
       }
       if (e.nodeId !== undefined) envelope.nodeId = e.nodeId
-      envelope.hash = sha256(envelope.prevHash + canonicalJson(hashPayload(envelope)))
+      envelope.hash = chainHash(envelope, hashPayload(envelope))
       await appendLine(file, JSON.stringify(envelope))
       const info = await stat(file)
       appendTails.set(file, { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, seq: envelope.seq, hash: envelope.hash, start: last.size })

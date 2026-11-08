@@ -62,6 +62,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
       return leads.get(stores.projectDir)!.commands
     },
     getLeadPresence: (dir, id) => leads.get(dir)!.getPresence(id),
+    resendTask: async (dir, id, message, reason) => leads.get(dir)?.resendTask(id, message, reason),
     subscribeLead: (dir, id, send) => {
       const key = `${dir}:${id}`
       const bucket = listeners.get(key) ?? new Set()

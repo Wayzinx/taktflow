@@ -861,7 +861,8 @@ export interface EventPayloads {
   'review.issue': { key: string; action: ReviewIssueEntry['history'][number]['action']; revision: number; round: number; by: string; checkpointId?: string; note?: string; entry: Omit<ReviewIssueEntry, 'history'> }
   // —— 运行透明与回退（docs/design/26）——
   /** 节点回退到开始前：恢复的文件、因此过期的下游。 */
-  'node.rewound': { files: Array<{ path: string; scope: 'repo' | 'workspace'; repo?: string; version?: number }>; stale: Array<{ runId: RunId; nodeId: NodeId }>; reason: string }
+  /** kept：本节点新建、回退点里没有前一版本的存放区产物，原样保留并随生产节点过期（docs/design/26 §5）。 */
+  'node.rewound': { files: Array<{ path: string; scope: 'repo' | 'workspace'; repo?: string; version?: number }>; stale: Array<{ runId: RunId; nodeId: NodeId }>; reason: string; kept?: string[] }
   'lesson.recalled': { ids: string[]; holdout: boolean; tokens: number }
   'lesson.learned': { id: string; title: string; source: Lesson['source'] }
   'lesson.updated': { id: string; status: Lesson['status']; reason: string; stats: Lesson['stats'] }
@@ -1431,7 +1432,8 @@ export type LeadAction =
   | { type: 'start_run'; workflowId: string; args?: Record<string, unknown>; budget?: RunBudget }
   | { type: 'resume_run'; runId: RunId }
   | { type: 'cancel_run'; runId: RunId; reason: string }
-  | { type: 'request_human'; to: string; ask: string; form: HumanNodeDef['form']; choices?: string[] }
+  /** assumption / timebox 同 HumanNodeDef：只有 answer 带假设时才会到时交还（docs/design/26 §3）。 */
+  | { type: 'request_human'; to: string; ask: string; form: HumanNodeDef['form']; choices?: string[]; assumption?: string; timebox?: HumanTimebox }
   | { type: 'propose_workflow_change'; workflowId: string; description: string; source?: string }
   | { type: 'update_notes'; content: string }
   /** 调用命令注册表里风险为 read 的命令（查询类）；写类命令走上面的专用动作。 */
@@ -1663,6 +1665,11 @@ export interface EvalRun {
   candidates?: Record<string, string>
   repeats?: number
   report?: EvalReport
+  /** 开始时冻结的样本副本与评委候选包 id；报告只依据它们，之后样本退役或改动不影响这次结果。 */
+  frozenCases?: EvalCase[]
+  judgeCandidate?: string
+  /** 逐次证据：每个样本 × 变体 × 第几次重复一条。 */
+  replayEvidence?: EvalReplayEvidence[]
   startedAt: Timestamp
   endedAt?: Timestamp
   by: Actor
@@ -1670,6 +1677,19 @@ export interface EvalRun {
   comparison?: EvalComparison
 }
 
+/** 一次回放的证据：结论、输出、误报、评委调用与本次所有调用身份。 */
+export interface EvalReplayEvidence {
+  caseId: string
+  variant: string
+  repeat: number
+  verdict: { outcome: 'pass' | 'fail' | 'insufficient'; reason?: string; falsePositive?: boolean; invocationId?: string }
+  result?: EvalCaseResult
+  output?: unknown
+  /** clean 样本提出了 blocker / major。 */
+  falsePositive?: boolean
+  judgeInvocationId?: string
+  invocations: Invocation[]
+}
 
 // ============================================================ 归因可信度（docs/design/21）
 
@@ -1874,6 +1894,9 @@ export type QualityLogKind =
   | 'sample.retired'
   | 'eval.started'
   | 'eval.finished'
+  /** 评测回放里的 harness 调用身份（docs/design/21 §2、§5）：开始 / 结束各一条。 */
+  | 'invocation.started'
+  | 'invocation.finished'
   | 'recovery'
 
 export interface QualityLogEntry {

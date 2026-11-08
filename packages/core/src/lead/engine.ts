@@ -1,3 +1,4 @@
+import { delegationOrigin } from './delegation.js'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import type { Engine, ProjectStores } from '../interfaces.js'
 import type { AgentProfile, EventEnvelope, RoomMessage } from '../types.js'
@@ -9,6 +10,7 @@ interface Invocation {
   profiles: Record<string, AgentProfile>
   created(state: TaskRunState): Promise<void>
   kind: 'task' | 'workflow'
+  origin?: TaskRunState['origin']
 }
 
 export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<string, AgentProfile>, onRunEvent: (runId: string, event: EventEnvelope) => Promise<void>, audit: (runId: string, message: unknown) => Promise<unknown>): (invocation: Invocation) => Engine {
@@ -23,9 +25,9 @@ export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<s
   runs.create = async (state, snapshot) => {
     const scope = invocation.getStore()
     if (!scope) throw new Error('缺少 Lead 引擎调用上下文')
-    Object.assign(state, { kind: scope.kind, origin: { kind: 'chat', messageId: scope.message.id, by: scope.message.author, title: scope.title } })
+    Object.assign(state, { kind: scope.kind, origin: scope.origin ?? { kind: 'chat', messageId: scope.message.id, by: scope.message.author, title: scope.title, ...await delegationOrigin(stores, scope.message) } })
     await stores.runs.create(state, snapshot)
-    await audit(state.runId, { kind: 'lead.origin', onBehalfOf: scope.message.author, messageId: scope.message.id })
+    await audit(state.runId, { kind: 'lead.origin', onBehalfOf: state.origin!.by, messageId: scope.message.id })
     await scope.created(state)
   }
   const events: ProjectStores['events'] = {

@@ -13,7 +13,9 @@ const allowed = (scope: Scope, file: string) => scope.profile.some((p) => matchG
 function metadata(file: string, requirements: string): boolean {
   const relative = file.startsWith(`${requirements}/`) ? file.slice(requirements.length + 1) : ''
   if (/^[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp|\.lock)?$/.test(relative)) return true
-  return /^\.takt\/(runs|objects|chat)\//.test(file) ||
+  // 质量日志与运行事件同属存储元数据；实时同步不归因给正在执行的模型。候选包和快照不豁免。
+  return /^\.takt\/quality\/(?:log\.jsonl|anchor\.json|cursors\.json|views\/[^/]+\.json|eval-mutations|defect-projections)(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+    /^\.takt\/(runs|objects|chat)\//.test(file) ||
     /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
 }

@@ -16,6 +16,6 @@ it('Qwen 合成 Claude 兼容格式保留消息、工具、用量及最终结果
   expect(parser.result()).toEqual({ ok: true, sessionId: 'q1', finalText: '完成', usage: { inputTokens: 6, outputTokens: 3 } })
   expect(events).toContainEqual({ type: 'started', sessionId: 'q1', model: 'qwen-test' })
   expect(events).toContainEqual({ type: 'message', role: 'assistant', text: '读取' })
-  expect(events).toContainEqual({ type: 'tool_call', tool: 'read_file', input: '{"path":"a"}', output: 'body', ok: true })
+  expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'read_file', input: '{"path":"a"}', output: 'body', ok: true })
   expect(events).toContainEqual({ type: 'usage', usage: { inputTokens: 6, outputTokens: 3 } })
 })

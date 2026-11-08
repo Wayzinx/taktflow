@@ -33,11 +33,12 @@ export async function loadedSkills(cwd: string, harness: string): Promise<NodeRe
     .map(async (entry) => ({ name: entry.name, hash: await skillContentHash(join(root, entry.name)) })))
 }
 
-export async function recordRecipe(host: HarnessHost, node: AgentNodeDef, cwd: string, selector: HarnessSelector, lessons: string[], prompt?: string): Promise<void> {
+export async function recordRecipe(host: HarnessHost, node: AgentNodeDef, cwd: string, selector: HarnessSelector, lessons: string[], prompt?: string): Promise<NodeRecipe> {
   const { stores, profiles } = host.deps
   const events = await stores.events.read(host.state.runId, { nodeId: node.id })
   const start = events.map((event) => event.type).lastIndexOf('node.started')
-  if (events.slice(start + 1).some((event) => event.type === 'node.recipe' && (event.data as NodeRecipe).role === node.role && (event.data as NodeRecipe).harness === selector.harness && (event.data as NodeRecipe).model === selector.model)) return
+  const recorded = events.slice(start + 1).find(event => event.type === 'node.recipe' && (event.data as NodeRecipe).role === node.role && (event.data as NodeRecipe).harness === selector.harness && (event.data as NodeRecipe).model === selector.model && (event.data as NodeRecipe).effort === selector.effort)
+  if (recorded) return recorded.data as NodeRecipe
   const snapshot = await stores.runs.getWorkflow(host.state.runId)
   const definition = snapshotNodes([...(snapshot?.nodes ?? []), ...host.state.expansions.flatMap((item) => item.nodes ?? [])]).find((item) => item.id === node.id)
   const original = host.graph?.get(node.id)?.def
@@ -46,7 +47,7 @@ export async function recordRecipe(host: HarnessHost, node: AgentNodeDef, cwd: s
   if (original?.kind === 'review') {
     const reviewer = [...original.reviewers, ...(original.arbiter ? [original.arbiter] : [])].find((item) => item.role === node.role)
     template = node.role === original.author.role ? original.author.prompt ?? '按评审意见修改产物'
-      : canonicalJson({ focus: reviewer?.focus, checklist: reviewer?.checklist, target: original.target, role: node.role })
+      : canonicalJson({ focus: reviewer?.focus, checklist: reviewer?.checklist, target: original.target, references: original.references, role: node.role })
   }
   if (original?.kind === 'judge') template = canonicalJson({ template: '判断以下失败的根因。输出 { verdicts: JudgeVerdict[] }，每个 subject 恰好一个判决：', target: original.target, routes: original.routes })
   if (original?.kind === 'gate') template = canonicalJson(original.checks.filter((check) => check.kind === 'rubric' && check.role === node.role))
@@ -62,5 +63,7 @@ export async function recordRecipe(host: HarnessHost, node: AgentNodeDef, cwd: s
   }
   const key = recipeKey(value)
   await saveRecipeContext(stores, host.state.runId, node.id, events[start]?.seq ?? 0, key, { prompt, resultSchema: node.resultSchema })
-  await host.emit('node.recipe', { ...value, recipeKey: key }, node.id)
+  const recipe = { ...value, recipeKey: key }
+  await host.emit('node.recipe', recipe, node.id)
+  return recipe
 }

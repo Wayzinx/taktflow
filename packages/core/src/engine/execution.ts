@@ -1,6 +1,6 @@
-import { access } from 'node:fs/promises'
-import { dirname, relative } from 'node:path'
-import type { AgentNodeDef, EventPayloads, NodeContext, NodeState, SandboxProvider, SandboxMount, TaktConfig } from '../types.js'
+import { access, writeFile } from 'node:fs/promises'
+import { dirname, join, relative } from 'node:path'
+import type { AgentNodeDef, EventPayloads, NodeContext, NodeState, SandboxProvider, SandboxMount, TaktConfig, SnapshotManifest, Actor } from '../types.js'
 import { BlockedError, type HarnessHost } from './harness.js'
 import { WriteGuard } from './guard.js'
 import { sha256 } from '../util/hash.js'
@@ -42,7 +42,7 @@ export async function workingDirectory(host: HarnessHost, node: AgentNodeDef, ct
   return ns.worktree.path
 }
 
-export async function saveWorktreeDiff(host: HarnessHost, nodeId: string, ns: NodeState, base?: string): Promise<void> {
+export async function saveWorktreeDiff(host: HarnessHost, nodeId: string, ns: NodeState, base?: string, actor?: Actor): Promise<void> {
   if (!ns.worktree) return
   const { stores, repos } = host.deps
   const diff = await repos!.diff(ns.worktree.path, base ?? ns.worktree.base)
@@ -51,16 +51,16 @@ export async function saveWorktreeDiff(host: HarnessHost, nodeId: string, ns: No
   const prefix = relative(stores.projectDir, stores.workspaces.dir(host.state.requirementId))
   await host.guard.system([`${prefix}/${path}`], async () => {
     const ref = await stores.workspaces.writeArtifact({ ref: { workspace: host.state.requirementId, path }, content: patch,
-      kind: 'code-change', author: { type: 'system', id: 'engine' }, reason: `仓库 ${ns.worktree!.repo} 节点 ${nodeId} 的改动`,
-      producedBy: { runId: host.state.runId, nodeId }, derivedFrom: ns.inputs })
+      kind: 'code-change', author: actor ?? { type: 'system', id: 'engine' }, reason: `仓库 ${ns.worktree!.repo} 节点 ${nodeId} 的改动`,
+      producedBy: { runId: host.state.runId, nodeId, invocationId: actor?.type === 'agent' ? actor.invocationId : undefined }, derivedFrom: ns.inputs })
     const actual = host.state.nodes[nodeId]!
     actual.outputs = [...actual.outputs.filter((output) => output.path !== path), ref]
     ns.outputs = actual.outputs
-    await host.emit('artifact.written', { ref, kind: 'code-change', sha256: sha256(patch) }, nodeId)
+    await host.emit('artifact.written', { ref, kind: 'code-change', sha256: sha256(patch) }, nodeId, actor)
   })
 }
 
-export async function sandboxCall(host: HarnessHost, cwd: string, harness: string, ctx: NodeContext, env: Record<string, string>, timeoutMs?: number, directories: string[] = []) {
+export async function sandboxCall(host: HarnessHost, cwd: string, harness: string, ctx: NodeContext, env: Record<string, string>, timeoutMs?: number, directories: string[] = [], snapshot?: SnapshotManifest) {
   const { stores } = host.deps
   const adapters = await executionAdapters()
   if (host.deps.skillsDir) await host.guard.system(['.agents/skills/**', '.claude/skills/**', '.takt/worktrees/**'],
@@ -73,8 +73,18 @@ export async function sandboxCall(host: HarnessHost, cwd: string, harness: strin
     try { await access(source) } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue; throw error }
     mounts.push({ source, target: source, mode: 'ro' })
   }
-  return provider.create({ workdir: cwd, mounts, env, network: stores.config.sandbox?.network, image: stores.config.sandbox?.image,
+  if (snapshot) {
+    const source = join(stores.taktDir, snapshot.dir)
+    mounts.push({ source, target: source, mode: 'ro' })
+  }
+  const sandbox = await provider.create({ workdir: cwd, mounts, env, network: stores.config.sandbox?.network, image: stores.config.sandbox?.image,
     limits: timeoutMs ? { timeoutMs } : undefined })
+  if (snapshot && ['bwrap', 'docker'].includes(sandbox.provider)) {
+    snapshot.readOnly = 'sandbox'
+    await host.guard.system([`.takt/${snapshot.dir}/**`], () => writeFile(join(stores.taktDir, snapshot.dir, 'manifest.json'), JSON.stringify(snapshot, null, 2)))
+    await host.emit('snapshot.created', snapshot, ctx.nodeId)
+  }
+  return sandbox
 }
 
 export function cwdGuard(host: HarnessHost, cwd: string): WriteGuard {

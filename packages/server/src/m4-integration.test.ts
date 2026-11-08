@@ -109,5 +109,5 @@ it('openai-chat 适配器按别名选择真实 model id，转达复用群聊 Lea
   }, { timeout: 5000 }).toBe('done')
   expect(calls.map(call => call.model)).toEqual(['local-model-id', 'local-model-id'])
   expect(authors).toEqual([{ type: 'agent', role: 'steward', harness: 'steward' }])
-  expect(message!.delegations![0]).toMatchObject({ status: 'answered' })
+  expect(message!.delegations![0]).toMatchObject({ status: 'replied' })
 })

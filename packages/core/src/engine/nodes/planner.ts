@@ -1,3 +1,4 @@
+import { scheduleCheckpoint, finishCheckpoint, withCapture } from '../checkpoints.js'
 import type { NodeContext } from '../../types.js'
 import type { Entry } from '../graph.js'
 import type { NodeHost } from './host.js'
@@ -17,19 +18,24 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
 
   let expansion = host.state.expansions.find((item) => item.plannerId === node.id)
   if (!expansion) {
-    const value = await host.model(entry, ctx, node.role, node.prompt, PLANNER_SCHEMA) as { items: PlannedItem[] }
-    const groups = expandPlanner(node, value.items)
-    for (const message of serializePlannerGroups(groups, host.deps.profiles)) await host.emit('log', { level: 'info', message }, node.id)
-    const definitions = groups.flatMap((group) => group.nodes)
-    const workflow = { id: node.id, title: node.title, version: '1', stages: [], nodes: definitions }
-    validateWorkflowHarnesses(workflow, { config: host.deps.stores.config, profiles: host.deps.profiles, harnesses: host.deps.harnesses }, host.override)
-    const ids = groups.flatMap((group) => group.nodes.map((child) => child.id))
-    if (ids.some((id) => host.graph.has(id))) throw new Error('planner 展开节点 ID 冲突')
-    for (const group of groups) host.add(group.nodes, node.id, group.scope, group.item, entry.iteration)
-    expansion = { plannerId: node.id, items: value.items, nodeIds: ids, nodes: snapshotWorkflow(workflow).nodes, at: host.timestamp() }
-    host.state.expansions.push(expansion)
-    await host.persistGraph()
-    await host.emit('dag.expanded', expansion, node.id)
+    const point = await scheduleCheckpoint(host, node.id, 'planner', node.role, [node.title])
+    let value: { items: PlannedItem[] }
+    try {
+      value = await withCapture(host, node.id, { role: 'planner', checkpointId: point.id }, () => host.model(entry, ctx, node.role, node.prompt, PLANNER_SCHEMA)) as { items: PlannedItem[] }
+      const groups = expandPlanner(node, value.items)
+      for (const message of serializePlannerGroups(groups, host.deps.profiles)) await host.emit('log', { level: 'info', message }, node.id)
+      const definitions = groups.flatMap((group) => group.nodes)
+      const workflow = { id: node.id, title: node.title, version: '1', stages: [], nodes: definitions }
+      validateWorkflowHarnesses(workflow, { config: host.deps.stores.config, profiles: host.deps.profiles, harnesses: host.deps.harnesses }, host.override)
+      const ids = groups.flatMap((group) => group.nodes.map((child) => child.id))
+      if (ids.some((id) => host.graph.has(id))) throw new Error('planner 展开节点 ID 冲突')
+      for (const group of groups) host.add(group.nodes, node.id, group.scope, group.item, entry.iteration)
+      expansion = { plannerId: node.id, items: value.items, nodeIds: ids, nodes: snapshotWorkflow(workflow).nodes, at: host.timestamp() }
+      host.state.expansions.push(expansion)
+      await host.persistGraph()
+      await host.emit('dag.expanded', expansion, node.id)
+      await finishCheckpoint(host, point, 'done')
+    } catch (error) { await finishCheckpoint(host, point, 'error', error); throw error }
   }
   await host.schedule(expansion.nodeIds)
   host.containerState(ns, expansion.nodeIds)

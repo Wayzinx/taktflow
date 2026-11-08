@@ -3,8 +3,10 @@ import type { ReviewNodeDef, ReviewRecord, ReviewResponse } from '../../types.js
 export const REVIEW_SCHEMA = {
   type: 'object', required: ['verdict', 'summary', 'issues'], properties: {
     verdict: { type: 'string', enum: ['approve', 'request_changes', 'reject'] }, score: { type: 'number' }, summary: { type: 'string' },
+    checklist: { type: 'array', items: { type: 'object', required: ['item', 'status'], properties: { item: { type: 'string' }, status: { type: 'string', enum: ['ok', 'issue', 'na'] }, issues: { type: 'array', items: { type: 'string' } }, note: { type: 'string' } } } },
+    previous: { type: 'array', items: { type: 'object', required: ['key', 'status'], properties: { key: { type: 'string' }, status: { type: 'string', enum: ['resolved', 'still_open', 'not_checked'] }, note: { type: 'string' } } } },
     issues: { type: 'array', items: { type: 'object', required: ['id', 'severity', 'description'], properties: {
-      id: { type: 'string' }, severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
+      key: { type: 'string' }, duty: { type: 'string' }, id: { type: 'string' }, severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
       title: { type: 'string' }, category: { type: 'string' }, description: { type: 'string' }, location: { type: 'string' }, suggestion: { type: 'string' },
     } } },
   },

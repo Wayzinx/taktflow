@@ -5,6 +5,7 @@ import { parseCliArgs, expectPositionals, parsePositiveInt, HELP, UsageError, ty
 import { createPrinter } from './output.js'
 import { registerEvalCommands, type EvalCliRegister } from './commands/eval.js'
 import { registerDefectCommands } from './commands/defect.js'
+import { runQualityCommand } from './commands/quality.js'
 import { runM3Command } from './commands/m3.js'
 import { runInit } from './commands/init.js'
 import { runReqList, runReqNew, runReqEdit, runReqCreateCommand, type CrudCliOptions } from './commands/req.js'
@@ -49,6 +50,9 @@ async function dispatch(cli: ParsedCli): Promise<number> {
   const handler = command && registered.get(command)
   if (handler) return handler(cli)
   switch (command) {
+    case 'quality':
+    case 'attention':
+      return runQualityCommand(cli)
     case 'cmd':
       return args[0] === 'requirement.create' ? runReqCreateCommand(cli) : runM3Command(cli)
     case 'route':

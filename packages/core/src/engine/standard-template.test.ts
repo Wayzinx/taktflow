@@ -3,12 +3,18 @@ import ts from 'typescript'
 import { expect, it } from 'vitest'
 import workflow from '../../../../templates/workflows/taktflow-standard.workflow.js'
 
-it('作者版模板满足受限子集；示例流程与模板一致', async () => {
+it('作者版模板满足受限子集；除 M5 职责与依据外与示例一致', async () => {
   const source = await readFile(new URL('../../../../templates/workflows/taktflow-standard.workflow.ts', import.meta.url), 'utf8')
   const example = await readFile(new URL('../../../../examples/standard-delivery/workflows/taktflow-standard.workflow.ts', import.meta.url), 'utf8')
-  expect(example).toBe(source)
-  expect(await readFile(new URL('../../../../examples/standard-delivery/workflows/taktflow-standard.hooks.ts', import.meta.url), 'utf8'))
-    .toBe(await readFile(new URL('../../../../templates/workflows/taktflow-standard.hooks.ts', import.meta.url), 'utf8'))
+  const withoutCapture = (text: string) => text.replace(/, (?:references|checklist): \[[^\]]*\]/g, '')
+  expect(withoutCapture(example)).toBe(withoutCapture(source))
+  expect(withoutCapture(await readFile(new URL('../../../../examples/standard-delivery/workflows/taktflow-standard.hooks.ts', import.meta.url), 'utf8')))
+    .toBe(withoutCapture(await readFile(new URL('../../../../templates/workflows/taktflow-standard.hooks.ts', import.meta.url), 'utf8')))
+  const reviews = workflow.nodes.filter(node => node.kind === 'review')
+  expect(reviews.find(node => node.id === 'review-prd')?.references).toEqual(['spec/clarify.md'])
+  expect(reviews.find(node => node.id === 'review-design')?.references).toEqual(['spec/prd.md'])
+  expect(reviews.find(node => node.id === 'review-cases')?.references).toEqual(['spec/prd.md', 'design/contracts*'])
+  expect(reviews.every(node => node.reviewers.every(reviewer => reviewer.checklist && reviewer.checklist.length >= 3 && reviewer.checklist.length <= 5))).toBe(true)
   const file = ts.createSourceFile('taktflow-standard.workflow.ts', source, ts.ScriptTarget.Latest, true)
   const exported = file.statements.find(ts.isExportAssignment)!
   expect(ts.isCallExpression(exported.expression)).toBe(true)

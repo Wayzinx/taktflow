@@ -8,7 +8,7 @@ import { listEvalCases } from './cases.js'
 import { runEval, waitEvalRun } from './runner.js'
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
-it('读取技能自带用例，覆盖技能/prompt/角色并冻结文件；schema失败保持失败', async () => {
+it('M5：技能自带的旧写节点用例仍可读，但不执行整节点回放', async () => {
   const root = await mkdtemp(join(tmpdir(), 'takt-eval-variants-')); roots.push(root)
   const stores = await initProject(root)
   const builtin = join(stores.paths.skills, 'work', 'evals'), replacement = join(root, 'replacement')
@@ -45,8 +45,7 @@ it('读取技能自带用例，覆盖技能/prompt/角色并冻结文件；schem
   await writeFile(promptFile, 'changed after start')
   await writeFile(join(replacement, 'work/SKILL.md'), 'changed after start')
   const result = await waitEvalRun(stores, run.id)
-  expect(result.results.filter((row) => row.variant === 'baseline').every((row) => !row.pass && !!row.error)).toBe(true)
-  expect(result.results.filter((row) => row.variant === 'candidate').map((row) => row.error)).toEqual([undefined, undefined, undefined])
-  expect(result.comparison).toMatchObject({ verdict: 'better', wins: 3 })
-  expect(models.filter((model) => model === 'changed')).toHaveLength(3)
+  expect(result).toMatchObject({ status: 'refused', results: [] })
+  expect(models).toEqual([])
+  expect(result.isolation?.reasons?.join('')).toContain('整节点')
 })

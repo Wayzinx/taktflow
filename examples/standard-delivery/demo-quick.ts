@@ -4,7 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { initProject, openProject, routeRequirement, snapshotWorkflow, type EventEnvelope } from '@taktflow/core'
+import { createEngine, previewRewind, rewind, initProject, openProject, routeRequirement, snapshotWorkflow, type EventEnvelope } from '@taktflow/core'
 import { createRunEngine, loadRuntime } from '../../packages/cli/src/project.js'
 import workflow from './workflows/quick-fix.workflow.js'
 
@@ -74,3 +74,27 @@ assert.equal(t0State.nodes.spec?.status, 'skipped')
 assert.equal(t0State.nodes['review-code']?.status, 'skipped')
 assert.equal(t0State.nodes['delivery-check']?.status, 'succeeded')
 console.log('PASS T0 预置 spec/cases；跳过 spec 与代码评审；真实测试和交付校验通过；运行参数不能替换测试命令。')
+
+// 新建产物没有前一版本：回退保留内容与历史，生产者和消费者过期后由重跑覆盖。
+const rewindReq = await reopened.workspaces.createRequirement({ title: '回退新增产物演示' })
+const rewindFlow = { id: 'rewind-demo', title: '回退', version: '1', stages: [], nodes: [
+  { id: 'write', kind: 'script' as const, title: '新增产物', outputs: [{ path: 'new.md', kind: 'other' as const }], run: async (ctx: import('@taktflow/core').NodeContext) => { await writeFile(join(ctx.workspaceDir, 'new.md'), '初次产物') } },
+  { id: 'read', kind: 'script' as const, title: '消费产物', needs: ['write'], inputs: [{ path: 'new.md' }], run: async () => {} },
+] }
+const rewindEngine = createEngine({ stores: reopened, profiles: {}, harnesses: {}, knowledge: [] })
+const before = await rewindEngine.start({ workflow: rewindFlow, requirementId: rewindReq.id })
+assert.equal(before.status, 'succeeded')
+const preview = await previewRewind(reopened, before.runId, 'write')
+assert.equal(preview.blocked, undefined)
+const result = await rewind(reopened, before.runId, 'write', { token: preview.token, reason: '演示人工要求重做新增产物' }, by)
+assert.equal(result.files[0]!.version, undefined)
+assert.equal((await reopened.workspaces.readArtifact({ workspace: rewindReq.id, path: 'new.md' }))!.toString(), '初次产物')
+assert.equal((await reopened.workspaces.listArtifacts(rewindReq.id))[0]!.versions.length, 1)
+const after = (await reopened.runs.get(before.runId))!
+assert.equal(after.nodes.write!.status, 'stale'); assert.equal(after.nodes.read!.status, 'stale')
+const audit = (await reopened.events.read(before.runId, { types: ['node.rewound'] }))[0] as EventEnvelope<'node.rewound'>
+assert.deepEqual(audit.data.kept, ['new.md'])
+rewindFlow.nodes[0]!.run = async (ctx: import('@taktflow/core').NodeContext) => { await writeFile(join(ctx.workspaceDir, 'new.md'), '重跑产物') }
+assert.equal((await rewindEngine.resume(before.runId, rewindFlow)).status, 'succeeded')
+assert.equal((await reopened.workspaces.readArtifact({ workspace: rewindReq.id, path: 'new.md' }))!.toString(), '重跑产物')
+console.log('PASS 回退新增产物：保留内容和版本 → 生产者与下游过期 → 重跑覆盖；kept 审计可回读。')

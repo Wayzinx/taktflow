@@ -33,9 +33,9 @@ function contentText(value: unknown): string {
     .filter(part => part.type === 'text').map(part => string(part.text) ?? '').join('') : ''
 }
 
-async function runPiProcess(bin: string, args: string[], req: HarnessRequest): Promise<ProcessResult> {
+async function runPiProcess(bin: string, args: string[], req: HarnessRequest, onJsonLine: (line: string) => void): Promise<ProcessResult> {
   const transcriptPath = req.env?.TAKT_TRANSCRIPT
-  if (!transcriptPath || req.signal?.aborted) return runProcess(bin, args, req, { stdin: req.prompt })
+  if (!transcriptPath || req.signal?.aborted) return runProcess(bin, args, req, { stdin: req.prompt, onJsonLine })
   const redact = createRedactor(collectSecrets(req))
   let transcript: Awaited<ReturnType<typeof open>> | undefined
   let result: ProcessResult = { ok: false, stdout: '', stderr: '' }
@@ -48,7 +48,7 @@ async function runPiProcess(bin: string, args: string[], req: HarnessRequest): P
     await mkdir(dirname(transcriptPath), { recursive: true })
     transcript = await open(transcriptPath, 'a')
     // 公共 runner 的 readline 也用于 transcript，会改变 Unicode 分隔符；Pi 单独保存已脱敏的原始 stdout。
-    result = await runProcess(bin, args, { ...req, env: { ...req.env, TAKT_TRANSCRIPT: '' } }, { stdin: req.prompt })
+    result = await runProcess(bin, args, { ...req, env: { ...req.env, TAKT_TRANSCRIPT: '' } }, { stdin: req.prompt, onJsonLine })
     result.transcriptPath = transcriptPath
     if (result.stdout) await transcript.appendFile(result.stdout.endsWith('\n') ? result.stdout : `${result.stdout}\n`, 'utf8')
   } catch (error) { fail(error) } finally {
@@ -137,6 +137,7 @@ export function createPiParser(onEvent: EventSink = () => {}): StreamParser {
         state.completed = false
         const message = object(data.message)
         if (message.role !== 'assistant') break
+        if (typeof message.model === 'string') state.started(state.value.sessionId, message.model)
         messageOpen = true
         latestUsage = undefined
         blocks.clear()
@@ -200,6 +201,7 @@ export function createPiHarness(options: PiOptions = {}): HarnessAdapter {
   return {
     id: 'pi', displayName: 'Pi',
     capabilities: {
+      toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
       resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true,
       compactionEvents: true, customProvider: false, sandbox: false, mcp: true,
     },
@@ -218,10 +220,8 @@ export function createPiHarness(options: PiOptions = {}): HarnessAdapter {
         ...(req.systemAppend ? ['--append-system-prompt', req.systemAppend] : []),
       ]
       const parser = createPiParser(onEvent)
-      // 公共 runner 持续读取管道并处理取消、超时、脱敏；不使用其 readline 回调解析 Pi。
-      // 只按 LF 切分原始 stdout，保留 JSON 字符串内的 Unicode 分隔符；事件在进程结束后回放。
-      const proc = await runPiProcess(bin, args, req)
-      for (const line of proc.stdout.split('\n')) parser.onLine(line.endsWith('\r') ? line.slice(0, -1) : line)
+      // 按 LF 实时处理完整 JSON 行，保留字符串内的 Unicode 分隔符。
+      const proc = await runPiProcess(bin, args, req, parser.onLine)
       return finalizeResult(req, parser.result(), proc)
     },
   }

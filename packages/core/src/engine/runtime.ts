@@ -1,3 +1,5 @@
+import { captureRewindPoint, captureNodeChanges } from '../insights/changes.js'
+import { reconcileAssumptions } from '../attention/timebox.js'
 import { join, relative } from 'node:path'
 import type { AttentionItem, EngineDeps } from '../interfaces.js'
 import type { Actor, AgentNodeDef, ArtifactRef, FailureRecord, EventPayloads, HumanNodeDef, NodeContext, NodeDef, NodeState, PlannedItem, RunState, WorkflowDefinition } from '../types.js'
@@ -10,7 +12,7 @@ import { runDir } from '../store/paths.js'
 import { collectOutputs, readCurrent, resolveInputs } from './artifacts.js'
 import { expandPlanner, qualify, validateDag, type Entry, type Graph } from './graph.js'
 import { WriteGuard } from './guard.js'
-import { saveWorktreeDiff, recordKnowledgeUsage } from './execution.js'
+import { saveWorktreeDiff, recordKnowledgeUsage, workingDirectory } from './execution.js'
 import { BlockedError, callHarness, type Emit, type HarnessHost } from './harness.js'
 import { command, Semaphore } from './process.js'
 import { BudgetGuard } from './budget.js'
@@ -80,7 +82,8 @@ export class Runtime implements HarnessHost {
     return next
   }
   emit: Emit = async (type, data, nodeId, actor = system) => {
-    if (!['harness.message', 'harness.tool_call', 'log', 'knowledge.query', 'context.assembled', 'context.compacted'].includes(type)) await this.save()
+    // 调用身份直接落事件日志，不改变 RunState，避免每次调用重复保存整份状态。
+    if (!['harness.message', 'harness.tool_call', 'log', 'knowledge.query', 'context.assembled', 'context.compacted', 'invocation.started', 'invocation.finished'].includes(type)) await this.save()
     if (type === 'node.finished' && nodeId && this.state.nodes[nodeId]?.status === 'stale') return
     if (type === 'run.finished') data = { status: this.state.status } as typeof data
     const event = await this.deps.stores.events.append(this.state.runId, { type, data, nodeId, actor })
@@ -222,6 +225,9 @@ export class Runtime implements HarnessHost {
     ns.status = 'succeeded'
     ns.endedAt = this.timestamp()
     delete ns.error
+    await captureNodeChanges(this.deps.stores, this.state, ns.id, this.deps.repos).catch(async error => {
+      await this.emit('log', { level: 'warn', message: `改动记录失败，回退不可用：${errorText(error)}` }, ns.id)
+    })
     await this.emit('node.finished', { status: ns.status, outputs: ns.outputs, result: ns.result, usage: ns.usage }, ns.id, actor)
   }
   recordAnswer(item: AttentionItem, actor?: Actor): Promise<void> {
@@ -251,7 +257,7 @@ export class Runtime implements HarnessHost {
       return
     }
     if (entry.def.kind === 'review') { await answerReview(this, entry, item); await this.save(); return }
-    const answer = { decision: item.decision, answer: item.answer }
+    const answer = { decision: item.decision, answer: item.handedBack ? `未获回答，按假设：${item.answer}` : item.answer, ...(item.handedBack ? { handedBack: true } : {}) }
     ns.result = entry.def.kind === 'judge' ? { ...ns.result as object, ...answer } : answer
     if (item.decision === 'cancelled') {
       ns.status = 'cancelled'
@@ -265,12 +271,24 @@ export class Runtime implements HarnessHost {
     } else await this.finish(entry, actor)
   }
   async restoreAnswers(): Promise<void> {
+    await reconcileAssumptions(this.deps.stores)
+    await this.save()
     await this.budget.restore()
     this.semaphore.setLimit(Math.max(1, Math.floor(Math.min(this.options.concurrency ?? 4, this.state.budget?.concurrency ?? Infinity))))
     if (this.state.status === 'cancelled') this.controller.abort(new Error('人工停止运行'))
     const attention = await this.deps.stores.attention.list({ requirementId: this.state.requirementId })
     for (const entry of this.graph.values()) {
       const ns = this.state.nodes[entry.def.id]!
+      const correction = attention.find(item => item.kind === 'assumption' && item.assumedFor === this.requests[ns.id] && item.answeredAt && item.answer !== item.assumption)
+      if (entry.def.kind === 'human' && ns.status === 'stale' && correction) {
+        this.restarting.add(ns.id)
+        await this.beginAttempt(ns)
+        this.requests[ns.id] = correction.requestId
+        await this.persistGraph()
+        await this.consume(entry, { ...correction, kind: 'node', handedBack: false })
+        continue
+      }
+
       if (ns.status === 'waiting_human' || ns.status === 'blocked' && this.requests[ns.id]) {
         const requestId = this.requests[ns.id]
         const item = requestId ? attention.find((item) => item.requestId === requestId) : undefined
@@ -297,14 +315,16 @@ export class Runtime implements HarnessHost {
     const base = `${this.state.runId}:${ns.id}`
     const prior = all.filter((item) => item.runId === this.state.runId && item.nodeId === ns.id)
     const requestId = prior.length ? `${base}#${prior.length + 1}` : base
+    const timebox = entry.def.kind === 'human' ? entry.def.timebox ?? this.deps.stores.config.human : this.deps.stores.config.human
+    const assumption = entry.def.kind === 'human' ? entry.def.assumption : undefined
     const item = await this.deps.stores.attention.create({
-      requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices, kind, boundTo: boundTo ?? (entry.def.kind === 'human' ? ns.inputs : undefined),
+      timebox, assumption, requestId, runId: this.state.runId, nodeId: ns.id, requirementId: this.state.requirementId, ask, form, choices, kind, boundTo: boundTo ?? (entry.def.kind === 'human' ? ns.inputs : undefined),
       owner: entry.def.owner, assignees: entry.def.owner ? this.deps.stores.config.members?.filter((member) => member.duties?.includes(entry.def.owner!)).map((member) => member.id) : undefined,
     })
     this.requests[ns.id] = requestId
     if (!this.signal.aborted) ns.status = kind === 'retry' ? 'blocked' : 'waiting_human'
     await this.persistGraph()
-    await this.emit('human.requested', { requestId, ask, form, choices }, ns.id)
+    await this.emit('human.requested', { requestId, ask, form, choices, timebox, assumption }, ns.id)
     if (this.signal.aborted) {
       const answered = await answerOrRead(this.deps.stores, item, { decision: 'cancelled', by: system })
       await this.recordAnswer(answered)
@@ -344,6 +364,9 @@ export class Runtime implements HarnessHost {
     }
     ns.status = this.signal.aborted ? 'cancelled' : error instanceof BlockedError ? 'blocked' : 'failed'
     ns.error = errorText(error)
+    try { await captureNodeChanges(this.deps.stores, this.state, ns.id, this.deps.repos) } catch (captureError) {
+      await this.emit('log', { level: 'warn', message: `改动记录失败，回退不可用：${errorText(captureError)}` }, ns.id)
+    }
     ns.endedAt = this.timestamp()
     await this.emit('node.failed', { error: ns.error, attempt: ns.attempts }, ns.id)
   }
@@ -365,8 +388,17 @@ export class Runtime implements HarnessHost {
     ns.startedAt = this.timestamp()
     delete ns.endedAt
     if (reserved) await this.persistGraph()
-    if (announce) await this.emit('node.started', { attempt: ns.attempts, iteration: ns.iteration }, ns.id)
+    if (announce) await this.announceAttempt(this.graph.get(ns.id)!, ns)
     else await this.save()
+  }
+  private async announceAttempt(entry: Entry, ns: NodeState): Promise<void> {
+    if (entry.def.kind === 'agent' && entry.def.repo) await workingDirectory(this, entry.def, this.context(entry), ns)
+    // 回退能力不可用不能阻断已成功引导的执行面；缺少回退点时预览会拒绝操作。
+    const rewindPoint = await captureRewindPoint(this.deps.stores, this.state, entry.def, ns).catch(async error => {
+      await this.emit('log', { level: 'warn', message: `回退点记录失败，回退不可用：${errorText(error)}` }, ns.id)
+      return undefined
+    })
+    await this.emit('node.started', { attempt: ns.attempts, iteration: ns.iteration, rewindPoint }, ns.id)
   }
   async skipNode(id: string, started = false): Promise<void> {
     const ns = this.state.nodes[id]!
@@ -400,13 +432,14 @@ export class Runtime implements HarnessHost {
         this.signal.throwIfAborted()
         if (!await this.budget.check()) { ns.status = 'pending'; return }
         delete ns.checks
-        await this.beginAttempt(ns)
+        await this.beginAttempt(ns, false)
         if ((ns.status as NodeState['status']) === 'stale') return
         const ctx = this.context(entry)
         if (node.when && !await node.when(ctx)) {
           await this.skipNode(node.id, true)
           return
         }
+        await this.announceAttempt(entry, ns)
         const inputs = await this.guard.system(this.workspacePaths(node.inputs?.map((input) => input.path)), () =>
           resolveInputs(this.deps.stores, this.state, node, this.emit))
         ns.inputs = node.kind === 'review' && this.reviews[node.id]?.rounds.length ? ns.inputs : inputs
@@ -477,6 +510,21 @@ export class Runtime implements HarnessHost {
     const prefix = relative(this.deps.stores.projectDir, this.deps.stores.workspaces.dir(this.state.requirementId))
     return paths.map((path) => `${prefix}/${path}`)
   }
+  private assumptionPrompt(entry: Entry, prompt: AgentNodeDef['prompt']): AgentNodeDef['prompt'] {
+    const seen = new Set<string>()
+    const visit = (id: string) => {
+      for (const need of this.graph.get(id)?.def.needs ?? []) if (!seen.has(need)) { seen.add(need); visit(need) }
+      const parent = this.graph.get(id)?.parent
+      if (parent && !seen.has(parent)) { seen.add(parent); visit(parent) }
+    }
+    visit(entry.def.id)
+    const notes = [...seen].flatMap(id => {
+      const result = this.state.nodes[id]?.result as { handedBack?: boolean; answer?: string } | undefined
+      return result?.handedBack && result.answer ? [result.answer] : []
+    })
+    if (!notes.length) return prompt
+    return async ctx => `${notes.join('\n')}\n\n${typeof prompt === 'function' ? await prompt(ctx) : prompt}`
+  }
   private environment(ctx: NodeContext): Record<string, string> {
     return { TAKT_RUN_ID: ctx.runId, TAKT_REQ: ctx.requirementId, TAKT_WORKSPACE: ctx.workspaceDir, TAKT_NODE: ctx.nodeId }
   }
@@ -491,7 +539,7 @@ export class Runtime implements HarnessHost {
   async model(entry: Entry, ctx: NodeContext, role: string, prompt: string | AgentNodeDef['prompt'], schema: Record<string, unknown>): Promise<unknown> {
     const node = entry.def
     const result = await callHarness(this, {
-      ...node, kind: 'agent', role, prompt, resultSchema: schema,
+      ...node, kind: 'agent', role, prompt: this.assumptionPrompt(entry, prompt), resultSchema: schema,
       harness: 'harness' in node ? node.harness : undefined,
     }, ctx, this.state.nodes[node.id]!, node.kind === 'planner')
     return result.data
@@ -515,7 +563,7 @@ export class Runtime implements HarnessHost {
         break
       }
       case 'agent': {
-        const result = await callHarness(this, node, ctx, ns, false)
+        const result = await callHarness(this, { ...node, prompt: this.assumptionPrompt(entry, node.prompt) }, ctx, ns, false)
         ns.result = result.data
         return result.actor
       }

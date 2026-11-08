@@ -5,7 +5,7 @@ import type { Entry } from './graph.js'
 import type { NodeHost } from './nodes/host.js'
 import { RUBRIC_SCHEMA } from './nodes/schemas.js'
 
-export async function checkAcceptance(host: NodeHost, entry: Entry, id: string, role?: string): Promise<GateCheckResult> {
+async function evaluateAcceptance(host: NodeHost, entry: Entry, id: string, role?: string): Promise<GateCheckResult> {
   const { workspaces } = host.deps.stores
   const requirementId = host.state.requirementId
   const data = await readArtifactData(workspaces, requirementId)
@@ -38,4 +38,13 @@ export async function checkAcceptance(host: NodeHost, entry: Entry, id: string, 
   const review = await host.model(entry, host.context(entry), role,
     `独立复核交付校验。逐条确认 AC 的用例、最近执行结果与证据，不得以作者自述作为通过依据。输出 score、pass、message。\n${JSON.stringify(details)}`, RUBRIC_SCHEMA) as GateCheckResult
   return { id, pass: review.pass === true, message: review.message, score: review.score, details }
+}
+
+export async function checkAcceptance(host: NodeHost, entry: Entry, id: string, role?: string): Promise<GateCheckResult> {
+  try {
+    const result = await evaluateAcceptance(host, entry, id, role)
+    return { ...result, status: result.pass ? 'pass' : 'fail' }
+  } catch (error) {
+    return { id, pass: false, status: 'error', message: `交付校验执行失败：${error instanceof Error ? error.message : String(error)}；请修复材料或检查服务后重试` }
+  }
 }

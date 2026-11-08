@@ -1,3 +1,4 @@
+import { startMaintenance } from './maintenance.js'
 import { createServer as httpServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { openProject, StewardStore, StewardError, type AttentionItem } from '@taktflow/core'
@@ -117,6 +118,13 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         selected = found
         url.pathname = '/api' + url.pathname.slice(prefix[0].length)
       }
+      const scopedAdmin = prefix && admin.match(request.method ?? 'GET', url.pathname)
+      if (scopedAdmin && url.pathname.startsWith('/api/steward/')) {
+        validateWriteRequest(request)
+        const result = await scopedAdmin.handler({ stores: selected!, request, response, url, params: scopedAdmin.params })
+        if (result !== STREAMING) json(response, result)
+        return
+      }
       const matched = selected && routers.get(spaceId(selected))?.match(request.method ?? 'GET', url.pathname)
       if (matched) {
         validateWriteRequest(request)
@@ -146,6 +154,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       server.listen(options.port ?? 4870, options.host ?? '127.0.0.1', () => { server.off('error', reject); resolve() })
     })
   } catch (error) { await steward.close(); throw error }
+  const maintenance = startMaintenance(() => spaces, (stores, item) => options.onSpaceAnswer ? options.onSpaceAnswer(stores.projectDir, item) : options.onAnswer?.(item))
   const address = server.address() as AddressInfo
   let closePromise: Promise<void> | undefined
   return {
@@ -153,7 +162,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     close() {
       if (closePromise) return closePromise
       closing = true
-      closePromise = steward.close().then(() => new Promise<void>((resolve, reject) => {
+      closePromise = maintenance.close().then(() => steward.close()).then(() => new Promise<void>((resolve, reject) => {
         for (const close of connections) close()
         server.close((error) => { if (error) reject(error); else resolve() })
         server.closeAllConnections()

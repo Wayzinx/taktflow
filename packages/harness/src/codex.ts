@@ -11,7 +11,13 @@ export function createCodexParser(onEvent: EventSink = () => {}): StreamParser {
   let completed = false
   return state.parser(data => {
     if (data.type === 'thread.started') state.started(data.thread_id)
-    else if (data.type === 'item.completed') {
+    else if (data.type === 'item.started') {
+      const item = object(data.item)
+      if (['command_execution', 'file_change', 'mcp_tool_call', 'web_search'].includes(String(item.type))) {
+        const tool = item.type === 'mcp_tool_call' ? [string(item.server), string(item.tool)].filter(Boolean).join('.') || 'mcp_tool_call' : String(item.type)
+        state.tool(item.id, tool, item.command ?? item.changes ?? item.arguments ?? item.query)
+      }
+    } else if (data.type === 'item.completed') {
       const item = object(data.item)
       if (item.type === 'agent_message' && typeof item.text === 'string') {
         state.value.finalText = item.text
@@ -19,17 +25,12 @@ export function createCodexParser(onEvent: EventSink = () => {}): StreamParser {
       } else if (item.type === 'reasoning') state.message(item.text ?? item)
       // 启动阶段的 item.error 可以是可恢复通知；整轮失败由顶层错误和终止事件判断。
       else if (item.type === 'error') state.message(item)
-      else if (item.type === 'command_execution') {
-        onEvent({ type: 'tool_call', tool: 'command_execution', input: text(item.command),
-          output: text(item.aggregated_output), ok: item.status !== 'failed' && item.exit_code === 0 })
-      } else if (item.type === 'file_change') {
-        onEvent({ type: 'tool_call', tool: 'file_change', input: text(item.changes),
-          output: text(item), ok: item.status === 'completed' })
-      } else if (item.type === 'mcp_tool_call') {
-        onEvent({ type: 'tool_call', tool: [string(item.server), string(item.tool)].filter(Boolean).join('.') || 'mcp_tool_call',
-          input: text(item.arguments), output: text(item.error ?? item.result), ok: item.status === 'completed' && !item.error })
-      } else if (item.type === 'web_search') {
-        onEvent({ type: 'tool_call', tool: 'web_search', input: text(item.query), output: text(item) })
+      else if (['command_execution', 'file_change', 'mcp_tool_call', 'web_search'].includes(String(item.type))) {
+        const tool = item.type === 'mcp_tool_call' ? [string(item.server), string(item.tool)].filter(Boolean).join('.') || 'mcp_tool_call' : String(item.type)
+        const output = item.aggregated_output ?? item.error ?? item.result ?? item
+        const ok = item.status !== 'failed' && !item.error && (item.type !== 'command_execution' || item.exit_code === 0)
+        if (state.hasTool(item.id)) state.toolResult(item.id, output, ok, data)
+        else onEvent({ type: 'tool_call', tool, input: text(item.command ?? item.changes ?? item.arguments ?? item.query), output: text(output), ok })
       } else state.message(data)
     } else if (data.type === 'turn.completed') {
       completed = true
@@ -53,6 +54,7 @@ function tomlString(value: string): string {
 export function createCodexHarness(options: CodexOptions = {}): HarnessAdapter {
   const bin = options.bin ?? 'codex'
   const capabilities: HarnessCapabilities = {
+    toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
     resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false,
     compactionEvents: false, customProvider: true, sandbox: false, mcp: true,
     providerProtocols: ['openai-chat', 'openai-responses'],

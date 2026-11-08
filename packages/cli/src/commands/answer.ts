@@ -29,6 +29,10 @@ export async function runAnswer(cli: ParsedCli): Promise<number> {
   if (!options.json) {
     printer.text(`${printer.colors.green('✔')} 已回答 ${printer.colors.cyan(requestId)}：${answered.decision ?? answered.answer ?? ''}`)
   }
+  if (answered.kind === 'assumption') {
+    if (options.json) printer.data(answered)
+    return 0
+  }
   const run = await stores.runs.get(answered.runId)
   if (run?.workflowId === 'lead' || !options.noResume && run?.workflowId.startsWith('task:')) {
     if (await answerLead(await loadRuntime(options.project, { mock: options.mock }), answered)) {

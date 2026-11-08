@@ -1,4 +1,4 @@
-import type { CommandRegistry, LeadPresence, ProjectStores } from '@taktflow/core'
+import type { CommandRegistry, LeadPresence, ProjectStores, RoomMessage } from '@taktflow/core'
 import type { EvalRuntimeResolver } from './eval-routes.js'
 import { actor, authorize, body, HttpError, text, viewer } from './http.js'
 import { projectCommands } from './space.js'
@@ -12,6 +12,7 @@ export interface M3Callbacks {
   resolveRuntime?: EvalRuntimeResolver
   getCommands?(stores: ProjectStores): CommandRegistry | Promise<CommandRegistry>
   getLeadPresence?(projectDir: string, requirementId: string): LeadPresence
+  resendTask?(projectDir: string, requirementId: string, message: RoomMessage, reason: string): Promise<RoomMessage | undefined>
   subscribeLead?(projectDir: string, requirementId: string, send: (presence: LeadPresence) => void): () => void
 }
 export function commandExecutor(options: M3Callbacks = {}) {
@@ -30,7 +31,7 @@ export function commandExecutor(options: M3Callbacks = {}) {
   }
   const execute = async (stores: ProjectStores, request: Parameters<typeof actor>[0], id: string, input: Record<string, unknown>, reason?: string) => {
     const result = await (await commands(stores, id)).run(id, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)), { actor: actor(request, stores), reason })
-    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|冲突|已存在/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
+    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|已改变|冲突|已存在/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
     return result.result
   }
   return { commands, execute }

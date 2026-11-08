@@ -10,7 +10,7 @@ export const actionSchemas: Record<LeadAction['type'], Record<string, unknown>> 
   start_run: { required: ['workflowId'], properties: { workflowId: text, args: { type: 'object' }, budget: budgetSchema } },
   resume_run: { required: ['runId'], properties: { runId: text } },
   cancel_run: { required: ['runId', 'reason'], properties: { runId: text, reason: text } },
-  request_human: { required: ['to', 'ask', 'form'], properties: { to: text, ask: text, form: { type: 'string', enum: ['approve', 'answer', 'choice'] }, choices: strings } },
+  request_human: { required: ['to', 'ask', 'form'], properties: { to: text, ask: text, assumption: text, timebox: { type: 'object', properties: { remindAfter: text, handbackAfter: text } }, form: { type: 'string', enum: ['approve', 'answer', 'choice'] }, choices: strings } },
   propose_workflow_change: { required: ['workflowId', 'description'], properties: { workflowId: text, description: text, source: text } },
   update_notes: { required: ['content'], properties: { content: text } },
   command: { required: ['id'], properties: { id: text, input: { type: 'object' } } },

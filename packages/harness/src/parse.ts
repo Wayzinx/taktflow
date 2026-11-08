@@ -36,7 +36,7 @@ export function readUsage(value: unknown, camelCase = false): Usage | undefined 
 
 export class ParseState {
   value: HarnessResult = { ok: true, finalText: '' }
-  private tools = new Map<string, { tool: string; input: string }>()
+  private tools = new Map<string, { tool: string; input: string; started: number }>()
 
   constructor(readonly emit: EventSink) {}
 
@@ -51,22 +51,28 @@ export class ParseState {
     this.message(error)
   }
 
-  started(sessionId: unknown, model?: unknown): void {
+  started(sessionId: unknown, model?: unknown, effort?: unknown, skills?: unknown): void {
     this.value.sessionId = string(sessionId) ?? this.value.sessionId
-    this.emit({ type: 'started', sessionId: this.value.sessionId, model: string(model) })
+    this.emit({ type: 'started', sessionId: this.value.sessionId, model: string(model), ...(typeof effort === 'string' ? { effort } : {}), ...(Array.isArray(skills) && skills.every(skill => typeof skill === 'string') ? { skills } : {}) })
   }
 
   tool(id: unknown, tool: string, input: unknown): void {
-    const call = { tool, input: text(input) }
-    if (typeof id === 'string') this.tools.set(id, call)
-    this.emit({ type: 'tool_call', ...call })
+    if (typeof id !== 'string') { this.emit({ type: 'tool_call', tool, input: text(input) }); return }
+    if (this.tools.has(id)) return
+    const call = { tool, input: text(input), started: Date.now() }
+    this.tools.set(id, call)
+    this.emit({ type: 'tool_call', tool, input: call.input, callId: id, phase: 'start' })
   }
+
+  hasTool(id: unknown): boolean { return typeof id === 'string' && this.tools.has(id) }
 
   toolResult(id: unknown, output: unknown, ok: boolean, raw: unknown): void {
     const call = typeof id === 'string' ? this.tools.get(id) : undefined
-    // 协议没有调用 ID；完成事件必须重复原 tool/input，不能只发一个孤立 output。
-    if (call) this.emit({ type: 'tool_call', ...call, output: text(output), ok })
-    else this.message(raw)
+    if (call) {
+      this.tools.delete(id as string)
+      this.emit({ type: 'tool_call', tool: call.tool, input: call.input, callId: id as string,
+        phase: 'end', durationMs: Math.max(0, Date.now() - call.started), output: text(output), ok })
+    } else this.message(raw)
   }
 
   parser(handle: (data: JsonObject) => void, result = () => ({ ...this.value })): StreamParser {

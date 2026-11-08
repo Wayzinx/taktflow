@@ -49,6 +49,7 @@ export function createStreamCliHarness(config: StreamCliConfig): HarnessAdapter 
     id: config.id,
     displayName: config.displayName,
     capabilities: {
+      toolPhases: true, readOnly: false, modelOverride: true, effortOverride: false,
       resume: false, structuredOutput: false, toolEvents: true, usage: true,
       cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false,
       ...config.capabilities,

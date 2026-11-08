@@ -85,8 +85,8 @@ describe('DSH parser', () => {
       usage: { inputTokens: 230, outputTokens: 50, cachedTokens: 100 } })
     expect(events).toContainEqual({ type: 'started', sessionId: 'dsh-s', model: undefined })
     expect(events).toContainEqual({ type: 'message', role: 'system', text: '内部思考' })
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'shell', input: '{"command":"false"}', output: '{"message":"exit 1"}', ok: false })
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'read', input: '{"path":"a"}', output: 'source body', ok: true })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'shell', input: '{"command":"false"}', output: '{"message":"exit 1"}', ok: false })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'read', input: '{"path":"a"}', output: 'source body', ok: true })
     expect(events.filter(event => event.type === 'usage')).toEqual([
       { type: 'usage', usage: { inputTokens: 100, outputTokens: 20, cachedTokens: 40 } },
       { type: 'usage', usage: { inputTokens: 130, outputTokens: 30, cachedTokens: 60 } },

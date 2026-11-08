@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
+import { createQualityStore } from '../quality/index.js'
 import type { ProjectStores } from '../interfaces.js'
 import type { AgentProfile, HarnessSelector, SkillRecord, TaktConfig } from '../types.js'
 import { parseFrontmatter } from '../util/frontmatter.js'
@@ -50,7 +51,7 @@ export async function openProject(projectDir: string): Promise<ProjectStores> {
   const checked = assertConfig(config, configFile)
   const paths = await resolvePaths(root, checked)
   const chat = new FsChatStore(taktDir)
-  return {
+  const stores: ProjectStores = {
     projectDir: root,
     taktDir,
     config: checked,
@@ -60,6 +61,8 @@ export async function openProject(projectDir: string): Promise<ProjectStores> {
     runs: new FsRunStore(taktDir),
     attention: new FsAttentionStore(taktDir),
   }
+  stores.quality = createQualityStore(stores)
+  return stores
 }
 
 /** 优先传解析后的 paths；兼容旧调用方传 .takt 或模板根目录。 */

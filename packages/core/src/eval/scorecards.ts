@@ -1,6 +1,6 @@
 import type { ProjectStores } from '../interfaces.js'
 import type { NodeScorecard } from '../api.js'
-import type { ArtifactRecord, EventEnvelope, EventPayloads, NodeRecipe, RunState, VerdictCategory } from '../types.js'
+import type { ArtifactRecord, EventEnvelope, EventPayloads, NodeRecipe, Observation, RunState, VerdictCategory } from '../types.js'
 import { canonicalJson } from '../util/hash.js'
 import { addUsage, summarizeUsage } from '../insights/usage.js'
 import { readReviewRounds } from '../insights/review-rounds.js'
@@ -31,7 +31,7 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
       if (!nodeEvents.some((e) => e.type === 'node.started')) continue
       const recipes = nodeEvents.filter((e) => e.type === 'node.recipe')
       // 一个 run/node 只作为一次成绩；review 多角色配方在配方/技能视角分别展开。
-      const identities = recipes.length ? [...new Map(recipes.map((event) => [(event.data as NodeRecipe).role ?? nodeId, event])).values()] : [undefined]
+      const identities = recipes.length ? [...new Map(recipes.map(event => [(event.data as NodeRecipe).recipeKey, event])).values()] : [undefined]
       const firstFinish = nodeEvents.find((e) => e.type === 'node.finished')?.data as EventPayloads['node.finished'] | undefined
       const firstFailure = nodeEvents.find((e) => e.type === 'node.failed')
       const firstChecks = nodeEvents.find((e) => e.type === 'node.checks')?.data as EventPayloads['node.checks'] | undefined
@@ -59,22 +59,39 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
         sample.rounds++; if (!entry.round.passed) sample.reworks++
         for (const record of entry.round.records) for (const issue of record.issues) sample.issues[issue.severity]++
       }
-      for (const sample of affected(entry.runId, entry.nodeId)) for (const record of entry.round.records) for (const issue of record.issues) {
-        if (issue.severity === 'blocker' || issue.severity === 'major') sample.caught.add(issue.groupKey ?? canonicalJson([issue.location, issue.description]))
-      }
     }
-    for (const defect of await listDefects(stores, req)) {
-      const attr = defect.attribution
-      if (defect.status !== 'confirmed' || !attr?.confirmed) continue
-      const identity = `${req}/${defect.id}`
-      for (const source of [attr.introducedAt, ...attr.missedBy]) {
-        if (!source.nodeId) continue
-        const matches = samples.filter((sample) => sample.run.requirementId === req && sample.nodeId === source.nodeId && (!source.runId || sample.run.runId === source.runId))
-        for (const sample of matches) {
-          if (source === attr.introducedAt) sample.escapes.add(identity)
-          else { sample.missed.add(identity); sample.detector = true }
+    const defects = stores.quality ? await stores.quality.defects(req) : await listDefects(stores, req)
+    const observations: Observation[] = stores.quality ? await stores.quality.observations({ requirementId: req }) : []
+    const checkpointSamples = (runId: string, nodeId: string, checkpointId: string) => affected(runId, nodeId).filter(sample => {
+      if (options.by === 'node' || !sample.recipe) return true
+      // 多评审者节点按实际调用配方归属，不能把甲的检出计到乙的技能上。
+      return sample.events.some(event => event.type === 'invocation.started'
+        && (event.data as EventPayloads['invocation.started']).checkpointId === checkpointId
+        && (event.data as EventPayloads['invocation.started']).recipeKey === sample.recipe!.recipeKey)
+    })
+    for (const defect of defects) {
+      const attr = defect.attribution, identity = `${req}/${defect.id}`
+      const valid = defect.validity === 'valid'
+      if (valid) for (const observation of observations) {
+        if (observation.kind !== 'finding' || !observation.checkpointId || !observation.runId || !observation.nodeId
+          || !defect.observations?.includes(observation.id)) continue
+        for (const sample of checkpointSamples(observation.runId, observation.nodeId, observation.checkpointId)) {
+          sample.caught.add(`${observation.runId}/${observation.checkpointId}`); sample.detector = true
         }
       }
+      if (!attr) continue
+      for (const point of attr.checkpoints ?? []) {
+        if (!valid || point.verdict !== 'should_have_caught' || point.confirmed?.by.type !== 'human') continue
+        if (![point.conditions.existed, point.conditions.materialProvided, point.conditions.inDuty, point.conditions.executed, point.conditions.notRaised].every(value => value === true)) continue
+        for (const sample of checkpointSamples(point.runId, point.nodeId, point.checkpointId)) {
+          sample.missed.add(`${point.runId}/${point.checkpointId}`); sample.detector = true
+        }
+      }
+      // M3 引入归因仍可展示和统计逃逸；旧 missedBy 不再充当五条件漏检证据。
+      if (defect.status !== 'confirmed' || !attr.confirmed || (defect.validity !== undefined && !valid)) continue
+      const source = attr.introducedAt
+      if (source.nodeId) for (const sample of samples.filter(sample => sample.run.requirementId === req && sample.nodeId === source.nodeId
+        && (!source.runId || sample.run.runId === source.runId))) sample.escapes.add(identity)
     }
     const seenEdits = new Set<string>()
     for (const run of runs.filter((item) => item.requirementId === req)) for (const event of await stores.events.read(run.runId)) {
@@ -85,7 +102,6 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
         const source = producer(artifacts, edit.ref.path, (edit.ref.version ?? Infinity) - 1, reviewProducers)
         if (source) for (const sample of affected(source.runId, source.nodeId)) { sample.edits[edit.impact ?? 'semantic']++; sample.editedPaths.add(edit.ref.path) }
       }
-      if (event.type === 'gate.result') for (const sample of affected(run.runId, event.nodeId!)) for (const check of (event.data as EventPayloads['gate.result']).checks) if (!check.pass) sample.caught.add(check.id)
       if (event.type !== 'judge.verdict') continue
       for (const verdict of (event.data as EventPayloads['judge.verdict']).verdicts) {
         const kind: Partial<Record<VerdictCategory, string>> = { case_defect: 'case', script_defect: 'script', product_bug: 'code-change', requirement_gap: 'spec' }
@@ -122,7 +138,13 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
         : (sample.recipe?.skills ?? []).map((skill) => ({ by: 'skill', skill }))
     for (const key of keys) {
       const identity = canonicalJson(key), group = groups.get(identity) ?? { key, samples: [] }
-      if (!group.samples.some((item) => item.run.runId === sample.run.runId && item.nodeId === sample.nodeId)) group.samples.push(sample)
+      const existing = group.samples.find(item => item.run.runId === sample.run.runId && item.nodeId === sample.nodeId)
+      if (!existing) group.samples.push({ ...sample, caught: new Set(sample.caught), missed: new Set(sample.missed) })
+      else {
+        for (const point of sample.caught) existing.caught.add(point)
+        for (const point of sample.missed) existing.missed.add(point)
+        existing.detector ||= sample.detector
+      }
       groups.set(identity, group)
     }
   }
@@ -149,7 +171,7 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
     }
     card.durationMsAvg = rows.reduce((sum, row) => { const state = row.run.nodes[row.nodeId]!; return sum + (state.startedAt && state.endedAt ? Math.max(0, Date.parse(state.endedAt) - Date.parse(state.startedAt)) : 0) }, 0) / rows.length
     if (rows.some((row) => row.detector)) {
-      const caught = rows.reduce((sum, row) => sum + row.caught.size, 0), missed = new Set(rows.flatMap((row) => [...row.missed])).size
+      const caught = new Set(rows.flatMap(row => [...row.caught])).size, missed = new Set(rows.flatMap(row => [...row.missed])).size
       card.detection = { caught, missed, rate: caught + missed ? caught / (caught + missed) : undefined }
     }
     card.trend = [...trends].map(([recipeKey, group]) => ({ recipeKey, firstAt: group.map((row) => row.firstAt).sort()[0]!, executions: group.length, firstPassRate: group.filter((row) => row.pass).length / group.length })).sort((a, b) => a.firstAt.localeCompare(b.firstAt))

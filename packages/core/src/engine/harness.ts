@@ -1,10 +1,13 @@
 import { recordRecipe } from './recipe.js'
+import { captureContext, type CaptureContext } from './checkpoints.js'
+import { startInvocation } from './invocations.js'
+import { snapshotPrompt } from './snapshots.js'
 import { randomUUID } from 'node:crypto'
 import { writeFileAtomic } from '../store/fs-utils.js'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
-import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeDef, NodeState, RunState } from '../types.js'
+import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeDef, NodeState, RunState, InvocationEnd } from '../types.js'
 import { estimateTokens } from '../util/tokens.js'
 import { addUsage } from '../insights/usage.js'
 import { assertNoSymlinks } from '../store/fs-utils.js'
@@ -12,7 +15,6 @@ import { runDir } from '../store/paths.js'
 import { createKnowledgeRouter } from '../knowledge/router.js'
 import { parseResult, validateSchema } from './schema.js'
 import { Semaphore } from './process.js'
-import { system } from './actor.js'
 import { WriteGuard } from './guard.js'
 import { harnessSelectors, resolveHarnessSelector, selectHarness } from './selection.js'
 import { intersectWriteScopes } from './scope.js'
@@ -37,9 +39,10 @@ export interface HarnessHost {
   setLessonRecall?(nodeId: string, recalled: Awaited<ReturnType<NonNullable<EngineDeps['lessons']>['recall']>> | undefined): void
 }
 
-export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState, acquireSlot = true, directories: string[] = []): Promise<{ data: unknown; actor: Actor }> {
+export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext, ns: NodeState, acquireSlot = true, directories: string[] = [], capture?: CaptureContext): Promise<{ data: unknown; actor: Actor }> {
   const invoke = async (): Promise<{ data: unknown; actor: Actor }> => {
     host.signal.throwIfAborted()
+    const identity = capture ?? captureContext(host, node.id) ?? { role: 'producer' }
     const { stores, profiles, harnesses, knowledge } = host.deps
     const profile = profiles[node.role]
     if (!profile) throw new Error(`角色不存在：${node.role}`)
@@ -92,8 +95,8 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     if (lessonText) add('lesson', '经验', lessonText)
     if (recalled?.lessons.length) await host.emit('lesson.recalled', { ids: recalled.lessons.map((lesson) => lesson.id), holdout: recalled.holdout, tokens: recalled.tokens }, node.id)
     const artifacts: string[] = []
-    for (const input of ns.inputs ?? []) {
-      const text = await ctx.readArtifact(input.path)
+    for (const input of identity.snapshot ? [] : ns.inputs ?? []) {
+      const text = (await stores.workspaces.readArtifact(input))?.toString()
       add('artifact', input.path, text ?? '', input.path)
       artifacts.push(`${input.path}@${input.version ?? 'latest'}：\n${text ?? ''}`)
     }
@@ -104,7 +107,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     await stores.runs.saveContext(host.state.runId, context)
     await host.emit('context.assembled', context, node.id)
     const prompt = [skills, ...summaries, lessonText, ...artifacts,
-      `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
+      identity.snapshot ? snapshotPrompt(stores.taktDir, identity.snapshot) : `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
       task, knowledgeTools, schema ? `最后输出一个 \`\`\`json 代码块，满足：${JSON.stringify(schema)}` : '', completion,
     ].filter(Boolean).join('\n\n')
     const priorOutputs = ns.outputs.length || node.session !== 'resume' ? ns.outputs
@@ -135,7 +138,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       await mkdir(dirname(transcript), { recursive: true })
       const env: Record<string, string> = { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_NODE_ID: node.id, TAKT_KB_BASES: JSON.stringify(spec?.bases ?? []), TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript }
       if (provider?.apiKeyEnv && process.env[provider.apiKeyEnv]) env[provider.apiKeyEnv] = process.env[provider.apiKeyEnv]!
-      const sandbox = await sandboxCall(host, cwd, harness.id, ctx, env, node.timeoutMs, directories)
+      const sandbox = await sandboxCall(host, cwd, harness.id, ctx, env, node.timeoutMs, directories, identity.snapshot)
       let finishGuard: () => Promise<{ paths: string[]; action: 'flagged'; ambiguous: boolean }>
       try {
         const scope = { profile: profile.writeScope, node: node.writeScope }
@@ -161,13 +164,27 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         try { await finishGuard() } finally { await sandbox.dispose() }
         throw error
       }
+      let invocation: Awaited<ReturnType<typeof startInvocation>>
+      try {
+        const recipe = await recordRecipe(host, node, cwd, { ...selector, harness: harness.id, model }, recalled && !recalled.holdout ? recalled.lessons.map(lesson => lesson.id) : [], task)
+        invocation = await startInvocation(host, node.id, node.role, harness, selector, { model, effort: selector.effort }, index, cwd, identity, recipe.recipeKey)
+      } catch (error) {
+        try { await finishGuard(); await finishOutputs() } finally { await sandbox.dispose() }
+        throw error
+      }
+      if (actor.type === 'agent') actor.invocationId = invocation.id
+      const startedAt = Date.now()
+      let reported: InvocationEnd['reported']
+      const toolStarts = new Map<string, number>()
       let eventChain = Promise.resolve()
       let eventError: unknown
       const onEvent = (event: HarnessEvent): void => {
+        const receivedAt = Date.now()
         eventChain = eventChain.then(async () => {
           if (event.type === 'started') {
+            reported = { model: event.model, effort: event.effort, skills: event.skills }
             if (event.sessionId) ns.sessionRef = { harness: harness.id, sessionId: event.sessionId }
-            await host.emit('harness.started', { harness: harness.id, model: event.model, sessionId: event.sessionId }, node.id, actor)
+            await host.emit('harness.started', { harness: harness.id, model: event.model, sessionId: event.sessionId, contextWindow: modelConfig?.contextWindow, skills: event.skills }, node.id, actor)
           } else if (event.type === 'usage') {
             if (harness.capabilities?.usage) {
               ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, event.usage)
@@ -180,7 +197,11 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           } else if (event.type === 'message') {
             await host.emit('harness.message', { role: event.role, text: event.text }, node.id, actor)
           } else {
-            await host.emit('harness.tool_call', { tool: event.tool, input: event.input, output: event.output, ok: event.ok }, node.id, actor)
+            if (event.phase === 'start' && event.callId) toolStarts.set(event.callId, receivedAt)
+            const start = event.callId ? toolStarts.get(event.callId) : undefined
+            const durationMs = event.durationMs ?? (event.phase === 'end' && start !== undefined ? receivedAt - start : undefined)
+            if (event.phase === 'end' && event.callId) toolStarts.delete(event.callId)
+            await host.emit('harness.tool_call', { tool: event.tool, input: event.input, output: event.output, ok: event.ok, phase: event.phase, callId: event.callId, durationMs }, node.id, actor)
           }
         }).catch((error: unknown) => { eventError ??= error })
       }
@@ -194,58 +215,67 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           systemAppend: profile.instructions, timeoutMs: node.timeoutMs, resultSchema: harness.capabilities?.structuredOutput ? schema : undefined,
           sessionId: resume && ns.sessionRef?.harness === harness.id ? ns.sessionRef.sessionId : undefined,
           env,
-          tools: { writeScope, allowBash: profile.allowBash === true },
+          readOnly: identity.snapshot ? true : undefined,
+          tools: { writeScope: identity.snapshot ? [] : writeScope, allowBash: !identity.snapshot && profile.allowBash === true },
           signal: node.timeoutMs ? AbortSignal.any([host.signal, AbortSignal.timeout(node.timeoutMs)]) : host.signal,
         }
-        await recordRecipe(host, node, cwd, { ...selector, harness: harness.id, model }, recalled && !recalled.holdout ? recalled.lessons.map((lesson) => lesson.id) : [], task)
         result = stores.kb ? await host.guard.system(['.takt/knowledge/queries.jsonl'], () => harness.run(request, onEvent)) : await harness.run(request, onEvent)
       } catch (error) { failure = error }
       finally { try { await sandbox.dispose() } catch (error) { failure ??= error } }
       await eventChain
-      let violation: Awaited<ReturnType<typeof finishGuard>>
-      try { violation = await finishGuard() } catch (error) { await finishOutputs(); throw error }
-      const untracked = await finishOutputs()
-      if (node.strictOutputs && untracked.length) await host.emit('guard.violation', { rule: 'output-contract', paths: untracked.map((item) => item.path), action: 'reverted' }, node.id, actor)
-      else for (const item of untracked) await host.emit('artifact.untracked', item, node.id, actor)
-      await saveWorktreeDiff(host, node.id, ns)
-      if (violation.paths.length) {
-        await host.emit('guard.violation', { rule: violation.ambiguous ? 'concurrent-write' : 'writeScope', paths: violation.paths, action: violation.action }, node.id, violation.ambiguous ? system : actor)
-        throw new BlockedError(`写权限越界：${violation.paths.join(', ')}`)
+      let invocationFailure: unknown = failure ?? eventError
+      try {
+        let violation: Awaited<ReturnType<typeof finishGuard>>
+        try { violation = await finishGuard() } catch (error) { await finishOutputs(); throw error }
+        const untracked = await finishOutputs()
+        if (node.strictOutputs && untracked.length) await host.emit('guard.violation', { rule: 'output-contract', paths: untracked.map((item) => item.path), action: 'reverted' }, node.id, actor)
+        else for (const item of untracked) await host.emit('artifact.untracked', item, node.id, actor)
+        await saveWorktreeDiff(host, node.id, ns, undefined, actor)
+        if (violation.paths.length) {
+          await host.emit('guard.violation', { rule: violation.ambiguous ? 'concurrent-write' : 'writeScope', paths: violation.paths, action: violation.action }, node.id, violation.ambiguous ? { type: 'system', id: 'engine' } : actor)
+          throw new BlockedError(`写权限越界：${violation.paths.join(', ')}`)
+        }
+        host.signal.throwIfAborted()
+        if (eventError) throw eventError
+        if (failure || !result?.ok) {
+          previous = failure instanceof Error ? failure.message : String(failure ?? result?.error ?? 'harness failed')
+          invocationFailure = previous
+          if (/429|503|401|sign in|timeout/i.test(previous) && index < chain.length - 1) continue
+          throw failure instanceof Error ? failure : new Error(previous)
+        }
+        if (result.sessionId) ns.sessionRef = { harness: harness.id, sessionId: result.sessionId }
+        if (harness.capabilities?.usage && result.usage) {
+          if (!ns.usage) await host.emit('harness.usage', result.usage, node.id, actor)
+          ns.usage = result.usage
+        }
+        if (!harness.capabilities?.usage || !ns.usage) {
+          const inputTokens = estimateTokens(profile.instructions) + estimateTokens(requestPrompt)
+          const outputTokens = estimateTokens(result.finalText)
+          const price = modelConfig?.price
+          const estimated = { inputTokens, outputTokens, ...(price ? { costUsd: (inputTokens * price.input + outputTokens * price.output) / 1_000_000 } : {}), note: 'estimated' }
+          ns.usage = { inputTokens, outputTokens, ...(estimated.costUsd !== undefined ? { costUsd: estimated.costUsd } : {}) }
+          await host.emit('harness.usage', estimated, node.id, actor)
+        }
+        await host.save()
+        const data = result.structured !== undefined ? result.structured : schema ? extractJsonBlock(result.finalText) : result.finalText
+        ns.summary = resultSummary(typeof data === 'string' ? extractJsonBlock(result.finalText) ?? data : data, result.finalText)
+        if (node.completion?.length) {
+          const checked = checkCompletion(node.completion, data)
+          ns.checks = checked.checks
+          await host.emit('node.checks', checked, node.id, actor)
+          if (checked.unmet.length) throw new FailureError(`完成标准未满足：${checked.unmet.join('、')}`, 'completion.unmet', checked.unmet.join(','))
+        }
+        if (schema) {
+          if (data === undefined) parseResult(result.finalText, schema)
+          validateSchema(data, schema)
+        }
+        return { data, actor }
+      } catch (error) { invocationFailure = error; throw error }
+      finally {
+        await host.emit('invocation.finished', { id: invocation.id, outcome: host.signal.aborted ? 'cancelled' : invocationFailure ? 'error' : 'ok',
+          error: invocationFailure ? String(invocationFailure instanceof Error ? invocationFailure.message : invocationFailure) : undefined,
+          usage: ns.usage ?? result?.usage, sessionId: result?.sessionId ?? ns.sessionRef?.sessionId, reported, durationMs: Date.now() - startedAt }, node.id, actor)
       }
-      host.signal.throwIfAborted()
-      if (eventError) throw eventError
-      if (failure || !result?.ok) {
-        previous = failure instanceof Error ? failure.message : String(failure ?? result?.error ?? 'harness failed')
-        if (/429|503|401|sign in|timeout/i.test(previous) && index < chain.length - 1) continue
-        throw failure instanceof Error ? failure : new Error(previous)
-      }
-      if (result.sessionId) ns.sessionRef = { harness: harness.id, sessionId: result.sessionId }
-      if (harness.capabilities?.usage && result.usage) {
-        if (!ns.usage) await host.emit('harness.usage', result.usage, node.id, actor)
-        ns.usage = result.usage
-      }
-      if (!harness.capabilities?.usage || !ns.usage) {
-        const inputTokens = estimateTokens(profile.instructions) + estimateTokens(requestPrompt)
-        const outputTokens = estimateTokens(result.finalText)
-        const price = modelConfig?.price
-        const estimated = { inputTokens, outputTokens, ...(price ? { costUsd: (inputTokens * price.input + outputTokens * price.output) / 1_000_000 } : {}), note: 'estimated' }
-        ns.usage = { inputTokens, outputTokens, ...(estimated.costUsd !== undefined ? { costUsd: estimated.costUsd } : {}) }
-        await host.emit('harness.usage', estimated, node.id, actor)
-      }
-      await host.save()
-      const data = result.structured !== undefined ? result.structured : schema ? extractJsonBlock(result.finalText) : result.finalText
-      ns.summary = resultSummary(typeof data === 'string' ? extractJsonBlock(result.finalText) ?? data : data, result.finalText)
-      if (node.completion?.length) {
-        const checked = checkCompletion(node.completion, data)
-        ns.checks = checked.checks
-        await host.emit('node.checks', checked, node.id, actor)
-        if (checked.unmet.length) throw new FailureError(`完成标准未满足：${checked.unmet.join('、')}`, 'completion.unmet', checked.unmet.join(','))
-      }
-      if (schema) {
-        if (data === undefined) parseResult(result.finalText, schema)
-        validateSchema(data, schema)
-      }
-      return { data, actor }
     }
     throw new Error(previous || '没有可用 harness')
   }

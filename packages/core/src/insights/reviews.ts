@@ -1,3 +1,4 @@
+import { nodeQuality } from './node-quality.js'
 import { join } from 'node:path'
 import { readJsonFile } from '../store/fs-utils.js'
 import { runDir } from '../store/paths.js'
@@ -18,7 +19,7 @@ function definitions(nodes: SnapshotNode[], prefix = ''): SnapshotNode[] {
 }
 
 function latestIssues(rounds: ReviewRound[]): Map<string, ReviewIssue> {
-  return new Map(rounds.flatMap((round) => round.records.flatMap((record) => record.issues.map((issue) => [issue.groupKey!, issue] as const))))
+  return new Map(rounds.flatMap((round) => round.records.flatMap((record) => record.issues.map((issue) => [issue.key ?? issue.groupKey!, issue] as const))))
 }
 
 function isOpen(issue: ReviewIssue, dispositions: ReviewDisposition[]): boolean {
@@ -95,7 +96,10 @@ export async function reviewDetail(stores: ProjectStores, runId: string, nodeId:
         : status === 'revising' ? 'revising' : status === 'pending' ? 'pending' : 'reviewing'
   const dispositions = await listReviewDispositions(stores, runId, nodeId)
   const open: ReviewFacets['open'] = { blocker: 0, major: 0, minor: 0, nit: 0 }
-  for (const issue of latestIssues(rounds).values()) if (isOpen(issue, dispositions)) open[issue.severity]++
+  const quality = await nodeQuality(stores, runId, nodeId)
+  if (quality.issues?.length) {
+    for (const issue of quality.issues) if (issue.status === 'open' || issue.status === 'claimed_fixed') open[issue.severity]++
+  } else for (const issue of latestIssues(rounds).values()) if (isOpen(issue, dispositions)) open[issue.severity]++
   const observed: NonNullable<ReviewFacets['observed']> = {}
   for (const item of latest?.continuity ?? []) {
     observed[item.observation] = (observed[item.observation] ?? 0) + 1
@@ -122,12 +126,16 @@ export async function listReviews(stores: ProjectStores, requirementId: string):
       const detail = await reviewDetail(stores, state.runId, node.id, diffs)
       if (!detail) continue
       const latest = detail.rounds.at(-1)
+      const issues = (await nodeQuality(stores, state.runId, node.id)).issues ?? []
       const events = await stores.events.read(state.runId, { nodeId: node.id, types: ['rework.started'] })
       summaries.push({ runId: state.runId, nodeId: node.id, title: node.title, target: detail.config.target,
         status: detail.status, round: state.nodes[node.id]?.round ?? latest?.round ?? 0, maxRounds: detail.config.maxRounds, reworks: events.length,
         revision: detail.revision, facets: detail.facets,
         latest: (latest?.records ?? []).map((record) => ({ reviewer: record.reviewer, verdict: record.verdict, score: record.score,
-          openIssues: record.issues.filter((issue) => isOpen(issue, detail.dispositions ?? [])).length })),
+          openIssues: record.issues.filter(issue => {
+            const entry = issue.key ? issues.find(entry => entry.key === issue.key) : undefined
+            return entry ? entry.status === 'open' || entry.status === 'claimed_fixed' : isOpen(issue, detail.dispositions ?? [])
+          }).length })),
       })
     }
   }

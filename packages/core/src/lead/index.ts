@@ -1,3 +1,5 @@
+import { reconcileAssumptions } from '../attention/timebox.js'
+import { assertTaskResendable, checkDelegationHops, TaskResendConflictError } from './delegation.js'
 import { startRouted } from '../route/start.js'
 import type { StartRunInput } from '../interfaces.js'
 import type { LeadAction, LeadPresence, RouteDecision } from '../types.js'
@@ -22,6 +24,7 @@ import { errorText, type LeadRuntimeOptions, type LeadTurnResult, type TaskRunSt
 
 export type { LeadRuntimeOptions, LeadTurnResult, TaskRunState, LeadWorkflowAccess } from './contracts.js'
 export { taskWorkflow } from './task.js'
+export { assertTaskResendable, TaskResendConflictError } from './delegation.js'
 
 interface Proposal { requestId: string; workflowId: string; description: string; baseRev: string; source?: string }
 const system: Actor = { type: 'system', id: 'lead' }
@@ -47,7 +50,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
   async function refreshPresence(id: string) {
     if (thinking.has(id)) return
-    const pending = await stores.attention.list({ requirementId: id, pending: true })
+    const pending = (await stores.attention.list({ requirementId: id, pending: true })).filter(item => item.kind !== 'assumption')
     const runs = await stores.runs.list({ requirementId: id })
     await setPresence(id, pending.length ? 'waiting' : runs.some((run) => run.workflowId !== 'lead' && run.status === 'running') ? 'working' : 'idle')
   }
@@ -66,7 +69,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       const observed = await stores.runs.get(runId)
       if (observed && observed.workflowId !== 'lead') await refreshPresence(observed.requirementId)
     }
-    if (!['node.finished', 'run.finished', 'human.requested', 'review.exhausted', 'budget.warning', 'budget.exhausted', 'retry.suppressed', 'route.decided'].includes(event.type)) return
+    if (!['node.started', 'node.finished', 'run.finished', 'human.requested', 'review.exhausted', 'budget.warning', 'budget.exhausted', 'retry.suppressed', 'route.decided'].includes(event.type)) return
     const file = join(stores.taktDir, 'runs', runId, 'lead-projection.json')
     await withFileLock(file, async () => {
       const projection = await readJsonFile<{ events: number[]; stages: string[] }>(file) ?? { events: [], stages: [] }
@@ -75,10 +78,16 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       if (!state || state.workflowId === 'lead') return
       if (event.type === 'run.finished') engines.delete(runId)
       const refs = { runId, nodeId: event.nodeId }
+      if (state.kind === 'task' && event.type === 'node.started') {
+        if (!projection.stages.includes('__task_started')) {
+          await post(state.requirementId, { author, kind: 'task', text: `${state.origin?.title ?? state.workflowId}：已开始`, replyTo: state.origin?.messageId, refs: { taskRunId: runId, runId }, receipt: { status: 'started', hops: state.origin?.hops, chain: state.origin?.chain } })
+          projection.stages.push('__task_started')
+        }
+      }
       if (state.kind === 'task' && event.type === 'run.finished') {
         const node = event.nodeId && state.nodes[event.nodeId]
         await post(state.requirementId, { author, kind: 'task', text: `${state.origin?.title ?? state.workflowId}：${state.status}${node ? `；${node.id} ${node.status}` : ''}`,
-          replyTo: state.origin?.messageId, refs: { ...refs, taskRunId: runId, artifacts: Object.values(state.nodes).flatMap((node) => node.outputs) } })
+          replyTo: state.origin?.messageId, receipt: { status: state.status === 'succeeded' ? 'done' : state.status === 'failed' || state.status === 'cancelled' ? 'refused' : 'started', hops: state.origin?.hops, chain: state.origin?.chain }, refs: { ...refs, taskRunId: runId, artifacts: Object.values(state.nodes).flatMap((node) => node.outputs) } })
       }
       if (stores.config.lead?.progressUpdates !== true) {
         projection.events.push(event.seq)
@@ -108,21 +117,22 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     })
   }
 
-  function instrument(message: RoomMessage, title: string, scopedProfiles: Record<string, AgentProfile>, created: (state: TaskRunState) => Promise<void>, kind: 'task' | 'workflow' = 'task') {
-    return scopedEngine({ message, title, profiles: scopedProfiles, created, kind })
+  function instrument(message: RoomMessage, title: string, scopedProfiles: Record<string, AgentProfile>, created: (state: TaskRunState) => Promise<void>, kind: 'task' | 'workflow' = 'task', origin?: TaskRunState['origin']) {
+    return scopedEngine({ message, title, profiles: scopedProfiles, created, kind, origin })
   }
 
-  async function launch(workflow: WorkflowDefinition, requirementId: string, message: RoomMessage, scopedProfiles = profiles, args: Record<string, unknown> = {}, parentRunId?: string, start: Pick<StartRunInput, 'budget' | 'route'> = {}): Promise<string> {
-    let resolveCreated!: (id: string) => void
+  async function launch(workflow: WorkflowDefinition, requirementId: string, message: RoomMessage, scopedProfiles = profiles, args: Record<string, unknown> = {}, parentRunId?: string, start: Pick<StartRunInput, 'budget' | 'route'> = {}, resend?: { origin: NonNullable<TaskRunState['origin']>; reason: string }): Promise<{ runId: string; taskMessage?: RoomMessage }> {
+    let resolveCreated!: (created: { runId: string; taskMessage?: RoomMessage }) => void
     let rejectCreated!: (error: unknown) => void
-    const ready = new Promise<string>((resolve, reject) => { resolveCreated = resolve; rejectCreated = reject })
+    const ready = new Promise<{ runId: string; taskMessage?: RoomMessage }>((resolve, reject) => { resolveCreated = resolve; rejectCreated = reject })
     const engine = instrument(message, workflow.title, scopedProfiles, async (state) => {
       engines.set(state.runId, engine)
       if (parentRunId && workflow.id.startsWith('task:')) await stores.events.append(parentRunId, { type: 'task.dispatched', actor: author,
         data: { taskRunId: state.runId, role: workflow.nodes[0]?.kind === 'agent' ? workflow.nodes[0].role : workflow.id, title: workflow.title, by: message.author } })
-      if (workflow.id.startsWith('task:')) await post(requirementId, { author, kind: 'task', text: `${workflow.title}：已派发`, replyTo: message.id, refs: { taskRunId: state.runId, runId: state.runId } })
-      resolveCreated(state.runId)
-    }, workflow.id.startsWith('task:') ? 'task' : 'workflow')
+      const taskMessage = workflow.id.startsWith('task:') ? await post(requirementId, { author, kind: 'task', text: `${workflow.title}：已派发`, mentions: resend ? message.mentions : undefined,
+        receipt: { status: 'sent', hops: state.origin?.hops, chain: state.origin?.chain, ...(resend ? { note: resend.reason } : {}) }, replyTo: message.id, refs: { taskRunId: state.runId, runId: state.runId } }) : undefined
+      resolveCreated({ runId: state.runId, taskMessage })
+    }, workflow.id.startsWith('task:') ? 'task' : 'workflow', resend?.origin)
     const job = engine.start({ workflow, requirementId, args, ...start }).then(async (state) => {
       if (state.kind === 'task') await recordTaskImpact(stores, state)
       await refreshPresence(requirementId)
@@ -147,16 +157,17 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
           await post(requirementId, { author, kind: 'text', text: value.text, mentions: value.mentions, replyTo: message.id })
           break
         case 'dispatch_task': {
+          await checkDelegationHops(stores, message)
           const task = taskWorkflow(value.task, stores, profiles)
           await stores.chat.addMembers(requirementId, [{ id: `agent:${value.task.role}`, kind: 'agent', name: value.task.role, role: value.task.role }])
-          const taskRunId = await launch(task.workflow, requirementId, message, task.profiles, { __leadTask: value.task }, runId)
+          const { runId: taskRunId } = await launch(task.workflow, requirementId, message, task.profiles, { __leadTask: value.task }, runId)
           return { action: actionName, ok: true, message: `任务已派发：${value.task.title}`, refs: { taskRunId, runId: taskRunId } }
         }
         case 'start_run': {
           if (!options.workflows) throw new Error('未接入 workflow 加载器')
           const workflow = await options.workflows.load(value.workflowId)
           const revision = options.workflows.get ? (await options.workflows.get(workflow.id)).rev : undefined
-          const id = await launch(workflow, requirementId, message, profiles, { ...value.args, ...(revision ? { workflowRev: revision } : {}), ...(route ? { tier: route.tier } : {}) }, runId, { budget: value.budget, route })
+          const { runId: id } = await launch(workflow, requirementId, message, profiles, { ...value.args, ...(revision ? { workflowRev: revision } : {}), ...(route ? { tier: route.tier } : {}) }, runId, { budget: value.budget, route })
           return { action: actionName, ok: true, message: '运行已启动', refs: { runId: id } }
         }
         case 'resume_run': {
@@ -179,7 +190,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
           const room = await stores.chat.getRoom(requirementId)
           if (!value.ask.trim() || !room?.members.some((member) => member.id === value.to && member.kind === 'human') && !stores.config.members?.some((member) => member.id === value.to)) throw new Error('待办接收人必须存在且问题不能为空')
           if (value.form === 'choice' && (!value.choices?.length || new Set(value.choices).size !== value.choices.length)) throw new Error('choice 待办必须有不重复的 choices')
-          return await request(runId!, index, requirementId, value.ask, value.form, value.to, value.choices)
+          return await request(runId!, index, requirementId, value.ask, value.form, value.to, value.choices, value.assumption, value.timebox)
         }
         case 'propose_workflow_change': {
           if (!options.workflows) throw new Error('未接入 workflow-source store')
@@ -250,6 +261,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       const mapping: Partial<Record<LeadAction['type'], string>> = { start_run: 'run.start', resume_run: 'run.resume', cancel_run: 'run.cancel', dispatch_task: 'task.dispatch' }
       const id = mapping[current.type] ?? `lead.${current.type}`
       if (current.type === 'resume_run' || current.type === 'cancel_run') await requireRun(current.runId, requirementId)
+      if (current.type === 'dispatch_task' && options.commands?.list().some(command => command.id === id)) await checkDelegationHops(stores, message)
       const registry: CommandRegistry = commands.list().some((command) => command.id === id) ? commands : local
       const result = await registry.run(id, { ...current, requirementId, ...(route ? { route } : {}) }, context)
       const executed = result.result as LeadActionResult | undefined
@@ -266,14 +278,15 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     if (!state || state.requirementId !== requirementId) throw new Error('运行不存在或属于其他需求')
     return state
   }
-  async function request(runId: string, index: number, requirementId: string, ask: string, form: AttentionItem['form'], to?: string, choices?: string[]): Promise<LeadActionResult> {
-    const item = await stores.attention.create({ requestId: `${runId}:lead-action-${index}`, runId, nodeId: 'lead', requirementId, ask, form, choices })
-    await stores.events.append(runId, { type: 'human.requested', actor: author, nodeId: 'lead', data: { requestId: item.requestId, ask, form, choices } })
+  async function request(runId: string, index: number, requirementId: string, ask: string, form: AttentionItem['form'], to?: string, choices?: string[], assumption?: string, timebox?: AttentionItem['timebox']): Promise<LeadActionResult> {
+    const item = await stores.attention.create({ requestId: `${runId}:lead-action-${index}`, runId, nodeId: 'lead', requirementId, ask, form, choices, assignees: to ? [to] : undefined, timebox: timebox ?? stores.config.human, assumption })
+    await stores.events.append(runId, { type: 'human.requested', actor: author, nodeId: 'lead', data: { requestId: item.requestId, ask, form, choices, timebox: item.timebox, assumption } })
     await post(requirementId, { author, kind: 'attention', text: ask, mentions: to ? [to] : undefined, refs: { requestId: item.requestId, runId } })
     return { action: 'request_human', ok: true, message: ask, refs: { requestId: item.requestId, runId } }
   }
 
   async function turn(requirementId: string, message: RoomMessage): Promise<LeadTurnResult> {
+    await post(requirementId, { author, kind: 'system', text: 'Lead 已接手', replyTo: message.id, receipt: { status: 'taken' } })
     const prompt = await leadContext(stores, requirementId, message, { instructions: profiles.lead!.instructions, commands: options.commands?.list() ?? createCommandRegistry({ stores, audit: async () => {} }).list() })
     const workflow: WorkflowDefinition = { id: 'lead', title: 'Lead 回合', version: '1', stages: [], nodes: [{
       id: 'lead', kind: 'agent', title: 'Lead 回合', role: 'lead', harness: selector, prompt, resultSchema: LEAD_TURN_SCHEMA, writeScope: [], session: 'fresh',
@@ -286,7 +299,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       throw new Error(`Lead 回合失败：${state.nodes.lead?.error ?? state.status}`)
     }
     const result = state.nodes.lead!.result as LeadTurn
-    await post(requirementId, { author, kind: 'text', text: result.reply, replyTo: message.id, refs: { runId: state.runId } })
+    await post(requirementId, { author, kind: 'text', text: result.reply, receipt: { status: 'replied' }, replyTo: message.id, refs: { runId: state.runId } })
     const results: LeadActionResult[] = []
     for (const [index, value] of result.actions.entries()) {
       const executed = await action(value, requirementId, message, state.runId, index)
@@ -296,6 +309,28 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       if (!executed.ok || value.type === 'command') await post(requirementId, { author: system, kind: 'system', text: `${executed.action}：${executed.ok ? '成功' : '失败'}；${executed.message}`, replyTo: message.id, refs: executed.refs })
     }
     return { run: state, results }
+  }
+
+  async function resendTask(requirementId: string, message: RoomMessage, reason: string): Promise<RoomMessage> {
+    return serial(requirementId, async () => {
+      const messages = await stores.chat.list(requirementId)
+      const original = messages.find(entry => entry.id === message.id)
+      if (!original || original.roomId !== requirementId) throw new TaskResendConflictError('原任务消息已丢失；请刷新群聊后重新向 @lead 发起任务')
+      assertTaskResendable(messages, original)
+      if (!reason.trim()) throw new TaskResendConflictError('重发必须填写原因；请补充后重试')
+      const state = original.refs?.taskRunId ? await stores.runs.get(original.refs.taskRunId) : undefined
+      if (!state || state.requirementId !== requirementId || state.kind !== 'task' || !state.origin || !state.args.__leadTask) {
+        throw new TaskResendConflictError('原任务运行或任务定义已丢失，无法重发；请在群聊向 @lead 重新描述任务并派发')
+      }
+      let task: ReturnType<typeof taskWorkflow>
+      try { task = taskWorkflow(state.args.__leadTask as import('../types.js').TaskSpec, stores, profiles) }
+      catch (error) { throw new TaskResendConflictError(`原任务无法恢复：${errorText(error)}；请恢复角色与任务配置，或向 @lead 重新发起任务`) }
+      if (task.workflow.id !== state.workflowId) throw new TaskResendConflictError('原任务定义与 workflow 不一致；请核对运行记录后向 @lead 重新发起任务')
+      // 重发是同一份工作的新尝试，不是下游派活；不能重新计算 hops 或向 chain 追加原运行。
+      const result = await launch(task.workflow, requirementId, original, task.profiles, structuredClone(state.args), undefined,
+        { budget: state.budget, route: state.route }, { origin: { ...structuredClone(state.origin), messageId: original.id }, reason })
+      return result.taskMessage!
+    })
   }
 
   async function resumeTask(runId: string): Promise<RunState> {
@@ -314,12 +349,13 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
 
   async function onAttention(input: AttentionItem): Promise<boolean> {
+    if (input.kind === 'assumption') { await reconcileAssumptions(stores); return true }
     const state = await stores.runs.get(input.runId)
     if (state?.workflowId.startsWith('task:')) { await resumeTask(state.runId); return true }
     if (state?.workflowId !== 'lead') return false
     return serial(state.requirementId, () => withFileLock(join(stores.taktDir, 'runs', input.runId, 'lead-approval'), async () => {
       const item = (await stores.attention.list()).find((item) => item.requestId === input.requestId)
-      if (!item?.answeredAt || item.answeredBy?.type !== 'human') throw new Error('必须由人先回答待办')
+      if (!item?.answeredAt || (item.answeredBy?.type !== 'human' && !(item.form === 'answer' && item.handedBack && item.answeredBy?.type === 'system'))) throw new Error('必须由人先回答待办')
       const events = await stores.events.read(item.runId, { types: ['log'] })
       const logs = events.map((event) => { try { return JSON.parse((event.data as { message: string }).message) } catch { return {} } })
       if (logs.some((log) => log.kind === 'lead.approval-result' && log.requestId === item.requestId)) return true
@@ -345,9 +381,9 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   }
 
   return {
-    executeAction,
+    executeAction, resendTask,
     onMessage(requirementId: string, message: RoomMessage, input: { private?: boolean } = {}): Promise<LeadTurnResult | undefined> {
-      if (message.author.type !== 'human' || !(input.private || message.mentions?.includes('lead') || /(^|\s)@lead\b/i.test(message.text))) return Promise.resolve(undefined)
+      if (!['human', 'agent'].includes(message.author.type) || message.author.type === 'agent' && message.author.role === 'lead' || !(input.private || message.mentions?.includes('lead') || /(^|\s)@lead\b/i.test(message.text))) return Promise.resolve(undefined)
       if (message.roomId !== requirementId) return Promise.reject(new Error('消息不属于当前需求'))
       return serial(requirementId, async () => {
         thinking.add(requirementId)

@@ -819,8 +819,8 @@ describe('问答与工具', () => {
     expect(updated).toHaveLength(1)
     for (const listener of f.listeners) listener({ ...reply, replyTo: 'sent-1' })
     await vi.waitFor(() => expect(updated).toHaveLength(2))
-    await vi.waitFor(async () => expect(await f.agent.store.lines('feed.jsonl')).toHaveLength(1))
-    expect(updated[1]?.status).toBe('answered')
+    await vi.waitFor(async () => expect(await f.agent.store.lines('feed.jsonl')).toHaveLength(2))
+    expect(updated[1]?.status).toBe('replied')
     expect(f.listeners.size).toBe(0)
   })
   it('禁读内部/密钥/穿越/软链与大文件，脱敏配置', async () => {
@@ -1008,7 +1008,7 @@ it('重启后恢复未完成转达，从群聊读回匹配回复，不重复发�
   await restarted.ready
   await vi.waitFor(async () =>
     expect((await restarted.store.messages(f.thread.id))[0]?.delegations?.[0]).toMatchObject({
-      status: 'answered',
+      status: 'replied',
       reply: '恢复后结果',
     }),
   )
@@ -1333,4 +1333,41 @@ it('M4-8：连接配置与运行中的 workflow 为 high，auto-low 不执行', 
       { kind: 'workflow', spaceId: 'shop', workflowId: 'flow', baseRev: 'r1', edits: [{ op: 'setMeta', key: 'title', value: '交付流程' }] },
     ]),
   ).toMatchObject({ risk: 'high' })
+})
+
+it('M5：taken 回执不是回答，随后 replied；发送错误为 uncertain，显式重发需原因', async () => {
+  const f = await fixture()
+  await f.stores.workspaces.createRequirement({ id: 'REQ-001', title: '回执' })
+  const context = { threadId: f.thread.id, messageId: 'm', proposals: [], delegations: [] as StewardDelegation[], onDelegation: vi.fn(async () => {}) }
+  const result = await f.agent.tools.call('ask_lead', { spaceId: 'shop', requirementId: 'REQ-001', message: '处理' }, context)
+  const reply: RoomMessage = { id: 'taken', seq: 1, roomId: 'REQ-001', at: '2026-11-06T10:01:00Z', kind: 'system', text: '接手', author: { type: 'agent', role: 'lead', harness: 'mock' }, replyTo: 'sent-1', receipt: { status: 'taken' } }
+  for (const listener of f.listeners) listener(reply)
+  await vi.waitFor(() => expect(result.data).toMatchObject({ status: 'taken' }))
+  expect((result.data as StewardDelegation).reply).toBeUndefined()
+  for (const listener of f.listeners) listener({ ...reply, id: 'replied', kind: 'text', text: '完成', receipt: { status: 'replied' } })
+  await vi.waitFor(() => expect(result.data).toMatchObject({ status: 'replied', reply: '完成' }))
+  await expect(f.agent.tools.resendDelegation('sent-1', '重复')).rejects.toThrow('仅不确定')
+  const post = vi.spyOn(f.space, 'postToLead').mockRejectedValueOnce(new Error('network'))
+  const uncertain = (await f.agent.tools.call('ask_lead', { spaceId: 'shop', requirementId: 'REQ-001', message: '可能送达' }, context)).data as StewardDelegation
+  expect(uncertain.status).toBe('uncertain')
+  expect(post).toHaveBeenCalledTimes(1)
+  await expect(f.agent.tools.resendDelegation(uncertain.messageId, '')).rejects.toThrow('原因')
+  post.mockResolvedValueOnce('resent-2')
+  expect(await f.agent.tools.resendDelegation(uncertain.messageId, '人工核对未送达')).toMatchObject({ status: 'sent', messageId: 'resent-2' })
+  expect(await f.agent.store.lines('delegation-audit.jsonl')).toHaveLength(1)
+})
+it('M5：未接手 30 分钟过期，旧 answered/failed 归一并持久回读', async () => {
+  const f = await fixture()
+  await f.stores.workspaces.createRequirement({ id: 'REQ-001', title: '旧回执' })
+  await f.agent.store.saveMessage({ id: 'legacy', threadId: f.thread.id, role: 'steward', text: '旧数据', at: '2026-11-06T10:00:00Z', delegations: [
+    { spaceId: 'shop', requirementId: 'REQ-001', messageId: 'answered', status: 'answered', at: '2026-11-06T10:00:00Z' },
+    { spaceId: 'shop', requirementId: 'REQ-001', messageId: 'failed', status: 'failed', at: '2026-11-06T10:00:00Z' },
+    { spaceId: 'shop', requirementId: 'REQ-001', messageId: 'sent', status: 'sent', at: '2026-11-06T10:00:00Z' },
+  ] })
+  const post = vi.spyOn(f.space, 'postToLead')
+  f.clock('2026-11-06T10:30:00Z')
+  const results = await f.agent.tools.refreshDelegations()
+  expect(new Map(results.map(item => [item.messageId, item.status]))).toEqual(new Map([['answered', 'replied'], ['failed', 'uncertain'], ['sent', 'expired']]))
+  expect((await f.agent.store.messages(f.thread.id))[0]!.delegations!.map(item => item.status)).toEqual(['replied', 'uncertain', 'expired'])
+  expect(post).not.toHaveBeenCalled()
 })

@@ -79,7 +79,14 @@
         "verdict": "approve",
         "score": 95,
         "summary": "Mock 剧本：通过本轮评审",
-        "issues": []
+        "issues": [],
+        "previous": [
+          {
+            "key": "ISS-1",
+            "status": "resolved",
+            "note": "逐项核对修订 PRD，边界已补齐"
+          }
+        ]
       }
     },
     {
@@ -665,7 +672,8 @@
             },
             "change": "增加非空名字包含两侧空格的用例，断言输出逐字保留输入名字"
           }
-        ]
+        ],
+        "checkpoints": []
       }
     }
   ]

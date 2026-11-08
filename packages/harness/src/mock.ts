@@ -25,6 +25,7 @@ export function createMockHarness(script: MockScript): HarnessAdapter {
     id: 'mock',
     displayName: 'Mock',
     capabilities: {
+      toolPhases: false, readOnly: false, modelOverride: false, effortOverride: false,
       resume: false, structuredOutput: false, toolEvents: true, usage: true, cost: true,
       compactionEvents: true, customProvider: false, sandbox: false, mcp: false,
     },

@@ -16,7 +16,7 @@ describe('Kimi 合成 OpenAI message / Wire', () => {
     expect(parser.result()).toEqual({ ok: true, finalText: '完成', sessionId: 'k1', usage: { inputTokens: 10, outputTokens: 3, cachedTokens: 2 } })
     expect(events).toContainEqual({ type: 'started', sessionId: 'k1', model: 'kimi-test' })
     expect(events).toContainEqual({ type: 'message', role: 'assistant', text: '完成' })
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'read', input: '{"path":"a"}', output: 'body', ok: true })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'read', input: '{"path":"a"}', output: 'body', ok: true })
     expect(events).toContainEqual({ type: 'usage', usage: parser.result().usage })
   })
 
@@ -41,7 +41,7 @@ describe('Kimi 合成 OpenAI message / Wire', () => {
       { type: 'usage', usage: { inputTokens: 13, outputTokens: 3, cachedTokens: 2 } },
       { type: 'usage', usage: { inputTokens: 26, outputTokens: 6, cachedTokens: 4 } },
     ])
-    expect(events).toContainEqual({ type: 'tool_call', tool: 'read', input: '{"path":"a"}', output: 'body', ok: true })
+    expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'read', input: '{"path":"a"}', output: 'body', ok: true })
   })
 
   it('两轮工具往返后只保留最新 step 的 chunks，较小的下一步用量也完整累加', () => {
