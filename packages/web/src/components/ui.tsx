@@ -63,6 +63,9 @@ export interface TabDef {
  * Tab 条：一个指示器按 transform 平移 / 缩放到当前 Tab（150ms）；内容用 <TabPanel key={tab}> 交叉淡化。
  *   <Tabs tabs={…} value={tab} onChange={setTab} />  <TabPanel key={tab}>…</TabPanel>
  */
+/** 最近一次点 Tab 的方向（往右 1 / 往左 -1）与时刻：随后挂载的 TabPanel 从那一侧滑入；不是点 Tab 引起的切换（链接、前进后退）只淡入。 */
+let tabMove = { dir: 0, at: 0 }
+
 export function Tabs({ tabs, value, onChange, size }: { tabs: TabDef[]; value: string; onChange: (id: string) => void; size?: 'sm' }) {
   const root = useRef<HTMLDivElement>(null)
   const [ind, setInd] = useState<{ x: number; w: number } | null>(null)
@@ -80,7 +83,17 @@ export function Tabs({ tabs, value, onChange, size }: { tabs: TabDef[]; value: s
         .map((t) => {
           const Icon = t.icon
           return (
-            <button key={t.id} role="tab" aria-selected={t.id === value} className={`tab${t.id === value ? ' active' : ''}`} onClick={() => onChange(t.id)}>
+            <button
+              key={t.id}
+              role="tab"
+              aria-selected={t.id === value}
+              className={`tab${t.id === value ? ' active' : ''}`}
+              onClick={() => {
+                const ids = tabs.filter((x) => !x.hidden).map((x) => x.id)
+                tabMove = { dir: Math.sign(ids.indexOf(t.id) - ids.indexOf(value)), at: performance.now() }
+                onChange(t.id)
+              }}
+            >
               {Icon && <Icon />}
               {t.label}
               {t.count !== undefined && <span className="tab-count num">{t.count}</span>}
@@ -92,10 +105,14 @@ export function Tabs({ tabs, value, onChange, size }: { tabs: TabDef[]; value: s
   )
 }
 
-/** Tab 内容：换 key 时 150ms 淡入（交叉淡化的"入"半段；旧内容立即卸载，避免两份布局叠加跳动）。 */
+/**
+ * Tab 内容：换 key 时淡入（交叉淡化的"入"半段；旧内容立即卸载，避免两份布局叠加跳动）。
+ * 刚点过 Tab 时顺着方向滑入 10px：往右点从右边进、往左点从左边进。
+ */
 export function TabPanel({ children, className }: { children: ReactNode; className?: string }) {
+  const [dir] = useState(() => (performance.now() - tabMove.at < 400 ? tabMove.dir : 0))
   return (
-    <div role="tabpanel" className={`tab-panel${className ? ` ${className}` : ''}`}>
+    <div role="tabpanel" className={`tab-panel${dir > 0 ? ' from-right' : dir < 0 ? ' from-left' : ''}${className ? ` ${className}` : ''}`}>
       {children}
     </div>
   )
@@ -127,6 +144,7 @@ export { CountUp } from './ui/count-up'
 export { useStagger, type StaggerProps } from './ui/stagger'
 export { useFlashOnChange, useFlashRows } from './ui/flash-row'
 export { Segmented, type SegmentedOption } from './ui/segmented'
+export { GlideMark, useGlide } from './ui/glide'
 export { Chip, Chips, type ChipItem } from './ui/chips'
 export { Kbd, withShortcut } from './ui/kbd'
 export { Drawer, type DrawerProps } from './ui/drawer'

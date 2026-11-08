@@ -9,7 +9,7 @@
 | **A 管家** | `pages/steward/**`、`components/steward/**`（停靠面板、消息、工具卡、引用、提案卡、风险卡、汇报卡、输入框、`context.ts`）、`pages/workflow/edit-fallback.tsx`、`pages/workflow/ask-steward.tsx`、`pages/workflow/canvas/ghost-overlay.tsx`，以及 `pages/workflow/` 下与编辑兜底 / 问管家相关的新文件 |
 | **B 增删改** | `components/requirement-create/**`、`components/space-switcher.*`、`components/space-create/**`、`pages/spaces/**`、`pages/requirement/header*`、`pages/requirements*.tsx` 里的主动作（`NewRequirementButton` 的挂载） |
 | **C 知识库** | `pages/knowledge/**`、`pages/settings/knowledge-tab.tsx` |
-| **D 体验重做** | `pages/{overview*,requirements*,attention}.tsx`（不含 B 的主动作）、`pages/overview.css`、`pages/run/**`、`pages/eval/**`、`pages/settings/**`（不含 knowledge-tab）、`pages/workflows-list*`、`pages/requirement/**`（不含 header*）、`components/{layout,topbar,stage-bar,stat-card,attention-card,event-*,budget-bar,route-card,lead-light,tier-glyph}.*` |
+| **D 体验重做** | `pages/{overview*,requirements*,attention}.tsx`（不含 B 的主动作）、`pages/overview.css`、`pages/run/**`、`pages/eval/**`、`pages/settings/**`（不含 knowledge-tab）、`pages/workflows-list*`、`pages/requirement/**`（不含 header*）、`components/{layout,topbar,stage-rail,stat-card,attention-card,event-*,budget-bar,route-card,lead-light,tier-glyph}.*` |
 | **共享（只有汇总能改）** | `api/**`、`app.tsx`、`main.tsx`、`lib/**`（含 `ui-store.ts`、`shortcuts.ts`、`router.tsx`、`motion.tsx`）、`components/ui.tsx`、`components/ui/**`、`components/command-palette*`、`styles/**`、`scripts/**`、`package.json` |
 
 `pages/workflow/index.tsx`、`pages/workflow/canvas/workflow-canvas.tsx` 本轮不归任何组：骨架已在里面给 A 预留好挂载点，要改写变更请求。
@@ -73,6 +73,8 @@
 - **useStagger**：`const st = useStagger(rows.length)` → `<li key={r.id} {...st(i)}>`，或合并：`className={\`row ${st(i).className ?? ''}\`} style={{ ...mine, ...st(i).style }}`
 - **useFlashRows**：`const flash = useFlashRows(rows.map((r) => r.id))` → `<tr className={\`row ${flash(r.id)}\`}>`；单个值用 `useFlashOnChange(value)` 返回 class
 - **Segmented**：`<Segmented value={view} onChange={setView} options={[{ value: 'grid', label: '卡片', icon: LayoutGrid, count: 5 }]} size="sm" ariaLabel="视图" />`
+- **竖向滑块**：列表的选中底色跟着选中项滑过去。`const [ref, glide] = useGlide<HTMLElement>('.item.active')`，容器 `ref={ref}`（要 position: relative / sticky），第一个子元素放 `<GlideMark glide={glide} className="xx-glide" />`，有滑块时把 `.item.active` 自己的底色去掉（例：侧栏 `.sb-glide`、产物列表 `.art-glide`）。
+- **分层入场**：`.page` 的直接子块自动分层入场；页面内想让某个容器的子块也依次出现，给容器加 `cascade` 类。
 - **Chips / Chip**：`<Chips items={ctx.map((c) => ({ id: c.id, label: c.label }))} onRemove={drop} onAdd={pick} />`、`<Chip icon={GitBranch} tone="running" onRemove={…}>shop-web</Chip>`
 - **Kbd**：`<Kbd combo="mod+k" />`、`<Kbd>Esc</Kbd>`；tooltip 用 `title={withShortcut('管家', 'mod+j')}`
 - **Drawer**：`<Drawer open={open} onClose={close} title="产品健康" description="…" width={520} footer={…}>…</Drawer>`；停靠面板用 `mode="dock"`（无遮罩、不锁焦点）

@@ -1,0 +1,542 @@
+/* 阶段轨道 StageRail（components/stage-rail.tsx；DESIGN.md「阶段轨道」）
+ * 静态样式写在外面；所有动画都在 prefers-reduced-motion: no-preference 里，减少动效时只剩最终状态。 */
+.stage-empty {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+
+.rail {
+  --node: 22px;
+  --line: 3px;
+  --fill-ms: 700ms;
+  --rail-bg: var(--surface);
+  --done-c: color-mix(in oklch, var(--st-success) 82%, var(--rail-bg));
+  position: relative;
+  container: rail / inline-size;
+  padding-top: 3px;
+}
+.rail[data-size='sm'] {
+  --node: 18px;
+  --line: 2px;
+  --rail-bg: var(--bg);
+}
+.rail[data-live='running'] {
+  --head: var(--accent);
+}
+.rail[data-live='waiting_human'] {
+  --head: var(--st-waiting);
+}
+.rail[data-live='failed'] {
+  --head: var(--st-failed);
+}
+
+/* ---------- 轨道：底线（没走到的段是虚线）+ 完成段 + 当前段 + 光点 */
+.rail-track {
+  position: absolute;
+  top: calc(3px + var(--node) / 2 - var(--line) / 2);
+  left: calc(100% / var(--n) / 2);
+  right: calc(100% / var(--n) / 2);
+  height: var(--line);
+  /* 光点按轨道宽度定位（translateX 用 cqw，不动画 left / width） */
+  container: rail-track / inline-size;
+  pointer-events: none;
+}
+.rail-base,
+.rail-done,
+.rail-live {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-pill);
+}
+.rail-base {
+  background: repeating-linear-gradient(90deg, var(--border-strong) 0 4px, transparent 4px 8px);
+  /* 只画还没走到的那段，不从实色段下面透出来 */
+  clip-path: inset(0 0 0 calc(var(--p-live) * 100%));
+  transition: clip-path var(--fill-ms) var(--ease-out-soft);
+}
+.rail-done {
+  overflow: hidden;
+  background: var(--done-c);
+  clip-path: inset(0 calc((1 - var(--p-done)) * 100%) 0 0 round var(--radius-pill));
+  transition: clip-path var(--fill-ms) var(--ease-out-soft);
+}
+/* 当前段：传送带接缝，运行中每拍前进一格 */
+.rail-live {
+  background: repeating-linear-gradient(90deg, var(--rail-tone) 0 7px, color-mix(in oklch, var(--rail-tone) 40%, transparent) 7px 10px);
+  clip-path: inset(0 calc((1 - var(--p-live)) * 100%) 0 calc(var(--p-done) * 100%) round var(--radius-pill));
+  transition: clip-path var(--fill-ms) var(--ease-out-soft);
+}
+.rail[data-live='waiting_human'] .rail-live {
+  background: repeating-linear-gradient(90deg, var(--rail-tone) 0 3px, transparent 3px 6px);
+}
+.rail[data-live='failed'] .rail-live {
+  background: color-mix(in oklch, var(--rail-tone) 55%, transparent);
+}
+.rail-head {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  transform: translateX(calc(var(--p-live) * 100cqw));
+  transition: transform var(--fill-ms) var(--ease-out-soft);
+}
+.rail-head::before,
+.rail-head::after {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--head);
+}
+.rail-head::before {
+  z-index: 1;
+  box-shadow: 0 0 0 2px var(--rail-bg);
+}
+.rail-head::after {
+  opacity: 0;
+}
+.rail-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 72px;
+  background: linear-gradient(90deg, transparent, light-dark(oklch(1 0 0 / 0.85), oklch(1 0 0 / 0.6)), transparent);
+  opacity: 0;
+}
+
+/* ---------- 站点 */
+.rail-stops {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rail-stop {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+}
+.rail-hit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 0 6px 2px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+.rail-click {
+  cursor: pointer;
+}
+.rail-click:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+.rail-node {
+  --ring: var(--border-strong);
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  box-sizing: border-box;
+  width: var(--node);
+  height: var(--node);
+  border: 1.5px solid var(--ring);
+  border-radius: 50%;
+  background: var(--rail-bg);
+  /* 外圈用页面底色"切开"轨道，站点像穿在轨道上 */
+  box-shadow: 0 0 0 3px var(--rail-bg);
+  color: var(--text-3);
+  transition:
+    background-color var(--dur-slow) var(--ease),
+    border-color var(--dur-slow) var(--ease),
+    color var(--dur-slow) var(--ease),
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.rail-stop.st-todo .rail-node {
+  border-style: dashed;
+}
+.rail-stop.st-done .rail-node {
+  --ring: transparent;
+  background: var(--st-success);
+  color: var(--text-inverse);
+}
+.rail-stop.st-failed .rail-node {
+  --ring: transparent;
+  background: var(--st-failed);
+  color: var(--text-inverse);
+}
+.rail-stop.st-running .rail-node {
+  --ring: var(--st-running);
+  color: var(--st-running);
+}
+.rail-stop.st-waiting_human .rail-node {
+  --ring: var(--st-waiting);
+  background: color-mix(in oklch, var(--st-waiting-soft) 100%, var(--rail-bg));
+  color: var(--st-waiting);
+}
+.rail-stop.is-cur .rail-node {
+  transform: scale(1.14);
+}
+.rail-stop.on .rail-node {
+  box-shadow:
+    0 0 0 3px var(--rail-bg),
+    0 0 0 5px var(--accent-ring);
+}
+.rail-click:hover .rail-node {
+  transform: translateY(-2px);
+}
+.rail-stop.is-cur .rail-click:hover .rail-node {
+  transform: translateY(-2px) scale(1.14);
+}
+.rail-node::after {
+  content: '';
+  position: absolute;
+  inset: -1.5px;
+  border: 1.5px solid var(--stop-tone);
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.rail-idx {
+  font: 500 10px/1 var(--font-mono);
+}
+.rail[data-size='sm'] .rail-idx {
+  font-size: 9px;
+}
+.rail-glyph {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+.rail[data-size='sm'] .rail-glyph {
+  width: 10px;
+  height: 10px;
+}
+.rail-dot {
+  fill: currentColor;
+  stroke: none;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.rail-check {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+/* ---------- 站点下方：阶段名、节点刻度、计数、当前在做什么 */
+.rail-title {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: var(--text-ui);
+  line-height: 18px;
+  color: var(--text-2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--dur) var(--ease);
+}
+.rail[data-size='sm'] .rail-hit {
+  gap: 4px;
+}
+.rail[data-size='sm'] .rail-title {
+  font-size: var(--text-meta);
+  line-height: 16px;
+}
+.rail-stop.st-todo .rail-title {
+  color: var(--text-3);
+}
+.rail-stop.is-cur .rail-title {
+  font-weight: 600;
+  color: var(--text);
+}
+.rail-click:hover .rail-title {
+  color: var(--text);
+}
+.rail-stop.on .rail-title {
+  color: var(--accent-text);
+}
+.rail-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: -2px;
+}
+.rail-ticks {
+  display: inline-flex;
+  gap: 2px;
+}
+.rail-ticks > span {
+  width: 5px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--border-strong);
+  transition: background-color var(--dur-slow) var(--ease);
+}
+.rail-ticks > [data-t='done'] {
+  background: var(--done-c);
+}
+.rail-ticks > [data-t='cur'] {
+  background: var(--stop-tone);
+}
+.rail-mini {
+  position: relative;
+  width: 36px;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+}
+.rail-mini > span {
+  position: absolute;
+  inset: 0;
+  background: var(--done-c);
+  transform: scaleX(clamp(0, var(--p, 0), 1));
+  transform-origin: left center;
+  transition: transform var(--dur-count) var(--ease-out-soft);
+}
+.rail-count {
+  font: 500 11px/1 var(--font-mono);
+  color: var(--text-3);
+}
+.rail-stop.is-cur .rail-count {
+  color: var(--text-2);
+}
+.rail-cur {
+  --shimmer-base: var(--stop-tone);
+  max-width: 100%;
+  margin-top: -1px;
+  font-size: var(--text-meta);
+  color: var(--stop-tone);
+}
+
+/* 窄容器：去掉刻度，字号降一级 */
+@container rail (max-width: 520px) {
+  .rail-ticks,
+  .rail-mini {
+    display: none;
+  }
+  .rail-title {
+    font-size: var(--text-meta);
+  }
+}
+
+/* ---------- 动效 */
+@media (prefers-reduced-motion: no-preference) {
+  /* 入场：轨道从左铺开 → 走过一站点亮一站（勾描出来）→ 当前段伸出去、光点出现 */
+  .rail-done {
+    animation: rail-fill var(--fill-ms) var(--ease-out-soft) backwards;
+  }
+  .rail-base {
+    animation: rail-base-in var(--fill-ms) var(--ease-out-soft) backwards;
+  }
+  .rail-live {
+    animation: rail-live-in 420ms var(--ease-out-soft) calc(var(--fill-ms) - 60ms) backwards;
+  }
+  .rail[data-live='running'] .rail-live {
+    animation:
+      rail-live-in 420ms var(--ease-out-soft) calc(var(--fill-ms) - 60ms) backwards,
+      rail-belt var(--takt) var(--ease-in-out) var(--fill-ms) infinite;
+  }
+  .rail-head::before {
+    animation: rail-head-in 260ms var(--ease-spring) calc(var(--fill-ms) + 200ms) backwards;
+  }
+  .rail[data-live='running'] .rail-head::after,
+  .rail[data-live='waiting_human'] .rail-head::after {
+    animation: rail-halo var(--takt) var(--ease-out-soft) calc(var(--fill-ms) + 200ms) infinite;
+  }
+  .rail[data-live='waiting_human'] .rail-head::after {
+    animation-duration: calc(var(--takt) * 2);
+  }
+  .rail-stop {
+    animation: rail-stop-in 280ms var(--ease-out-soft) calc(var(--i) * 40ms) backwards;
+  }
+  .rail-stop.st-done .rail-node,
+  .rail-stop.st-failed .rail-node,
+  .rail-stop.is-cur .rail-node {
+    animation: rail-arrive 380ms var(--ease-spring) var(--reach) backwards;
+  }
+  .rail-stop.is-cur .rail-node {
+    animation-delay: var(--lit);
+  }
+  .rail-stop.st-done .rail-check {
+    animation: rail-check 300ms var(--ease-out-soft) calc(var(--reach) + 90ms) backwards;
+  }
+  .rail-stop.st-running .rail-node::after,
+  .rail-stop.st-waiting_human .rail-node::after {
+    animation: rail-halo var(--takt) var(--ease-out-soft) var(--lit) infinite;
+  }
+  .rail-stop.st-waiting_human .rail-node::after {
+    animation-duration: calc(var(--takt) * 2);
+  }
+  .rail-stop.st-running .rail-dot {
+    animation: rail-beat var(--takt) var(--ease-in-out) infinite;
+  }
+  .rail-stop.st-running .rail-ticks > [data-t='cur'] {
+    animation: rail-tick var(--takt) var(--ease-in-out) infinite;
+  }
+  /* 状态换了图形轻轻换入（StopGlyph 按状态 key 重挂载） */
+  .rail-glyph,
+  .rail-idx {
+    animation: rail-glyph-in 220ms var(--ease-out-soft) backwards;
+  }
+  .rail-stop.st-done .rail-glyph {
+    animation: none;
+  }
+
+  /* 全部完成：一道光扫过轨道，站点依次轻跳，最后一站放一圈光 */
+  .rail-sweep {
+    animation: rail-sweep 900ms var(--ease-in-out) calc(var(--fill-ms) + 120ms) both;
+  }
+  .rail[data-complete] .rail-stop .rail-node {
+    animation:
+      rail-arrive 380ms var(--ease-spring) var(--reach) backwards,
+      rail-wave 420ms var(--ease-out-soft) calc(var(--fill-ms) + 160ms + var(--i) * 70ms) 1 none;
+  }
+  .rail[data-complete] .rail-stop:last-child .rail-node::after {
+    border-color: var(--st-success);
+    animation: rail-burst 900ms var(--ease-out-soft) calc(var(--fill-ms) + 160ms + (var(--n) - 1) * 70ms) both;
+  }
+}
+
+@keyframes rail-fill {
+  from {
+    clip-path: inset(0 100% 0 0 round var(--radius-pill));
+  }
+}
+@keyframes rail-base-in {
+  from {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes rail-live-in {
+  from {
+    clip-path: inset(0 calc((1 - var(--p-done)) * 100%) 0 calc(var(--p-done) * 100%) round var(--radius-pill));
+  }
+}
+@keyframes rail-belt {
+  to {
+    background-position: 10px 0;
+  }
+}
+@keyframes rail-head-in {
+  from {
+    opacity: 0;
+    /* motion-audit: ok 光点从轨道里冒出来 */
+    transform: scale(0.4);
+  }
+}
+@keyframes rail-halo {
+  from {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(2);
+  }
+}
+@keyframes rail-burst {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  8% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+@keyframes rail-stop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes rail-arrive {
+  from {
+    border-color: var(--border-strong);
+    background-color: var(--rail-bg);
+    color: var(--text-3);
+    /* motion-audit: ok 站点被点亮时弹一下 */
+    transform: scale(0.86);
+  }
+}
+@keyframes rail-check {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+@keyframes rail-beat {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  14% {
+    transform: scale(1.4);
+  }
+  45% {
+    transform: scale(1);
+  }
+}
+@keyframes rail-tick {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@keyframes rail-glyph-in {
+  from {
+    opacity: 0;
+    /* motion-audit: ok 图形换入 */
+    transform: scale(0.6);
+  }
+}
+@keyframes rail-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-72px);
+  }
+  15%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(100cqw);
+  }
+}
+@keyframes rail-wave {
+  40% {
+    transform: translateY(-3px) scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-base,
+  .rail-done,
+  .rail-live,
+  .rail-head,
+  .rail-node,
+  .rail-mini > span {
+    transition: none;
+  }
+}

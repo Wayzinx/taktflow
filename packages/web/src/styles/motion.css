@@ -81,6 +81,18 @@
   height: 6px;
 }
 
+/* 首次出现时从左打开（clip-path，圆角不变形；与 viz 条形同一做法），之后数值变化走 scaleX 过渡 */
+@keyframes meter-reveal {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .meter > .meter-fill {
+    animation: meter-reveal 520ms var(--ease-out-soft) 120ms backwards;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .shimmer-text {
     animation: none !important;
@@ -243,9 +255,54 @@
   animation: flash-row var(--dur-flash) var(--ease-out-soft) both;
 }
 
-/* ---------------------------------------------------------------- Tab 内容交叉淡化 150ms（TabPanel） */
+/* ---------------------------------------------------------------- Tab 内容交叉淡化 150ms（TabPanel）；点 Tab 切换时顺着方向滑入 10px、200ms */
 .tab-panel {
   animation: fade-only-in var(--dur-tab) var(--ease-out-soft) both;
+}
+@keyframes tab-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+@keyframes tab-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* backwards：播完不留 transform（面板里有 position: fixed / sticky 的后代） */
+  .tab-panel.from-right {
+    animation: tab-in-right 200ms var(--ease-out-soft) backwards;
+  }
+  .tab-panel.from-left {
+    animation: tab-in-left 200ms var(--ease-out-soft) backwards;
+  }
+}
+
+/* ---------------------------------------------------------------- 页面首屏分层入场：页面（.page）与 .cascade 的直接子块依次上移淡入，45ms 一层
+ * :where() 让特异度为 0：子块自己有动画（.stagger-item、.fade-in…）时以它为准；Tab 内容有自己的入场，不参与。
+ * 只在挂载时播一次；轮询刷新、换查询参数不重播。 */
+@media (prefers-reduced-motion: no-preference) {
+  :where(.page, .cascade) > :where(:not(.tab-panel)) {
+    animation: item-in 260ms var(--ease-out-soft) backwards;
+  }
+  :where(.page, .cascade) > :where(:nth-child(2)) {
+    animation-delay: 45ms;
+  }
+  :where(.page, .cascade) > :where(:nth-child(3)) {
+    animation-delay: 90ms;
+  }
+  :where(.page, .cascade) > :where(:nth-child(4)) {
+    animation-delay: 135ms;
+  }
+  :where(.page, .cascade) > :where(:nth-child(5)) {
+    animation-delay: 180ms;
+  }
+  :where(.page, .cascade) > :where(:nth-child(n + 6)) {
+    animation-delay: 225ms;
+  }
 }
 
 /* ---------------------------------------------------------------- 运行中：按 --takt 呼吸的外环（.live-ring 放在有圆角的元素上） */

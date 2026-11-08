@@ -234,6 +234,36 @@
 .sb-item.active svg {
   color: var(--accent);
 }
+/* 有滑块时：当前项的底色与刻度画在滑块上，换页时滑过去 */
+.sb-nav {
+  position: relative;
+}
+.sb-glide {
+  border-radius: var(--radius-sm);
+  background: var(--rail-active);
+}
+.sb-glide::before {
+  content: '';
+  position: absolute;
+  left: -12px;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+}
+.sb-nav.has-glide .sb-item.active {
+  background: transparent;
+}
+.sb-nav.has-glide .sb-item.active:hover {
+  background: oklch(1 0 0 / 0.03);
+}
+.sb-nav.has-glide .sb-item.active::before {
+  content: none;
+}
+.sb-item svg {
+  transition: color var(--dur) var(--ease);
+}
 .sb-badge {
   margin-left: auto;
   min-width: 20px;
@@ -388,7 +418,8 @@
   .sidebar.collapsed .sb-row.has-create .sb-item {
     padding-right: 0;
   }
-  .sidebar.collapsed .sb-item.active::before {
+  .sidebar.collapsed .sb-item.active::before,
+  .sidebar.collapsed .sb-glide::before {
     left: -8px;
   }
   .sidebar.collapsed .sb-badge {

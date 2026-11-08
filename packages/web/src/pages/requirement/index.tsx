@@ -2,7 +2,7 @@ import { Activity, Bug, ChartNoAxesColumn, ClipboardCheck, FolderOpen, GitBranch
 import { useAsync } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { BudgetBar } from '../../components/budget-bar'
-import { StageBar } from '../../components/stage-bar'
+import { StageRail } from '../../components/stage-rail'
 import type { RequirementDetail, RunDetail } from '@taktflow/core'
 import { TierGlyph, TIER_LABEL } from '../../components/tier-glyph'
 import { ErrorState, Skeleton, StatusDot, SuggestionChips, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
@@ -97,14 +97,14 @@ export function RequirementPage({ id }: { id: string }) {
 
   return (
     <div className="page req-page">
-      <header className="req-header">
+      <header className="req-header cascade">
         <RequirementHeader id={id} detail={r} status={r ? <StatusLine r={r} run={latest.data} /> : <Skeleton w={280} h={14} style={{ marginTop: 10 }} />} onChanged={q.reload} />
         {suggestions.length > 0 && <SuggestionChips className="req-suggest" items={suggestions} context={[{ type: 'requirement', id, label: id }]} />}
         <div className="card req-stage-card">
           {r ? (
-            <StageBar
+            <StageRail
               stages={r.stages}
-              variant="full"
+              current={r.current}
               empty={r.latestRunId ? '最近的运行没有划分阶段' : '尚未运行'}
               onStage={r.latestRunId ? (sid) => navigate(`/run/${r.latestRunId}?stage=${encodeURIComponent(sid)}`) : undefined}
             />

@@ -36,6 +36,15 @@
 .dag-node.st-running .dag-status {
   animation: icon-beat var(--takt) var(--ease) infinite;
 }
+@keyframes icon-beat {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent);
+  }
+  70%,
+  100% {
+    box-shadow: 0 0 0 5px transparent;
+  }
+}
 .dag-node.st-running.selected {
   box-shadow: 0 0 0 3px var(--accent-ring), var(--shadow-md);
 }
@@ -62,43 +71,6 @@
 .flow-dot-core {
   stroke: var(--surface);
   stroke-width: 1.2;
-}
-
-/* ---------- 阶段条：传送带 ---------- */
-.stage-cell.st-running .stage-cell-bar > span,
-.stage-cell.st-waiting_human .stage-cell-bar > span {
-  min-width: 12px;
-  /* 履带接缝：每 16px 一道，运行中每拍前进一格 */
-  background-image: linear-gradient(90deg, transparent 0 13px, color-mix(in srgb, var(--surface) 60%, transparent) 13px 16px);
-  background-size: 16px 100%;
-  background-repeat: repeat-x;
-}
-.stage-cell.st-running .stage-cell-bar > span {
-  animation: belt-step var(--takt) var(--ease-in-out) infinite;
-}
-@keyframes belt-step {
-  from {
-    background-position: 0 0;
-  }
-  to {
-    background-position: 16px 0;
-  }
-}
-.stage-cell.st-running .stage-cell-icon {
-  box-shadow: 0 0 0 0 var(--tone-soft);
-  animation: icon-beat var(--takt) var(--ease) infinite;
-}
-@keyframes icon-beat {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--tone) 45%, transparent);
-  }
-  70%,
-  100% {
-    box-shadow: 0 0 0 5px transparent;
-  }
-}
-.stage-cell.st-running .stage-cell-title {
-  font-weight: 600;
 }
 
 /* ---------- 抽屉：弹簧进场 / 快速收起 ---------- */
@@ -157,8 +129,6 @@
     opacity: 0.6;
     transform: none;
   }
-  .stage-cell.st-running .stage-cell-bar > span,
-  .stage-cell.st-running .stage-cell-icon,
   .dag-node.st-running .dag-status,
   .dag-group.st-running .dag-group-status svg {
     animation: none !important;

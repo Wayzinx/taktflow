@@ -12,7 +12,7 @@ import { useTheme, type ThemePref } from '../lib/theme'
 import { CommandPalette, setPaletteOpen } from './command-palette'
 import { SpaceSwitcher } from './space-switcher'
 import { TaktBeat } from './takt'
-import { StatusDot } from './ui'
+import { GlideMark, StatusDot, useGlide } from './ui'
 import './layout.css'
 import './topbar.css'
 import { usePulse } from './pulse'
@@ -133,6 +133,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
     { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []
+  const [navRef, glide] = useGlide<HTMLElement>('.sb-item.active')
   return (
     <aside className={`sidebar${open ? ' open' : ''}${collapsed ? ' collapsed' : ''}`} aria-label="主导航">
       <div className="sb-brand">
@@ -143,7 +144,8 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           <X aria-hidden />
         </button>
       </div>
-      <nav className="sb-nav">
+      <nav ref={navRef} className={`sb-nav${glide ? ' has-glide' : ''}`}>
+        <GlideMark glide={glide} className="sb-glide" />
         {items.map(({ to, label, icon: Icon, active, badge, count, create }) => (
           <div key={to} className={`sb-row${create ? ' has-create' : ''}`}>
             <Link to={to} className={`sb-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined} title={collapsed ? label : undefined}>

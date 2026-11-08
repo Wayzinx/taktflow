@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, Copy, FileCode2, FileJson, FileText, FolderOpen, GitCommitHorizontal, Image as ImageIcon, MessageSquare, Pencil, Send, TriangleAlert, X } from 'lucide-react'
 import type { ArtifactEditResponse, ArtifactKind, ArtifactRecord, ArtifactVersion, RequirementDetail, RunDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
-import { Avatar, EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows, toast } from '../../components/ui'
+import { Avatar, EmptyState, ErrorState, GlideMark, Segmented, Skeleton, SkeletonRows, toast, useGlide } from '../../components/ui'
 import { JsonView } from '../../lib/json-view'
 import { Markdown } from '../../lib/markdown'
 import { actorName, fmtDate, fmtRelative } from '../../lib/format'
@@ -59,6 +59,7 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
     if (!records) return []
     return SPEC_GROUPS.map((g) => ({ ...g, items: records.filter((r) => inGroup(g, r.kind)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)) })).filter((g) => g.items.length)
   }, [records])
+  const [listRef, glide] = useGlide<HTMLElement>('.art-item.active')
   const scopeSwitch = stagePaths && (
     <div className="art-scope">
       <Segmented<'all' | 'stage'>
@@ -114,7 +115,8 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
   const selected = records.find((r) => r.path === selectedPath) ?? records[0]!
   return (
     <div className="art-layout">
-      <nav className="card art-list" aria-label="产物列表">
+      <nav ref={listRef} className={`card art-list${glide ? ' has-glide' : ''}`} aria-label="产物列表">
+        <GlideMark glide={glide} className="art-glide" />
         {scopeSwitch}
         {groups.map((g) => (
           <div key={g.id} className="art-group">
@@ -311,7 +313,7 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
         </div>
       )}
 
-      <div className="art-body">
+      <div key={ver.version} className="art-body">
         {editing ? (
           <div className="art-editor">
             <textarea className="textarea mono" value={draft} onChange={(e) => setDraft(e.target.value)} spellCheck={false} />

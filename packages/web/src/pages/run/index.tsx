@@ -5,7 +5,7 @@ import { Crosshair, Fingerprint, Map as MapIcon, Maximize2 } from 'lucide-react'
 import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
-import { StageBar } from '../../components/stage-bar'
+import { StageRail } from '../../components/stage-rail'
 import { CountUp, ErrorState, Skeleton, StatusBadge, SuggestionChips, useStewardSuggestions } from '../../components/ui'
 import { fmtCost, fmtDate, fmtDuration, fmtTokens, totalTokens } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
@@ -182,7 +182,7 @@ export function RunPage({ runId }: { runId: string }) {
           )}
         </div>
         <div className="run-stage-row">
-          {d ? <StageBar stages={stages} variant="full" empty="这个流程没有划分阶段" onStage={(id) => setQuery({ stage: id === stageFocus ? undefined : id })} activeId={stageFocus} /> : <Skeleton h={26} />}
+          {d ? <StageRail size="sm" stages={stages} empty="这个流程没有划分阶段" onStage={(id) => setQuery({ stage: id === stageFocus ? undefined : id })} activeId={stageFocus} /> : <Skeleton h={26} />}
         </div>
         {d && suggestions.length > 0 && <SuggestionChips className="run-suggest" items={suggestions} context={[{ type: 'run', id: runId, label: runId }]} />}
       </header>

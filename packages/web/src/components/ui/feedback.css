@@ -286,7 +286,21 @@
   background: transparent;
 }
 
+/* ---------------------------------------------------------------- 竖向滑块（useGlide）：当前项底色跟着选中项滑过去 */
+.glide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  transform: translateY(var(--glide-y));
+  transition: transform 220ms var(--ease-out-soft);
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .glide {
+    transition: none;
+  }
   .toast,
   .toast[data-state='exit'],
   .ui-drawer[data-state='enter'],
