@@ -1,0 +1,92 @@
+/* 动作行（docs/design/26 §1）：运行中节点的副标题；换动作时整行从下方滑入。 */
+.act-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 11px;
+  color: var(--text-2);
+}
+.act-verb {
+  flex: none;
+  font-weight: 600;
+  color: var(--st-running);
+}
+.act-line[data-state='compacting'] .act-verb {
+  color: var(--accent-text);
+}
+.act-line[data-state='waiting_tool'] .act-verb {
+  color: var(--text-2);
+}
+.act-target {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.act-time {
+  flex: none;
+  color: var(--text-3);
+}
+.act-long {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--st-waiting);
+  background: color-mix(in srgb, var(--st-waiting) 13%, transparent);
+}
+.act-dots {
+  display: inline-flex;
+  gap: 2px;
+  align-self: center;
+}
+.act-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--st-running);
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .act-line {
+    animation: actline-in 260ms var(--ease-out-soft) both;
+  }
+  .act-dots i {
+    animation: act-dot calc(var(--takt) * 1.5) var(--ease-in-out) infinite;
+  }
+  .act-dots i:nth-child(2) {
+    animation-delay: calc(var(--takt) * 0.25);
+  }
+  .act-dots i:nth-child(3) {
+    animation-delay: calc(var(--takt) * 0.5);
+  }
+  .act-line.is-long .act-long {
+    animation: act-long-in 320ms var(--ease-spring) both;
+  }
+}
+@keyframes actline-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+@keyframes act-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.35;
+    transform: none;
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-1.5px);
+  }
+}
+@keyframes act-long-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}

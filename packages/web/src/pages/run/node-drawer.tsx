@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { Bot, ClipboardCheck, FileInput, Fingerprint, Layers, ListChecks, ListTree, Scale, ScrollText, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Bot, ClipboardCheck, FileDiff, FileInput, Fingerprint, Layers, ListChecks, ListTree, Scale, ScanSearch, ScrollText, ShieldCheck, Sparkles, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, TabPanel, Tabs, type TabDef } from '../../components/ui'
@@ -12,6 +12,8 @@ import { CompletionTab } from './completion-tab'
 import { NodeBrief } from './node-brief'
 import { RecipeSection } from './recipe-section'
 import { ReviewTab } from './review/review-tab'
+import { CheckpointsTab } from './checkpoints-tab'
+import { ChangesCard } from './changes/changes-card'
 import './drawer.css'
 
 const MIN_W = 440
@@ -77,6 +79,8 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
     { id: 'judge', label: '判决', icon: Scale, hidden: d?.kind !== 'judge', count: d?.verdicts?.length },
     { id: 'gate', label: '门禁', icon: ShieldCheck, hidden: d?.kind !== 'gate' },
     { id: 'review', label: '评审', icon: ClipboardCheck, hidden: d?.kind !== 'review', count: d?.review?.rounds.length },
+    { id: 'checkpoints', label: '检查点', icon: ScanSearch, hidden: !d?.checkpoints?.length, count: d?.checkpoints?.length },
+    { id: 'changes', label: '改动', icon: FileDiff, hidden: !d?.changes?.files.length, count: d?.changes?.files.length },
     { id: 'prompt', label: 'Prompt', icon: Bot, hidden: !d?.prompt },
     { id: 'recipe', label: '配方', icon: Fingerprint, hidden: !d?.recipe },
   ]
@@ -135,11 +139,17 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             {tab === 'overview' && <OverviewTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'completion' && <CompletionTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'io' && <IoTab d={d} requirementId={requirementId} />}
-            {tab === 'trace' && <TraceTab d={d} />}
+            {tab === 'trace' && <TraceTab d={d} at={query.get('at') ?? undefined} />}
             {tab === 'context' && <ContextTab d={d} />}
             {tab === 'judge' && <JudgeTab d={d} runId={runId} requirementId={requirementId} />}
             {tab === 'gate' && <GateTab d={d} />}
             {tab === 'review' && <ReviewTab d={d} runId={runId} requirementId={requirementId} />}
+            {tab === 'checkpoints' && <CheckpointsTab d={d} runId={runId} />}
+            {tab === 'changes' && d.changes && (
+              <div className="dpad">
+                <ChangesCard runId={runId} nodeId={nodeId} nodeTitle={title ?? nodeId} changes={d.changes} limit={50} bare />
+              </div>
+            )}
             {tab === 'prompt' && <PromptTab d={d} />}
             {tab === 'recipe' && <RecipeSection recipe={d.recipe} />}
           </TabPanel>

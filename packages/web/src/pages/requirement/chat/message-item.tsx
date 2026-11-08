@@ -72,7 +72,17 @@ export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: bool
   let body
   if (m.kind === 'attention') body = <AttentionMessage m={m} items={ctx.attention} />
   else if (m.kind === 'route' && m.route) body = <RouteCard route={m.route} requirementId={ctx.requirementId} runId={m.refs?.runId} />
-  else if (m.kind === 'task') body = <TaskCard m={m} pulse={(m.refs?.taskRunId && ctx.pulse[m.refs.taskRunId]) || 0} onRoles={ctx.onTaskRoles} />
+  else if (m.kind === 'task')
+    body = (
+      <TaskCard
+        m={m}
+        pulse={(m.refs?.taskRunId && ctx.pulse[m.refs.taskRunId]) || 0}
+        onRoles={ctx.onTaskRoles}
+        requirementId={ctx.requirementId}
+        resent={[...ctx.byId.values()].find((x) => x.kind === 'task' && x.replyTo === m.id)?.id}
+        onJump={ctx.onJump}
+      />
+    )
   else
     body = (
       <div className={`chat-text${m.kind === 'progress' ? ' progress' : ''}`}>

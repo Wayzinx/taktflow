@@ -2,6 +2,7 @@ import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@tak
 import { currentSpaceId } from '../lib/space'
 import { actingUserHeader } from '../lib/acting-user'
 import { createM4Http } from './client-m4'
+import { createM5Http } from './client-m5'
 import { fetchStream } from './sse'
 import { WorkflowConflictError, type DataSource, type EvalOutputSnapshot } from './source'
 
@@ -109,7 +110,7 @@ export function createHttpSource(base = '/api'): DataSource {
     lessons: (status) => get(`/lessons${qs({ status })}`),
     updateLesson: (id, body) => req('PATCH', `/lessons/${enc(id)}`, body),
     scorecards: (by, workflow) => get(`/eval/scorecards${qs({ by, workflow })}`),
-    evalCases: (target) => get(`/eval/cases${qs({ target })}`),
+    evalCases: (target, opts) => get(`/eval/cases${qs({ target, retired: opts?.retired ? '1' : undefined })}`),
     // 评测 / 缺陷的写操作在服务端走写命令（eval.* / defect.*），注册表要求非空 reason，但 api.ts 的请求体没有这个字段：
     // 先由客户端按操作内容生成审计原因（见交付说明的协议变更请求），协议补上后改成界面收集。
     collectEvalCases: (body) => req('POST', '/eval/cases/collect', { ...body, reason: auditReason(body, '从历史与缺陷收集评测用例') }),
@@ -136,6 +137,7 @@ export function createHttpSource(base = '/api'): DataSource {
     rollbackWorkflow: (id, body) => req('POST', `/workflows/${enc(id)}/rollback`, body),
     subscribeWorkflow: (id, onChange) => stream(scoped(`/workflows/${enc(id)}/stream`), onChange),
     ...createM4Http({ req, get, url: scoped, stream, stewardStream: (url, on) => fetchStream(url, on, () => actingUserHeader(true)) }),
+    ...createM5Http({ req, get }),
   }
 }
 

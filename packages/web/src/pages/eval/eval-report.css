@@ -1,0 +1,693 @@
+/* 检查点回放报告（docs/design/21 §5–6）：门槛 / 探索性、Wilson 区间、逐样本逐次结论、隔离与候选包、拒绝启动 */
+
+.er-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+.er-tag svg {
+  width: 12px;
+  height: 12px;
+}
+.er-tone-success {
+  background: var(--st-success-soft);
+  color: var(--st-success);
+}
+.er-tone-failed {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.er-tone-waiting {
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+}
+.er-tone-pending {
+  background: color-mix(in srgb, var(--st-pending) 14%, transparent);
+  color: var(--st-pending);
+}
+.er-tone-skipped {
+  background: var(--st-skipped-soft);
+  color: var(--st-skipped);
+}
+.er-c-success {
+  color: var(--st-success);
+}
+.er-c-failed {
+  color: var(--st-failed);
+}
+.er-c-waiting {
+  color: var(--st-waiting);
+}
+.er-c-pending {
+  color: var(--st-pending);
+}
+.er-c-skipped {
+  color: var(--text-2);
+}
+
+.er-k {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.er-sub {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+  line-height: 1.55;
+}
+.er-hint {
+  font-size: var(--text-meta);
+}
+.er-th {
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--text-3);
+}
+.er-th.r,
+.er-rate-grid .r {
+  text-align: right;
+  justify-self: end;
+}
+
+/* ---------------------------------------------------------------- 头部：门槛 / 探索性 */
+.er-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);
+  position: relative;
+  overflow: hidden;
+}
+.er-head::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--line, var(--border-strong));
+  transform-origin: top;
+}
+.er-tone-line-success {
+  --line: var(--st-success);
+}
+.er-tone-line-failed {
+  --line: var(--st-failed);
+}
+.er-tone-line-waiting {
+  --line: var(--st-waiting);
+}
+.er-verdict {
+  padding: 16px 20px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+}
+.er-big {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-display);
+  font-weight: 600;
+  line-height: 1.15;
+}
+.er-big svg {
+  width: 22px;
+  height: 22px;
+}
+.er-reasons {
+  margin: 2px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.er-pair {
+  margin: 4px 0 0;
+  font-size: var(--text-meta);
+}
+.er-pair b {
+  color: var(--text);
+  font-weight: 600;
+}
+.er-gate-snap {
+  padding: 16px 20px;
+  border-left: 1px solid var(--divider);
+  background: var(--bg-sunken);
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+.er-gate-snap dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 5px 14px;
+  font-size: var(--text-meta);
+}
+.er-gate-snap dt {
+  color: var(--text-2);
+}
+.er-gate-snap dd {
+  margin: 0;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* ---------------------------------------------------------------- 通过率与区间 */
+.er-rate-grid {
+  display: grid;
+  grid-template-columns: minmax(160px, 1.2fr) minmax(180px, 2fr) minmax(120px, max-content) 48px 64px;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 12px 16px 16px;
+}
+.er-axis {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 500;
+  font-family: var(--font-mono);
+}
+.er-vname {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.er-vtag {
+  flex: none;
+  font-size: var(--text-label);
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+}
+.er-vtag.is-base {
+  background: var(--surface-hover);
+  color: var(--text-2);
+}
+.er-vtag.is-cand {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.er-ci {
+  --c: var(--text-3);
+  position: relative;
+  height: 18px;
+}
+.er-ci.er-c-cand {
+  --c: var(--accent);
+}
+.er-ci::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 2px;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  background: var(--surface-hover);
+}
+.er-ci-mid {
+  position: absolute;
+  left: 50%;
+  top: 3px;
+  bottom: 3px;
+  width: 1px;
+  background: var(--divider);
+}
+.er-ci-band {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: calc(var(--lo) * 100%);
+  width: calc((var(--hi) - var(--lo)) * 100%);
+  min-width: 2px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--c) 26%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 45%, transparent);
+  transform-origin: left;
+}
+.er-ci-dot {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--x) * 100%);
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+.er-rate {
+  display: grid;
+  justify-items: end;
+  gap: 1px;
+  white-space: nowrap;
+}
+.er-rate b {
+  font-size: var(--text-title);
+  font-weight: 600;
+  line-height: 1.1;
+}
+.er-rate .faint {
+  font-size: var(--text-label);
+}
+
+/* ---------------------------------------------------------------- 逐样本 */
+.er-legend {
+  display: inline-flex;
+  gap: 12px;
+  font-size: var(--text-label);
+}
+.er-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.er-m-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(var(--cols), minmax(96px, max-content));
+  column-gap: 20px;
+  padding: 4px 16px 8px;
+}
+.er-m-grid > .er-th {
+  padding: 6px 0;
+}
+.er-m-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 40px;
+  /* 负边距 + 等量内边距：subgrid 的列仍与表头对齐，背景铺满整行 */
+  margin: 0 -16px;
+  padding: 0 16px;
+  border: 0;
+  border-top: 1px solid var(--divider);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.er-m-row:disabled {
+  cursor: default;
+}
+.er-m-row:not(:disabled):hover,
+.er-m-row.open {
+  background: var(--surface-hover);
+}
+.er-m-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.er-caret {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  transition: transform var(--dur-fast) var(--ease-out-soft);
+}
+.er-m-row:disabled .er-caret {
+  visibility: hidden;
+}
+.er-m-row.open .er-caret {
+  transform: rotate(90deg);
+}
+.er-m-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-meta);
+}
+.er-dots {
+  display: inline-flex;
+  gap: 4px;
+}
+.er-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+  display: inline-block;
+  background: var(--border-strong);
+}
+.er-d-pass {
+  background: var(--st-success);
+}
+.er-d-fail {
+  background: var(--st-failed);
+}
+.er-d-insufficient {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--st-pending);
+  background-image: repeating-linear-gradient(135deg, transparent 0 2px, color-mix(in srgb, var(--st-pending) 55%, transparent) 2px 3px);
+}
+.er-dot.is-fp {
+  width: 11px;
+  height: 11px;
+  border-radius: 0;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.er-m-why {
+  grid-column: 1 / -1;
+  margin: 0 -16px;
+  padding: 4px 16px 12px 38px;
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  background: var(--surface-hover);
+  font-size: var(--text-meta);
+}
+.er-m-why li {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+/* ---------------------------------------------------------------- 隔离、候选包、评委 */
+.er-iso {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr) minmax(0, 1fr);
+}
+.er-iso-cell {
+  padding: 14px 16px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+  border-left: 1px solid var(--divider);
+}
+.er-iso-cell:first-child {
+  border-left: 0;
+}
+.er-iso-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.er-iso-mode svg {
+  width: 16px;
+  height: 16px;
+}
+.er-cands {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 5px;
+  font-size: var(--text-meta);
+}
+.er-cands li {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) max-content;
+  gap: 8px;
+  align-items: center;
+}
+.er-cands svg {
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+}
+.er-cands .mono {
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------- 拒绝启动 */
+.er-refused {
+  padding: var(--sp-4) var(--sp-5);
+  display: grid;
+  gap: var(--sp-4);
+  border-color: color-mix(in srgb, var(--st-waiting) 55%, var(--border));
+  background: linear-gradient(180deg, var(--st-waiting-soft), transparent 70%), var(--surface);
+}
+.er-refused-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+}
+.er-refused-head svg {
+  width: 18px;
+  height: 18px;
+  color: var(--st-waiting);
+}
+.er-refused-head .faint {
+  font-size: var(--text-meta);
+}
+.er-refused-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--sp-3);
+}
+.er-refused-list li {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+.er-refused-n {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: var(--text-label);
+  font-weight: 600;
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+}
+.er-refused-why,
+.er-refused-next {
+  margin: 0;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  line-height: 1.55;
+}
+.er-refused-why svg,
+.er-refused-next svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  transform: translateY(2px);
+}
+.er-refused-why svg {
+  color: var(--st-waiting);
+}
+.er-refused-next {
+  margin-top: 3px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.er-refused-next svg {
+  color: var(--accent);
+}
+.er-refused-act {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* ---------------------------------------------------------------- 动效 */
+@media (prefers-reduced-motion: no-preference) {
+  .er-head::before {
+    animation: er-line-in var(--dur-enter) var(--ease-out-soft) both;
+  }
+  .er-ci-band {
+    animation: er-band-in var(--dur-enter) var(--ease-out-soft) both;
+    animation-delay: calc(var(--dur-item) * 0.5);
+  }
+  .er-ci-dot {
+    animation: er-dot-in var(--dur-enter) var(--ease-spring) both;
+    animation-delay: var(--dur-item);
+  }
+  .er-m-row,
+  .er-refused-list li {
+    animation: er-row-in var(--dur-item) var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * var(--stagger-step));
+  }
+  .er-m-why {
+    animation: er-row-in var(--dur-fast) var(--ease-out-soft) both;
+  }
+}
+@keyframes er-line-in {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes er-band-in {
+  from {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+}
+@keyframes er-dot-in {
+  from {
+    transform: scale(0);
+  }
+}
+@keyframes er-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* ---------------------------------------------------------------- 窄屏 */
+@media (max-width: 900px) {
+  .er-head,
+  .er-iso {
+    grid-template-columns: 1fr;
+  }
+  .er-gate-snap,
+  .er-iso-cell {
+    border-left: 0;
+    border-top: 1px solid var(--divider);
+  }
+  .er-iso-cell:first-child {
+    border-top: 0;
+  }
+  .er-rate-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, max-content) 36px 48px;
+  }
+  .er-rate-grid > .er-axis,
+  .er-rate-grid > .er-ci {
+    display: none;
+  }
+  .er-legend {
+    display: none;
+  }
+}
+
+/* ---------------------------------------------------------------- 样本列表 */
+.sm-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sm-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) max-content;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 16px;
+  border-top: 1px solid var(--divider);
+}
+.sm-row:first-child {
+  border-top: 0;
+}
+.sm-row.is-retired .sm-main,
+.sm-row.is-retired .sm-ic {
+  opacity: 0.55;
+}
+.sm-ic {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+}
+.sm-ic svg {
+  width: 15px;
+  height: 15px;
+}
+.sm-must_catch {
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+}
+.sm-clean {
+  background: var(--st-success-soft);
+  color: var(--st-success);
+}
+.sm-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.sm-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.sm-title {
+  font-weight: 500;
+}
+.sm-expect {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.sm-expect b {
+  color: var(--text);
+  font-weight: 500;
+}
+.sm-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--text-meta);
+  min-width: 0;
+}
+.sm-cp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-2);
+}
+.sm-cp:hover {
+  color: var(--accent-text);
+}
+.sm-cp svg {
+  width: 12px;
+  height: 12px;
+}
+.sm-snap {
+  max-width: 320px;
+}
+.sm-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-meta);
+  white-space: nowrap;
+}
+.sm-retired {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-3);
+}
+.sm-retired svg {
+  width: 13px;
+  height: 13px;
+}
+@media (max-width: 760px) {
+  .sm-row {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+  .sm-side {
+    grid-column: 2;
+  }
+}

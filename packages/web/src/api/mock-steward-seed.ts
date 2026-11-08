@@ -36,7 +36,8 @@ export function seedMessages(): StewardMessage[] {
         { id: 't2', tool: 'list_attention', input: { spaceId: 'hello-delivery' }, ok: true, summary: '待办：返回 3 条', ms: 18, output: [{ id: 'att-3', requirementId: 'REQ-003', ask: 'PRD 审批' }] },
         { id: 't3', tool: 'list_risks', input: { spaceId: 'hello-delivery' }, ok: true, summary: '风险：返回 4 条', ms: 25 },
       ],
-      text: '这周 **1 个需求已交付**（REQ-001）[1]，4 个在跑。要你处理的有 3 项，最急的是 REQ-003 的 PRD 审批，已经等了 5 小时 [2]。\n\n风险方面：REQ-004 的系分门禁连续两次同一个失败指纹，已被暂停 [3]；REQ-002 预算用到 84% [4]。\n\n另外按你上周说的，我把"测试之后加一道交叉评审"做成了 workflow 提案，等你确认。',
+      text: '这周 **1 个需求已交付**（REQ-001）[1]，4 个在跑。要你处理的有 3 项，最急的是 REQ-003 的 PRD 审批，已经等了 5 小时 [2]。\n\n风险方面：REQ-004 的系分门禁连续两次同一个失败指纹，已被暂停 [3]；REQ-002 预算用到 84% [4]。\n\n预算的事我转给了 REQ-002 的 Lead，但发送时连接断了，不确定送到没有。另外按你上周说的，我把"测试之后加一道交叉评审"做成了 workflow 提案，等你确认。',
+      delegations: [{ spaceId: 'hello-delivery', requirementId: 'REQ-002', messageId: 'chat-steward-2', status: 'uncertain', at: ago(44) }],
       citations: [
         { label: 'REQ-001 已交付', href: `${S}/req/REQ-001`, kind: 'requirement' },
         { label: 'REQ-003 待审批', href: `${S}/attention`, kind: 'attention' },

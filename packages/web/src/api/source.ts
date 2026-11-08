@@ -55,8 +55,10 @@ import type {
   Viewer,
 } from '@taktflow/core'
 import type { CrudSource, KnowledgeSource, StewardSource } from './source-m4'
+import type { M5Source } from './source-m5'
 
 export type { CrudSource, KnowledgeSource, StewardSource, StewardThreadDetail } from './source-m4'
+export { RevisionConflictError, RewindConflictError, type M5Source } from './source-m5'
 
 export type SpaceFileKind = SpaceFile['kind']
 
@@ -96,7 +98,7 @@ export interface EvalOutputSnapshot {
 }
 
 /** Web 用到的全部数据接口：真实 HTTP 客户端和演示数据实现同一份。 */
-export interface DataSource extends CrudSource, StewardSource, KnowledgeSource {
+export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, M5Source {
   readonly mock: boolean
   /** 当前用户（GET /me）：请求头 x-takt-user 指定，缺省为空间第一个 owner。 */
   me(): Promise<Viewer>
@@ -167,7 +169,8 @@ export interface DataSource extends CrudSource, StewardSource, KnowledgeSource {
   /** 成绩单：按节点 / 配方 / 技能聚合。 */
   scorecards(by: ScorecardBy, workflowId?: string): Promise<NodeScorecard[]>
   /** 评测用例；target 形如 node:<workflow>/<node> 或 skill:<name>，不给时返回全部。 */
-  evalCases(target?: string): Promise<EvalCase[]>
+  /** 默认不含已退役样本；样本页传 retired 一并取回。 */
+  evalCases(target?: string, opts?: { retired?: boolean }): Promise<EvalCase[]>
   collectEvalCases(body: EvalCollectRequest): Promise<{ added: string[] }>
   /** 运行列表不含 results 明细（results 为空数组）。 */
   evalRuns(): Promise<EvalRun[]>

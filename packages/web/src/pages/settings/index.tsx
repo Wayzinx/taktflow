@@ -1,4 +1,4 @@
-import { BookOpen, Cpu, GitFork, Lightbulb, Sparkles, UserRoundCog, Users, Workflow } from 'lucide-react'
+import { BookOpen, Cpu, GitFork, Lightbulb, ScrollText, Sparkles, UserRoundCog, Users, Workflow } from 'lucide-react'
 import { useAsync } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { ErrorState, PageHeader, Skeleton, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
@@ -9,13 +9,14 @@ import { FilesTab } from './files-tab'
 import { KnowledgeTab } from './knowledge-tab'
 import { LessonsTab } from './lessons-tab'
 import { MembersTab } from './members-tab'
+import { QualityTab } from './quality-tab'
 import { ReposTab } from './repos-tab'
 import { RuntimeTab } from './runtime-tab'
 import { WorkflowsTab } from './workflows-tab'
 import './settings.css'
 import './space.css'
 
-const TABS = ['members', 'repos', 'skills', 'agents', 'workflows', 'knowledge', 'lessons', 'runtime'] as const
+const TABS = ['members', 'repos', 'skills', 'agents', 'workflows', 'knowledge', 'lessons', 'runtime', 'quality'] as const
 type Tab = (typeof TABS)[number]
 
 const TAB_HINT: Record<Tab, string> = {
@@ -27,10 +28,11 @@ const TAB_HINT: Record<Tab, string> = {
   knowledge: '这个空间绑定的知识库，以及每个知识库给哪些角色用。',
   lessons: '从过往运行里沉淀下来的经验，Agent 在相似场景会参考。',
   runtime: '可用的 Agent CLI 和模型；缺密钥或不可用会标出来。',
+  quality: '缺陷、归因、样本与评测的权威日志：哈希链是否完整、锚点、各运行入账到哪里。',
 }
 
 /**
- * 空间设置（D 组）：成员 / 代码仓库 / 技能 / 角色 / workflow / 知识库 / 经验 / 模型与 harness。
+ * 空间设置（D 组）：成员 / 代码仓库 / 技能 / 角色 / workflow / 知识库 / 经验 / 模型与 harness / 质量日志。
  * 能直接改的都在页面上改（写回空间配置并留审计）；还不能直接改的给"让管家帮我改"，不教人改文件。
  */
 export function SettingsPage() {
@@ -74,6 +76,7 @@ export function SettingsPage() {
               { id: 'knowledge', label: '知识库', icon: BookOpen, count: bindings.data?.length },
               { id: 'lessons', label: '经验', icon: Lightbulb },
               { id: 'runtime', label: '模型与 Harness', icon: Cpu },
+              { id: 'quality', label: '质量日志', icon: ScrollText },
             ]}
           />
           <TabPanel key={tab} className="space-tab-body">
@@ -85,6 +88,7 @@ export function SettingsPage() {
             {tab === 'knowledge' && <KnowledgeTab space={sp} />}
             {tab === 'lessons' && <LessonsTab space={sp} />}
             {tab === 'runtime' && <RuntimeTab />}
+            {tab === 'quality' && <QualityTab />}
           </TabPanel>
         </>
       )}

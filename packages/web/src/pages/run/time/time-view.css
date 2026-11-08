@@ -1,0 +1,608 @@
+/*
+ * 运行页"时间"视图（docs/design/26 §2）。
+ * 泳道：执行 = 运行色实条（进行中的段是传送带条纹），等人 = 琥珀斜纹，就绪未调度 = 灰虚线，
+ * 工具步骤 = 贴底的细段（长步骤加深成琥珀，失败为红），压缩 = 菱形。
+ * 动效：首次出现时各行段落从左打开（逐行错开），上下文曲线随后描出；之后的刷新与缩放不重播。
+ */
+.tv {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-sunken);
+}
+.tv-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.tv-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.tv-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tv-hint {
+  color: var(--text-3);
+}
+.lg {
+  display: inline-block;
+  width: 16px;
+  height: 8px;
+  border-radius: 3px;
+}
+.lg-run {
+  background: var(--tv-run);
+}
+.lg-wait {
+  background: var(--tv-wait-fill);
+}
+.lg-queue {
+  height: 0;
+  border-top: 2px dashed var(--text-3);
+  border-radius: 0;
+}
+.lg-tool {
+  height: 4px;
+  background: var(--tv-tool);
+}
+.lg-long {
+  height: 4px;
+  background: var(--st-waiting);
+}
+.lg-compact {
+  width: 8px;
+  height: 8px;
+  border-radius: 1px;
+  rotate: 45deg;
+  background: var(--accent);
+}
+.tv-skel {
+  display: grid;
+  gap: 14px;
+  padding: 24px 24px 24px calc(232px + 16px);
+}
+
+.tv,
+.tv-legend {
+  --tv-run: color-mix(in srgb, var(--st-running) 42%, var(--surface));
+  --tv-run-edge: color-mix(in srgb, var(--st-running) 68%, var(--surface));
+  --tv-wait-fill: repeating-linear-gradient(-45deg, color-mix(in srgb, var(--st-waiting) 42%, transparent) 0 4px, color-mix(in srgb, var(--st-waiting) 18%, transparent) 4px 8px);
+  --tv-tool: color-mix(in oklch, var(--text) 62%, var(--surface));
+}
+
+.tv-main {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+}
+
+/* ---------- 时间轴 ---------- */
+.tv-axis {
+  display: grid;
+  grid-template-columns: var(--tv-label) 1fr;
+  height: 30px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.tv-axis-label {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 11.5px;
+  border-right: 1px solid var(--border);
+}
+.tv-axis-track {
+  position: relative;
+  overflow: hidden;
+  margin-right: 16px;
+}
+.tv-tick {
+  position: absolute;
+  bottom: 6px;
+  translate: -50% 0;
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.tv-now-tag {
+  position: absolute;
+  top: 7px;
+  translate: -100% 0;
+  margin-left: -4px;
+  white-space: nowrap;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 15px;
+  color: var(--surface);
+  background: var(--accent);
+}
+
+/* ---------- 泳道 ---------- */
+.tv-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.tv-rows {
+  position: relative;
+  min-height: 100%;
+  cursor: crosshair;
+}
+.tv-grid {
+  position: absolute;
+  inset: 0 16px 0 var(--tv-label);
+  pointer-events: none;
+}
+.tv-grid > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  opacity: 0.6;
+}
+.tv-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1.5px solid var(--accent);
+  z-index: 3;
+}
+.tv-brush {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 4;
+  border-inline: 1px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.tv-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--tv-row);
+  display: grid;
+  grid-template-columns: var(--tv-label) 1fr;
+}
+.tv-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 10px 0 12px;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  cursor: default;
+}
+.tv-track {
+  position: relative;
+  margin-right: 16px;
+  overflow: hidden;
+}
+.tv-lane:hover .tv-label,
+.tv-lane.is-hover .tv-label {
+  background: var(--surface-hover);
+}
+.tv-lane.is-hover .tv-track,
+.tv-lane.is-selected .tv-track {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.tv-lane.is-selected .tv-label {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.tv-stage .tv-label {
+  gap: 8px;
+  font-weight: 620;
+  font-size: 11.5px;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.tv-stage .tv-track {
+  border-top: 1px solid var(--border);
+}
+.tv-stage-idx {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.tv-stage-span {
+  position: absolute;
+  top: 50%;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 2px;
+  background: color-mix(in oklch, var(--text-3) 60%, transparent);
+}
+.tv-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: 0 4.5px;
+  border-radius: 50%;
+}
+.tv-caret,
+.tv-name {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.tv-caret {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-2);
+}
+.tv-caret:hover {
+  background: var(--surface-active);
+}
+.tv-caret svg {
+  width: 12px;
+  height: 12px;
+  transition: rotate var(--dur-fast, 120ms) var(--ease);
+}
+.tv-caret.open svg {
+  rotate: 90deg;
+}
+.tv-name {
+  min-width: 0;
+  text-align: left;
+  color: inherit;
+}
+.tv-name:hover {
+  color: var(--accent-text);
+}
+.tv-fb {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--st-waiting);
+  background: color-mix(in srgb, var(--st-waiting) 13%, transparent);
+}
+.tv-calls {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.tv-lane.is-inv .tv-label {
+  font-size: 11px;
+  color: var(--text-2);
+}
+.tv-inv-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.tv-inv-label > i {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+}
+.tv-inv-err {
+  font-weight: 600;
+  color: var(--st-failed);
+}
+
+/* ---------- 段落 ---------- */
+.tv-seg {
+  position: absolute;
+  top: 7px;
+  height: 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.tv-run {
+  background: var(--tv-run);
+  box-shadow: inset 0 0 0 1px var(--tv-run-edge);
+}
+.tv-run.is-failed {
+  background: color-mix(in srgb, var(--st-failed) 40%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-failed) 70%, var(--surface));
+}
+.tv-run.is-live {
+  background:
+    repeating-linear-gradient(-60deg, transparent 0 6px, color-mix(in srgb, var(--surface) 30%, transparent) 6px 12px),
+    var(--st-running);
+  background-size: 13.86px 100%, auto;
+  box-shadow: none;
+}
+.tv-wait {
+  background: var(--tv-wait-fill);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--st-waiting) 55%, transparent);
+}
+.tv-queue {
+  top: 13px;
+  height: 0;
+  border-top: 2px dashed color-mix(in oklch, var(--text-3) 80%, transparent);
+  border-radius: 0;
+}
+.tv-tool {
+  top: auto;
+  bottom: 7px;
+  height: 4px;
+  border-radius: 1px;
+  background: var(--tv-tool);
+  z-index: 1;
+}
+.tv-tool.is-long {
+  height: 6px;
+  background: var(--st-waiting);
+}
+.tv-tool.is-fail {
+  background: var(--st-failed);
+}
+.tv-compact {
+  top: 3px;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  border-radius: 1px;
+  rotate: 45deg;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--surface);
+  z-index: 2;
+}
+.tv-seg:hover {
+  filter: brightness(1.12);
+}
+.tv-inv-span {
+  position: absolute;
+  top: 5px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px dashed color-mix(in oklch, var(--inv) 70%, transparent);
+  background: color-mix(in oklch, var(--inv) 8%, transparent);
+}
+/* fallback 换 harness 的位置 */
+.tv-switch {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 0;
+  border-left: 1.5px solid var(--st-waiting);
+  z-index: 2;
+  pointer-events: none;
+}
+.tv-switch b {
+  position: absolute;
+  top: -1px;
+  left: 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 13px;
+  color: var(--st-waiting);
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+/* ---------- 悬停提示 ---------- */
+.tv-tip {
+  position: fixed;
+  z-index: 60;
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--surface-overlay, var(--surface));
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  pointer-events: none;
+}
+.tv-tip-title {
+  font-weight: 620;
+}
+.tv-tip-line {
+  margin-top: 3px;
+  color: var(--text-2);
+}
+.tv-tip-line b {
+  color: var(--text);
+}
+.tv-tip-time {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.tv-tip-bad {
+  color: var(--st-failed) !important;
+}
+.tv-tip-long {
+  color: var(--st-waiting) !important;
+}
+
+/* ---------- 上下文曲线 ---------- */
+.tv-ctx {
+  display: grid;
+  grid-template-columns: var(--tv-label) 1fr;
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface);
+}
+.tv-ctx-label {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  font-size: 12px;
+  border-right: 1px solid var(--border);
+}
+.tv-ctx-label .faint {
+  font-size: 11px;
+}
+.tv-ctx-y {
+  position: absolute;
+  right: 8px;
+  translate: 0 -50%;
+  font-size: 10px;
+  color: var(--text-3);
+}
+.tv-ctx-track {
+  position: relative;
+  margin-right: 16px;
+  overflow: hidden;
+}
+.tv-ctx-track svg {
+  display: block;
+}
+.tv-ctx-empty {
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  height: 48px;
+  font-size: 12px;
+}
+.tv-ctx-legend {
+  position: absolute;
+  left: 6px;
+  bottom: 4px;
+  font-size: 10.5px;
+  pointer-events: none;
+}
+.tv-ctx-unknown {
+  font-weight: 600;
+  color: var(--text-2);
+}
+.tv-win-band {
+  fill: color-mix(in srgb, var(--st-waiting) 9%, transparent);
+}
+.tv-win-line {
+  stroke: color-mix(in oklch, var(--text-3) 80%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+.tv-win-text {
+  font: 500 10px var(--font-sans);
+  fill: var(--text-3);
+}
+.tv-ctx-line {
+  transition: opacity 160ms var(--ease);
+}
+.tv-ctx-line.is-dim {
+  opacity: 0.22;
+}
+.tv-ctx-path {
+  fill: none;
+  stroke: var(--line);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+.tv-ctx-line.is-focus .tv-ctx-path {
+  stroke-width: 2.2;
+}
+.tv-ctx-hot {
+  fill: none;
+  stroke: var(--st-waiting);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.tv-ctx-compact line {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.tv-ctx-compact rect {
+  fill: var(--accent);
+  stroke: var(--surface);
+  stroke-width: 1;
+}
+.tv-ctx-dot {
+  fill: var(--surface);
+  stroke: var(--line);
+  stroke-width: 2;
+}
+
+/* 抽屉打开时让出右侧，免得最新的一段被盖住 */
+.run-body:has(.drawer) .tv-main {
+  margin-right: min(var(--drawer-w, 560px), 85vw);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tv-run.is-live {
+    animation: tv-belt var(--takt) linear infinite;
+  }
+  .tv-main.is-enter .tv-seg,
+  .tv-main.is-enter .tv-stage-span,
+  .tv-main.is-enter .tv-inv-span {
+    animation: tv-seg-in 620ms var(--ease-out-soft) both;
+    animation-delay: calc(var(--row, 0) * 24ms);
+  }
+  .tv-main.is-enter .tv-compact {
+    animation: tv-pop 320ms var(--ease-spring) both;
+    animation-delay: calc(var(--row, 0) * 24ms + 420ms);
+  }
+  .tv-main.is-enter .tv-ctx-path {
+    stroke-dasharray: 1;
+    animation: tv-draw 900ms var(--ease-out-soft) 240ms both;
+  }
+  .tv-main.is-enter .tv-ctx-hot,
+  .tv-main.is-enter .tv-ctx-compact {
+    animation: tv-fade 300ms var(--ease) 900ms both;
+  }
+  .tv-brush {
+    animation: tv-fade 120ms var(--ease) both;
+  }
+  .tv-tip {
+    animation: tv-fade 120ms var(--ease) both;
+  }
+}
+@keyframes tv-belt {
+  to {
+    background-position: 13.86px 0, 0 0;
+  }
+}
+@keyframes tv-seg-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes tv-pop {
+  from {
+    opacity: 0;
+    scale: 0.4;
+  }
+}
+@keyframes tv-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tv-fade {
+  from {
+    opacity: 0;
+  }
+}

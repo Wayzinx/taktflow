@@ -1,8 +1,9 @@
 import type { Actor, EvalCase, EvalCaseResult, EvalComparison, EvalRun, EvalRunRequest, EvalTarget, EvalVariant, SnapshotNode } from '@taktflow/core'
 import type { EvalOutputSnapshot } from './source'
 import { WF } from './mock-eval-scorecards'
+import { aggregate, buildReport, replayTrials } from './mock-eval-samples'
 
-/** 评测用例与评测运行（docs/design/20 §4）：ER-0001 better；ER-0002 worse 且挂了回归用例。 */
+/** 评测用例与评测运行（docs/design/20 §4）：ER-0001 better；ER-0002 worse 且挂了回归用例（M3 整节点回放，留作历史）。检查点样本与回放报告见 mock-eval-samples.ts。 */
 
 const WEB: Actor = { type: 'human', id: 'web' }
 const LIN: Actor = { type: 'human', id: 'lin' }
@@ -119,29 +120,45 @@ export function seedRuns(cases: EvalCase[]): EvalRun[] {
   return runs
 }
 
-/** 新建评测：后台跑，2.4 秒后出结果（确定性的伪分数）。 */
+/**
+ * 新建评测（docs/design/21 §5）：只回放只读检查点样本；含旧整节点用例或已退役样本时拒绝启动并说明原因。
+ * 样本评测后台跑，2.4 秒后出报告（确定性的逐次结果）。
+ */
 export function startRun(runs: EvalRun[], cases: EvalCase[], req: EvalRunRequest): EvalRun | string {
   if (req.variants.length === 0) return '至少需要一个候选变体'
   const t = targetKey(req.target)
-  const pool = cases.filter((c) => targetKey(c.target) === t)
+  const pool = cases.filter((c) => targetKey(c.target) === t && !c.sample?.retiredAt)
   const caseIds = req.caseIds?.length ? req.caseIds : pool.map((c) => c.id)
-  if (caseIds.length === 0) return `目标 ${t} 没有评测用例，先收集用例`
+  if (caseIds.length === 0) return `目标 ${t} 没有评测样本，先从缺陷或评审检查点生成`
   if (req.judge?.model && req.judge.model === 'gpt-5-codex' && req.target.kind === 'node' && req.target.nodeId === 'automate') return 'judge 模型不能与被测模型相同'
+  const repeats = req.repeats ?? 3
+  if (!Number.isSafeInteger(repeats) || repeats < 1 || repeats > 10) return '重复次数应为 1–10 的整数'
   const variants = req.variants[0]?.id === 'baseline' ? req.variants : [BASE('当前配方'), ...req.variants]
+  const picked = caseIds.map((id) => cases.find((c) => c.id === id)).filter((c): c is EvalCase => Boolean(c))
+  const reasons = [
+    ...picked.filter((c) => !c.sample).map((c) => `用例 ${c.id} 是旧整节点用例；本期拒绝写代码 / 整节点回放，请从只读检查点创建样本`),
+    ...picked.filter((c) => c.sample?.retiredAt).map((c) => `样本 ${c.id} 已退役；请取消勾选或重新生成`),
+  ]
   const id = `ER-${String(runs.length + 1).padStart(4, '0')}`
-  const run: EvalRun = { id, target: req.target, variants, caseIds, status: 'running', startedAt: new Date().toISOString(), by: WEB, results: [] }
+  const now = new Date().toISOString()
+  const candidates = Object.fromEntries(variants.map((v, i) => [v.id, `cand-${(id.charCodeAt(4) * 31 + i * 977).toString(16).padStart(4, '0')}${v.id.length.toString(16)}e91d`]))
+  if (reasons.length) {
+    const isolation: EvalRun['isolation'] = { ok: false, reasons }
+    const run: EvalRun = { id, target: req.target, variants, caseIds, status: 'refused', isolation, repeats, report: buildReport(picked, variants, repeats, {}, isolation), frozenCases: picked, startedAt: now, endedAt: now, by: WEB, results: [] }
+    runs.unshift(run)
+    return run
+  }
+  const isolation: EvalRun['isolation'] = { ok: true, mode: 'sandbox', reasons: [] }
+  const run: EvalRun = { id, target: req.target, variants, caseIds, status: 'running', isolation, repeats, candidates, judgeCandidate: 'cand-j-7c2e91d04b38', frozenCases: structuredClone(picked), startedAt: now, by: WEB, results: [] }
   runs.unshift(run)
   setTimeout(() => {
-    run.results = caseIds.flatMap((cid, i) =>
-      variants.map((v, j) => {
-        const seed = (cid.charCodeAt(cid.length - 1) * 7 + j * 13 + i * 5) % 30
-        const score = 62 + seed + (j > 0 ? 4 : 0)
-        return result(id, cid, v.id, score >= 72, Math.min(98, score), j > 0 ? '候选：覆盖更完整' : '基线', i + j)
-      }),
-    )
+    const report = buildReport(picked, variants, repeats, replayTrials(picked, variants, repeats), isolation)
+    run.report = report
+    run.results = aggregate(report, repeats)
     run.status = 'done'
     run.endedAt = new Date().toISOString()
     run.comparison = compare(run, cases)
+    if (run.comparison && (report.exploratory || report.gate?.verdict !== 'pass')) run.comparison.verdict = 'inconclusive'
   }, 2400)
   return run
 }

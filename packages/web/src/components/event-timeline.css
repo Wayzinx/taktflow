@@ -149,3 +149,24 @@
 .ev-link:hover {
   color: var(--accent-text);
 }
+
+/* 从时间视图点进来定位的那一步：底色闪一下再淡出 */
+.ev-row.is-focus {
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .ev-row.is-focus {
+    animation: ev-focus 1600ms var(--ease) 200ms both;
+  }
+}
+@keyframes ev-focus {
+  0%,
+  30% {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  100% {
+    background: color-mix(in srgb, var(--accent) 9%, transparent);
+  }
+}

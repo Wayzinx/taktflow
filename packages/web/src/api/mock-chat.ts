@@ -41,6 +41,8 @@ export interface MockChat {
   subscribe(id: string, on: (m: RoomMessage) => void, onLead?: (p: LeadPresence) => void): () => void
   /** 群里的待办被处理后，Lead 跟进一句。 */
   onAnswered(item: AttentionItem): void
+  /** 群聊任务卡重发（只允许 uncertain / expired）：发一张新卡片，replyTo 指向原卡片。 */
+  resendTask(id: string, messageId: string, reason: string): RoomMessage | string
 }
 
 export function createMockChat(db: MockDb): MockChat {
@@ -52,6 +54,12 @@ export function createMockChat(db: MockDb): MockChat {
     st.messages.push(m)
     st.subs.forEach((f) => f(structuredClone(m)))
     return m
+  }
+
+  /** 原地更新一条消息（回执推进）：订阅方按 id upsert。 */
+  function update(st: RoomState, m: RoomMessage, patch: Partial<RoomMessage>) {
+    Object.assign(m, patch)
+    st.subs.forEach((f) => f(structuredClone(m)))
   }
 
   function ensure(reqId: string): RoomState | undefined {
@@ -90,6 +98,10 @@ export function createMockChat(db: MockDb): MockChat {
       push(st, { author: human('qiao'), at: ago(23), kind: 'text', text: 'TC-EXP-005 是不是要等分片方案？设计里写的是 2000 行一片。', refs: { artifacts: [{ workspace: reqId, path: 'design/design.md' }] } })
       push(st, { author: LEAD, at: ago(22), kind: 'text', mentions: ['qiao'], text: '对，design/design.md 第 3 节已经定了分片方案，fix-code 这一轮会按它实现。@qiao 想改分片大小的话直接在群里说，我来发起修改。' })
       push(st, { author: LEAD, at: ago(20), kind: 'text', mentions: ['lin'], text: 'TC-EXP-003 的金额格式问题定位到 csv.ts:42，fix-code 已改好。**待确认** @lin 确认合入 fix-code 的改动 **下一步** 合入后重跑 TC-EXP-003 与 TC-EXP-005', refs: { runId: 'run-20261104-0002', nodeId: 'fix-code' } })
+      // 回执的两种异常（docs/design/26 §4）：派发时出错、可能已送达；跳数超过上限被拒绝
+      push(st, { author: LEAD, at: ago(16), kind: 'text', mentions: ['dev'], text: 'TC-EXP-006 是脚本的等待条件写死了 500ms，我派给 @dev 改成等进度条出现。' })
+      push(st, { author: LEAD, at: ago(16), kind: 'task', text: '修正 TC-EXP-006 的等待条件', receipt: { status: 'uncertain', hops: 0, note: '派发时服务重启，没收到"任务已创建"的确认，任务可能已经在跑。' } })
+      push(st, { author: LEAD, at: ago(9), kind: 'task', text: '再补一轮导出性能压测（10 万行）', receipt: { status: 'refused', hops: 4, chain: ['task-m3k2a1', 'task-m3k4c7', 'task-m3k9f2'], note: '超过派发跳数上限（本空间设为 3）：上一轮压测任务的产出又派了任务，已经是第 4 跳。停下来等人看要不要继续。' } })
       return
     }
     for (const a of items) push(st, { author: ENGINE, at: a.createdAt, kind: 'attention', text: a.ask, refs: { requestId: a.requestId, runId: a.runId, nodeId: a.nodeId } })
@@ -101,6 +113,7 @@ export function createMockChat(db: MockDb): MockChat {
     const reqId = st.room.requirementId
     const runId = `task-${Date.now().toString(36)}`
     let task: ReturnType<typeof createTaskRun> | undefined
+    let taskMsg: RoomMessage | undefined
     const steps: Array<[number, () => void]> = [
       [2600, () => push(st, { author: human('lin'), kind: 'text', mentions: ['lead'], text: '@lead 金额两位小数这个能不能先单独修？周五要给运营演示导出。' })],
       [5200, () => push(st, { author: LEAD, kind: 'text', mentions: ['dev', 'reviewer'], text: '可以单独修。我派一个临时任务给 @dev：只改 shop-api 的 src/export/csv.ts，金额统一走 formatAmount(value, 2) 并补单测，写权限收窄到 src/export/**；改完由 @reviewer 评审一轮。', refs: { artifacts: [{ workspace: reqId, path: 'cases/TC-EXP-003.json' }, { workspace: reqId, path: 'design/contracts.json' }] } })],
@@ -114,9 +127,13 @@ export function createMockChat(db: MockDb): MockChat {
           ],
         })
         addMembers(reqId, [{ id: 'dev', kind: 'agent', name: 'dev', role: '研发 · codex' }, { id: 'reviewer', kind: 'agent', name: 'reviewer', role: '代码评审 · claude-code' }])
-        push(st, { author: LEAD, kind: 'task', text: '金额字段统一保留两位小数', refs: { taskRunId: runId, runId } })
+        taskMsg = push(st, { author: LEAD, kind: 'task', text: '金额字段统一保留两位小数', refs: { taskRunId: runId, runId }, receipt: { status: 'sent', hops: 0 } })
       }],
-      [11600, () => task?.start('implement')],
+      [11000, () => taskMsg && update(st, taskMsg, { receipt: { status: 'taken', hops: 0 } })],
+      [11600, () => {
+        task?.start('implement')
+        if (taskMsg) update(st, taskMsg, { receipt: { status: 'started', hops: 0 } })
+      }],
       [17800, () => {
         task?.finish('implement', 'succeeded', [], { inputTokens: 18_420, outputTokens: 2_310, cachedTokens: 9_800, costUsd: 0.046 })
         push(st, { author: DEV, kind: 'text', text: '改好了：csv.ts:42 改用 formatAmount(value, 2)，stream.ts 里同样的写法也一起换了；新增 3 条单测，本地 12/12 通过。', refs: { taskRunId: runId, nodeId: 'implement' } })
@@ -127,6 +144,7 @@ export function createMockChat(db: MockDb): MockChat {
         addReviewReport(reqId, runId, path)
         task?.finish('review', 'succeeded', [{ workspace: reqId, path, version: 1 }], { inputTokens: 9_610, outputTokens: 880, cachedTokens: 4_200, costUsd: 0.041 })
         task?.end('succeeded')
+        if (taskMsg) update(st, taskMsg, { receipt: { status: 'done', hops: 0 } })
         push(st, { author: REVIEWER, kind: 'text', text: '评审通过，92 分。1 条建议：把舍入方式写进 money-format 技能的示例里，免得下次再踩。', refs: { taskRunId: runId, nodeId: 'review', artifacts: [{ workspace: reqId, path, version: 1 }] } })
       }],
       [25600, () => push(st, { author: ENGINE, kind: 'system', text: '临时任务完成：金额字段统一保留两位小数（评审 1 轮通过）', refs: { taskRunId: runId } })],
@@ -205,6 +223,18 @@ export function createMockChat(db: MockDb): MockChat {
           st.leadTimer = undefined
         }
       }
+    },
+    resendTask(id, messageId, reason) {
+      const st = ensure(id)
+      const m = st?.messages.find((x) => x.id === messageId)
+      if (!st || !m || m.kind !== 'task') return `任务消息 ${messageId} 不存在`
+      if (!reason.trim()) return '需要写原因'
+      const status = m.receipt?.status
+      if (status !== 'uncertain' && status !== 'expired') return '只有"不确定"或"已过期"的任务可以重发'
+      if (st.messages.some((x) => x.kind === 'task' && x.replyTo === messageId)) return '这个任务已经重发过了，看下面的新卡片'
+      const next = push(st, { author: LEAD, kind: 'task', text: m.text, replyTo: m.id, receipt: { status: 'sent', hops: m.receipt?.hops, chain: m.receipt?.chain, note: `人工重发：${reason.trim()}` } })
+      setTimeout(() => update(st, next, { receipt: { ...next.receipt!, status: 'taken' } }), 1600)
+      return next
     },
     onAnswered(item) {
       const st = rooms.get(item.requirementId)

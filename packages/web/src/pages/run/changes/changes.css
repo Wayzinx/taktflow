@@ -1,0 +1,292 @@
+/* 节点改动卡与回退（docs/design/26 §5） */
+.chg {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.chg.is-bare {
+  border: 0;
+  background: none;
+}
+.chg-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+}
+.chg-head > svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-2);
+}
+.chg-split {
+  margin-left: auto;
+  font-size: 11.5px;
+}
+.chg-list {
+  margin: 0;
+  padding: 0 4px;
+  list-style: none;
+}
+.chg-file {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+.chg-file:hover {
+  background: var(--surface-hover);
+}
+.chg-st {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  font: 700 10px/1 var(--font-mono);
+  color: var(--surface);
+  background: var(--text-3);
+}
+.chg-st.st-added {
+  background: var(--st-success);
+}
+.chg-st.st-modified {
+  background: var(--st-running);
+}
+.chg-st.st-deleted {
+  background: var(--st-failed);
+}
+.chg-st.st-renamed {
+  background: var(--st-waiting);
+}
+.chg-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.chg-scope {
+  flex: none;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  line-height: 17px;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.chg-scope.is-ws {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.delta {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.delta-num {
+  display: inline-flex;
+  gap: 4px;
+  font-size: 11px;
+}
+.delta-num .is-add,
+.delta-bar .is-add {
+  color: var(--st-success);
+}
+.delta-num .is-del,
+.delta-bar .is-del {
+  color: var(--st-failed);
+}
+.delta-bar {
+  display: inline-flex;
+  gap: 1.5px;
+}
+.delta-bar i {
+  width: 6px;
+  height: 6px;
+  border-radius: 1.5px;
+  background: var(--border-strong);
+}
+.delta-bar i.is-add {
+  background: var(--st-success);
+}
+.delta-bar i.is-del {
+  background: var(--st-failed);
+}
+.chg-empty {
+  margin: 0;
+  padding: 2px 12px 8px;
+  font-size: 12px;
+}
+.chg-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 8px;
+  border-top: 1px solid var(--border);
+}
+.chg-foot .flip {
+  rotate: 180deg;
+}
+.chg-foot svg {
+  transition: rotate var(--dur-fast) var(--ease);
+}
+.chg-blocked {
+  margin: 0;
+  padding: 0 12px 10px;
+  font-size: 11.5px;
+  color: var(--text-3);
+  text-align: right;
+}
+.chg-diffs {
+  display: grid;
+  gap: 14px;
+}
+.chg-diff-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 12px;
+}
+
+/* ---------- 回退预览 ---------- */
+.rw {
+  display: grid;
+  gap: 14px;
+}
+.rw-skel {
+  display: grid;
+  gap: 10px;
+}
+.rw-sec h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 620;
+  color: var(--text-2);
+}
+.rw-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.rw-files li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+.rw-files li + li {
+  border-top: 1px solid var(--border);
+}
+.rw-files .mono {
+  min-width: 0;
+  flex: 1;
+  font-size: 11.5px;
+}
+.rw-to {
+  flex: none;
+  font-size: 11px;
+}
+.rw-stale {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rw-node {
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 11.5px;
+  color: var(--st-stale, var(--st-waiting));
+  background: color-mix(in srgb, var(--st-stale, var(--st-waiting)) 12%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--st-stale, var(--st-waiting)) 45%, transparent);
+}
+.rw-node.is-self {
+  font-weight: 620;
+  border-style: solid;
+}
+.rw-blocked,
+.rw-notice {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+}
+.rw-blocked {
+  color: var(--text);
+  background: color-mix(in srgb, var(--st-failed) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-failed) 35%, transparent);
+}
+.rw-blocked svg {
+  color: var(--st-failed);
+}
+.rw-notice {
+  color: var(--text);
+  background: color-mix(in srgb, var(--st-running) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--st-running) 35%, transparent);
+}
+.rw-notice svg {
+  color: var(--st-running);
+}
+.rw-blocked svg,
+.rw-notice svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+}
+.rw-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.rw-note svg {
+  width: 13px;
+  height: 13px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chg-row {
+    animation: chg-row-in 220ms var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * 30ms);
+  }
+  .rw-files li,
+  .rw-node {
+    animation: chg-row-in 240ms var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * 35ms);
+  }
+  .rw-notice {
+    animation: rw-notice-in 360ms var(--ease-spring) both;
+  }
+}
+@keyframes chg-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+@keyframes rw-notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}

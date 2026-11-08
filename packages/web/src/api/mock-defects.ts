@@ -1,4 +1,5 @@
-import type { Actor, DefectAttribution, DefectConfirmRequest, DefectDetail, DefectReportRequest, EvalCase, EvalTarget } from '@taktflow/core'
+import type { Actor, DefectAttribution, DefectConfirmRequest, DefectDetail, DefectMergeSuggestion, DefectReportRequest, DefectUpdateRequest, EvalCase, EvalTarget, MissDecisionRequest, Observation } from '@taktflow/core'
+import { D1_CHECKPOINTS, seedM5Defects, seedMergeSuggestions, seedObservations } from './mock-defects-m5'
 import { WF } from './mock-eval-scorecards'
 
 /**
@@ -46,6 +47,10 @@ const D1_REQ2: DefectDetail = {
   links: [{ type: 'feishu', url: 'https://feishu.example.com/docs/uat-export', title: 'UAT 记录' }],
   evidence: ['uat/export-1105.csv 第 37 行'],
   status: 'attributed',
+  observations: ['external:7c1e'],
+  validity: 'valid',
+  resolution: 'open',
+  revision: 3,
   attribution: {
     defectId: 'D-1',
     introducedAt: { origin: 'design', runId: RUN2, nodeId: 'design', artifact: { workspace: 'REQ-002', path: 'design/design.md', version: 1 }, evidence: ['design/design.md 只写了"服务端流式写 CSV"，没有字段转义约定', '技能 csv-export 第 3 条规定了转义，但系分没有引用'] },
@@ -61,6 +66,7 @@ const D1_REQ2: DefectDetail = {
     ],
     precheck: { acCovered: true, cases: ['TC-EXP-003', 'TC-EXP-004'], codeNodes: ['implement'], reviewedBy: ['review-design'], gates: ['design-gate', 'trace-gate'] },
     by: AUDITOR, at: '2026-11-05T08:02:00Z',
+    checkpoints: D1_CHECKPOINTS,
   },
 }
 
@@ -91,29 +97,110 @@ export function regressionCases(d: DefectDetail, at: string): EvalCase[] {
   })
 }
 
+/** 写冲突（baseRevision 不一致）：mock 层换成 RevisionConflictError。 */
+export interface Conflict {
+  conflict: string
+}
+
 export interface MockDefects {
   list(reqId: string): DefectDetail[]
+  find(defectId: string): DefectDetail | undefined
+  observations(reqId: string, opts?: { source?: string; run?: string }): Observation[]
+  update(reqId: string, id: string, body: DefectUpdateRequest): DefectDetail | Conflict | string
+  mergeSuggestions(reqId: string): DefectMergeSuggestion[]
+  decideMerge(reqId: string, sid: string, body: { decision: 'accept' | 'reject' | 'undo'; reason: string }): DefectMergeSuggestion | string
+  decideMiss(reqId: string, id: string, checkpointId: string, body: MissDecisionRequest): DefectDetail | Conflict | string
   report(reqId: string, body: DefectReportRequest): DefectDetail | string
   attribute(reqId: string, id: string, runId?: string): DefectDetail | string
   confirm(reqId: string, id: string, body: DefectConfirmRequest): { defect: DefectDetail; cases: EvalCase[] } | string
 }
 
 export function createMockDefects(seeded: boolean): MockDefects {
-  const store = new Map<string, DefectDetail[]>(seeded ? [['REQ-001', [structuredClone(D1_REQ1)]], ['REQ-002', [structuredClone(D1_REQ2)]]] : [])
+  const store = new Map<string, DefectDetail[]>(seeded ? [['REQ-001', [structuredClone(D1_REQ1)]], ['REQ-002', [structuredClone(D1_REQ2), ...seedM5Defects()]]] : [])
+  const obs: Observation[] = seeded ? seedObservations() : []
+  const merges: Array<DefectMergeSuggestion & { requirementId: string; prev?: Partial<DefectDetail> }> = seeded ? seedMergeSuggestions().map((m) => ({ ...m, requirementId: 'REQ-002' })) : []
+  // 演示"别人刚改过"：REQ-002 D-1 第一次改状态时，先模拟 chen 改了处理状态
+  let conflictShown = false
   const of = (reqId: string) => {
     let l = store.get(reqId)
     if (!l) store.set(reqId, (l = []))
     return l
   }
+  const view = (d: DefectDetail): DefectDetail => ({ ...d, observationsDetail: (d.observations ?? []).map((id) => obs.find((o) => o.id === id)).filter((o): o is Observation => Boolean(o)) })
+  const bump = (d: DefectDetail) => (d.revision = (d.revision ?? 1) + 1)
+  const stale = (d: DefectDetail, base: number | undefined): Conflict | undefined =>
+    base !== undefined && base !== (d.revision ?? 1) ? { conflict: `${d.id} 刚被别人改过（你看到的是第 ${base} 版，现在是第 ${d.revision ?? 1} 版）` } : undefined
   return {
-    list: (reqId) => [...of(reqId)].sort((a, b) => b.foundAt.localeCompare(a.foundAt)),
+    list: (reqId) => [...of(reqId)].sort((a, b) => b.foundAt.localeCompare(a.foundAt)).map(view),
+    find: (defectId) => [...store.values()].flat().find((d) => d.id === defectId),
+    observations: (reqId, opts = {}) => obs.filter((o) => o.requirementId === reqId && (!opts.source || o.source === opts.source) && (!opts.run || o.runId === opts.run)).sort((a, b) => b.at.localeCompare(a.at)),
+    update(reqId, id, body) {
+      const d = of(reqId).find((x) => x.id === id)
+      if (!d) return `缺陷 ${id} 不存在`
+      if (!body.reason.trim()) return '需要写原因'
+      if (!conflictShown && reqId === 'REQ-002' && id === 'D-1') {
+        conflictShown = true
+        d.resolution = 'claimed_fixed'
+        bump(d)
+      }
+      const c = stale(d, body.baseRevision)
+      if (c) return c
+      if (body.validity === 'duplicate' && !body.duplicateOf) return '标为重复时要选和哪个缺陷重复'
+      Object.assign(d, { validity: body.validity ?? d.validity, resolution: body.resolution ?? d.resolution, duplicateOf: body.validity === 'duplicate' ? body.duplicateOf : undefined })
+      bump(d)
+      return view(d)
+    },
+    mergeSuggestions: (reqId) => merges.filter((m) => m.requirementId === reqId).map(({ requirementId: _r, prev: _p, ...m }) => m),
+    decideMerge(reqId, sid, body) {
+      const m = merges.find((x) => x.id === sid && x.requirementId === reqId)
+      if (!m) return `合并建议 ${sid} 不存在`
+      if (!body.reason.trim()) return '需要写原因'
+      const [keep, dup] = m.defects.map((id) => of(reqId).find((d) => d.id === id))
+      if (body.decision === 'undo') {
+        if (m.status !== 'accepted' && m.status !== 'rejected') return '只有已接受或已拒绝的建议可以撤销'
+        if (m.status === 'accepted' && dup) {
+          Object.assign(dup, m.prev ?? {})
+          bump(dup)
+        }
+        m.status = 'undone'
+      } else {
+        if (m.status !== 'suggested' && m.status !== 'undone') return '这条建议已经决定过了'
+        if (body.decision === 'accept' && dup && keep) {
+          m.prev = { validity: dup.validity, duplicateOf: dup.duplicateOf }
+          Object.assign(dup, { validity: 'duplicate', duplicateOf: keep.id })
+          bump(dup)
+        }
+        m.status = body.decision === 'accept' ? 'accepted' : 'rejected'
+      }
+      m.decidedBy = human('web')
+      m.at = new Date().toISOString()
+      const { requirementId: _r, prev: _p, ...out } = m
+      return out
+    },
+    decideMiss(reqId, id, checkpointId, body) {
+      const d = of(reqId).find((x) => x.id === id)
+      const a = d?.attribution?.checkpoints?.find((x) => x.checkpointId === checkpointId)
+      if (!d || !a) return `缺陷 ${id} 没有检查点 ${checkpointId} 的结论`
+      if (!body.reason?.trim()) return '改判需要写原因'
+      const c = stale(d, body.baseRevision)
+      if (c) return c
+      Object.assign(a, { verdict: body.verdict, conditions: { ...a.conditions, ...body.conditions }, by: 'human', confirmed: { by: human('web'), at: new Date().toISOString(), note: body.note?.trim() || body.reason.trim() } })
+      bump(d)
+      return view(d)
+    },
     report(reqId, body) {
       if (!body.title.trim()) return '标题必填'
       if (!body.description.trim()) return '描述必填'
       const l = of(reqId)
-      const d: DefectDetail = { id: `D-${l.length + 1}`, requirementId: reqId, title: body.title.trim(), description: body.description.trim(), severity: body.severity, foundAt: new Date().toISOString(), reportedBy: human('web'), acs: body.acs, links: body.links, evidence: body.evidence, status: 'open' }
+      const at = new Date().toISOString()
+      const id = `D-${l.length + 1}`
+      // 直接录入外部问题时同时生成一条 report 观察；从观察创建时把它们挂到新缺陷上
+      const from = body.observations?.length ? body.observations : [`human:${Date.now().toString(36)}`]
+      if (!body.observations?.length) obs.push({ id: from[0]!, source: 'human', kind: 'report', requirementId: reqId, title: body.title.trim(), detail: body.description.trim(), severity: body.severity, at, by: human('web') })
+      for (const o of obs) if (from.includes(o.id)) o.defects = [...(o.defects ?? []), id]
+      const d: DefectDetail = { id, requirementId: reqId, title: body.title.trim(), description: body.description.trim(), severity: body.severity, foundAt: at, reportedBy: human('web'), acs: body.acs, links: body.links, evidence: body.evidence, status: 'open', observations: from, validity: 'unconfirmed', resolution: 'open', revision: 1 }
       l.push(d)
-      return d
+      return view(d)
     },
     attribute(reqId, id, runId) {
       const d = of(reqId).find((x) => x.id === id)

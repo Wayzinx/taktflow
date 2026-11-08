@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import { ArrowRight, CircleHelp, Gauge, GitFork, History, ListChecks, Repeat2, ShieldCheck, type LucideIcon } from 'lucide-react'
+import { ArrowRight, CircleHelp, Gauge, GitFork, History, Lightbulb, ListChecks, Repeat2, ShieldCheck, type LucideIcon } from 'lucide-react'
 import type { AttentionItem, BudgetStatus, RequirementDetail, RunDetail } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { fmtRelative } from '../../lib/format'
@@ -50,6 +50,7 @@ function fromAttention(a: AttentionItem, detail: RequirementDetail | undefined, 
   if (a.kind === 'retry') return { ...base, urgency: 1, tone: 'failed', icon: Repeat2, kind: '重复失败', action: '去裁决' }
   if (a.stale) return { ...base, urgency: 2, tone: 'stale', icon: History, kind: '审批已过期', detail: staleDetail(a, detail), action: '重新审批' }
   if (a.kind === 'route') return { ...base, urgency: 3, tone: 'waiting', icon: GitFork, kind: '改档确认', action: '去确认' }
+  if (a.kind === 'assumption') return { ...base, urgency: 3, tone: 'waiting', icon: Lightbulb, kind: '待确认假设', title: `没等到回答，系统按假设推进了：${a.assumption ?? ''}`, detail: '确认假设，或改答让相关节点重跑', to: '/attention', action: '去确认' }
   if (a.kind === 'workflow_change') return { ...base, urgency: 3, tone: 'waiting', icon: GitFork, kind: '流程变更', action: '去确认' }
   const f = FORM_LABEL[a.form]
   return { ...base, urgency: 3, tone: 'waiting', icon: f.icon, kind: f.kind, action: f.action }

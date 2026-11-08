@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, Map as MapIcon, Maximize2 } from 'lucide-react'
+import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, Workflow } from 'lucide-react'
 import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { StageRail } from '../../components/stage-rail'
-import { CountUp, ErrorState, Skeleton, StatusBadge, SuggestionChips, useStewardSuggestions } from '../../components/ui'
+import { CountUp, ErrorState, Segmented, Skeleton, StatusBadge, SuggestionChips, useStewardSuggestions } from '../../components/ui'
 import { fmtCost, fmtDate, fmtDuration, fmtTokens, totalTokens } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
 import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
@@ -17,6 +17,7 @@ import { edgeTypes } from './dag-edges'
 import { EventTicker } from '../../components/event-ticker'
 import { NodeDrawer } from './node-drawer'
 import { RunCounters } from './run-counters'
+import { TimeView } from './time/time-view'
 import './run.css'
 import './run-motion.css'
 
@@ -43,6 +44,24 @@ function useMiniMapPref(): [boolean, (v: boolean) => void] {
     }
   }
   return [on, set]
+}
+
+type RunView = 'canvas' | 'time'
+
+/** 画布 / 时间切换（docs/design/26 §2）：两个视图在同一位置放同一个开关，写进 URL 的 view。 */
+function ViewSwitch({ value }: { value: RunView }) {
+  return (
+    <Segmented<RunView>
+      size="sm"
+      ariaLabel="运行视图"
+      value={value}
+      onChange={(v) => setQuery({ view: v === 'canvas' ? undefined : v })}
+      options={[
+        { value: 'canvas', label: '画布', icon: Workflow },
+        { value: 'time', label: '时间', icon: GanttChartSquare },
+      ]}
+    />
+  )
 }
 
 /** 抽屉收起动画的时长，与 run-motion.css 的 drawer-out 保持一致。 */
@@ -78,6 +97,7 @@ export function RunPage({ runId }: { runId: string }) {
   const { query } = useLocation()
   const selected = query.get('node') ?? undefined
   const stageFocus = query.get('stage') ?? undefined
+  const view: RunView = query.get('view') === 'time' ? 'time' : 'canvas'
   const suggestions = useStewardSuggestions('run', runId)
   const q = useAsync((s) => s.run(runId), [runId])
   const audit = useAsync((s) => s.audit(runId), [runId])
@@ -187,7 +207,19 @@ export function RunPage({ runId }: { runId: string }) {
         {d && suggestions.length > 0 && <SuggestionChips className="run-suggest" items={suggestions} context={[{ type: 'run', id: runId, label: runId }]} />}
       </header>
       <div className="run-body">
-        {d ? <RunCanvas detail={d} selected={selected} stageFocus={stageFocus} /> : <div className="run-canvas-skeleton"><Skeleton w="100%" h={9999} r={0} /></div>}
+        {!d ? (
+          <div className="run-canvas-skeleton">
+            <Skeleton w="100%" h={9999} r={0} />
+          </div>
+        ) : view === 'time' ? (
+          <div key="time" className="run-view">
+            <TimeView runId={runId} detail={d} liveTick={liveTick} selected={selected} toolbar={<ViewSwitch value="time" />} />
+          </div>
+        ) : (
+          <div key="canvas" className="run-view">
+            <RunCanvas detail={d} selected={selected} stageFocus={stageFocus} />
+          </div>
+        )}
         {d && drawer.id && d.run.nodes[drawer.id] && (
           <NodeDrawer closing={drawer.closing} runId={runId} requirementId={d.run.requirementId} nodeId={drawer.id} graphNode={d.graph.nodes.find((n) => n.id === drawer.id)} expansions={d.run.expansions} liveTick={liveTick} />
         )}
@@ -286,6 +318,7 @@ function RunCanvas({ detail, selected, stageFocus }: { detail: RunDetail; select
           </span>
         </Panel>
         <Panel position="top-right" className="dag-tools" style={{ marginRight: drawerOpen ? 'calc(var(--drawer-w, 560px) + 16px)' : undefined }}>
+          <ViewSwitch value="canvas" />
           <button className={`btn btn-sm${miniMap ? ' on' : ''}`} onClick={() => setMiniMap(!miniMap)} title={miniMap ? '隐藏小地图' : '显示小地图'} aria-pressed={miniMap}>
             <MapIcon />
             小地图

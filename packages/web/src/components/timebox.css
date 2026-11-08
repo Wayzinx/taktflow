@@ -1,0 +1,92 @@
+/* 等人限时（docs/design/26 §3） */
+.tbx {
+  display: grid;
+  gap: 5px;
+}
+.tbx-bar {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-2);
+  overflow: visible;
+}
+.tbx-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--st-running);
+  transform-origin: left center;
+  transform: scaleX(var(--p, 0));
+  transition: transform 900ms linear, background 400ms var(--ease);
+}
+.tbx.is-near .tbx-fill {
+  background: var(--st-waiting);
+}
+.tbx.is-back .tbx-fill {
+  background: var(--text-3);
+}
+.tbx-mark {
+  position: absolute;
+  top: -2px;
+  width: 2px;
+  height: 8px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--text-2);
+  box-shadow: 0 0 0 1.5px var(--surface);
+}
+.tbx-text {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.tbx.is-near .tbx-text {
+  color: var(--st-waiting);
+  font-weight: 600;
+}
+.tbx-text svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.tbx-assume {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 2px 0 0;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.tbx-assume svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+  color: var(--accent-text);
+}
+.tbx.is-compact .tbx-text {
+  font-size: 11px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tbx-fill {
+    transition: none;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .tbx.is-near .tbx-mark {
+    animation: tbx-tick calc(var(--takt) * 2) var(--ease-in-out) infinite;
+  }
+}
+@keyframes tbx-tick {
+  50% {
+    background: var(--st-waiting);
+  }
+}
+.tbx-mark.is-done {
+  background: var(--st-waiting);
+}

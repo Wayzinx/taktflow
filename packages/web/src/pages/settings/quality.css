@@ -1,0 +1,254 @@
+/* 设置 · 质量日志（docs/design/21 §7）：链校验结果、锚点、游标与补算 / 修复 */
+
+.ql {
+  display: grid;
+  gap: var(--sp-4);
+}
+.ql-hint {
+  font-size: var(--text-meta);
+}
+
+/* ---------------------------------------------------------------- 校验结果 */
+.ql-hero {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 16px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.ql-hero-ic {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--tone-soft);
+  color: var(--tone);
+}
+.ql-hero-ic svg {
+  width: 20px;
+  height: 20px;
+}
+.ql-hero.is-ok {
+  --tone: var(--st-success);
+  --tone-soft: var(--st-success-soft);
+}
+.ql-hero.is-behind {
+  --tone: var(--st-waiting);
+  --tone-soft: var(--st-waiting-soft);
+  border-color: color-mix(in srgb, var(--st-waiting) 45%, var(--border));
+}
+.ql-hero.is-broken {
+  --tone: var(--st-failed);
+  --tone-soft: var(--st-failed-soft);
+  border-color: var(--st-failed);
+  background: linear-gradient(180deg, var(--st-failed-soft), transparent 75%), var(--surface);
+}
+.ql-hero-main {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.ql-hero-title {
+  font-size: var(--text-title);
+  font-weight: 600;
+  color: var(--tone);
+}
+.ql-hero-main p {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.ql-steps {
+  margin: 6px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 4px;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------- 统计 */
+.ql-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.ql-stat {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 14px 16px;
+  border-left: 1px solid var(--divider);
+  min-width: 0;
+}
+.ql-stat:first-child {
+  border-left: 0;
+}
+.ql-stat-k {
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.ql-stat-v {
+  font-size: var(--text-title);
+  font-weight: 600;
+  min-width: 0;
+}
+.ql-yes {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--st-success);
+}
+.ql-yes svg {
+  width: 15px;
+  height: 15px;
+}
+.ql-anchor {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.ql-hash {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-sunken);
+  color: var(--text-2);
+  font-size: var(--text-label);
+  font-weight: 400;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.ql-hash:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.ql-hash svg {
+  width: 11px;
+  height: 11px;
+}
+.ql-behind {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-meta);
+  color: var(--st-waiting);
+}
+.ql-behind svg {
+  width: 13px;
+  height: 13px;
+}
+.ql-linked {
+  width: 14px;
+  height: 14px;
+  color: var(--st-success);
+}
+
+/* ---------------------------------------------------------------- 游标 */
+.ql-cursors {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ql-cursors li {
+  display: grid;
+  grid-template-columns: minmax(180px, max-content) 80px minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 16px;
+  border-top: 1px solid var(--divider);
+  font-size: var(--text-ui);
+}
+.ql-cursors li:first-child {
+  border-top: 0;
+}
+.ql-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text);
+}
+.ql-run svg {
+  width: 12px;
+  height: 12px;
+  color: var(--text-3);
+}
+.ql-run:hover {
+  color: var(--accent-text);
+}
+.ql-seq {
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+.ql-seq b {
+  color: var(--text);
+  font-weight: 600;
+}
+.ql-foot {
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: 1.6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ql-hero-ic {
+    animation: ql-ic-in var(--dur-enter) var(--ease-spring) both;
+  }
+  .ql-hero.is-broken .ql-hero-ic {
+    animation: ql-ic-in var(--dur-enter) var(--ease-spring) both, ql-alert 2.4s var(--ease-in-out) var(--dur-enter) infinite;
+  }
+  .ql-cursors li {
+    animation: ql-row-in var(--dur-item) var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * var(--stagger-step));
+  }
+}
+@keyframes ql-ic-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+@keyframes ql-alert {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--st-failed) 18%, transparent);
+  }
+}
+@keyframes ql-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@media (max-width: 760px) {
+  .ql-hero {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .ql-hero > .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .ql-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ql-stat:nth-child(3) {
+    border-left: 0;
+  }
+  .ql-stat:nth-child(n + 3) {
+    border-top: 1px solid var(--divider);
+  }
+  .ql-cursors li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .ql-cursors li > :nth-child(2) {
+    display: none;
+  }
+}

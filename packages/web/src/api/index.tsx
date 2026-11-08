@@ -3,7 +3,7 @@ import { createHttpSource, probeApi } from './client'
 import type { DataSource } from './source'
 
 export type { CrudSource, DataSource, EvalOutputSnapshot, KnowledgeSource, RepoPatch, ScorecardBy, StewardSource, StewardThreadDetail, WorkflowRevisionDetail } from './source'
-export { WorkflowConflictError } from './source'
+export { RevisionConflictError, RewindConflictError, WorkflowConflictError } from './source'
 
 const SourceContext = createContext<DataSource | null>(null)
 

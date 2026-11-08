@@ -18,6 +18,7 @@ import type {
   EventType,
   GraphEdge,
   GraphNode,
+  HumanTimebox,
   JudgeVerdict,
   NodeKind,
   NodeState,
@@ -313,10 +314,18 @@ interface RunPlan {
   nodes: Record<string, NodePlan>
   /** 人工节点的回答（requestId 由节点生成）。 */
   answers?: Record<string, { by: string; decision?: string; answer?: string }>
+  /** 人工节点的等人限时与默认假设（docs/design/26 §3）；answers 里 by 为 system 表示到时按假设交还。 */
+  timeboxes?: Record<string, { timebox: HumanTimebox; assumption?: string; ask?: string }>
   extra?: (at: (min: number) => number) => RawEvent[]
   snapshots?: Record<string, (at: (min: number) => number, base: ContextSnapshot) => { snapshots: ContextSnapshot[]; compactions: CompactionRecord[] }>
   gates?: Record<string, { pass: boolean; checks: Array<{ id: string; pass: boolean; score?: number; message?: string }> }>
   verdicts?: Record<string, Array<{ iteration: number; verdicts: JudgeVerdict[]; routed: Array<{ subject: string; to: string }> }>>
+}
+
+/** `30m` / `2h` → 分钟。 */
+const spanMin = (v: string | undefined): number | undefined => {
+  const m = v && /^(\d+(?:\.\d+)?)(s|m|h|d)$/.exec(v)
+  return m ? Number(m[1]) * { s: 1 / 60, m: 1, h: 60, d: 1440 }[m[2] as 's' | 'm' | 'h' | 'd'] : undefined
 }
 
 const ok = (start: number, end: number, u?: [number, number], iteration?: number): NodePlan => ({ status: 'succeeded', execs: [{ start, end, usage: u, iteration }] })
@@ -645,9 +654,21 @@ function buildEvents(
 
       if (t.kind === 'human') {
         const requestId = `att-${plan.runId.slice(-4)}-${t.id}`
-        push(s, 'human.requested', ENGINE, { requestId, ask: t.ask ?? '', form: t.form ?? 'approve' }, t.id)
+        const tb = plan.timeboxes?.[t.id]
+        const form = t.form ?? 'approve'
+        push(s, 'human.requested', ENGINE, { requestId, ask: tb?.ask ?? t.ask ?? '', form, ...(tb && { timebox: tb.timebox, assumption: tb.assumption }) }, t.id)
         const a = plan.answers?.[t.id]
-        if (end && a) push(end, 'human.answered', human(a.by), { requestId, decision: a.decision, answer: a.answer }, t.id)
+        const remind = spanMin(tb?.timebox.remindAfter)
+        const handback = form === 'answer' && tb?.assumption ? spanMin(tb.timebox.handbackAfter) : undefined
+        // 提醒两轮：到 remindAfter 提醒派给的人，再到一次加上 owner；交还之后不再提醒
+        for (const round of [1, 2]) {
+          const ts = remind !== undefined ? s + round * remind * MIN : Infinity
+          if (ts <= (end ?? NOW) && (handback === undefined || round * remind! < handback)) push(ts, 'human.reminded', ENGINE, { requestId, to: round === 1 ? ['assignees'] : ['assignees', 'owner'], round }, t.id)
+        }
+        if (end && a?.by === 'system' && tb?.assumption) {
+          push(end - 1000, 'human.handed_back', ENGINE, { requestId, assumption: tb.assumption }, t.id)
+          push(end, 'human.answered', ENGINE, { requestId, answer: tb.assumption }, t.id)
+        } else if (end && a) push(end, 'human.answered', human(a.by), { requestId, decision: a.decision, answer: a.answer }, t.id)
       }
 
       if (t.kind === 'gate' && end) {
@@ -955,11 +976,12 @@ export function createMockDb(): MockDb {
       [`${L}/fix-case`]: { status: 'skipped', execs: [] },
     },
     answers: {
-      'answer-clarify': { by: 'lin', answer: '金额统一两位小数；导出上限 10 万行。' },
+      'answer-clarify': { by: 'system' },
       'review-spec': { by: 'lin', decision: 'approve' },
       'review-design': { by: 'chen', decision: 'approve' },
       'review-cases': { by: 'qiao', decision: 'approve' },
     },
+    timeboxes: { 'answer-clarify': { ask: '2 个待确认问题：① 金额字段保留几位小数？② 单次导出最多多少行，超过怎么办？', timebox: { remindAfter: '5m', handbackAfter: '14m' }, assumption: '金额统一保留两位小数；单次导出上限 10 万行，超过时提示缩小筛选范围。' } },
     gates: {
       'design-gate': { pass: true, checks: [{ id: 'design-rubric', pass: true, score: 84, message: '契约完整；分片方案明确；建议补充导出任务的过期清理。' }] },
       'trace-gate': { pass: true, checks: [{ id: 'ac-covered', pass: true, message: 'AC 5 条（AC-4 性能已转专项豁免），未覆盖 0，孤立用例 0' }] },
@@ -1094,7 +1116,7 @@ export function createMockDb(): MockDb {
   runs.set(
     RUN5,
     buildRun(
-      { runId: RUN5, reqId: 'REQ-005', start: r5, status: 'waiting_human', items: [], nodes: { clarify: ok(0.2, 4.2, [11.6, 1.8]), 'answer-clarify': { status: 'waiting_human', execs: [{ start: 4.2 }] } } },
+      { runId: RUN5, reqId: 'REQ-005', start: r5, status: 'waiting_human', items: [], timeboxes: { 'answer-clarify': { timebox: { remindAfter: '10m', handbackAfter: '35m' }, assumption: '不区分大小写；多个关键词统一用一种高亮色；拼音与同义词命中不高亮。' } }, nodes: { clarify: ok(0.2, 4.2, [11.6, 1.8]), 'answer-clarify': { status: 'waiting_human', execs: [{ start: 4.2 }] } } },
       rec5,
       contents,
     ),
@@ -1127,7 +1149,13 @@ export function createMockDb(): MockDb {
       const answered = run.events.find((x) => x.type === 'human.answered' && (x.data as EventPayloads['human.answered']).requestId === d.requestId)
       const ad = answered?.data as EventPayloads['human.answered'] | undefined
       if (run.state.status === 'cancelled' && !ad) continue
-      attention.push({ requestId: d.requestId, runId: run.state.runId, nodeId: e.nodeId!, requirementId: run.state.requirementId, ask: d.ask, form: d.form, choices: d.choices, createdAt: e.ts, answeredAt: answered?.ts, decision: ad?.decision, answer: ad?.answer })
+      const of = (type: 'human.reminded' | 'human.handed_back') => run.events.filter((x) => x.type === type && (x.data as { requestId: string }).requestId === d.requestId)
+      const reminded = of('human.reminded').map((x) => x.ts)
+      const handedBack = of('human.handed_back').length > 0
+      const item: AttentionItem = { requestId: d.requestId, runId: run.state.runId, nodeId: e.nodeId!, requirementId: run.state.requirementId, ask: d.ask, form: d.form, choices: d.choices, createdAt: e.ts, answeredAt: answered?.ts, answeredBy: answered?.actor, decision: ad?.decision, answer: ad?.answer, timebox: d.timebox, assumption: d.assumption, remindedAt: reminded.length ? reminded : undefined, handedBack: handedBack || undefined }
+      attention.push(item)
+      // 按假设交还后生成"待确认假设"：人确认或改答（改答让依赖它的节点过期）
+      if (handedBack && d.assumption) attention.push({ requestId: `${d.requestId}:assumption`, runId: item.runId, nodeId: item.nodeId, requirementId: item.requirementId, kind: 'assumption', form: 'answer', ask: `按假设推进，待确认：${d.assumption}`, assumption: d.assumption, assumedFor: d.requestId, createdAt: answered?.ts ?? e.ts })
     }
   }
   attention.push({

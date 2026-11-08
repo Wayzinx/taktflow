@@ -182,6 +182,17 @@ p {
 .btn-sm.btn-icon {
   width: 26px;
 }
+/* 卡片内的次要动作（改动卡、时间轴复位） */
+.btn-xs {
+  height: 22px;
+  padding: 0 7px;
+  gap: 4px;
+  font-size: 11.5px;
+}
+.btn-xs svg {
+  width: 12px;
+  height: 12px;
+}
 
 /* ---------------------------------------------------------------- 输入 */
 .input,

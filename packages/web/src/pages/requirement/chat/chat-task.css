@@ -240,3 +240,29 @@
     animation: none;
   }
 }
+
+/* 派发回执（docs/design/26 §4） */
+.chat-task-receipt {
+  display: grid;
+  gap: 6px;
+  padding: 8px var(--sp-3);
+  border-bottom: 1px solid var(--divider);
+}
+.chat-task-receipt:last-child {
+  border-bottom: 0;
+}
+.chat-task-receipt.is-problem {
+  background: color-mix(in srgb, var(--st-waiting) 5%, transparent);
+}
+.chat-task-note {
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.chat-task-resend {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+}

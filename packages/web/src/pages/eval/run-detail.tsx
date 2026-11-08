@@ -1,13 +1,14 @@
 import { useEffect, type CSSProperties } from 'react'
-import { ArrowLeft, CircleX, ShieldAlert } from 'lucide-react'
+import { ArrowLeft, Ban, CircleX, ShieldAlert } from 'lucide-react'
 import type { EvalCase, EvalRun } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, Meter, Skeleton, StatusBadge } from '../../components/ui'
 import { TaktLoader } from '../../components/takt'
 import { actorName, fmtDate } from '../../lib/format'
 import { Link } from '../../lib/router'
-import { pct, RUN_STATE, targetKey, targetLabel, variantPair, VERDICT_META } from './labels'
+import { pct, RUN_STATE, shortId, targetKey, targetLabel, variantPair, VERDICT_META } from './labels'
 import { CaseCompare } from './case-compare'
+import { IsolationCard, PassRates, RefusedCard, ReportBadge, ReportHead, SampleMatrix } from './report'
 import { VerdictBadge } from './runs-list'
 
 function Overview({ run, cases }: { run: EvalRun; cases: EvalCase[] }) {
@@ -90,6 +91,8 @@ function Overview({ run, cases }: { run: EvalRun; cases: EvalCase[] }) {
 function NoComparison({ run }: { run: EvalRun }) {
   const errors = run.results.filter((r) => r.error)
   const failed = run.status === 'failed'
+  // 检查点回放中断时，后端把原因追加在 isolation.reasons 里
+  const interrupted = (run.isolation?.reasons ?? []).filter((x) => x.startsWith('评测中断'))
   // 服务端把整体失败原因写成这个评测运行 id 下的 log 事件（level error）
   // ux-audit: ok 失败原因的补充日志，只在有内容时显示；没有时外层卡片已经说明了状态
   const log = useAsync(
@@ -104,6 +107,15 @@ function NoComparison({ run }: { run: EvalRun }) {
         <b>{failed ? '评测失败，没有产出对比结果' : '评测已结束，但没有对比结果'}</b>
         <StatusBadge meta={{ label: st.label, tone: st.tone, icon: CircleX }} subtle />
       </div>
+      {interrupted.length > 0 && (
+        <ul className="ev-failed-list">
+          {interrupted.map((m) => (
+            <li key={m} className="ev-failed-log">
+              <span className="mono ev-failed-msg">{m}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {log.data && log.data.length > 0 && (
         <ul className="ev-failed-list">
           {log.data.map((m, i) => (
@@ -135,7 +147,8 @@ function NoComparison({ run }: { run: EvalRun }) {
 export function RunDetail({ id }: { id: string }) {
   const q = useAsync((ds) => ds.evalRun(id), [id])
   const run = q.data
-  const cases = useAsync((ds) => (run ? ds.evalCases(targetKey(run.target)) : Promise.resolve([])), [run ? targetKey(run.target) : ''])
+  // 旧报告可能引用已退役的样本，标题仍要能显示
+  const cases = useAsync((ds) => (run ? ds.evalCases(targetKey(run.target), { retired: true }) : Promise.resolve([])), [run ? targetKey(run.target) : ''])
   const running = run?.status === 'running'
   useEffect(() => {
     if (!running) return
@@ -152,12 +165,22 @@ export function RunDetail({ id }: { id: string }) {
           评测运行
         </Link>
         <h2 className="ev-run-title">
-          <span className="mono">{id}</span>
-          {run && (run.status === 'failed' ? <StatusBadge meta={{ label: RUN_STATE.failed.label, tone: 'failed', icon: CircleX }} /> : <VerdictBadge v={run.comparison} />)}
+          <span className="mono" title={id}>
+            {shortId(id)}
+          </span>
+          {run &&
+            (run.status === 'failed' ? (
+              <StatusBadge meta={{ label: RUN_STATE.failed.label, tone: 'failed', icon: CircleX }} />
+            ) : run.status === 'refused' ? (
+              <StatusBadge meta={{ label: RUN_STATE.refused.label, tone: 'waiting', icon: Ban }} />
+            ) : (
+              <VerdictBadge v={run.comparison} />
+            ))}
+          {run && <ReportBadge run={run} />}
         </h2>
         {run ? (
           <span className="faint">
-            <span className="mono">{targetLabel(run.target)}</span> · {run.caseIds.length} 条用例 · {actorName(run.by)} 于 {fmtDate(run.startedAt)}
+            <span className="mono">{targetLabel(run.target)}</span> · {run.caseIds.length} {run.report ? `个样本 × ${run.repeats ?? 1} 次` : '条用例'} · {actorName(run.by)} 于 {fmtDate(run.startedAt)}
           </span>
         ) : (
           <Skeleton w={260} h={12} />
@@ -167,8 +190,24 @@ export function RunDetail({ id }: { id: string }) {
         <Skeleton h={120} />
       ) : running ? (
         <div className="card ev-running">
-          <TaktLoader label={`正在沙箱里回放 ${run.caseIds.length} 条用例 × ${run.variants.length} 个版本，并由独立 evaluator 判分`} />
+          <TaktLoader
+            label={
+              run.repeats
+                ? `正在隔离环境里回放 ${run.caseIds.length} 个样本 × ${run.variants.length} 个版本 × ${run.repeats} 次，评委盲评`
+                : `正在沙箱里回放 ${run.caseIds.length} 条用例 × ${run.variants.length} 个版本，并由独立 evaluator 判分`
+            }
+          />
         </div>
+      ) : run.status === 'refused' ? (
+        <RefusedCard run={run} />
+      ) : run.report ? (
+        <>
+          {run.status === 'failed' && <NoComparison run={run} />}
+          <ReportHead run={run} />
+          <PassRates run={run} />
+          <SampleMatrix run={run} cases={cases.data ?? []} />
+          <IsolationCard run={run} />
+        </>
       ) : (
         <>
           {run.comparison ? <Overview run={run} cases={cases.data ?? []} /> : <NoComparison run={run} />}

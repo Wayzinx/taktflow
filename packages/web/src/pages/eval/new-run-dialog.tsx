@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Download, ListChecks, LoaderCircle } from 'lucide-react'
+import { ListChecks, LoaderCircle } from 'lucide-react'
 import type { EvalTarget, EvalVariant, HarnessInfo, HarnessSelector } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { Dialog, EmptyState, SkeletonRows, toast } from '../../components/ui'
 import { navigate } from '../../lib/router'
-import { CASE_SOURCE, defaultHarness } from './labels'
+import { CASE_SOURCE, defaultHarness, SAMPLE_KIND, shortId, targetKey } from './labels'
 
 const parse = (s: string): EvalTarget | undefined => {
   const m = /^node:([^/]+)\/(.+)$/.exec(s)
@@ -18,13 +18,18 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
   const ds = useSource()
   const targets = useAsync(async (d) => {
     const [nodes, skills, all] = await Promise.all([d.scorecards('node'), d.scorecards('skill'), d.evalCases().catch(() => [])])
-    const withCases = new Set(all.map((c) => (c.target.kind === 'node' ? `node:${c.target.workflowId}/${c.target.nodeId}` : `skill:${c.target.name}`)))
     const options = [
       ...nodes.map((n) => ({ value: `node:${n.key.workflowId}/${n.key.nodeId}`, label: `节点 · ${n.label}${n.label.includes(n.key.nodeId!) ? '' : `（${n.key.nodeId}）`}`, role: n.role })),
       ...[...new Set(skills.map((s) => s.key.skill!.name))].map((name) => ({ value: `skill:${name}`, label: `技能 · ${name}`, role: undefined as string | undefined })),
-    ].map((o) => ({ ...o, cases: withCases.has(o.value) }))
-    // 有用例的目标排在前面（默认选中第一个），其余保持成绩单顺序
-    return [...options.filter((o) => o.cases), ...options.filter((o) => !o.cases)]
+    ]
+    // 检查点样本的目标是检查点所在节点，可能不在成绩单里：补上
+    for (const c of all) {
+      const k = targetKey(c.target)
+      if (c.sample && c.target.kind === 'node' && !options.some((o) => o.value === k)) options.push({ value: k, label: `节点 · ${c.target.nodeId}`, role: c.node.role })
+    }
+    // 有在用样本的目标排在前面（默认选中第一个），其余保持成绩单顺序
+    const marked = options.map((o) => ({ ...o, cases: all.some((c) => targetKey(c.target) === o.value && c.sample && !c.sample.retiredAt) }))
+    return [...marked.filter((o) => o.cases), ...marked.filter((o) => !o.cases)]
   }, [])
   const harnesses = useAsync((d) => d.harnesses(), [])
   const [target, setTarget] = useState(initialTarget ?? '')
@@ -38,7 +43,12 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
   const cases = useAsync((d) => (target ? d.evalCases(target) : Promise.resolve([])), [target])
   const [picked, setPicked] = useState<Set<string> | null>(null)
   useEffect(() => setPicked(null), [target])
-  const selected = useMemo(() => picked ?? new Set((cases.data ?? []).map((c) => c.id)), [picked, cases.data])
+  // 本期只回放只读检查点样本：旧整节点用例与已退役样本不能勾选
+  const usable = useMemo(() => (cases.data ?? []).filter((c) => c.sample && !c.sample.retiredAt), [cases.data])
+  const legacy = (cases.data ?? []).filter((c) => !c.sample)
+  const selected = useMemo(() => picked ?? new Set(usable.map((c) => c.id)), [picked, usable])
+  const [repeats, setRepeats] = useState(3)
+  const repeatsOk = Number.isSafeInteger(repeats) && repeats >= 1 && repeats <= 10
   const [v, setV] = useState({ label: '', skillsDir: '', promptFile: '', profileFile: '', harness: '', model: '', judgeHarness: '', judge: '' })
   const [busy, setBusy] = useState(false)
   const set = (k: keyof typeof v) => (e: { target: { value: string } }) => setV((s) => ({ ...s, [k]: e.target.value }))
@@ -51,25 +61,13 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
   // 变体 id 叫 baseline 时服务端不再自动加基线，也就没有对比结果
   const idTaken = variantId === 'baseline'
   const harnessMissing = (Boolean(v.model) && !variantHarness) || (Boolean(v.judge) && !judgeHarness)
-  const ok = Boolean(parse(target)) && selected.size > 0 && v.label.trim() && hasOverride && !idTaken && !harnessMissing && !busy
+  const ok = Boolean(parse(target)) && selected.size > 0 && repeatsOk && v.label.trim() && hasOverride && !idTaken && !harnessMissing && !busy
 
   const toggle = (id: string) => {
     const next = new Set(selected)
     if (next.has(id)) next.delete(id)
     else next.add(id)
     setPicked(next)
-  }
-  const collect = async () => {
-    const t = parse(target)
-    if (!t) return
-    try {
-      const r = await ds.collectEvalCases({ target: t, includeDefects: true })
-      toast(r.added.length ? `收集到 ${r.added.length} 条用例` : '没有新的可收集用例', { tone: 'success' })
-      setPicked(null)
-      cases.reload()
-    } catch (e) {
-      toast('收集失败', { body: (e as Error).message, tone: 'failed' })
-    }
   }
   const submit = async () => {
     const t = parse(target)
@@ -84,7 +82,7 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
     }
     setBusy(true)
     try {
-      const run = await ds.startEvalRun({ target: t, variants: [variant], caseIds: [...selected], judge })
+      const run = await ds.startEvalRun({ target: t, variants: [variant], caseIds: [...selected], judge, repeats })
       invalidate()
       onClose()
       navigate(`/eval?tab=runs&run=${run.id}`)
@@ -102,7 +100,7 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
       size="lg"
       dismissible={!v.label && !hasOverride}
       title="新建评测"
-      description="在冻结输入上回放被测节点，与当前配方配对比较；回归用例必须全过才算更好。"
+      description="在隔离环境里回放只读检查点样本，与当前配方配对比较；每个样本重复多次，按预先规定的发布门槛给结论。"
       footer={
         <>
           <button className="btn btn-sm" onClick={onClose}>
@@ -110,7 +108,7 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
           </button>
           <button className="btn btn-sm btn-primary" disabled={!ok} aria-busy={busy} onClick={submit}>
             {busy && <LoaderCircle className="spin" aria-hidden />}
-            {`开始评测（${selected.size} 条用例 × 2 个版本）`}
+            {`开始评测（${selected.size} 个样本 × 2 个版本 × ${repeatsOk ? repeats : '?'} 次）`}
           </button>
         </>
       }
@@ -130,31 +128,46 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
         </label>
         <div className="ev-field">
           <span className="ev-label">
-            用例
-            <span className="faint num"> · 已选 {selected.size} / {cases.data?.length ?? 0}</span>
-            <span style={{ flex: 1 }} />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={collect}>
-              <Download />
-              从历史与缺陷收集
-            </button>
+            样本
+            <span className="faint num"> · 已选 {selected.size} / {usable.length}</span>
           </span>
           <div className="ev-cases">
             {!cases.data ? (
               <SkeletonRows rows={3} gap={10} />
-            ) : cases.data.length === 0 ? (
-              <EmptyState compact icon={ListChecks} title="这个目标还没有用例" body="从历史运行与已确认的缺陷里收集一批。" action={<button type="button" className="btn btn-sm" onClick={collect}>从历史与缺陷收集</button>} />
+            ) : usable.length === 0 && legacy.length === 0 ? (
+              <EmptyState compact icon={ListChecks} title="这个目标还没有样本" body="确认一个本该拦住的漏检后，在缺陷详情里生成必拦样本；评审调用确认没问题时，在检查点里生成无缺陷样本。" />
             ) : (
-              cases.data.map((c) => (
-                <label key={c.id} className="ev-case-opt">
-                  <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
-                  <span className={`ev-src ev-src-${c.source.kind}`}>{CASE_SOURCE[c.source.kind]}</span>
-                  <span className="truncate">{c.title}</span>
-                  <span className="mono faint">{c.id}</span>
-                </label>
-              ))
+              <>
+                {usable.map((c) => (
+                  <label key={c.id} className="ev-case-opt">
+                    <input type="checkbox" checked={selected.has(c.id)} onChange={() => toggle(c.id)} />
+                    <span className={`er-tag er-tone-${SAMPLE_KIND[c.sample!.kind].tone}`}>{SAMPLE_KIND[c.sample!.kind].label}</span>
+                    <span className="truncate">{c.title}</span>
+                    <span className="mono faint" title={c.id}>
+                      {shortId(c.id)}
+                    </span>
+                  </label>
+                ))}
+                {legacy.map((c) => (
+                  <label key={c.id} className="ev-case-opt is-off" title="旧整节点用例：本期只回放只读检查点，不能勾选">
+                    <input type="checkbox" checked={false} disabled />
+                    <span className={`ev-src ev-src-${c.source.kind}`}>{CASE_SOURCE[c.source.kind]}</span>
+                    <span className="truncate">{c.title}</span>
+                    <span className="mono faint">{c.id}</span>
+                  </label>
+                ))}
+              </>
             )}
           </div>
+          {legacy.length > 0 && <span className="faint ev-cases-note">{legacy.length} 条旧整节点用例本期不再回放（写代码 / 整节点重执行后续再做）。</span>}
         </div>
+        <label className="ev-field ev-repeats">
+          <span className="ev-label">每个样本重复</span>
+          <span className="ev-pair">
+            <input className="input num" type="number" min={1} max={10} value={Number.isFinite(repeats) ? repeats : ''} onChange={(e) => setRepeats(e.target.valueAsNumber)} aria-describedby="ev-repeats-hint" />
+            <span id="ev-repeats-hint" className="faint">次（1–10）。低于空间门槛的最少重复次数时，报告只作探索。</span>
+          </span>
+        </label>
         <fieldset className="ev-variant">
           <legend className="ev-label">候选变体（在当前配方上覆盖，至少填一项）</legend>
           <label className="ev-field">

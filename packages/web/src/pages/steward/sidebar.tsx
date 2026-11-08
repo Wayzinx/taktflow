@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CircleCheck, FileText, Forward, Hourglass, MessagesSquare, OctagonAlert, Search, Sparkles, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react'
-import type { StewardFeedItem, StewardThread } from '@taktflow/core'
+import type { DelegationStatus, StewardFeedItem, StewardThread } from '@taktflow/core'
 import { useAsync, useSource, type AsyncState } from '../../api'
+import { normReceipt } from '../../components/receipt'
 import { EmptyState, ErrorState, Segmented, SkeletonRows, TabPanel, useFlashRows, useStagger } from '../../components/ui'
 import { fmtRelative } from '../../lib/format'
 import { useStewardUnread } from '../../lib/ui-store'
@@ -57,6 +58,17 @@ function ThreadList({ threads, current, onPick }: { threads: StewardThread[]; cu
   )
 }
 
+const DELEGATION_TITLE: Record<DelegationStatus, string> = {
+  sent: '收到转达',
+  taken: '接手了转达',
+  started: '按转达开始干活',
+  done: '处理完了转达',
+  replied: '回复了',
+  refused: '拒绝了转达',
+  expired: '没接手转达（已过期）',
+  uncertain: '可能没收到转达',
+}
+
 function feedLine(it: StewardFeedItem): { icon: LucideIcon; tone?: string; title: string; sub?: string } | null {
   switch (it.type) {
     case 'digest':
@@ -69,7 +81,7 @@ function feedLine(it: StewardFeedItem): { icon: LucideIcon; tone?: string; title
       return { icon: p.status === 'applied' ? CircleCheck : p.status === 'reverted' ? Undo2 : Sparkles, tone: p.status === 'applied' ? 'success' : p.status === 'pending' ? 'waiting' : undefined, title: `提案${verb}：${p.title}` }
     }
     case 'delegation':
-      return { icon: Forward, title: `${it.delegation.requirementId} 的 Lead ${it.delegation.status === 'answered' ? '回复了' : '收到转达'}`, sub: it.delegation.reply }
+      return { icon: Forward, title: `${it.delegation.requirementId} 的 Lead ${DELEGATION_TITLE[normReceipt(it.delegation.status)]}`, sub: it.delegation.reply }
     default:
       return null
   }

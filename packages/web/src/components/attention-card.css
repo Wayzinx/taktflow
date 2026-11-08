@@ -318,3 +318,69 @@
   height: 26px;
   font-size: var(--text-meta);
 }
+
+/* 等人限时与待确认假设（docs/design/26 §3） */
+.att-card > .tbx {
+  margin-top: 10px;
+  max-width: 72ch;
+}
+.att-result.is-back {
+  color: var(--text-2);
+}
+.att-label {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 18px;
+  vertical-align: 1px;
+  color: var(--text-3);
+  background: var(--surface-2);
+}
+.att-assume {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  max-width: 72ch;
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+  line-height: 1.55;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--accent) 38%, transparent);
+}
+.att-assume svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  color: var(--accent-text);
+}
+.att-handback {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: var(--text-meta);
+}
+.att-handback svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+}
+.att-warn {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 6px 0 0;
+  font-size: var(--text-meta);
+  color: var(--st-waiting);
+}
+.att-warn svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-top: 2px;
+}

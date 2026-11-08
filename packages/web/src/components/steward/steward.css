@@ -483,3 +483,39 @@ button.stw-thinking:hover {
   grid-template-columns: minmax(0, 1fr);
 }
 
+/* 转达回执（docs/design/26 §4） */
+.stw-delegation-main {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.stw-delegation-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.stw-delegation-head a {
+  color: inherit;
+}
+.stw-delegation-reply {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--st-success);
+  color: var(--text);
+  line-height: 1.55;
+}
+.stw-delegation-act {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+}
+.stw-delegation.st-uncertain,
+.stw-delegation.st-expired {
+  background: color-mix(in srgb, var(--st-waiting) 7%, var(--surface-2));
+}
+.stw-delegation.st-refused {
+  background: color-mix(in srgb, var(--st-failed) 6%, var(--surface-2));
+}

@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { ClipboardCheck, FileSearch, Gavel, GitCompareArrows, ListChecks, Undo2, Unplug, Users } from 'lucide-react'
+import { ClipboardCheck, FileSearch, Gavel, GitCompareArrows, KeyRound, ListChecks, Undo2, Unplug, Users } from 'lucide-react'
 import type { EventEnvelope, EventPayloads, NodeDetail } from '@taktflow/core'
 import { EmptyState, StatusBadge } from '../../../components/ui'
 import { fmtDate, fmtTime } from '../../../lib/format'
 import { ArtifactDiffs, changedPairs } from './artifact-diff'
 import { FacetTags, OpenCounts } from './facet-tags'
 import { IssueList } from './issue-list'
+import { IssueLedger } from './issue-ledger'
 import { ReviewerCards } from './round-detail'
 import { REVIEW_STATUS, VERDICT_META, exhaustedRule, passRule, targetText } from './review-meta'
 import { avgScore, roundViews, type RoundView } from './review-rounds'
@@ -42,6 +43,7 @@ export function ReviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: s
   const review = d.review
   const views = review ? roundViews(review.rounds, review.config.maxRounds) : []
   const [picked, setPicked] = useState<number>()
+  const [focusKey, setFocusKey] = useState<string>()
   if (!review || !views.length)
     return (
       <div className="dpad rv">
@@ -123,6 +125,17 @@ export function ReviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: s
         </dd>
       </dl>
 
+      {d.issues && d.issues.length > 0 && (
+        <section className="d-section">
+          <div className="d-section-title">
+            <KeyRound />
+            问题台账
+            <span className="d-section-hint faint">系统问题键跨修订有效 · 虚线 = 作者称已修，实线 = 评审者复查确认</span>
+          </div>
+          <IssueLedger issues={d.issues} focus={focusKey} onFocus={setFocusKey} />
+        </section>
+      )}
+
       <section className="d-section">
         <div className="d-section-title">
           <ListChecks />
@@ -184,7 +197,10 @@ export function ReviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: s
           问题、观察与处置
           {view.r.revised.length > 0 && <span className="d-section-hint faint mono">修改后 {view.r.revised.map((r) => `${r.path}@v${r.version}`).join(', ')}</span>}
         </div>
-        <IssueList view={view} prev={prev} isLast={view === last} exhausted={exhaustedHere} dispositions={review.dispositions} runId={runId} nodeId={d.state.id} />
+        <IssueList view={view} prev={prev} isLast={view === last} exhausted={exhaustedHere} dispositions={review.dispositions} runId={runId} nodeId={d.state.id} ledger={d.issues} onKey={(k) => {
+          setFocusKey(k)
+          requestAnimationFrame(() => document.getElementById(`iss-${k}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+        }} />
 
         {endsRevision && reworks[revIndex] && <ReworkRecord rework={reworks[revIndex]!} exhausted={reworkExhausted[revIndex]} />}
 

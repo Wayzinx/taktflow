@@ -1,0 +1,519 @@
+/* 节点抽屉 · 检查点（docs/design/21 §1–2） */
+.cp {
+  display: grid;
+  gap: 14px;
+}
+.cp-sum {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 12.5px;
+}
+.cp-sum-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+}
+.cp-sum-item svg {
+  width: 13px;
+  height: 13px;
+}
+.cp-done svg,
+.cp-sum-item.cp-done svg {
+  color: var(--st-success);
+}
+.cp-error svg {
+  color: var(--st-failed);
+}
+.cp-skipped svg {
+  color: var(--text-3);
+}
+.cp-scheduled svg {
+  color: var(--st-running);
+}
+.cp-group-title {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  font-weight: 620;
+  color: var(--text-3);
+}
+.cp-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+.cp-row {
+  position: relative;
+}
+.cp-row + .cp-row {
+  border-top: 1px solid var(--border);
+}
+.cp-row.cp-skipped .cp-head {
+  color: var(--text-2);
+}
+.cp-head {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px 7px 6px;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.cp-head:hover {
+  background: var(--surface-hover);
+}
+.cp-caret {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+  transition: rotate var(--dur-fast) var(--ease);
+}
+.cp-row.open .cp-caret {
+  rotate: 90deg;
+}
+.cp-st {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface-2);
+}
+.cp-st svg {
+  width: 10px;
+  height: 10px;
+}
+.cp-st.cp-done {
+  background: color-mix(in srgb, var(--st-success) 16%, transparent);
+}
+.cp-st.cp-error {
+  background: color-mix(in srgb, var(--st-failed) 16%, transparent);
+}
+.cp-st.cp-scheduled {
+  background: color-mix(in srgb, var(--st-running) 16%, transparent);
+}
+.cp-role-ic {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+}
+.cp-role {
+  flex: none;
+  color: var(--text-2);
+}
+.cp-subject {
+  min-width: 0;
+  font-weight: 600;
+}
+.cp-verdict {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.cp-verdict.v-approve {
+  color: var(--st-success);
+}
+.cp-verdict.v-request_changes,
+.cp-verdict.v-reject {
+  color: var(--st-waiting);
+}
+.cp-gate {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: var(--radius-xs);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 18px;
+}
+.cp-gate svg {
+  width: 11px;
+  height: 11px;
+}
+.cp-gate.g-pass {
+  color: var(--st-success);
+  background: color-mix(in srgb, var(--st-success) 13%, transparent);
+}
+.cp-gate.g-fail {
+  color: var(--st-failed);
+  background: color-mix(in srgb, var(--st-failed) 13%, transparent);
+}
+/* 检查出错：流程问题，不是产物缺陷——虚线框、中性色，和"不通过"明显区分 */
+.cp-gate.g-error {
+  color: var(--text-2);
+  background: transparent;
+  outline: 1px dashed var(--st-waiting);
+  outline-offset: -1px;
+}
+.cp-gate.g-error svg {
+  color: var(--st-waiting);
+}
+.cp-ro-warn {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--st-waiting);
+}
+.cp-ms {
+  flex: none;
+  font-size: 11px;
+}
+.cp-body {
+  display: grid;
+  gap: 12px;
+  padding: 4px 12px 12px 34px;
+}
+.cp-err {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  margin: 0;
+  font-size: 12px;
+}
+.cp-err svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+.cp-err.cp-error {
+  color: var(--st-failed);
+}
+.cp-err.cp-skipped {
+  color: var(--text-2);
+}
+.cp-gate-msg {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.cp-none {
+  margin: 0;
+  font-size: 12px;
+}
+.cp-sec {
+  display: grid;
+  gap: 6px;
+}
+.cp-sec-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 620;
+  color: var(--text-2);
+}
+.cp-ro {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 17px;
+}
+.cp-ro svg {
+  width: 11px;
+  height: 11px;
+}
+.cp-ro.ro-ok {
+  color: var(--st-success);
+  background: color-mix(in srgb, var(--st-success) 13%, transparent);
+}
+.cp-ro.ro-mid {
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.cp-ro.ro-warn {
+  color: var(--st-waiting);
+  background: color-mix(in srgb, var(--st-waiting) 14%, transparent);
+}
+.cp-ro-note {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--st-waiting);
+}
+.cp-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.cp-files > li + li {
+  border-top: 1px solid var(--border);
+}
+.cp-file {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  background: none;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.cp-file:hover,
+.cp-file.on {
+  background: var(--surface-hover);
+}
+.cp-file .truncate {
+  flex: 1;
+  min-width: 0;
+}
+.cp-frole {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  font-size: 10.5px;
+  line-height: 16px;
+}
+.cp-frole.r-target {
+  color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.cp-frole.r-reference {
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.cp-fver {
+  flex: none;
+}
+.cp-file-view {
+  max-height: 260px;
+  overflow: auto;
+  padding: 8px 12px;
+  border-top: 1px dashed var(--border);
+  font-size: 12px;
+  background: var(--bg-sunken);
+}
+.cp-file-view pre {
+  margin: 0;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+}
+.cp-dir {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 10.5px;
+}
+.cp-dir svg {
+  width: 11px;
+  height: 11px;
+}
+.cp-layers {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+.cp-layers th,
+.cp-layers td {
+  padding: 4px 8px 4px 0;
+  text-align: left;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.cp-layers thead th {
+  font-size: 10.5px;
+  color: var(--text-3);
+}
+.cp-layers tbody th {
+  color: var(--text-2);
+}
+.cp-layers tbody tr + tr {
+  border-top: 1px solid var(--border);
+}
+.cp-layers tr.is-differ td:nth-child(4) {
+  color: var(--st-waiting);
+}
+.cp-unknown {
+  font-style: italic;
+  color: var(--text-3);
+}
+.cp-yes,
+.cp-no,
+.cp-inv-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.cp-yes svg,
+.cp-no svg,
+.cp-inv-live svg {
+  width: 11px;
+  height: 11px;
+}
+.cp-yes {
+  color: var(--st-success);
+}
+.cp-no {
+  color: var(--text-2);
+}
+.cp-inv-live {
+  font-size: 11px;
+  color: var(--st-running);
+}
+.cp-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11.5px;
+}
+.cp-skills li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+}
+.cp-skill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10.5px;
+}
+.cp-skill svg {
+  width: 10px;
+  height: 10px;
+}
+.cp-skill.c-yes {
+  color: var(--st-success);
+}
+.cp-skill.c-no {
+  color: var(--st-failed);
+}
+.cp-skill.c-unknown {
+  color: var(--text-3);
+}
+.cp-check,
+.cp-duties {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+.cp-check li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+}
+.cp-check-ic {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+}
+.cp-check-ic svg {
+  width: 11px;
+  height: 11px;
+}
+.k-ok .cp-check-ic {
+  color: var(--st-success);
+  background: color-mix(in srgb, var(--st-success) 13%, transparent);
+}
+.k-issue .cp-check-ic {
+  color: var(--st-waiting);
+  background: color-mix(in srgb, var(--st-waiting) 14%, transparent);
+}
+.k-na .cp-check-ic {
+  color: var(--text-3);
+  background: var(--surface-2);
+}
+.k-na .cp-check-item {
+  color: var(--text-3);
+}
+.cp-check-note {
+  font-size: 11px;
+}
+.cp-duties li {
+  padding: 2px 0 2px 12px;
+  position: relative;
+}
+.cp-duties li::before {
+  content: '·';
+  position: absolute;
+  left: 2px;
+  color: var(--text-3);
+}
+.cp-id {
+  margin: 0;
+  font-size: 10px;
+  word-break: break-all;
+}
+.cp-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cp-foot .cp-id {
+  flex: 1;
+  min-width: 0;
+}
+/* 排队中的检查点：左边一条运行色细线按节拍呼吸 */
+.cp-live {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--st-running);
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .cp-row {
+    animation: cp-row-in 220ms var(--ease-out-soft) both;
+    animation-delay: calc(var(--i, 0) * 28ms);
+  }
+  .cp-body {
+    animation: cp-row-in 200ms var(--ease-out-soft) both;
+  }
+  .cp-live {
+    animation: cp-breathe var(--takt) var(--ease-in-out) infinite;
+  }
+}
+@keyframes cp-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+@keyframes cp-breathe {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}

@@ -102,3 +102,35 @@
 | `mock-crud.ts` | `ServerInfo`（多空间、管家已配置）；空间 hello-delivery、growth-lab、payments「支付中台」、payments-legacy「支付中台（旧版）」（原先同名，已改名）+ 已归档 growth-2025；空间卡片统计（颜色、风险、待办、最近活动）；需求增删改（有运行记录的不能删、运行中不能归档）；workflow 兜底转换（hotfix 可转；`?mockConvert=fail` 转换失败） |
 | `mock-steward-seed.ts` / `mock-steward.ts` | 3 个会话（"这周交付进度和风险"含工具卡、引用、待决定的 workflow 提案 pr-review 和已执行的需求提案 pr-req8）；风险 5 条（高 2、中 3；open / snoozed / ignored）；一份汇报；产品健康 8 项；动态与未读 3；偏好、profile、各页建议；发消息后按"思考 → 工具卡逐个出现 → 正文逐字"流式回复，"建需求"类问题会出提案 |
 | `mock-knowledge-seed.ts` / `mock-knowledge.ts` | 只在 hello-delivery：商城文档（rag，ready，v3 + 候选 v4）、业务 Wiki（llm-wiki，构建中，进度每 0.8 秒前进）、订单库（database，ready）、开放平台接口（api，草稿）、提交历史（history，ready）；检索测试带 bm25 / vector / rerank 分项，database / api 显示执行语句，写操作被只读守卫拦截；2 个评测集（含候选用例）；kr-12 两变体对比（worse）；发布商城文档 v4 门槛不通过（2 条原因），`force` 带原因可强制发布；其他空间为空 |
+
+## M5 运行透明与归因可信度（docs/dev/m5-web.md）
+
+`DataSource` 另继承 `api/source-m5.ts` 的 `M5Source`，HTTP 客户端在 `api/client-m5.ts`。写冲突（409）统一抛 `RevisionConflictError`，调用方给"别人刚改过 · 载入最新"。
+
+| 组 | 方法 |
+|---|---|
+| 运行透明 | `timeline`、`nodeChanges`、`nodeDiff`、`rewindPreview`、`rewind`（token 不符 409） |
+| 回执 | `resendRoomTask(requirementId, messageId, reason)`、`resendDelegation(messageId, reason)`（只允许 uncertain / expired） |
+| 检查点 | `snapshot`、`snapshotFile` |
+| 缺陷两层 | `observations`、`updateDefect`（带 `baseRevision`）、`mergeSuggestions`、`decideMerge`、`decideMiss`（带 `reason`、`baseRevision`） |
+| 样本与日志 | `createEvalSample`（must_catch 带 `baseRevision`）、`retireEvalSample`、`qualityStatus`、`syncQuality`、`repairQuality` |
+
+新组件：
+
+- **TimeboxBar**（`components/timebox.tsx`）：`<TimeboxBar createdAt timebox assumption form remindedAt handedBack compact />`，待办卡与节点抽屉概览共用。
+- **ReceiptRail / HopChain / ResendButton**（`components/receipt.tsx`）：`<ReceiptRail status kind="task|relay" compact />`、`<HopChain hops chain refused />`、`<ResendButton status what onResend roomHref />`；`normReceipt` 把 answered 归到 replied、failed 归到 uncertain。
+- **ChangesCard**（`pages/run/changes/changes-card.tsx`）：`limit`（默认 3）、`bare`；内含 `DiffDialog`、`RewindDialog`。
+- **CheckpointsTab**（`pages/run/checkpoints-tab.tsx`）：快照、调用身份三层、职责清单；完成的评审者调用可"设为无缺陷样本"。
+- **评测报告**（`pages/eval/report.tsx`）：`ReportBadge`、`ReportHead`、`PassRates`、`SampleMatrix`、`IsolationCard`、`RefusedCard`；样本列表 `pages/eval/samples.tsx`（`/eval?tab=cases`）。
+- **质量日志**（`pages/settings/quality-tab.tsx`，`/settings?tab=quality`）。
+
+演示数据：
+
+| 文件 | 内容 |
+|---|---|
+| `mock-m5-run.ts` | 时间泳道与上下文曲线（含 fallback、压缩点、超过 80% 区间）、改动卡与回退（可回退 / 阻止回退各一）、运行中节点的活动行轮换 |
+| `mock-m5-checks.ts` | 检查点（3 个评审者，其中一个 skipped；快照只读方式含 none；三层取值含"未知"）、问题台账（claimed_fixed / verified_fixed / not_checked）、门禁 error |
+| `mock-defects-m5.ts` / `mock-defects.ts` | REQ-002：9 条观察；D-1 五种漏检结论各一（含 undetermined）、D-2 拦住了但被放行、D-3 与 D-1 的合并建议；D-1 第一次改状态会撞一次写冲突 |
+| `mock-eval-samples.ts` | 样本 S-001…S-007（S-007 已退役）；ER-0003 沙箱隔离、门槛达标；ER-0004 拒绝启动；ER-0005 模拟隔离、探索性（含证据不足与误报）；新建评测含旧整节点用例时拒绝启动 |
+| `mock-m5-quality.ts` | 质量日志链完整、锚点落后 14 条（可修复）；`?mockQuality=broken` 演示链被篡改（不给修复）；管家转达重发 |
+| `mock-data.ts` / `mock-m3-runs.ts` / `mock-chat.ts` / `mock-steward-seed.ts` | 待办时限（接近交还、已交还的假设、只提醒的 approve）；群聊 uncertain 与 refused（跳数超限）任务卡、回执逐站推进与重发；管家 uncertain 转达 |

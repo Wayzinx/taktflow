@@ -103,7 +103,7 @@ function retrySuppressed(db: MockDb) {
   ]
   insertRunEvents(run, items)
   const a = db.attention.find((x) => x.requestId === 'att-0004-design-gate')
-  if (a) Object.assign(a, { kind: 'retry', createdAt: second, ask: '同样的失败已出现 2 次：系分门禁 rubric 62 < 80（未覆盖 AC-4 跨时区、契约缺错误码），输入没有变化，已停止重试。', form: 'choice', choices: ['再试一次', '交给人处理', '终止运行'] } satisfies Partial<AttentionItem>)
+  if (a) Object.assign(a, { kind: 'retry', createdAt: second, ask: '同样的失败已出现 2 次：系分门禁 rubric 62 < 80（未覆盖 AC-4 跨时区、契约缺错误码），输入没有变化，已停止重试。', form: 'choice', choices: ['再试一次', '交给人处理', '终止运行'], timebox: { remindAfter: '90m' }, remindedAt: [shift(second, 90 * MIN), shift(second, 180 * MIN)].filter((t) => Date.parse(t) <= Date.now()) } satisfies Partial<AttentionItem>)
 }
 
 function latestVersionAt(db: MockDb, reqId: string, path: string, at: string): number | undefined {

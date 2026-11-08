@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   Bot,
   CheckCheck,
@@ -34,6 +34,7 @@ import { actorName, fmtDate, fmtTime, fmtTokens, totalTokens } from '../lib/form
 import { Link } from '../lib/router'
 import { NODE_STATUS, VERDICT, toneVar, type Tone } from '../lib/status'
 import { toolAction } from '../lib/actions'
+import { prefersReducedMotion } from '../lib/motion'
 import { ActionText, actionIcon } from './action-row'
 import { describeM3 } from './event-timeline-m3'
 import './event-timeline.css'
@@ -255,23 +256,27 @@ export function describe(e: EventEnvelope): Described {
 
 export const toneColor = (t: Described['tone']) => (t === 'neutral' ? 'var(--text-3)' : t === 'accent' ? 'var(--accent)' : toneVar(t))
 
-export function EventTimeline({ events, showNode, showRun, showDate }: { events: EventEnvelope[]; showNode?: boolean; showRun?: boolean; showDate?: boolean }) {
+export function EventTimeline({ events, showNode, showRun, showDate, focusSeq }: { events: EventEnvelope[]; showNode?: boolean; showRun?: boolean; showDate?: boolean; focusSeq?: number }) {
   return (
     <ol className="ev-timeline">
       {events.map((e) => (
-        <EventRow key={`${e.runId}-${e.seq}`} e={e} showNode={showNode} showRun={showRun} showDate={showDate} />
+        <EventRow key={`${e.runId}-${e.seq}`} e={e} showNode={showNode} showRun={showRun} showDate={showDate} focus={e.seq === focusSeq} />
       ))}
     </ol>
   )
 }
 
-function EventRow({ e, showNode, showRun, showDate }: { e: EventEnvelope; showNode?: boolean; showRun?: boolean; showDate?: boolean }) {
+function EventRow({ e, showNode, showRun, showDate, focus }: { e: EventEnvelope; showNode?: boolean; showRun?: boolean; showDate?: boolean; focus?: boolean }) {
   const info = describe(e)
   const collapsible = e.type === 'harness.tool_call' || e.type === 'harness.started' || e.type === 'rework.started' || e.type === 'worktree.bootstrapped'
-  const [open, setOpen] = useState(!collapsible)
+  const [open, setOpen] = useState(!collapsible || Boolean(focus))
+  const ref = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    if (focus) ref.current?.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+  }, [focus])
   const Icon = info.icon
   return (
-    <li className={`ev-row${collapsible ? ' collapsible' : ''}`} style={{ '--ev-tone': toneColor(info.tone) } as CSSProperties}>
+    <li ref={ref} className={`ev-row${collapsible ? ' collapsible' : ''}${focus ? ' is-focus' : ''}`} style={{ '--ev-tone': toneColor(info.tone) } as CSSProperties}>
       <span className="ev-time mono num" title={`seq ${e.seq} · ${e.ts}\nhash ${e.hash}`}>
         {showDate ? (
           <>

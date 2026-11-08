@@ -1,6 +1,7 @@
 import type {
   Actor,
   ArtifactRecord,
+  EvalSampleRequest,
   EventEnvelope,
   EventPayloads,
   EventType,
@@ -26,6 +27,10 @@ import { createMockReviews } from './mock-reviews'
 import { MOCK_HARNESSES, MOCK_MODELS } from './mock-settings'
 import type { WorkflowApi } from './mock-workflows'
 import { createMockRequirementCrud } from './mock-crud'
+import { createMockChanges, mockActivity, mockTimeline } from './mock-m5-run'
+import { createMockChecks } from './mock-m5-checks'
+import { createMockQuality } from './mock-m5-quality'
+import { RewindConflictError } from './source-m5'
 import type { DataSource } from './source'
 import type { KnowledgeSource, StewardSource } from './source-m4'
 
@@ -48,6 +53,29 @@ export function createProjectMock(db: MockDb): ProjectSource {
   const evals = createMockEval(db.requirements.length > 0, (reqId) => [...db.runs.values()].filter((r) => r.state.requirementId === reqId).sort((a, b) => b.state.startedAt.localeCompare(a.state.startedAt))[0]?.state.runId)
   const delay = <T,>(v: T, ms = 90): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
   const fail = (msg: string) => Promise.reject(new Error(msg))
+  const checks = createMockChecks(db)
+  const quality = createMockQuality(db)
+  // 回退：本节点与下游标 stale，存放区产物写回退点版本（不删历史），记 node.rewound
+  const changes = createMockChanges(db, (run, nodeId, p, reason) => {
+    const actor: Actor = { type: 'human', id: 'web' }
+    for (const f of p.files) {
+      if (f.scope !== 'workspace' || !f.from) continue
+      const rec = db.artifacts.get(run.state.requirementId)?.find((a) => a.path === f.path)
+      const back = db.contents.get(`${run.state.requirementId}:${f.path}@${f.from}`)
+      if (!rec || !back) continue
+      const last = rec.versions[rec.versions.length - 1]!
+      const version = last.version + 1
+      rec.versions.push({ ...last, version, createdAt: new Date().toISOString(), author: actor, reason: `回退到「${nodeId}」之前：${reason}`, derivedFrom: [{ workspace: run.state.requirementId, path: f.path, version: f.from }], producedBy: undefined })
+      db.contents.set(`${run.state.requirementId}:${f.path}@${version}`, back)
+    }
+    for (const s of p.stale) {
+      const g = run.graph.nodes.find((n) => n.id === s.nodeId)
+      if (!g) continue
+      g.status = 'stale'
+      run.state.nodes[s.nodeId]!.status = 'stale'
+    }
+    appendEvent(run, 'node.rewound', actor, { reason, files: p.files.map((f) => ({ path: f.path, scope: f.scope, repo: f.repo, version: f.from })), stale: p.stale.map((s) => ({ runId: s.runId, nodeId: s.nodeId })) }, nodeId)
+  })
 
   /** 运行中的节点：token 随时间缓慢增长，模拟实时进度。 */
   function liveUsage(run: MockRun, id: string, u: Usage | undefined): Usage | undefined {
@@ -57,7 +85,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
   }
 
   function graphNodes(run: MockRun): GraphNode[] {
-    return run.graph.nodes.map((n) => ({ ...n, usage: liveUsage(run, n.id, n.usage) }))
+    return run.graph.nodes.map((n) => ({ ...n, usage: liveUsage(run, n.id, n.usage), activity: n.status === 'running' && run.live.includes(n.id) && (n.kind === 'agent' || n.kind === 'judge') ? mockActivity(n.id) : undefined }))
   }
 
   function runUsage(run: MockRun): Usage {
@@ -275,8 +303,45 @@ export function createProjectMock(db: MockDb): ProjectSource {
         recipe: state.startedAt ? mockRecipe(nodeId, t.kind, t.role) : undefined,
         events,
       }
+      checks.decorate(run, nodeId, detail)
+      if (state.startedAt) detail.changes = changes.changes(run, nodeId)
       return delay(detail)
     },
+    timeline(runId) {
+      const run = getRun(runId)
+      return run ? delay(mockTimeline(run), 140) : fail(`运行 ${runId} 不存在`)
+    },
+    nodeChanges(runId, nodeId) {
+      const run = getRun(runId)
+      return run?.state.nodes[nodeId] ? delay(changes.changes(run, nodeId)) : fail(`节点 ${nodeId} 不存在`)
+    },
+    nodeDiff(runId, nodeId, path) {
+      const run = getRun(runId)
+      return run ? delay({ patch: changes.diff(run, nodeId, path) }, 80) : fail(`运行 ${runId} 不存在`)
+    },
+    rewindPreview(runId, nodeId) {
+      const run = getRun(runId)
+      return run?.state.nodes[nodeId] ? delay(changes.preview(run, nodeId), 260) : fail(`节点 ${nodeId} 不存在`)
+    },
+    rewind(runId, nodeId, body) {
+      const run = getRun(runId)
+      if (!run) return fail(`运行 ${runId} 不存在`)
+      const r = changes.rewind(run, nodeId, body.token, body.reason)
+      if (r === 'conflict') return new Promise((_, reject) => setTimeout(() => reject(new RewindConflictError('预览之后工作树多了一次提交，已按最新状态重新预览')), 320))
+      if (typeof r === 'string') return fail(r)
+      return delay({ files: r.files, stale: r.stale }, 420)
+    },
+    snapshot(runId, checkpointId) {
+      const run = getRun(runId)
+      const m = run && checks.snapshot(run, checkpointId)
+      return m ? delay(m) : fail(`检查点 ${checkpointId} 没有快照`)
+    },
+    snapshotFile(runId, checkpointId, path) {
+      const run = getRun(runId)
+      const f = run && checks.snapshotFile(run, checkpointId, path)
+      return f ? delay(f, 60) : fail(`快照里没有 ${path}`)
+    },
+    ...quality,
     audit(runId) {
       const run = getRun(runId)
       if (!run) return fail(`运行 ${runId} 不存在`)
@@ -296,7 +361,15 @@ export function createProjectMock(db: MockDb): ProjectSource {
       })
       Object.assign(item, { answeredAt: new Date().toISOString(), answeredBy: { type: 'human', id: 'web' }, decision: body.decision, answer: body.answer, boundTo })
       const run = getRun(item.runId)
-      if (run) {
+      if (run && item.kind === 'assumption') {
+        // 待确认假设：确认 = 回答与假设相同；改答让这个节点过期（真实后端还会沿依赖传播）
+        if (body.answer !== item.assumption) {
+          const g = run.graph.nodes.find((n) => n.id === item.nodeId)
+          if (g) g.status = 'stale'
+          if (run.state.nodes[item.nodeId]) run.state.nodes[item.nodeId]!.status = 'stale'
+          appendEvent(run, 'log', { type: 'human', id: 'web' }, { level: 'info', message: `人工改答假设：${body.answer ?? ''}；依赖节点已过期，请恢复运行` }, item.nodeId)
+        }
+      } else if (run) {
         appendEvent(run, 'human.answered', { type: 'human', id: 'web' }, { requestId, decision: body.decision, answer: body.answer, boundTo }, item.nodeId)
         const g = run.graph.nodes.find((n) => n.id === item.nodeId)
         if (g && g.status === 'waiting_human' && body.decision !== 'reject') {
@@ -309,6 +382,10 @@ export function createProjectMock(db: MockDb): ProjectSource {
     },
     harnesses: () => delay(MOCK_HARNESSES, 140),
     models: () => delay(MOCK_MODELS, 140),
+    resendRoomTask(id, messageId, reason) {
+      const r = chat.resendTask(id, messageId, reason)
+      return typeof r === 'string' ? fail(r) : delay(r, 260)
+    },
     room(id) {
       const room = chat.room(id)
       return room ? delay(room, 60) : fail(`需求 ${id} 不存在`)
@@ -360,6 +437,25 @@ export function createProjectMock(db: MockDb): ProjectSource {
           'defect.confirm': (i, reason) => viaRun(() => this.confirmDefect(String(i.requirementId), String(i.defectId), { attribution: i.attribution as never, note: (i.note as string | undefined) ?? reason }), '人工确认归因已执行'),
           'eval.collect': (i) => viaRun(() => this.collectEvalCases(i as never), '收集评测用例已执行'),
           'eval.run': (i) => viaRun(() => this.startEvalRun(i as never), '启动回放评测已执行'),
+          // M5 归因可信度与质量日志（core/commands/eval-commands.ts）
+          'defect.observations': (i) => viaRun(() => this.observations(String(i.requirementId), { source: i.source as string | undefined, run: i.runId as string | undefined }), '查询观察已执行'),
+          'defect.update': (i, reason) =>
+            viaRun(
+              () => this.updateDefect(String(i.requirementId), String(i.defectId), { validity: i.validity as never, resolution: i.resolution as never, duplicateOf: i.duplicateOf as string | undefined, baseRevision: Number(i.baseRevision), reason: reason! }),
+              '更新缺陷已执行',
+            ),
+          'defect.suggest-merges': (i) => viaRun(() => this.mergeSuggestions(String(i.requirementId)), '生成合并建议已执行'),
+          'defect.merge': (i, reason) => viaRun(() => this.decideMerge(String(i.requirementId), String(i.suggestionId), { decision: i.decision as never, reason: reason! }), '决定合并建议已执行'),
+          'defect.miss': (i, reason) =>
+            viaRun(
+              () => this.decideMiss(String(i.requirementId), String(i.defectId), String(i.checkpointId), { verdict: i.verdict as never, conditions: i.conditions as never, note: i.note as string | undefined, baseRevision: i.baseRevision as number | undefined, reason: reason! }),
+              '逐检查点改判已执行',
+            ),
+          'eval.sample': (i, reason) => viaRun(() => this.createEvalSample({ ...(i as Omit<EvalSampleRequest, 'reason'>), reason: reason! }), '生成评测样本已执行'),
+          'eval.retire': (i, reason) => viaRun(() => this.retireEvalSample(String(i.caseId), reason!), '退役评测样本已执行'),
+          'quality.sync': (i, reason) => viaRun(() => this.syncQuality({ runId: i.runId as string | undefined, reason: reason! }), '补算质量日志已执行'),
+          'quality.verify': () => viaRun(() => this.qualityStatus(), '验证质量日志已执行'),
+          'quality.repair': (_, reason) => viaRun(() => this.repairQuality(reason!), '修复质量锚点已执行'),
         }),
       )
     },

@@ -488,3 +488,30 @@ body.resizing * {
 .run-suggest {
   margin-top: var(--sp-3);
 }
+
+/* 画布 / 时间两个视图：同一位置切换，交叉淡入（docs/design/26 §2） */
+.run-view {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .run-view {
+    animation: run-view-in 220ms var(--ease-out-soft) both;
+  }
+}
+@keyframes run-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+/* 抽屉打开时画布变窄：图例让位给右上角的工具条 */
+.run-body:has(.drawer) .dag-legend {
+  opacity: 0;
+  pointer-events: none;
+}
+.dag-legend {
+  transition: opacity var(--dur-fast) var(--ease);
+}

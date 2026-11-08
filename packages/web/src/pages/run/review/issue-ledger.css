@@ -1,0 +1,218 @@
+/* 问题台账（docs/design/21 §3）：claimed 用虚线圈，verified 用实线勾 */
+.iss-key {
+  appearance: none;
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  font-size: 10.5px;
+  font-weight: 650;
+  line-height: 17px;
+  color: var(--text);
+}
+button.iss-key {
+  cursor: pointer;
+}
+button.iss-key:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.iss-ic {
+  width: 12px;
+  height: 12px;
+}
+.iss-st.iss-claimed_fixed .iss-ic.dashed {
+  stroke-dasharray: 3 2.4;
+}
+.iss-nc {
+  font-weight: 500;
+  opacity: 0.85;
+}
+.iss-ledger {
+  display: grid;
+  gap: 8px;
+}
+.iss-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--text-2);
+}
+.iss-sum-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.iss-sum-item.iss-open .iss-ic {
+  color: var(--st-failed);
+}
+.iss-sum-item.iss-claimed_fixed .iss-ic {
+  color: var(--st-waiting);
+  stroke-dasharray: 3 2.4;
+}
+.iss-sum-item.iss-verified_fixed .iss-ic {
+  color: var(--st-success);
+}
+.iss-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.iss-row + .iss-row {
+  border-top: 1px solid var(--border);
+}
+.iss-row-head {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 10px 6px 6px;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.iss-row-head:hover {
+  background: var(--surface-hover);
+}
+.iss-caret {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+  transition: rotate var(--dur-fast) var(--ease);
+}
+.iss-row.open .iss-caret {
+  rotate: 90deg;
+}
+.iss-title {
+  min-width: 0;
+}
+.iss-hist {
+  position: relative;
+  margin: 0;
+  padding: 2px 12px 10px 34px;
+  list-style: none;
+  font-size: 11.5px;
+}
+.iss-hist::before {
+  content: '';
+  position: absolute;
+  left: 22px;
+  top: 6px;
+  bottom: 16px;
+  width: 1px;
+  background: var(--border-strong);
+}
+.iss-step {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 0;
+}
+.iss-step-dot {
+  position: absolute;
+  left: -15px;
+  top: 8px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--text-3);
+}
+.iss-step.a-raised .iss-step-dot,
+.iss-step.a-still_open .iss-step-dot,
+.iss-step.a-reobserved .iss-step-dot {
+  box-shadow: inset 0 0 0 1.5px var(--st-failed);
+}
+.iss-step.a-claimed_fixed .iss-step-dot {
+  box-shadow: none;
+  outline: 1.5px dashed var(--st-waiting);
+  outline-offset: -1.5px;
+}
+.iss-step.a-verified_fixed .iss-step-dot {
+  background: var(--st-success);
+  box-shadow: none;
+}
+.iss-step.a-not_checked b {
+  color: var(--st-waiting);
+}
+.iss-step-where {
+  flex: none;
+  width: 34px;
+  color: var(--text-3);
+}
+.iss-step-note {
+  min-width: 0;
+  color: var(--text-2);
+}
+.iss-step-at {
+  margin-left: auto;
+  flex: none;
+}
+.iss-duty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: var(--text-3);
+}
+.iss-duty svg {
+  width: 12px;
+  height: 12px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .iss-step {
+    animation: iss-step-in 200ms var(--ease-out-soft) both;
+    animation-delay: calc(var(--k, 0) * 45ms);
+  }
+}
+@keyframes iss-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+}
+
+/* 逐键复查（评审问题清单下方） */
+.rv-prev {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.rv-prev-title {
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  font-weight: 620;
+  color: var(--text-2);
+}
+.rv-prev ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rv-prev-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+}
+.rv-prev-st {
+  font-weight: 600;
+}
+.rv-prev-row.p-resolved .rv-prev-st {
+  color: var(--st-success);
+}
+.rv-prev-row.p-still_open .rv-prev-st {
+  color: var(--st-failed);
+}
+.rv-prev-row.p-not_checked .rv-prev-st {
+  color: var(--st-waiting);
+}

@@ -4,7 +4,8 @@ import { EmptyState, SkeletonRows, StatusBadge, useFlashRows, useStagger } from 
 import { actorName, durationBetween, fmtDuration, fmtRelative } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { Ban, Check, LoaderCircle, X } from 'lucide-react'
-import { RUN_STATE, targetLabel, variantPair, VERDICT_META } from './labels'
+import { RUN_STATE, shortId, targetLabel, variantPair, VERDICT_META } from './labels'
+import { ReportBadge } from './report'
 
 /** 候选变体的名称：有 comparison 时就是它的 candidate，否则是基线之外的全部。 */
 const candidates = (r: EvalRun): string[] => {
@@ -64,29 +65,35 @@ export function RunsList({ runs, onNew }: { runs?: EvalRun[]; onNew: () => void 
             return (
               <tr key={r.id} className={`${stg(i).className ?? ''} ${flash(r.id)}`} style={stg(i).style}>
                 <td>
-                  <Link to={`/eval?tab=runs&run=${r.id}`} className="mono ev-run-id">
-                    {r.id}
+                  <Link to={`/eval?tab=runs&run=${r.id}`} className="mono ev-run-id" title={r.id}>
+                    {shortId(r.id)}
                   </Link>
                 </td>
                 <td className="mono truncate">{targetLabel(r.target)}</td>
                 <td className="truncate ev-variant-cell" title={candidates(r).join('\n')}>
                   {candidates(r).join('、') || <span className="faint">—</span>}
                 </td>
-                <td className="r num">{r.caseIds.length}</td>
+                <td className="r num" title={r.repeats ? `${r.caseIds.length} 个样本，每个重复 ${r.repeats} 次` : undefined}>
+                  {r.caseIds.length}
+                  {r.repeats ? <span className="faint"> × {r.repeats}</span> : null}
+                </td>
                 <td>
                   <StatusBadge meta={{ label: st.label, tone: st.tone, icon: STATE_ICON[r.status], spin: r.status === 'running' }} subtle />
                 </td>
                 <td>
-                  <VerdictBadge v={c} />
+                  <span className="ev-verdict-cell">
+                    <VerdictBadge v={c} />
+                    <ReportBadge run={r} />
+                  </span>
                 </td>
                 <td className="r num">{c ? `${c.wins} / ${c.losses} / ${c.ties}` : '—'}</td>
                 <td>{c ? c.regressionsFailed.length > 0 ? <span className="sc-bad">挂了 {c.regressionsFailed.length} 条</span> : <span className="faint">全过</span> : <span className="faint">—</span>}</td>
-                <td className="faint">
+                <td className="faint ev-started">
                   {fmtRelative(r.startedAt)} · {actorName(r.by)}
                   {ms !== undefined && <> · {fmtDuration(ms)}</>}
                 </td>
                 <td>
-                  <Link to={`/eval?tab=runs&run=${r.id}`} className="btn btn-ghost btn-icon btn-sm" aria-label={`打开 ${r.id}`}>
+                  <Link to={`/eval?tab=runs&run=${r.id}`} className="btn btn-ghost btn-icon btn-sm" aria-label={`打开 ${shortId(r.id)}`}>
                     <ChevronRight />
                   </Link>
                 </td>

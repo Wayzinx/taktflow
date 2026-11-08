@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, Bug, FlaskConical, PencilLine, Plus, ScanSearch } from 'lucide-react'
-import type { DefectDetail, RequirementDetail } from '@taktflow/core'
+import type { DefectDetail, DefectMergeSuggestion, Observation, RequirementDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
-import { EmptyState, ErrorState, SkeletonRows, toast } from '../../components/ui'
+import { EmptyState, ErrorState, Segmented, SkeletonRows, toast } from '../../components/ui'
 import { TaktLoader } from '../../components/takt'
 import { actorName, fmtDate, fmtRelative } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
-import { DEFECT_STATUS, ORIGIN, pct, SEVERITY, targetKey } from '../eval/labels'
+import { DEFECT_STATUS, OBS_KIND, OBS_SOURCE, ORIGIN, pct, SEVERITY, targetKey } from '../eval/labels'
 import { nodeIndex, Precheck, StageMarks, Suggestions, TraceChain } from './defects-tab.attribution'
 import { ConfirmDialog } from './defects-tab.confirm'
+import { MissCard, parseCheckpoint } from './defects-tab.checkpoints'
 import { DefectForm } from './defects-tab.form'
+import { MergeCard } from './defects-tab.merge'
+import { ObservationList } from './defects-tab.observations'
+import { StateButton, StateDialog, StateTags } from './defects-tab.state'
 import '../eval/eval-runs.css'
 import './defects-tab.css'
 
@@ -39,7 +43,34 @@ function RegressionCases({ d, runIds }: { d: DefectDetail; runIds: string[] }) {
   )
 }
 
-function Detail({ d, detail }: { d: DefectDetail; detail?: RequirementDetail }) {
+/** 缺陷由哪些观察创建：来源、类型、所属检查点。 */
+function SourceObservations({ list }: { list: Observation[] }) {
+  return (
+    <ul className="df-src-obs">
+      {list.map((o) => {
+        const cpt = o.checkpointId ? parseCheckpoint(o.checkpointId) : undefined
+        return (
+          <li key={o.id}>
+            <span className="df-obs-src">{OBS_SOURCE[o.source]}</span>
+            <span className={`df-tag df-tone-${OBS_KIND[o.kind].tone}`}>{OBS_KIND[o.kind].label}</span>
+            <span className="truncate">{o.title}</span>
+            <span style={{ flex: 1 }} />
+            {cpt && o.runId ? (
+              <Link to={`/run/${o.runId}?node=${encodeURIComponent(cpt.nodeId)}&dtab=checkpoints`} className="mono faint df-obs-cp" title={o.checkpointId}>
+                {cpt.nodeId} · {cpt.subject}
+              </Link>
+            ) : (
+              <span className="faint">{fmtRelative(o.at)}</span>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function Detail({ d, detail, defects, merges }: { d: DefectDetail; detail?: RequirementDetail; defects: DefectDetail[]; merges: DefectMergeSuggestion[] }) {
+  const [stateOpen, setStateOpen] = useState(false)
   const ds = useSource()
   const a = d.attribution
   const runId = a?.introducedAt.runId ?? a?.missedBy[0]?.runId ?? detail?.latestRunId
@@ -73,8 +104,12 @@ function Detail({ d, detail }: { d: DefectDetail; detail?: RequirementDetail }) 
         <div className="df-head-top">
           <span className="mono df-id">{d.id}</span>
           <Tag meta={SEVERITY[d.severity]} />
-          <Tag meta={d.attributing ? { label: '归因中', tone: 'running' } : DEFECT_STATUS[d.status]} />
+          <StateTags d={d} />
+          <StateButton onClick={() => setStateOpen(true)} />
           <span style={{ flex: 1 }} />
+          <span className="faint df-attr-st" title="归因流程状态">
+            归因：{d.attributing ? '进行中' : DEFECT_STATUS[d.status].label}
+          </span>
           {d.links?.map((l) => (
             <a key={l.url} className="chip" href={l.url} target="_blank" rel="noreferrer">
               <ArrowUpRight />
@@ -93,7 +128,9 @@ function Detail({ d, detail }: { d: DefectDetail; detail?: RequirementDetail }) 
             </span>
           ))}
         </div>
+        {d.observationsDetail?.length ? <SourceObservations list={d.observationsDetail} /> : null}
       </div>
+      <MergeCard d={d} suggestions={merges} defects={defects} />
 
       {d.attributing ? (
         <div className="df-attributing">
@@ -124,6 +161,7 @@ function Detail({ d, detail }: { d: DefectDetail; detail?: RequirementDetail }) 
             {detail?.stages.length ? <StageMarks a={a} stages={detail.stages} idx={idx} /> : null}
             <TraceChain a={a} idx={idx} runId={runId} />
           </section>
+          <MissCard d={d} idx={idx} />
           <div className="df-cols">
             <section className="df-sec">
               <h3 className="df-h3">
@@ -165,6 +203,7 @@ function Detail({ d, detail }: { d: DefectDetail; detail?: RequirementDetail }) 
         </div>
       )}
       <ConfirmDialog mode={mode} defect={d} nodes={run.data?.graph.nodes ?? []} onClose={() => setMode(undefined)} />
+      <StateDialog open={stateOpen} onClose={() => setStateOpen(false)} d={d} others={defects.filter((x) => x.id !== d.id)} />
     </div>
   )
 }
@@ -173,7 +212,10 @@ function Detail({ d, detail }: { d: DefectDetail; detail?: RequirementDetail }) 
 export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDetail }) {
   const { query } = useLocation()
   const q = useAsync((ds) => ds.defects(id), [id])
+  const ms = useAsync((ds) => ds.mergeSuggestions(id), [id])
   const [formOpen, setFormOpen] = useState(false)
+  const [from, setFrom] = useState<Observation[]>()
+  const view = query.get('dview') === 'obs' ? 'obs' : 'defects'
   const list = q.data
   const attributing = list?.some((d) => d.attributing)
   useEffect(() => {
@@ -185,7 +227,35 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
   const selectedId = query.get('defect') ?? list?.[0]?.id
   const selected = list?.find((d) => d.id === selectedId)
   if (q.error && !list) return <ErrorState error={q.error} onRetry={q.reload} />
-  const form = <DefectForm open={formOpen} requirementId={id} onClose={() => setFormOpen(false)} onCreated={(d) => (setFormOpen(false), setQuery({ defect: d.id }))} />
+  const form = (
+    <DefectForm
+      open={formOpen}
+      requirementId={id}
+      from={from}
+      onClose={() => (setFormOpen(false), setFrom(undefined))}
+      onCreated={(d) => (setFormOpen(false), setFrom(undefined), setQuery({ defect: d.id, dview: undefined }))}
+    />
+  )
+  const viewSwitch = (
+    <Segmented<'defects' | 'obs'>
+      size="sm"
+      value={view}
+      onChange={(v) => setQuery({ dview: v === 'obs' ? 'obs' : undefined })}
+      ariaLabel="缺陷或观察"
+      options={[
+        { value: 'defects', label: '缺陷', count: list?.length },
+        { value: 'obs', label: '观察' },
+      ]}
+    />
+  )
+  if (view === 'obs')
+    return (
+      <div className="df-wrap">
+        <div className="df-switch">{viewSwitch}</div>
+        <ObservationList requirementId={id} onCreate={(picked) => (setFrom(picked), setFormOpen(true))} />
+        {form}
+      </div>
+    )
   if (list && list.length === 0)
     return (
       <div className="card">
@@ -200,10 +270,17 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
             </button>
           }
         />
+        <div className="df-empty-obs">
+          <button type="button" className="btn btn-sm btn-ghost" onClick={() => setQuery({ dview: 'obs' })}>
+            看观察，从观察创建缺陷
+          </button>
+        </div>
         {form}
       </div>
     )
   return (
+    <div className="df-wrap">
+    <div className="df-switch">{viewSwitch}</div>
     <div className="df-layout">
       <div className="card df-list">
         <div className="card-head">
@@ -226,7 +303,7 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
                     <span className="mono">{d.id}</span>
                     <Tag meta={SEVERITY[d.severity]} />
                     <span style={{ flex: 1 }} />
-                    <Tag meta={d.attributing ? { label: '归因中', tone: 'running' } : DEFECT_STATUS[d.status]} />
+                    <StateTags d={d} link={false} />
                   </span>
                   <span className="df-item-title">{d.title}</span>
                   <span className="faint df-item-at">{fmtRelative(d.foundAt)}</span>
@@ -236,8 +313,9 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
           </ul>
         )}
       </div>
-      {selected ? <Detail key={selected.id} d={selected} detail={detail} /> : <div className="card">{!list && <SkeletonRows rows={6} />}</div>}
+      {selected ? <Detail key={selected.id} d={selected} detail={detail} defects={list ?? []} merges={ms.data ?? []} /> : <div className="card">{!list && <SkeletonRows rows={6} />}</div>}
       {form}
+    </div>
     </div>
   )
 }

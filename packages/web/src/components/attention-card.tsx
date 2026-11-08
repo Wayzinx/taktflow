@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ArrowUpRight, Check, CornerDownLeft, FileClock, Gauge, GitBranch, History, Lightbulb, MessageSquareText, RefreshCcwDot, ShieldAlert, UserRound, UserRoundCheck, Workflow, X } from 'lucide-react'
+import { ArrowUpRight, Check, CornerDownLeft, FileClock, Gauge, GitBranch, History, Lightbulb, MessageSquareText, PencilLine, RefreshCcwDot, ShieldAlert, TriangleAlert, Undo2, UserRound, UserRoundCheck, Workflow, X } from 'lucide-react'
 import type { AttentionItem } from '@taktflow/core'
-import { invalidate, useSource } from '../api'
+import { invalidate, useAsync, useSource } from '../api'
 import { actorName, fmtRelative } from '../lib/format'
-import { Link } from '../lib/router'
+import { Link, navigate } from '../lib/router'
+import { TimeboxBar } from './timebox'
 import { toast } from './ui'
 import './attention-card.css'
 
@@ -73,10 +74,85 @@ function AttentionContext({ item, answered }: { item: AttentionItem; answered: b
 }
 
 function answerLabel(item: AttentionItem): string {
+  if (item.kind === 'assumption') return item.answer === item.assumption ? '已确认假设' : '已改答'
+  if (item.handedBack) return '已按假设交还'
   if (item.decision === 'approve') return '已通过'
   if (item.decision === 'reject') return '已打回'
   if (item.decision === 'choice') return '已裁决'
   return item.decision ?? '已回答'
+}
+
+/**
+ * 待确认假设（docs/design/26 §3）：没等到回答，系统按提问方给的假设作答并继续了。
+ * 人确认（回答 = 假设原文）或改答；改答会让这个节点与依赖它的节点过期，需要恢复运行后重跑。
+ */
+function AssumptionBody({ item, busy, compact, onSubmit }: { item: AttentionItem; busy: boolean; compact?: boolean; onSubmit: (body: { answer: string }, label: string) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [text, setText] = useState(item.assumption ?? '')
+  const changed = text.trim() && text.trim() !== item.assumption
+  if (!editing)
+    return (
+      <div className="att-actions">
+        <button className="btn btn-sm btn-primary" disabled={busy || !item.assumption} onClick={() => onSubmit({ answer: item.assumption! }, '已确认假设')}>
+          <Check />
+          确认假设
+        </button>
+        <button className="btn btn-sm" disabled={busy} onClick={() => setEditing(true)}>
+          <PencilLine />
+          改答
+        </button>
+      </div>
+    )
+  return (
+    <div className="att-body">
+      <textarea className="textarea" rows={compact ? 2 : 3} value={text} onChange={(e) => setText(e.target.value)} autoFocus aria-label="改答内容" />
+      <p className="att-warn">
+        <TriangleAlert />
+        <span>
+          改答后 <span className="mono">{item.nodeId}</span> 与依赖它的节点会标为过期，需要在运行页恢复运行后重跑。
+        </span>
+      </p>
+      <div className="att-actions end">
+        <button className="btn btn-sm" onClick={() => (setEditing(false), setText(item.assumption ?? ''))}>
+          取消
+        </button>
+        <button className="btn btn-sm btn-primary" disabled={busy || !changed} onClick={() => onSubmit({ answer: text.trim() }, '已改答')}>
+          <CornerDownLeft />
+          提交改答
+        </button>
+      </div>
+    </div>
+  )
+}
+
+/** 原问题与交还时间：从被按假设作答的原待办取。 */
+function AssumptionOrigin({ item }: { item: AttentionItem }) {
+  const q = useAsync((s) => (item.assumedFor ? s.attention().then((l) => l.find((a) => a.requestId === item.assumedFor)) : Promise.resolve(undefined)), [item.assumedFor ?? ''])
+  const origin = q.data
+  return (
+    <>
+      {origin && (
+        <p className="att-ask">
+          <span className="att-label">原问题</span>
+          {origin.ask}
+        </p>
+      )}
+      <p className="att-assume">
+        <Lightbulb />
+        <span>
+          <b>{item.answeredAt ? '当时按的假设：' : '系统按这个假设推进了：'}</b>
+          {item.assumption}
+        </span>
+      </p>
+      {origin?.answeredAt && (
+        <p className="att-handback faint">
+          <Undo2 />
+          {fmtRelative(origin.answeredAt)}没等到回答，按假设交还给 Agent
+          {origin.remindedAt?.length ? `（之前提醒过 ${origin.remindedAt.length} 次）` : ''}
+        </p>
+      )}
+    </>
+  )
 }
 
 /** 一条待办：审批 / 回答 / 选择，可以直接在卡片里处理。 */
@@ -94,7 +170,12 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
     setBusy(true)
     try {
       await ds.answer(item.requestId, body)
-      toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : '已提交，运行将自动继续。', tone: 'success' })
+      if (label === '已改答')
+        toast(`${label}：${item.requirementId} · ${item.nodeId}`, {
+          body: '这个节点与依赖它的节点已标为过期，恢复运行后会按新的回答重跑。',
+          action: { label: '去运行页', onClick: () => navigate(`/run/${item.runId}?node=${encodeURIComponent(item.nodeId)}`) },
+        })
+      else toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : label === '已确认假设' ? '假设已确认，运行照常继续。' : '已提交，运行将自动继续。', tone: 'success' })
       invalidate()
     } catch (e) {
       toast('提交失败', { body: (e as Error).message, tone: 'failed' })
@@ -125,7 +206,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
           {fmtRelative(item.createdAt)}
         </span>
       </div>
-      <p className="att-ask">{item.ask}</p>
+      {item.kind === 'assumption' ? <AssumptionOrigin item={item} /> : <p className="att-ask">{item.ask}</p>}
       <div className="att-node">
         <Link to={`/run/${item.runId}?node=${encodeURIComponent(item.nodeId)}`} className="att-node-link">
           <span className="mono">{item.nodeId}</span>
@@ -134,10 +215,11 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
         <span className="faint mono">{item.runId}</span>
       </div>
       <AttentionContext item={item} answered={answered} />
+      {!answered && item.timebox && item.kind !== 'assumption' && <TimeboxBar createdAt={item.createdAt} timebox={item.timebox} assumption={item.assumption} form={item.form} remindedAt={item.remindedAt} compact={compact} />}
 
       {answered ? (
-        <div className="att-result">
-          <Check />
+        <div className={`att-result${item.handedBack ? ' is-back' : ''}`}>
+          {item.handedBack ? <Undo2 /> : <Check />}
           <span>
             {answerLabel(item)}
             {item.answer && <span className="faint"> · {item.answer}</span>}
@@ -147,6 +229,8 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
             {fmtRelative(item.answeredAt)}
           </span>
         </div>
+      ) : item.kind === 'assumption' ? (
+        <AssumptionBody item={item} busy={busy} compact={compact} onSubmit={submit} />
       ) : item.form === 'approve' ? (
         <div className="att-actions">
           {!compact && <input className="input" placeholder="意见（可选，进审计）" value={text} onChange={(e) => setText(e.target.value)} />}

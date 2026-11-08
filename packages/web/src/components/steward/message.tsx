@@ -1,8 +1,11 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Copy, CornerDownRight, Forward, ThumbsDown, ThumbsUp } from 'lucide-react'
-import type { Proposal, StewardMessage } from '@taktflow/core'
+import type { Proposal, StewardDelegation, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
 import { AgentMark } from '../agent-mark'
+import { normReceipt, ReceiptRail, ResendButton } from '../receipt'
+import { Link } from '../../lib/router'
+import { spacePath } from '../../lib/space'
 import { Menu, toast } from '../ui'
 import { hm } from './fmt'
 import { StewardBlocks } from './blocks'
@@ -97,6 +100,46 @@ export interface MessageViewProps {
   onSuggest: (text: string) => void
 }
 
+/**
+ * 管家转达 Lead 的回执（docs/design/26 §4）：已发出 → 已接手 → 已回复；
+ * 不确定时写明"可能已送达，重发前先看群聊"，由人决定重发。
+ */
+function Delegation({ d: initial }: { d: StewardDelegation }) {
+  const ds = useSource()
+  const [d, setD] = useState(initial)
+  useEffect(() => setD(initial), [initial])
+  const status = normReceipt(d.status)
+  const room = spacePath(d.spaceId, `/req/${encodeURIComponent(d.requirementId)}?tab=chat`)
+  return (
+    <div className={`stw-delegation st-${status}`}>
+      <Forward aria-hidden />
+      <div className="stw-delegation-main">
+        <div className="stw-delegation-head">
+          <span>
+            已转达 <Link to={room} className="mono">{d.requirementId}</Link> 的 Lead
+          </span>
+          <ReceiptRail status={d.status} kind="relay" compact />
+        </div>
+        {status === 'replied' && d.reply && <p className="stw-delegation-reply">{d.reply}</p>}
+        {(status === 'uncertain' || status === 'expired') && (
+          <div className="stw-delegation-act">
+            <span className="faint">{status === 'uncertain' ? '可能已送达，重发前请先看群聊。' : '30 分钟没有人接手。'}</span>
+            <ResendButton
+              status={d.status}
+              what="这条转达"
+              roomHref={room}
+              onResend={async (reason) => {
+                setD(await ds.resendDelegation(d.messageId, reason))
+                toast('已重发转达', { body: `${d.requirementId} 的 Lead 回复后会出现在这里。` })
+              }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 /** 一条消息：用户气泡；管家回复依次是思考 → 工具卡 → 正文（[n] 引用）→ 提案卡 → 最多 3 条后续建议。 */
 export function MessageView({ m, proposals, animate, showSuggestions, onProposal, onPatch, onSuggest }: MessageViewProps) {
   if (m.role === 'user')
@@ -135,12 +178,7 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
           </p>
         )}
         {delegations.map((d) => (
-          <div key={d.messageId} className="stw-delegation">
-            <Forward aria-hidden />
-            <span>
-              已转达 {d.requirementId} 的 Lead · {d.status === 'answered' ? `回复：${d.reply}` : d.status === 'failed' ? '没送达' : '等回复'}
-            </span>
-          </div>
+          <Delegation key={d.messageId} d={d} />
         ))}
         {(m.proposalIds ?? []).map((id) => (proposals[id] ? <ProposalCard key={id} proposal={proposals[id]!} onChange={onProposal} animate={live || animate} /> : null))}
         {!live && m.status !== 'error' && (

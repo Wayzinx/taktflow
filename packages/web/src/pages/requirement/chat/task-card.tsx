@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import { ArrowUpRight, GitBranch, ListChecks } from 'lucide-react'
 import type { RoomMessage, Usage } from '@taktflow/core'
-import { useAsync } from '../../../api'
-import { KindIcon, SkeletonRows, StatusBadge } from '../../../components/ui'
+import { invalidate, useAsync, useSource } from '../../../api'
+import { HopChain, normReceipt, ReceiptRail, ResendButton } from '../../../components/receipt'
+import { KindIcon, SkeletonRows, StatusBadge, toast } from '../../../components/ui'
 import { TaktRuler } from '../../../components/takt'
 import { fmtCost, fmtTokens } from '../../../lib/format'
 import { Link } from '../../../lib/router'
@@ -19,9 +20,19 @@ function sumUsage(list: Array<Usage | undefined>): Usage | undefined {
  * 临时任务卡片：Lead 派发的任务就是一次普通运行，卡片显示每个子任务的状态和产物。
  * 群里提到这个任务（pulse 变化）时刷新；运行中再按两拍轮询一次，节点开始这类不发群消息的变化也能跟上。
  */
-export function TaskCard({ m, pulse, onRoles }: { m: RoomMessage; pulse: number; onRoles?(runId: string, roles: string[]): void }) {
+export function TaskCard({ m, pulse, onRoles, requirementId, resent, onJump }: { m: RoomMessage; pulse: number; onRoles?(runId: string, roles: string[]): void; requirementId?: string; resent?: string; onJump?(messageId: string): void }) {
+  const ds = useSource()
   const runId = m.refs?.taskRunId ?? m.refs?.runId
-  const run = useAsync((ds) => (runId ? ds.run(runId) : Promise.reject(new Error('任务没有关联运行'))), [runId])
+  // 拒绝 / 过期 / 不确定 / 还没开始的派发没有运行：只画回执
+  const run = useAsync((ds) => (runId ? ds.run(runId) : Promise.resolve(undefined)), [runId ?? ''])
+  const receipt = m.receipt
+  const status = receipt ? normReceipt(receipt.status) : undefined
+  const problem = status === 'refused' || status === 'expired' || status === 'uncertain'
+  const resend = async (reason: string) => {
+    const next = await ds.resendRoomTask(requirementId ?? '', m.id, reason)
+    invalidate()
+    toast('已重发', { body: `Lead 会重新处理「${m.text}」，回执看新的任务卡片。`, action: onJump ? { label: '看新卡片', onClick: () => onJump(next.id) } : undefined })
+  }
   const running = run.data?.run.status === 'running'
   const { reload } = run
   // 不放进 deps：换 key 会清空数据造成闪烁，reload 保留旧数据
@@ -53,8 +64,29 @@ export function TaskCard({ m, pulse, onRoles }: { m: RoomMessage; pulse: number;
         <h4 className="chat-task-title truncate">{m.text}</h4>
         {d && <StatusBadge meta={RUN_STATUS[d.run.status]} />}
       </header>
+      {receipt && (
+        <div className={`chat-task-receipt${problem ? ' is-problem' : ''}`}>
+          <ReceiptRail status={receipt.status} kind="task" />
+          {(receipt.hops || receipt.chain?.length) && (status === 'refused' || (receipt.hops ?? 0) > 0) ? <HopChain hops={receipt.hops} chain={receipt.chain} refused={status === 'refused'} /> : null}
+          {receipt.note && <p className="chat-task-note">{receipt.note}</p>}
+          {problem && status !== 'refused' && (
+            <div className="chat-task-resend">
+              {resent ? (
+                <button type="button" className="btn btn-xs btn-ghost" onClick={() => onJump?.(resent)}>
+                  已重发，看新卡片
+                </button>
+              ) : (
+                <>
+                  <span className="faint">{status === 'uncertain' ? '重发前先确认下面没有同名任务在跑。' : '30 分钟没有人接手。'}</span>
+                  <ResendButton status={receipt.status} what="这个任务" onResend={resend} />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {running && <TaktRuler ticks={24} running className="chat-task-ruler" />}
-      {!d && !run.error && (
+      {runId && !d && !run.error && (
         <div className="chat-task-empty">
           <SkeletonRows rows={2} />
         </div>

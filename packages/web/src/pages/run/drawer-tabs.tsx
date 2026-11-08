@@ -8,6 +8,8 @@ import { JsonView } from '../../lib/json-view'
 import { Markdown } from '../../lib/markdown'
 import { durationBetween, fmtCost, fmtDate, fmtDuration, fmtTime, fmtTokens } from '../../lib/format'
 import { Link } from '../../lib/router'
+import { TimeboxBar } from '../../components/timebox'
+import { ChangesCard } from './changes/changes-card'
 import { ARTIFACT_KIND, CONTEXT_SOURCE, NODE_KIND, NODE_STATUS, VERDICT } from '../../lib/status'
 
 const eventsOf = <T extends keyof EventPayloads>(d: NodeDetail, type: T) => d.events.filter((e) => e.type === type) as Array<EventEnvelope<T>>
@@ -30,6 +32,9 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
   const u = s.usage
   const human = eventsOf(d, 'human.requested').at(-1)?.data
   const answered = eventsOf(d, 'human.answered').at(-1)
+  const requestedAt = eventsOf(d, 'human.requested').at(-1)?.ts
+  const reminded = eventsOf(d, 'human.reminded').map((e) => e.ts)
+  const handedBack = eventsOf(d, 'human.handed_back').at(-1)
   const expanded = eventsOf(d, 'dag.expanded').at(-1)?.data
   const violations = eventsOf(d, 'guard.violation')
   return (
@@ -111,10 +116,15 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
         </div>
       )}
 
+      {d.changes && d.changes.files.length > 0 && <ChangesCard runId={runId} nodeId={d.state.id} nodeTitle={d.title} changes={d.changes} />}
+
       {human && (
         <div className="d-section">
           <div className="d-section-title">人工卡点</div>
           <p className="d-ask">{human.ask}</p>
+          {human.timebox && requestedAt && (!answered || handedBack) && (
+            <TimeboxBar createdAt={requestedAt} timebox={human.timebox} assumption={handedBack?.data.assumption ?? human.assumption} form={human.form} remindedAt={reminded} handedBack={Boolean(handedBack)} />
+          )}
           {answered ? (
             <div className="d-answer">
               <Check />
@@ -264,8 +274,15 @@ export function IoTab({ d, requirementId }: { d: NodeDetail; requirementId: stri
 // ================================================================ Trace
 
 type TraceFilter = 'all' | 'talk' | 'tool' | 'engine'
-export function TraceTab({ d }: { d: NodeDetail }) {
-  const [f, setF] = useState<TraceFilter>('all')
+export function TraceTab({ d, at }: { d: NodeDetail; at?: string }) {
+  const [f, setF] = useState<TraceFilter>(at ? 'tool' : 'all')
+  // 从时间视图点进来：定位到最接近那一刻的工具步骤
+  const focus = useMemo(() => {
+    if (!at) return undefined
+    const t = Date.parse(at)
+    const tools = d.events.filter((e) => e.type === 'harness.tool_call')
+    return tools.reduce<EventEnvelope | undefined>((best, e) => (!best || Math.abs(Date.parse(e.ts) - t) < Math.abs(Date.parse(best.ts) - t) ? e : best), undefined)?.seq
+  }, [at, d.events])
   const events = d.events.filter((e) =>
     f === 'all' ? true : f === 'talk' ? e.type === 'harness.message' : f === 'tool' ? e.type === 'harness.tool_call' : !e.type.startsWith('harness.'),
   )
@@ -283,7 +300,7 @@ export function TraceTab({ d }: { d: NodeDetail }) {
           ]}
         />
       </div>
-      {events.length ? <EventTimeline events={events} /> : <EmptyState compact icon={FileText} title="没有事件" />}
+      {events.length ? <EventTimeline events={events} focusSeq={focus} /> : <EmptyState compact icon={FileText} title="没有事件" />}
     </div>
   )
 }

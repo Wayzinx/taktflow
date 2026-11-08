@@ -7,6 +7,12 @@
 .ev-run-id {
   color: var(--text);
   font-weight: 500;
+  white-space: nowrap;
+}
+.ev-runs td.r,
+.ev-runs .sc-bad,
+.ev-started {
+  white-space: nowrap;
 }
 .ev-variant-cell {
   max-width: 280px;
@@ -129,6 +135,21 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
+}
+.ev-case-opt.is-off {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ev-case-opt.is-off:hover {
+  background: none;
+}
+.ev-cases-note {
+  font-size: var(--text-meta);
+}
+.ev-repeats .ev-pair {
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  font-size: var(--text-meta);
 }
 
 /* ---------------------------------------------------------------- 运行详情 */
@@ -434,4 +455,10 @@
 }
 .ev-failed-list li.ev-failed-log {
   grid-template-columns: 1fr;
+}
+.ev-verdict-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
 }

@@ -1,4 +1,4 @@
-import { BarChart3, FlaskConical, Plus, TrendingDown } from 'lucide-react'
+import { BarChart3, Crosshair, FlaskConical, Plus, TrendingDown } from 'lucide-react'
 import type { NodeScorecard } from '@taktflow/core'
 import { useAsync, type ScorecardBy } from '../../api'
 import { useCrumbs } from '../../components/layout'
@@ -7,8 +7,9 @@ import { setQuery, useLocation } from '../../lib/router'
 import { NewRunDialog } from './new-run-dialog'
 import { RunDetail } from './run-detail'
 import { RunsList } from './runs-list'
+import { Samples } from './samples'
 import { ScorecardDetail } from './scorecard-detail'
-import { findCard } from './labels'
+import { findCard, shortId } from './labels'
 import { ScorecardTable } from './scorecard-table'
 import './eval.css'
 import './eval-runs.css'
@@ -62,7 +63,7 @@ function Runs() {
   return (
     <>
       <div className="ev-toolbar">
-        <span className="faint ev-toolbar-hint">每条用例在沙箱里用冻结输入回放被测节点；判分模型必须不同于被测模型。</span>
+        <span className="faint ev-toolbar-hint">在隔离环境里回放只读检查点样本，每个样本重复多次，按预先规定的发布门槛给结论；判分模型必须不同于被测模型。</span>
       </div>
       <div className="card">{q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : <RunsList runs={q.data} onNew={() => setQuery({ new: '1' })} />}</div>
       {dialog}
@@ -73,10 +74,10 @@ function Runs() {
 /** /eval：空间级评测页（docs/design/20 §6）——成绩单与评测运行（含 A/B 对比）。 */
 export function EvalPage() {
   const { query } = useLocation()
-  const tab = query.get('tab') === 'runs' ? 'runs' : 'scorecards'
+  const tab = query.get('tab') === 'runs' || query.get('tab') === 'cases' ? query.get('tab')! : 'scorecards'
   const suggestions = useStewardSuggestions('eval')
   const regressed = useAsync((ds) => ds.scorecards('node').then((cs) => cs.filter((c) => c.regression?.suspected).length).catch(() => 0), [])
-  useCrumbs([{ label: '评测', to: tab === 'runs' && query.get('run') ? '/eval?tab=runs' : undefined }, ...(query.get('run') ? [{ label: <span className="mono">{query.get('run')}</span> }] : [])], [tab, query.get('run')])
+  useCrumbs([{ label: '评测', to: tab === 'runs' && query.get('run') ? '/eval?tab=runs' : undefined }, ...(query.get('run') ? [{ label: <span className="mono">{shortId(query.get('run')!)}</span> }] : [])], [tab, query.get('run')])
   return (
     <div className="page ev-page">
       <PageHeader
@@ -100,10 +101,11 @@ export function EvalPage() {
         tabs={[
           { id: 'scorecards', label: '成绩单', icon: BarChart3 },
           { id: 'runs', label: '评测运行', icon: FlaskConical },
+          { id: 'cases', label: '样本', icon: Crosshair },
         ]}
       />
       <TabPanel key={tab} className="ev-body">
-        {tab === 'runs' ? <Runs /> : <Scorecards />}
+        {tab === 'runs' ? <Runs /> : tab === 'cases' ? <Samples /> : <Scorecards />}
       </TabPanel>
     </div>
   )
