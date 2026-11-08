@@ -128,22 +128,20 @@ export async function runSpaceCommand(cli: ParsedCli): Promise<number> {
 export async function runSpaceServer(options: import('./serve.js').ServeOptions): Promise<void> {
   if (options.project) throw new Error('--project 与 --spaces 不能同时指定')
   const { createServer } = await import('@taktflow/server')
-  const { engineDependencies, webDir } = await import('../project.js')
-  const { createProjectLead, watchLeadEvents } = await import('../lead.js')
+  const { webDir } = await import('../project.js')
   const { createRuntimeCatalog } = await import('../catalog.js')
-  const { validateRuntime } = await import('../runtime-validation.js')
-  const { resumeAfterAnswer } = await import('./serve.js')
+  const { createLiveProject, resumeAfterAnswer } = await import('./serve.js')
   const { access } = await import('node:fs/promises')
   const listeners = new Map<string, Set<(presence: import('@taktflow/core').LeadPresence) => void>>()
-  const runtimes = new Map<string, Promise<{ context: Awaited<ReturnType<typeof loadRuntime>>; lead: Awaited<ReturnType<typeof createProjectLead>>; stop: () => Promise<void> }>>()
+  const catalog = createRuntimeCatalog()
+  const runtimes = new Map<string, ReturnType<typeof createLiveProject>>()
   const ensure = (dir: string) => {
     let pending = runtimes.get(dir)
     if (!pending) {
       pending = (async () => {
-        const context = await loadRuntime(dir, { warn: console.warn })
-        validateRuntime(context, console.warn)
-        const lead = await createProjectLead(context, (id, presence) => { for (const send of listeners.get(`${dir}:${id}`) ?? []) send(presence) })
-        const entry = { context, lead, stop: await watchLeadEvents(context, lead) }
+        const entry = await createLiveProject(await loadRuntime(dir, { warn: console.warn }), (id, presence) => {
+          for (const send of listeners.get(`${dir}:${id}`) ?? []) send(presence)
+        }, catalog.invalidate)
         ready.set(dir, entry)
         return entry
       })()
@@ -159,9 +157,11 @@ export async function runSpaceServer(options: import('./serve.js').ServeOptions)
     for (const stores of await discoverSpaces(options.spaces!)) await ensure(stores.projectDir)
     server = await createServer({ spacesDir: options.spaces, port: options.port, host: options.host,
       webDir: await access(webDir).then(() => webDir, () => undefined),
-      ...createRuntimeCatalog(),
-      getCommands: async (stores) => { const entry = await ensure(stores.projectDir); entry.context.stores.config = stores.config; return entry.lead.commands },
-      resolveRuntime: async (stores) => { const entry = await ensure(stores.projectDir); return engineDependencies({ ...entry.context, stores }) },
+      ...catalog,
+      prepareRuntime: async (stores, config) => (await ensure(stores.projectDir)).prepareRuntime(config),
+      getCommands: async (stores) => (await ensure(stores.projectDir)).getCommands(stores),
+      resolveRuntime: async (stores) => (await ensure(stores.projectDir)).resolveRuntime(stores),
+      resendTask: async (dir, id, message, reason) => (await ensure(dir)).lead.resendTask(id, message, reason),
       onSpaceLeadMention: options.onSpaceLeadMention ?? (async (dir, id, message) => {
         if (options.onLeadMention) await options.onLeadMention(id, message)
         else await (await ensure(dir)).lead.onMessage(id, message)

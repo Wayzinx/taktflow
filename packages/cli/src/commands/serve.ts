@@ -1,6 +1,6 @@
 import { access } from 'node:fs/promises'
 import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
-import { RuntimeConfigError, validateHarnessSelector, type AttentionItem, type TaktConfig } from '@taktflow/core'
+import { RuntimeConfigError, validateHarnessSelector, type AttentionItem, type ProjectStores, type TaktConfig } from '@taktflow/core'
 import { createHarnesses } from '@taktflow/harness'
 import { createPrinter } from '../output.js'
 import { engineDependencies, loadRuntime, webDir, type ProjectContext } from '../project.js'
@@ -79,24 +79,64 @@ export function liveRuntime(initial: ProjectContext) {
   return { context, syncNonRuntime, prepare }
 }
 
+export async function createLiveProject(initial: ProjectContext,
+  onPresence: Parameters<typeof createProjectLead>[1], invalidate: (projectDir: string) => void) {
+  const runtime = liveRuntime(initial)
+  const { context } = runtime
+  validateRuntime(context, console.warn)
+  let lead = await createProjectLead(context, onPresence)
+  // 只保留一个事件观察者；旧 Lead 的在途工作继续完成，新消息交给更新后的 Lead。
+  const stop = await watchLeadEvents(context, { ...lead,
+    onRunEvent: (runId, event) => lead.onRunEvent(runId, event),
+    drain: () => lead.drain(),
+  })
+  const retired = new Set<Promise<void>>()
+  return {
+    context,
+    get lead() { return lead },
+    resolveRuntime(stores: ProjectStores) {
+      runtime.syncNonRuntime(stores.config)
+      return engineDependencies(context)
+    },
+    getCommands(stores: ProjectStores) {
+      runtime.syncNonRuntime(stores.config)
+      return lead.commands
+    },
+    async prepareRuntime(config: TaktConfig) {
+      try {
+        const prepared = runtime.prepare(config)
+        const nextLead = await createProjectLead(prepared.context, onPresence)
+        return () => {
+          const old = lead
+          prepared.activate()
+          lead = nextLead
+          invalidate(context.stores.projectDir)
+          const draining = old.drain().catch(error => { console.warn(redactConfigError(config, error)) }).finally(() => { retired.delete(draining) })
+          retired.add(draining)
+        }
+      } catch (error) { throw new RuntimeConfigError(400, `${redactConfigError(config, error)}；请修正运行时配置后重试`) }
+    },
+    async stop() {
+      try { await stop() }
+      finally { await Promise.all(retired) }
+    },
+  }
+}
+
 export async function runServe(options: ServeOptions): Promise<void> {
   if (options.project && options.spaces) throw new Error('--project 与 --spaces 不能同时指定')
   const loaded = options.spaces
     ? await Promise.all((await discoverSpaces(options.spaces)).map((stores) => loadRuntime(stores.projectDir, { warn: console.warn })))
     : [await loadRuntime(options.project, { warn: console.warn })]
-  for (const context of loaded) validateRuntime({ ...context, profiles: Object.fromEntries(Object.entries(context.profiles)
-    .map(([role, profile]) => [role, { ...profile, harness: context.stores.config.roles?.[role] ?? profile.harness }])) }, console.warn)
-  const runtimes = new Map(loaded.map(context => [context.stores.projectDir, liveRuntime(context)]))
-  const contexts = [...runtimes.values()].map(runtime => runtime.context)
   const listeners = new Map<string, Set<(presence: import('@taktflow/core').LeadPresence) => void>>()
-  const leads = new Map(await Promise.all(contexts.map(async (context) => [context.stores.projectDir, await createProjectLead(context, (id, presence) => { for (const send of listeners.get(`${context.stores.projectDir}:${id}`) ?? []) send(presence) })] as const)))
-  // 只保留一个事件观察者；旧 Lead 的在途工作继续完成，新消息交给更新后的 Lead。
-  const stops = await Promise.all(contexts.map((context) => watchLeadEvents(context, { ...leads.get(context.stores.projectDir)!,
-    onRunEvent: (runId, event) => leads.get(context.stores.projectDir)!.onRunEvent(runId, event),
-    drain: () => leads.get(context.stores.projectDir)!.drain(),
-  })))
-  const retired = new Set<Promise<void>>()
   const catalog = createRuntimeCatalog()
+  const runtimes = new Map(await Promise.all(loaded.map(async (context) => [context.stores.projectDir,
+    await createLiveProject(context, (id, presence) => {
+      for (const send of listeners.get(`${context.stores.projectDir}:${id}`) ?? []) send(presence)
+    }, catalog.invalidate),
+  ] as const)))
+  const contexts = [...runtimes.values()].map(runtime => runtime.context)
+  const stops = [...runtimes.values()].map(runtime => runtime.stop)
   const context = contexts[0]!
   const printer = createPrinter(options.json)
   const dir = await webDirectory()
@@ -107,43 +147,23 @@ export async function runServe(options: ServeOptions): Promise<void> {
     onLeadMention: options.onLeadMention,
     onSpaceLeadMention: options.onSpaceLeadMention ?? (options.onLeadMention
       ? (_, id, message) => options.onLeadMention!(id, message)
-      : async (dir, id, message) => { await leads.get(dir)!.onMessage(id, message) }),
+      : async (dir, id, message) => { await runtimes.get(dir)!.lead.onMessage(id, message) }),
     ...(options.spaces ? { spacesDir: options.spaces } : { projectDir: context.stores.projectDir }),
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.host === undefined ? {} : { host: options.host }),
     ...(dir === undefined ? {} : { webDir: dir }),
     onSpaceAnswer: async (dir, item) => {
-      if (!await leads.get(dir)!.onAttention(item)) await resumeAfterAnswer(contexts.find((entry) => entry.stores.projectDir === dir)!, item)
+      if (!await runtimes.get(dir)!.lead.onAttention(item)) await resumeAfterAnswer(runtimes.get(dir)!.context, item)
     },
     prepareRuntime: async (stores, config) => {
-      try {
-        const runtime = runtimes.get(stores.projectDir)
-        if (!runtime) throw new Error('空间运行时未加载；请重新启动 serve 后重试')
-        const prepared = runtime.prepare(config)
-        const lead = await createProjectLead(prepared.context, (id, presence) => {
-          for (const send of listeners.get(`${stores.projectDir}:${id}`) ?? []) send(presence)
-        })
-        return () => {
-          const old = leads.get(stores.projectDir)!
-          prepared.activate()
-          leads.set(stores.projectDir, lead)
-          catalog.invalidate(stores.projectDir)
-          const draining = old.drain().catch(error => { console.warn(redactConfigError(config, error)) }).finally(() => { retired.delete(draining) })
-          retired.add(draining)
-        }
-      } catch (error) { throw new RuntimeConfigError(400, `${redactConfigError(config, error)}；请修正运行时配置后重试`) }
-    },
-    resolveRuntime: (stores) => {
       const runtime = runtimes.get(stores.projectDir)!
-      runtime.syncNonRuntime(stores.config)
-      return engineDependencies(runtime.context)
+      if (!runtime) throw new RuntimeConfigError(400, '空间运行时未加载；请重新启动 serve 后重试')
+      return runtime.prepareRuntime(config)
     },
-    getCommands: (stores) => {
-      runtimes.get(stores.projectDir)!.syncNonRuntime(stores.config)
-      return leads.get(stores.projectDir)!.commands
-    },
-    getLeadPresence: (dir, id) => leads.get(dir)!.getPresence(id),
-    resendTask: async (dir, id, message, reason) => leads.get(dir)?.resendTask(id, message, reason),
+    resolveRuntime: (stores) => runtimes.get(stores.projectDir)!.resolveRuntime(stores),
+    getCommands: (stores) => runtimes.get(stores.projectDir)!.getCommands(stores),
+    getLeadPresence: (dir, id) => runtimes.get(dir)!.lead.getPresence(id),
+    resendTask: async (dir, id, message, reason) => runtimes.get(dir)?.lead.resendTask(id, message, reason),
     subscribeLead: (dir, id, send) => {
       const key = `${dir}:${id}`
       const bucket = listeners.get(key) ?? new Set()
@@ -169,7 +189,6 @@ export async function runServe(options: ServeOptions): Promise<void> {
   })
   await server.close()
   await Promise.all(stops.map((stop) => stop()))
-  await Promise.all(retired)
 }
 
 /**

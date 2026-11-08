@@ -1,8 +1,9 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { initProject, openProject } from '../store/project.js'
+import * as fileLocks from '../store/file-lock.js'
 import type { DelegationStatus, RunState } from '../types.js'
 import { DEFAULT_RECEIPT_TIMEOUT_MINUTES, expireTaskReceipts, recoverTaskReceipts, trackTaskExecution } from './receipts.js'
 import { startMaintenance } from '../../../server/src/maintenance.js'
@@ -25,6 +26,45 @@ async function setup() {
   }
   return { stores, requirement, post, run }
 }
+
+it.each(['chat', 'room', 'messages', 'no-candidates'] as const)('无待更新回执时 recover / expire 不加锁，目录树不变（%s）', async scenario => {
+  const { stores, requirement, post } = await setup()
+  if (scenario === 'no-candidates') await post('finished', 'done')
+  else {
+    const target = scenario === 'chat' ? join(stores.taktDir, 'chat')
+      : scenario === 'room' ? join(stores.taktDir, 'chat', requirement.id)
+        : join(stores.taktDir, 'chat', requirement.id, 'messages.jsonl')
+    await rm(target, { recursive: true, force: true })
+  }
+  const before = (await readdir(stores.taktDir, { recursive: true })).sort()
+  const lock = vi.spyOn(fileLocks, 'withFileLock')
+  try {
+    if (scenario !== 'no-candidates') expect(await stores.chat.list(requirement.id)).toEqual([])
+    expect((await readdir(stores.taktDir, { recursive: true })).sort()).toEqual(before)
+    expect(await recoverTaskReceipts(stores)).toEqual([])
+    expect((await readdir(stores.taktDir, { recursive: true })).sort()).toEqual(before)
+    expect(await expireTaskReceipts(stores, Date.now() + 31 * 60_000)).toEqual([])
+    expect((await readdir(stores.taktDir, { recursive: true })).sort()).toEqual(before)
+    expect(lock).not.toHaveBeenCalled()
+  } finally { lock.mockRestore() }
+})
+
+it.each(['recover', 'expire'] as const)('锁前候选已完成时，锁内重读不会追加回执（%s）', async mode => {
+  const { stores, requirement, post } = await setup()
+  const sent = await post('waiting', 'sent')
+  const list = stores.chat.list.bind(stores.chat)
+  const spy = vi.spyOn(stores.chat, 'list').mockImplementationOnce(async id => {
+    const messages = await list(id)
+    await post('waiting', 'done')
+    return messages
+  })
+  try {
+    const results = mode === 'recover' ? await recoverTaskReceipts(stores)
+      : await expireTaskReceipts(stores, Date.parse(sent.at) + 31 * 60_000)
+    expect(results).toEqual([])
+    expect((await list(requirement.id)).filter(message => message.kind === 'task').map(message => message.receipt?.status)).toEqual(['sent', 'done'])
+  } finally { spy.mockRestore() }
+})
 
 it.each([undefined, 5])('按配置或默认 30 分钟过期，只追加并保留链路（%s）', async minutes => {
   const { stores, requirement, post } = await setup()

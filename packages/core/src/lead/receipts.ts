@@ -23,18 +23,27 @@ export function withTaskReceiptLock<T>(stores: ProjectStores, requirementId: str
 }
 
 async function reconcileReceipts(stores: ProjectStores, noteFor: (message: RoomMessage) => Promise<string | undefined>, status: 'expired' | 'uncertain'): Promise<RoomMessage[]> {
+  async function candidates(requirementId: string): Promise<Array<{ message: RoomMessage; note: string }>> {
+    const latest = new Map<string, RoomMessage>()
+    for (const message of await stores.chat.list(requirementId)) {
+      if (message.kind !== 'task' || !message.refs?.taskRunId || !message.receipt) continue
+      const previous = latest.get(message.refs.taskRunId)
+      if (!previous || message.seq > previous.seq) latest.set(message.refs.taskRunId, message)
+    }
+    const pending: Array<{ message: RoomMessage; note: string }> = []
+    for (const message of latest.values()) {
+      const note = await noteFor(message)
+      if (note) pending.push({ message, note })
+    }
+    return pending
+  }
+
   const updated: RoomMessage[] = []
   for (const requirement of await stores.workspaces.listRequirements()) {
+    // 空扫描不能创建锁文件；锁前结果只决定是否加锁，追加前重新读取并判断。
+    if (!(await candidates(requirement.id)).length) continue
     await withTaskReceiptLock(stores, requirement.id, async () => {
-      const latest = new Map<string, RoomMessage>()
-      for (const message of await stores.chat.list(requirement.id)) {
-        if (message.kind !== 'task' || !message.refs?.taskRunId || !message.receipt) continue
-        const previous = latest.get(message.refs.taskRunId)
-        if (!previous || message.seq > previous.seq) latest.set(message.refs.taskRunId, message)
-      }
-      for (const message of latest.values()) {
-        const note = await noteFor(message)
-        if (!note) continue
+      for (const { message, note } of await candidates(requirement.id)) {
         updated.push(await stores.chat.post(requirement.id, {
           author: { type: 'system', id: 'lead' }, kind: 'task', text: note,
           replyTo: message.id, refs: message.refs, receipt: { ...message.receipt!, status, note },

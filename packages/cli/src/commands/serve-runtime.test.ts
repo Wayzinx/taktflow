@@ -69,8 +69,8 @@ it('停用项不探测且可重新启用；模型目录读取本机来源和 emb
   expect(createHarnesses({ config: context.stores.config }).codex).toBeDefined()
 })
 
-it('真实 serve 进程 PATCH 后新 Lead 使用新 CLI，无需重启并可从群聊回读', async () => {
-  const { context } = await fixture()
+it.each(['project', 'spaces'] as const)('真实 serve --%s 进程 PATCH 后新 Lead 使用新 CLI，无需重启并可从群聊回读', async (mode) => {
+  const { context, dir } = await fixture()
   const { stores } = context
   stores.config.lead = { harness: { harness: 'mock' } }
   stores.config.workflows = []
@@ -81,7 +81,7 @@ it('真实 serve 进程 PATCH 后新 Lead 使用新 CLI，无需重启并可从�
   reservation.listen(0, '127.0.0.1'); await once(reservation, 'listening')
   const port = (reservation.address() as AddressInfo).port
   await new Promise<void>(resolve => reservation.close(() => resolve()))
-  const child = spawn(process.execPath, ['--import', 'tsx', resolve('packages/cli/src/index.ts'), 'serve', '--project', stores.projectDir, '--port', String(port), '--json'], { stdio: ['ignore', 'pipe', 'pipe'] })
+  const child = spawn(process.execPath, ['--import', 'tsx', resolve('packages/cli/src/index.ts'), 'serve', `--${mode}`, mode === 'spaces' ? dir : stores.projectDir, '--port', String(port), '--json'], { stdio: ['ignore', 'pipe', 'pipe'] })
   let output = '', errors = ''
   child.stdout.on('data', chunk => { output += String(chunk) })
   child.stderr.on('data', chunk => { errors += String(chunk) })
@@ -92,13 +92,14 @@ it('真实 serve 进程 PATCH 后新 Lead 使用新 CLI，无需重启并可从�
       url = JSON.parse(output).url
       expect(url).toMatch(/^http:/)
     }, { timeout: 8000, interval: 20 })
-    const post = (path: string, body: object, method = 'POST') => fetch(url + path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+    const endpoint = (path: string) => url + (mode === 'spaces' ? path.replace(/^\/api/, '/api/s/space') : path)
+    const post = (path: string, body: object, method = 'POST') => fetch(endpoint(path), { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
     expect((await post(`/api/requirements/${req.id}/chat`, { text: '@lead before' })).status).toBe(200)
     await vi.waitFor(async () => {
       expect((await stores.chat.list(req.id)).some(message => message.text === 'before-reload')).toBe(true)
       expect((await stores.runs.list()).every(run => run.status === 'succeeded')).toBe(true)
     }, { timeout: 8000, interval: 20 })
-    const before = await (await fetch(url + '/api/space/runtime')).json()
+    const before = await (await fetch(endpoint('/api/space/runtime'))).json()
     const replyScript = `console.log(${JSON.stringify('```json\n{"reply":"after-reload","actions":[]}\n```')})`
     const patched = await post('/api/space/runtime', { baseRevision: before.revision, reason: '切换 Lead',
       harnesses: { 'next-lead': { id: 'next-lead', kind: 'cli', command: [process.execPath, '-e', replyScript], available: [process.execPath, '--version'], output: { format: 'text' } } },
