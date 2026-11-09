@@ -25,7 +25,9 @@
   gap: 6px 10px;
   min-width: 0;
 }
-.run-interrupted {
+.run-recover {
+  --tone: var(--st-waiting);
+  --tone-soft: var(--st-waiting-soft);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -33,18 +35,29 @@
   padding: 8px 10px 8px 12px;
   border-radius: var(--radius-sm);
   color: var(--text);
-  background: var(--st-waiting-soft);
-  border: 1px solid color-mix(in srgb, var(--st-waiting) 28%, transparent);
+  background: var(--tone-soft);
+  border: 1px solid color-mix(in srgb, var(--tone) 28%, transparent);
   font-size: var(--text-ui);
 }
-.run-interrupted > svg {
+.run-recover[data-mode='failed'] {
+  --tone: var(--st-failed);
+  --tone-soft: var(--st-failed-soft);
+}
+.run-recover > svg {
   flex: none;
   width: 16px;
   height: 16px;
-  color: var(--st-waiting);
+  color: var(--tone);
 }
-.run-interrupted b {
+.run-recover b {
   font-weight: 600;
+}
+.run-recover-text {
+  flex: 1;
+  min-width: 0;
+}
+.run-recover-error {
+  color: var(--text-2);
 }
 .run-title {
   font-size: 17px;

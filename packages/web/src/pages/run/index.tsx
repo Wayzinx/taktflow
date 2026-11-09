@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, Play, Square, Unplug, Workflow } from 'lucide-react'
+import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, OctagonX, Play, RotateCw, Square, Unplug, Workflow } from 'lucide-react'
 import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
@@ -202,7 +202,7 @@ export function RunPage({ runId }: { runId: string }) {
             </div>
           )}
         </div>
-        {d?.interrupted && <InterruptedBar detail={d} onResumed={q.reload} />}
+        {d && (d.interrupted || d.run.status === 'failed') && <RecoveryBar detail={d} onDone={q.reload} />}
         <div className="run-stage-row">
           {d ? <StageRail size="sm" stages={stages} empty="这个流程没有划分阶段" onStage={(id) => setQuery({ stage: id === stageFocus ? undefined : id })} activeId={stageFocus} /> : <Skeleton h={26} />}
         </div>
@@ -231,41 +231,68 @@ export function RunPage({ runId }: { runId: string }) {
   )
 }
 
-/** 运行状态还是 running，但没有进程在执行（serve 重启或崩溃时停下的）：说清楚停在哪，一键续跑。 */
-function InterruptedBar({ detail, onResumed }: { detail: RunDetail; onResumed: () => void }) {
+/**
+ * 运行停住了时的恢复条：
+ * - 中断（状态还是 running，但没有进程在执行，serve 重启或崩溃留下的）→ 继续运行（run.resume）
+ * - 失败 → 列出失败 / 阻塞的节点和原因，重试这些节点（run.retry），不必整个运行从头来
+ */
+function RecoveryBar({ detail, onDone }: { detail: RunDetail; onDone: () => void }) {
   const ds = useSource()
   const [busy, setBusy] = useState(false)
   const runId = detail.run.runId
-  const stopped = Object.values(detail.run.nodes).filter((n) => n.status === 'running').map((n) => n.id)
-  const resume = async () => {
+  const nodes = Object.values(detail.run.nodes)
+  const mode = detail.interrupted ? 'interrupted' : 'failed'
+  const targets = (mode === 'interrupted' ? nodes.filter((n) => n.status === 'running') : nodes.filter((n) => n.status === 'failed' || n.status === 'blocked')).map((n) => n.id)
+  const firstError = mode === 'failed' ? nodes.find((n) => targets.includes(n.id) && n.error)?.error : undefined
+  const act = async () => {
     setBusy(true)
     try {
-      const r = await ds.runCommand('run.resume', { input: { runId }, reason: `继续被中断的运行 ${runId}` })
+      const r =
+        mode === 'interrupted'
+          ? await ds.runCommand('run.resume', { input: { runId }, reason: `继续被中断的运行 ${runId}` })
+          : await ds.runCommand('run.retry', { input: { runId }, reason: `重试失败的节点：${targets.join('、')}` })
       if (!r.ok) throw new Error(r.message)
-      toast('已继续运行', { body: stopped.length ? `从 ${stopped.join('、')} 重新开始。` : undefined })
-      onResumed()
+      toast(mode === 'interrupted' ? '已继续运行' : '已开始重试', { body: targets.length ? `从 ${targets.join('、')} 重新开始。` : undefined })
+      onDone()
     } catch (e) {
-      toast('没继续成', { tone: 'failed', body: (e as Error).message })
+      toast(mode === 'interrupted' ? '没继续成' : '没重试成', { tone: 'failed', body: (e as Error).message })
     } finally {
       setBusy(false)
     }
   }
+  const Icon = mode === 'interrupted' ? Unplug : OctagonX
   return (
-    <div className="run-interrupted" role="status">
-      <Unplug aria-hidden />
-      <span>
-        <b>运行中断了</b>：没有进程在执行它，通常是 serve 重启或崩溃时停下的。
-        {stopped.length > 0 && (
+    <div className="run-recover" data-mode={mode} role="status">
+      <Icon aria-hidden />
+      <span className="run-recover-text">
+        {mode === 'interrupted' ? (
           <>
-            停在 <span className="mono">{stopped.join('、')}</span>，继续会从这里重跑。
+            <b>运行中断了</b>：没有进程在执行它，通常是 serve 重启或崩溃时停下的。
+            {targets.length > 0 && (
+              <>
+                停在 <span className="mono">{targets.join('、')}</span>，继续会从这里重跑。
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <b>运行失败</b>
+            {targets.length > 0 && (
+              <>
+                ：<span className="mono">{targets.join('、')}</span>
+                {firstError ? <span className="run-recover-error" title={firstError}> · {firstError}</span> : null}
+              </>
+            )}
+            。前面成功的节点会保留，只重跑这些。
           </>
         )}
       </span>
-      <span className="spacer" />
-      <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void resume()}>
-        <Play aria-hidden />
-        {busy ? '继续中…' : '继续运行'}
-      </button>
+      {(mode === 'interrupted' || targets.length > 0) && (
+        <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void act()}>
+          {mode === 'interrupted' ? <Play aria-hidden /> : <RotateCw aria-hidden />}
+          {busy ? (mode === 'interrupted' ? '继续中…' : '重试中…') : mode === 'interrupted' ? '继续运行' : '重试失败的节点'}
+        </button>
+      )}
     </div>
   )
 }

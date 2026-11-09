@@ -116,6 +116,16 @@ export function createProjectMock(db: MockDb): ProjectSource {
 
   // 演示"运行中断"：?mock=1&interrupted=<runId> 把一个 running 的运行当作没有进程在执行；run.resume 后恢复
   const interrupted = new Set(typeof location === 'undefined' ? [] : new URLSearchParams(location.search).getAll('interrupted'))
+  // 演示"运行失败"：?mock=1&failed=<runId> 把正在跑的节点标成失败；run.retry 把它们放回运行中
+  const demoFailed = new Map<string, string[]>()
+  for (const id of typeof location === 'undefined' ? [] : new URLSearchParams(location.search).getAll('failed')) {
+    const run = db.runs.get(id)
+    if (!run || run.state.status === 'succeeded' || run.state.status === 'cancelled') continue
+    const nodes = Object.values(run.state.nodes).filter((n) => n.status === 'running')
+    for (const n of nodes) Object.assign(n, { status: 'failed', error: '作者回应必须与本轮问题逐条对应：["architect","ISS-36"]' })
+    run.state.status = 'failed'
+    demoFailed.set(id, nodes.map((n) => n.id))
+  }
   const isInterrupted = (run: MockRun) => (run.state.status === 'running' && interrupted.has(run.state.runId) ? { interrupted: true as const } : {})
 
   function runSummary(run: MockRun): RunSummary {
@@ -442,6 +452,16 @@ export function createProjectMock(db: MockDb): ProjectSource {
           'attention.list': (i) => viaRun(() => this.attention(Boolean(i.pending)).then((l) => (i.requirementId ? l.filter((a) => a.requirementId === i.requirementId) : l)), '待办列表已执行'),
           'requirement.status': (i) => viaRun(() => this.requirement(String(i.requirementId)), '需求状态已执行'),
           'run.status': (i) => viaRun(() => this.run(String(i.runId)), '运行状态已执行'),
+          'run.retry': (i) =>
+            viaRun(async () => {
+              const run = db.runs.get(String(i.runId))
+              const ids = demoFailed.get(String(i.runId))
+              if (!run || !ids) throw new Error('没有失败或阻塞的节点可以重试')
+              for (const id of ids) Object.assign(run.state.nodes[id]!, { status: 'running', error: undefined })
+              run.state.status = 'running'
+              demoFailed.delete(String(i.runId))
+              return { runId: i.runId, nodeIds: ids }
+            }, '重试已开始'),
           'run.resume': (i) => viaRun(async () => (interrupted.delete(String(i.runId)) ? { runId: i.runId } : Promise.reject(new Error('运行仍在执行'))), '继续运行已执行'),
           'attention.answer': (i) => viaRun(() => this.answer(String(i.requestId), { decision: i.decision as string, answer: i.answer as string | undefined }), '回答待办已执行'),
           'eval.scorecards': (i) => viaRun(() => this.scorecards((i.by as never) ?? 'node', i.workflowId as string | undefined), '查询评测成绩单已执行'),
