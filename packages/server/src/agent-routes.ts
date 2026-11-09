@@ -2,8 +2,8 @@ import { spaceLock } from './space-lock.js'
 import { readFile, rm } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { explicitRoleHarness, harnessSelectors, listSkills, parseFrontmatter, parseRoleProfile, patchFrontmatter, loadPlugins, roleSources, selectHarness, sha256, systemWrite, validateHarnessSelector,
-  type AgentRoleView, type HarnessSelector, type ProjectStores } from '@taktflow/core'
-import { createHarnesses, createRedactor, collectSecrets } from '@taktflow/harness'
+  type AgentRoleView, type HarnessSelector, type ProjectStores, type ProviderBridge } from '@taktflow/core'
+import { createHarnesses, createRedactor, collectSecrets, withProviderPresets } from '@taktflow/harness'
 import { actor, authorize, body, HttpError, text } from './http.js'
 import { atomicWrite, auditSpace, spaceFile, workflowStore } from './space.js'
 import type { Handler } from './routes.js'
@@ -12,14 +12,18 @@ import type { M3Callbacks } from './m3-routes.js'
 const roleId = (id: string) => { if (!/^[a-z][a-z0-9-]{0,39}$/.test(id)) throw new HttpError(400, 'role 不合法，请使用小写字母开头的字母、数字或短横线，最多 40 位'); return id }
 const fields = ['title', 'description', 'harness', 'skills', 'knowledge', 'writeScope', 'readScope', 'allowBash'] as const
 
-async function roleProblems(stores: ProjectStores, profile: ReturnType<typeof parseRoleProfile>, selector: HarnessSelector, options: M3Callbacks): Promise<string[]> {
+type AgentRouteOptions = M3Callbacks & { bridge?: ProviderBridge }
+
+async function roleProblems(stores: ProjectStores, profile: ReturnType<typeof parseRoleProfile>, selector: HarnessSelector, options: AgentRouteOptions): Promise<string[]> {
   const errors: string[] = []
   const skills = new Set((await listSkills(stores.paths.skills)).map(s => s.name))
   for (const id of profile.skills) if (!skills.has(id)) errors.push(`skills：技能 ${id} 不存在，请先添加技能`)
   for (const id of profile.knowledge ?? []) if (!stores.config.knowledgeBindings?.some(b => b.baseId === id)) errors.push(`knowledge：知识库 ${id} 未绑定，请先绑定知识库`)
   const plugins = await loadPlugins(stores.config, stores.projectDir, url => import(url))
-  const harnesses = { ...createHarnesses({ config: stores.config, projectDir: stores.projectDir }), ...plugins.harnesses }
-  try { validateHarnessSelector(selector, stores.config, harnesses) }
+  // 和真正调用同一套判断：provider 补全预设入口（如 deepseek 的 Anthropic 入口），协议对不上时可经协议桥
+  const config = withProviderPresets(stores.config)
+  const harnesses = { ...createHarnesses({ config, projectDir: stores.projectDir }), ...plugins.harnesses }
+  try { validateHarnessSelector(selector, config, harnesses, options.bridge) }
   catch (error) { errors.push(`harness：${createRedactor(collectSecrets(undefined, stores.config.providers))((error as Error).message)}，请修改角色配置`) }
   for (const choice of harnessSelectors(selector)) {
     if (choice.model && !stores.config.models?.[choice.model] && !Object.values(stores.config.models ?? {}).some(m => m.id === choice.model)) {
@@ -31,7 +35,7 @@ async function roleProblems(stores: ProjectStores, profile: ReturnType<typeof pa
   return errors
 }
 
-export async function agentRoles(stores: ProjectStores, options: M3Callbacks = {}): Promise<AgentRoleView[]> {
+export async function agentRoles(stores: ProjectStores, options: AgentRouteOptions = {}): Promise<AgentRoleView[]> {
   const sources = await roleSources(stores), registry = workflowStore(stores)
   const workflows = await Promise.all((await registry.list({ record: false })).map(w => registry.get(w.id, { record: false })))
   const profiles = Object.fromEntries(Object.entries(sources).map(([role, source]) => [role, parseRoleProfile(source.markdown, role)]))
@@ -62,7 +66,7 @@ export async function agentRoles(stores: ProjectStores, options: M3Callbacks = {
   }))
 }
 
-export function agentRoutes(add: (method: string, path: string, handler: Handler) => void, options: M3Callbacks) {
+export function agentRoutes(add: (method: string, path: string, handler: Handler) => void, options: AgentRouteOptions) {
   const wrap = (handler: Handler): Handler => async context => {
     try { return await handler(context) } catch (error) {
       if (error instanceof HttpError) throw error

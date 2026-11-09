@@ -275,6 +275,7 @@ import type {
   NodeKind,
   NodeState,
   NodeStatus,
+  Pairing,
   Requirement,
   RequirementMetrics,
   RunState,
@@ -1335,6 +1336,8 @@ export interface StewardRuntimeChoice {
   reason?: string
   /** 当前默认（偏好或空间配置）。 */
   isDefault?: boolean
+  /** 外部 harness 怎么接这个模型：自带 / 直连 / 经协议桥（docs/design/31）。内置 harness 不填。 */
+  pairing?: Pairing
 }
 
 export interface StewardToolCall {

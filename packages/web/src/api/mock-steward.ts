@@ -349,9 +349,11 @@ export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewar
       delay([
         { harness: 'native', harnessLabel: '内置（直连模型 API）', model: 'ds-flash', modelLabel: 'deepseek-flash', provider: 'deepseek', available: true, isDefault: true },
         { harness: 'native', harnessLabel: '内置（直连模型 API）', model: 'ds-pro', modelLabel: 'deepseek-pro', provider: 'deepseek', available: true },
-        { harness: 'claude-code', harnessLabel: 'Claude Code', model: 'ds-flash', modelLabel: 'deepseek-flash', provider: 'deepseek', available: true },
-        { harness: 'claude-code', harnessLabel: 'Claude Code', modelLabel: 'Claude Code 自带模型', available: true },
-        { harness: 'codex', harnessLabel: 'Codex', modelLabel: 'Codex 自带模型', available: false, reason: 'Codex 未安装或不可用，请安装后重新选择' },
+        { harness: 'claude-code', harnessLabel: 'Claude Code', model: 'ds-flash', modelLabel: 'deepseek-flash', provider: 'deepseek', available: true, pairing: { mode: 'direct', protocol: 'anthropic-messages' } },
+        { harness: 'claude-code', harnessLabel: 'Claude Code', modelLabel: 'Claude Code 自带模型', available: true, pairing: { mode: 'builtin' } },
+        { harness: 'codex', harnessLabel: 'Codex', modelLabel: 'Codex 自带模型', available: true, pairing: { mode: 'builtin' } },
+        { harness: 'codex', harnessLabel: 'Codex', model: 'ds-flash', modelLabel: 'deepseek-flash', provider: 'deepseek', available: true, pairing: { mode: 'bridge', protocol: 'openai-responses', upstream: 'openai-chat' } },
+        { harness: 'trae', harnessLabel: 'TRAE CLI', modelLabel: 'TRAE CLI 自带模型', available: false, reason: 'TRAE CLI 未安装或不可用，请安装后重新选择' },
       ]),
     async createStewardThread(body) {
       const thread: StewardThread = { id: nid('th'), title: body.text.slice(0, 24), createdAt: now(), updatedAt: now(), context: body.context, lastMessage: body.text, ...(body.runtime ? { runtime: body.runtime } : {}) }

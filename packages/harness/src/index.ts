@@ -46,7 +46,7 @@ export type { ProcessOptions, ProcessResult } from './process.js'
 export type { StreamParser } from './parse.js'
 export * from './providers/index.js'
 export { createNativeHarness } from './native/index.js'
-export { providerConfig } from './providers/presets.js'
+export { providerConfig, withProviderPresets } from './providers/presets.js'
 export { collectSecrets, createRedactor } from './redact.js'
 
 export { createAcpHarness } from './acp/index.js'

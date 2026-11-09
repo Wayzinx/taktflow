@@ -1,6 +1,6 @@
 import { assertSecretName, patchRuntimeConfig, providerProtocols, readRuntimeConfig, RuntimeConfigError, setLocalSecret, systemWrite, validateHarnessSelector,
   type ProviderBridge, type ProjectStores, type RuntimeConfig, type RuntimeTestRequest, type TaktConfig } from '@taktflow/core'
-import { ACP_PRESETS, PROVIDER_PRESETS, createHarnesses, providerConfig, collectSecrets, createRedactor } from '@taktflow/harness'
+import { ACP_PRESETS, PROVIDER_PRESETS, createHarnesses, providerConfig, collectSecrets, createRedactor, withProviderPresets } from '@taktflow/harness'
 import { actor, authorize, body, HttpError, text } from './http.js'
 import type { Handler } from './routes.js'
 import type { M3Callbacks } from './m3-routes.js'
@@ -43,7 +43,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
         acpPresets: ACP_PRESETS.map(p => p.id), providerPresets: Object.keys(PROVIDER_PRESETS),
         prepare: async config => {
           if (options.prepareRuntime) return options.prepareRuntime(stores, config)
-          const normalized = { ...config, providers: Object.fromEntries(Object.entries(config.providers ?? {}).map(([id, p]) => [id, providerConfig(id, p)])) }
+          const normalized = withProviderPresets(config)
           const harnesses = createHarnesses({ config: normalized, projectDir: stores.projectDir })
           for (const [id, harness] of Object.entries(runtime?.harnesses ?? {})) {
             if (!builtinHarnesses.includes(id) && !stores.config.harnesses?.some(h => h.id === id)) harnesses[id] = harness

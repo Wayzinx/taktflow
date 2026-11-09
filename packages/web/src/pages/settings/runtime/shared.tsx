@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { CircleAlert, CircleCheck, Coins, KeyRound, LoaderCircle, PlugZap, RotateCw } from 'lucide-react'
-import type { HarnessSelector, Pairing, ProviderProtocol, RuntimeConfig, RuntimeConfigPatch, RuntimeTestRequest, RuntimeTestResult, SecretSource, Usage } from '@taktflow/core'
+import type { HarnessSelector, Pairing, RuntimeConfig, RuntimeConfigPatch, RuntimeTestRequest, RuntimeTestResult, SecretSource, Usage } from '@taktflow/core'
 import { RuntimeConflictError, invalidate, useAsync, useSource } from '../../../api'
 import { Dialog, Drawer, ReasonField, reasonOk, toast } from '../../../components/ui'
 import { fmtTokens } from '../../../lib/format'
+import { pairingText } from '../../../lib/pairing'
 
 /** 运行配置 + 带 baseRevision 的补丁：保存成功后让卡片、模型表一起刷新。 */
 export function useRuntime() {
@@ -267,18 +268,4 @@ export function toast409(e: unknown) {
 
 export type Cfg = RuntimeConfig
 
-/** 协议的短名：在搭配说明里用（「DeepSeek（Chat）」）。 */
-export const PROTOCOL_SHORT: Record<ProviderProtocol, string> = {
-  'openai-chat': 'Chat',
-  'openai-responses': 'Responses',
-  'anthropic-messages': 'Anthropic',
-  gemini: 'Gemini',
-}
-
-/** "直连 · Anthropic" / "桥接 · Responses ← Chat" / "自带" */
-export function pairingText(p: Pairing): string {
-  if (p.mode === 'builtin') return '自带'
-  if (p.mode === 'direct') return `直连 · ${p.protocol ? PROTOCOL_SHORT[p.protocol] : ''}`
-  if (p.mode === 'bridge') return `桥接 · ${p.protocol ? PROTOCOL_SHORT[p.protocol] : '?'} ← ${p.upstream ? PROTOCOL_SHORT[p.upstream] : '?'}`
-  return '不可用'
-}
+export { PROTOCOL_SHORT, pairingText } from '../../../lib/pairing'

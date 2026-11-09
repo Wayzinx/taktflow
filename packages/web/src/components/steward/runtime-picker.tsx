@@ -4,6 +4,7 @@ import type { StewardRuntime, StewardRuntimeChoice } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { harnessHue } from '../agent-mark'
 import { Menu, type MenuItem } from '../ui'
+import { pairingText } from '../../lib/pairing'
 
 const same = (c: StewardRuntimeChoice, r?: StewardRuntime | null) => !!r && c.harness === (r.harness ?? 'native') && c.model === r.model
 const modelName = (c: StewardRuntimeChoice) => (c.model ? c.modelLabel ?? c.model : '自带模型')
@@ -15,7 +16,7 @@ export function runtimeLabel(c: StewardRuntimeChoice): string {
 
 /**
  * 管家用哪个 harness × 模型（docs/design/30 §2）：输入框左下角的选择器。
- * 只列服务端给的组合；不可用的置灰并写原因。value 为空表示跟随默认（偏好 > 空间配置）。
+ * 只列服务端给的组合；不可用的置灰并写原因，经协议桥的标出「桥接 · Responses ← Chat」。value 为空表示跟随默认（偏好 > 空间配置）。
  * 服务端不支持（老版本 404）时不渲染。
  */
 export function RuntimePicker({ value, onChange }: { value?: StewardRuntime | null; onChange: (next: StewardRuntime | null) => void }) {
@@ -38,7 +39,8 @@ export function RuntimePicker({ value, onChange }: { value?: StewardRuntime | nu
         separator: first,
         label: modelName(c),
         text: modelName(c),
-        description: c.available ? undefined : c.reason,
+        // 能用时只标桥接（直连、自带是常态，不占一行）；不能用时写原因
+        description: c.available ? (c.pairing?.mode === 'bridge' ? pairingText(c.pairing) : undefined) : c.reason,
         hint: c.isDefault ? '默认' : undefined,
         disabled: !c.available,
         checked: same(c, value),

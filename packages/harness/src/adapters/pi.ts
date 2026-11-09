@@ -202,11 +202,12 @@ export function createPiHarness(options: PiOptions = {}): HarnessAdapter {
   const bin = options.bin ?? 'pi'
   return {
     id: 'pi', displayName: 'Pi',
+    // Pi 本身不接 MCP（工具走扩展），req.mcpServers 不会生效，所以不能当管家
     capabilities: {
       toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
       resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true,
       providerProtocols: ['openai-chat', 'anthropic-messages', 'openai-responses', 'gemini'],
-      compactionEvents: true, customProvider: true, sandbox: false, mcp: true,
+      compactionEvents: true, customProvider: true, sandbox: false, mcp: false,
     },
     async available() {
       const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })

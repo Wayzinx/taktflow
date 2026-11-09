@@ -63,6 +63,17 @@ it('非法 role、scope、harness、model、技能与知识库返回字段错误
   expect((await f.request('/api/space/agents/dev', 'DELETE', { reason: '删除内置' })).status).toBe(400)
 })
 
+it('保存角色按补全预设后的 provider 与协议桥判断搭配：预设入口直连、协议对不上经桥都能存', async () => {
+  const f = await fixture()
+  const config = JSON.parse(await readFile(join(f.dir, 'takt.config.json'), 'utf8')) as TaktConfig
+  // 只写了 preset：Anthropic 入口来自预设，配置里没有
+  await writeFile(join(f.dir, 'takt.config.json'), JSON.stringify({ ...config, providers: { deepseek: { preset: 'deepseek' } }, models: { ds: { id: 'deepseek-flash', provider: 'deepseek' } } }))
+  for (const harness of ['claude-code', 'codex']) {
+    const response = await f.put('custom', { harness: { harness, model: 'ds' } })
+    expect(response.status, harness).toBe(200)
+  }
+})
+
 it('在线编辑角色与运行中的写守卫兼容，源码入口同样只允许 owner', async () => {
   const f = await fixture()
   let release!: () => void, started!: () => void

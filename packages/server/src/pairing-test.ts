@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveHarnessSelector, resolveSecret, type HarnessAdapter, type ProviderBridge, type RuntimeTestRequest, type RuntimeTestResult, type TaktConfig, type BridgeRoute, type Pairing } from '@taktflow/core'
-import { collectSecrets, createRedactor, providerConfig } from '@taktflow/harness'
+import { collectSecrets, createRedactor, withProviderPresets } from '@taktflow/harness'
 import { HttpError } from './http.js'
 
 export async function testPairing(config: TaktConfig, request: RuntimeTestRequest, harnesses: () => Promise<Record<string, HarnessAdapter>>, bridge?: ProviderBridge): Promise<RuntimeTestResult> {
@@ -17,7 +17,7 @@ export async function testPairing(config: TaktConfig, request: RuntimeTestReques
   const result = (ok: boolean, message: string, detail?: string) => ({ ok, message: redact(message), detail: detail ? redact(detail) : pairing ? JSON.stringify({ pairing, usage: null }) : undefined, billed, latencyMs: Date.now() - started })
   try {
     if (config.harnessOverrides?.[target.harness]?.disabled) return result(false, '本空间已停用')
-    const normalized = { ...config, providers: Object.fromEntries(Object.entries(config.providers ?? {}).map(([id, p]) => [id, providerConfig(id, p)])) }
+    const normalized = withProviderPresets(config)
     const selected = resolveHarnessSelector(target, normalized, await harnesses(), bridge)
     pairing = selected.pairing
     const deadline = new Promise<never>((_, reject) => {

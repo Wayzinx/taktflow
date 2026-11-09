@@ -69,3 +69,8 @@ export function providerConfig(id: string, config: ProviderConfig): ProviderConf
     ...(preset?.endpoints || config.endpoints ? { endpoints: { ...preset?.endpoints, ...config.endpoints } } : {}),
   }
 }
+
+/** 每个 provider 补全预设（协议、地址、密钥名、其他协议入口）：校验搭配和真正调用都按补全后的配置判断。 */
+export function withProviderPresets<T extends { providers?: Record<string, ProviderConfig> }>(config: T): T {
+  return { ...config, providers: Object.fromEntries(Object.entries(config.providers ?? {}).map(([id, p]) => [id, providerConfig(id, p)])) }
+}

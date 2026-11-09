@@ -94,7 +94,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     openProject(space.projectDir).catch(() => undefined)))).filter(space => space !== undefined)
   const adminDeps = { spacesDir: options.spacesDir, projectDir: options.projectDir, onChange: refresh }
   let stewardMcpUrl = ''
-  const stewardOptions = { ...adminDeps, registry: byId, connections, mcpUrl: () => stewardMcpUrl,
+  const stewardOptions = { ...adminDeps, registry: byId, connections, mcpUrl: () => stewardMcpUrl, bridge,
     serverCommands: createServerCommandRegistry(adminDeps),
     prepareStores: async (stores: import('@taktflow/core').ProjectStores) => attachKnowledge(stores, options.spacesDir),
     commands: options.getCommands,

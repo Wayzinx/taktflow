@@ -27,6 +27,7 @@ import {
   stewardUndoCommands,
   type CommandRegistry,
   type ProjectStores,
+  type ProviderBridge,
   type StewardDeps,
   type StewardPrefs,
   type StewardPostRequest,
@@ -65,6 +66,8 @@ export interface StewardRouteDeps {
   prepareStores?: (stores: ProjectStores) => Promise<ProjectStores>
   connections?: Set<() => void>
   mcpUrl?: () => string
+  /** 协议桥：管家选了协议对不上的 harness × 模型时用（docs/design/31）。 */
+  bridge?: ProviderBridge
   steward?: Partial<
     Pick<StewardDeps, 'chat' | 'now' | 'extraRisks' | 'systemPrompt' | 'leadTimeoutMs'>
   >
@@ -215,7 +218,7 @@ export function registerStewardRoutes(
       if (agents.size >= 128)
         throw new HttpError(429, '管家活跃用户已达上限，请稍后重试或联系管理员')
       agent = new StewardAgent('dataDir' in deps ? deps : createStewardDeps(deps, id), id)
-      if (!('dataDir' in deps)) Object.assign(agent.deps, stewardRuntime(agent.deps, id, mcp, deps.mcpUrl ?? (() => { throw new StewardError(503, 'MCP 地址尚未就绪，请稍后重试') })))
+      if (!('dataDir' in deps)) Object.assign(agent.deps, stewardRuntime(agent.deps, id, mcp, deps.mcpUrl ?? (() => { throw new StewardError(503, 'MCP 地址尚未就绪，请稍后重试') }), undefined, deps.bridge))
       agents.set(id, agent)
       const current = agent
       schedulers.set(

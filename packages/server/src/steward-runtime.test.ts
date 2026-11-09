@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
-import { initProject, StewardAgent, type HarnessAdapter, type HarnessRequest, type StewardPrefs } from '@taktflow/core'
+import { initProject, StewardAgent, type HarnessAdapter, type HarnessRequest, type ProviderBridge, type StewardPrefs } from '@taktflow/core'
 import { createStewardDeps } from './steward-routes.js'
 import { stewardRuntime } from './steward-runtime.js'
 import { StewardMcp } from './steward-mcp.js'
@@ -32,7 +32,8 @@ async function fixture() {
   const native = adapter('native', ['openai-chat', 'anthropic-messages'])
   const codex = adapter('codex', ['openai-chat', 'openai-responses'])
   const claude = adapter('claude-code', ['anthropic-messages'], false)
-  const adapters = { native, codex, 'claude-code': claude, other: adapter('other', []) }
+  // other 不接 MCP：管家用不了 takt 的工具，不该列出来
+  const adapters = { native, codex, 'claude-code': claude, other: { ...adapter('other', []), capabilities: { mcp: false, customProvider: true } } }
   const mcp = new StewardMcp()
   const server = createServer((request, response) => {
     void mcp.handle({ request, response, stores, url: new URL(request.url!, 'http://localhost'), params: {} })
@@ -78,6 +79,25 @@ it('匹配备用 provider 协议，runtime 校验与 native 会话选择优先�
   await expect(f.runtime.resolveRuntime!(prefs, { harness: 'unknown' })).rejects.toMatchObject({ status: 400 })
   const native = await f.runtime.resolveRuntime!({ ...prefs, harness: { harness: 'codex', model: 'good' } }, { model: 'good' })
   expect(native.chat).toBeTypeOf('function'); expect(native.model).toBe('good'); expect(native.run).toBeUndefined()
+})
+it('协议对不上的外部 harness 经协议桥：列为可用并标出桥接，每轮开一条路由、结束就关', async () => {
+  const f = await fixture()
+  f.adapters.codex = adapter('codex', ['openai-responses'])
+  const direct = await f.runtime.runtimeChoices!(prefs)
+  expect(direct.find(c => c.harness === 'codex' && c.model === 'good')).toMatchObject({ available: false, reason: expect.stringContaining('协议不匹配') })
+  const close = vi.fn(async () => {})
+  const open = vi.fn<ProviderBridge['open']>(async (target, accept) => ({ provider: { id: target.id, protocol: accept, baseURL: 'http://127.0.0.1:1/bridge', apiKeyEnv: 'TAKT_BRIDGE_TOKEN' }, env: { TAKT_BRIDGE_TOKEN: 'one-time' }, close }))
+  const bridge: ProviderBridge = { supports: (accept, upstream) => accept === 'openai-responses' && upstream === 'openai-chat', open, close: async () => {} }
+  const runtime = stewardRuntime(f.deps, 'alice', f.mcp, () => f.url, () => f.adapters, bridge)
+  const choices = await runtime.runtimeChoices!(prefs)
+  expect(choices.find(c => c.harness === 'codex' && c.model === 'good')).toMatchObject({ available: true, pairing: { mode: 'bridge', protocol: 'openai-responses', upstream: 'openai-chat' } })
+  expect(choices.find(c => c.harness === 'codex' && c.model === undefined)).toMatchObject({ available: true, pairing: { mode: 'builtin' } })
+  expect(choices.find(c => c.harness === 'native' && c.model === 'good')?.pairing).toBeUndefined()
+  const { run } = await runtime.resolveRuntime!(prefs, { harness: 'codex', model: 'good' })
+  await run!({ threadId: 'thread-a', messages: [{ role: 'user', content: '你好' }], specs: [], call: async () => ({}), onEvent: () => {} })
+  expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 'chat', protocol: 'openai-chat' }), 'openai-responses', { model: 'g' })
+  expect(vi.mocked(f.adapters.codex.run).mock.calls[0]![0]).toMatchObject({ model: 'g', provider: { protocol: 'openai-responses', baseURL: 'http://127.0.0.1:1/bridge' }, env: { TAKT_BRIDGE_TOKEN: 'one-time' } })
+  expect(close).toHaveBeenCalledOnce()
 })
 it('MCP initialize/list/call 往返、用户与会话绑定、过期与非本机拒绝', async () => {
   const f = await fixture(), call = vi.fn(async () => ({ done: true }))

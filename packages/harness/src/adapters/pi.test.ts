@@ -185,7 +185,7 @@ process.stdin.on('end', () => {
 `, { mode: 0o700 })
     const harness = createHarnesses({ pi: { bin, provider: 'anthropic' } }).pi!
     expect(harness.capabilities).toMatchObject({ resume: true, compactionEvents: true, usage: true, cost: true,
-      structuredOutput: false, customProvider: true, sandbox: false, mcp: true })
+      structuredOutput: false, customProvider: true, sandbox: false, mcp: false })
     expect(await harness.available()).toEqual({ ok: true })
     const prompt = '-literal @missing.txt\nUnicode \u2028 \u2029'
     const result = await harness.run({ cwd: dir, prompt, model: 'test-model', effort: 'max',
