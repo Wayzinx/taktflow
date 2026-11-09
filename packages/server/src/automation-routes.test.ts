@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { initProject, AutomationRecords, openProject, type AutomationConfig, type AutomationRunRecord, type TaktConfig } from '@taktflow/core'
 import { createServer, type ServerOptions } from './index.js'
 import { projectCommands } from './space.js'
+import { automationAction } from './automation-actions.js'
 const cleanup: Array<() => Promise<unknown>> = []
 afterEach(async () => { for (const fn of cleanup.splice(0).reverse()) await fn(); vi.unstubAllEnvs() })
 async function fixture(extra: Partial<ServerOptions> = {}, multi = false) {
@@ -72,7 +73,12 @@ it('失败记录沿用原事件重试，恢复 running，digest 去重及无变�
   expect(response.status).toBe(200); expect(await response.json()).toMatchObject({ status: 'ok', trigger: 'retry', retryOf: 'failed-id', text: `需求标题||||https://app.invalid/req/${req.id}`, event: original.event })
   await f.save({ ...notify, id: 'digest', action: { kind: 'digest' } })
   expect(await f.trigger('digest')).toMatchObject({ status: 'ok', summary: '已推送 1 个需求的进展', text: expect.stringContaining('需求标题｜新建需求') })
-  expect(await f.trigger('digest')).toMatchObject({ status: 'skipped', summary: expect.stringContaining('没有任何变化') })
+  // 手动执行没变化也照发；定时触发没变化就跳过
+  expect(await f.trigger('digest')).toMatchObject({ status: 'ok', summary: '没有新进展（手动执行照发）', text: expect.stringContaining('以来没有新进展') })
+  const digest = { ...notify, id: 'digest', action: { kind: 'digest' as const } }
+  const scheduled: AutomationRunRecord = { id: 'scheduled', automationId: 'digest', at: new Date().toISOString(), trigger: 'schedule', status: 'running', summary: '', deliveries: [] }
+  expect(await automationAction(await openProject(f.stores.projectDir), digest, scheduled, { publicUrl: 'https://app.invalid' }, new Date().toISOString())).toBeUndefined()
+  expect(scheduled).toMatchObject({ status: 'skipped', summary: expect.stringContaining('没有任何变化') })
   await f.close()
   await records.write({ ...original, id: 'interrupted', status: 'running' })
   const reopened = await createServer({ projectDir: f.stores.projectDir, port: 0, automationFetch: f.fetcher }); cleanup.push(() => reopened.close())

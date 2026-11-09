@@ -44,7 +44,9 @@ export async function automationAction(stores: ProjectStores, automation: Automa
     }) }
     const digest = await buildDigest(deps, new StewardStore(dataDir), since, false, true)
     const failures = (await stores.runs.list()).filter(r => r.status === 'failed' && (r.endedAt ?? r.startedAt) > since)
-    if (!digest.progress.length && !failures.length && !digest.attention.some(a => a.since > since)) return skip('没有任何变化，本次不发送汇报')
+    const quiet = !digest.progress.length && !failures.length && !digest.attention.some(a => a.since > since)
+    // 定时 / 事件触发时没变化就不打扰；手动执行是想看看汇报长什么样，照发一条"没有新进展"
+    if (quiet && record.trigger !== 'manual') return skip('没有任何变化，本次不发送汇报')
     const requirements = await stores.workspaces.listRequirements(), labels = { created: '新建需求', started: '开始运行', stage: '进入阶段', delivered: '已交付', blocked: '受阻', failed: '运行失败' }
     const lines = digest.progress.map(p => {
       message.links.push(links.requirement(p.requirementId))
@@ -54,7 +56,9 @@ export async function automationAction(stores: ProjectStores, automation: Automa
     message.links = [...new Set(message.links)]
     if (digest.attention.length) lines.push('等人的事：', ...digest.attention.map(a => `${a.requirementTitle}：${a.ask} ${links.requirement(a.requirementId)}`))
     if (failures.length) lines.push('失败的运行：', ...failures.map(r => `${r.runId} ${links.run(r.runId)}`))
-    message.text = lines.join('\n'); record.summary = `已推送 ${digest.progress.length} 个需求的进展`
+    // 与 cron 同用 serve 所在时区
+    if (quiet) lines.unshift(`${stores.config.project.name}：${new Date(since).toLocaleString('zh-CN', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })} 以来没有新进展。`)
+    message.text = lines.join('\n'); record.summary = quiet ? '没有新进展（手动执行照发）' : `已推送 ${digest.progress.length} 个需求的进展`
   }
   record.text = message.text
   return message
