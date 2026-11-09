@@ -21,6 +21,31 @@ export function lintModel(model: EditableWorkflow): WorkflowDiagnostic[] {
       return [parent, ...upstream(parent, seen)]
     })
   }
+  // acceptance 检查逐条 AC 要求用例（cases/*.json）和执行结果（evidence/summary.json）；流程里没有节点产出它们时，
+  // 这条交付校验永远过不了（真实事故：裁掉测分与跑用例后保留了交付校验）。产出位置看不清（非字面量 outputs、
+  // planner / subflow 动态展开）时不判断。
+  const produced = (pattern: RegExp): boolean | undefined => {
+    let unknown = false
+    for (const candidate of nodes) {
+      if (candidate.kind === 'planner' || candidate.kind === 'subflow') unknown = true
+      if (candidate.props.outputs === undefined) continue
+      const outputs = value(candidate.props.outputs)
+      if (!Array.isArray(outputs)) { unknown = true; continue }
+      if (outputs.some((output) => typeof object(output).path === 'string' && pattern.test(object(output).path as string))) return true
+    }
+    return unknown ? undefined : false
+  }
+  const acceptanceInputs = (gate: EditableNode) => {
+    const checks = value(gate.props.checks)
+    if (!Array.isArray(checks) || !checks.some((entry) => object(entry).kind === 'acceptance')) return
+    const missing = [
+      ...(produced(/^cases\//) === false ? ['用例 cases/*.json'] : []),
+      ...(produced(/^evidence\//) === false ? ['执行结果 evidence/summary.json'] : []),
+    ]
+    if (missing.length > 0) {
+      report('error', `交付校验的 acceptance 检查要求每条 AC 都有用例和通过的执行结果，但流程里没有节点产出${missing.join('、')}，这条校验永远不会通过；加上测分与跑用例节点（参考 taktflow-standard 的 test-design / automate / run-cases），或经用户同意去掉这条检查`, gate.id)
+    }
+  }
   for (const node of nodes) {
     if (node.kind === 'review') {
       const author = object(value(node.props.author)).role
@@ -36,6 +61,7 @@ export function lintModel(model: EditableWorkflow): WorkflowDiagnostic[] {
         if (check.kind === 'rubric' && typeof check.role === 'string' && authors.includes(check.role)) report('warning', `rubric 门禁 ${String(check.id)} 的评审角色与上游产出角色相同`, node.id)
       }
     }
+    if (node.kind === 'gate') acceptanceInputs(node)
     const completion = value(node.props.completion)
     if (node.kind === 'agent' && Array.isArray(completion) && completion.some((criterion) => typeof criterion === 'string' && [...criterion.trim()].length < 6)) report('warning', '完成标准少于 6 个字，请写成可验证的条件', node.id)
   }

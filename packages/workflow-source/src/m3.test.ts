@@ -59,3 +59,20 @@ it('嵌套 loop 的节点也检查，循环依赖不会无限递归', () => {
   ] })] })`
   expect(lintWorkflowSource(text)).toHaveLength(2)
 })
+it('acceptance 交付校验没有任何节点产出用例 / 执行结果时报错；能产出或看不清时不报', () => {
+  const flow = (nodes: string) => `export default defineWorkflow({ id: 'x', title: 'x', version: '1', stages: [], nodes: [${nodes}] })`
+  const gateNode = "gate({ id: 'delivery-check', needs: ['implement'], checks: [{ id: 'acceptance', kind: 'acceptance', role: 'verifier' }] })"
+  const implement = "agent({ id: 'implement', role: 'dev', outputs: [{ path: 'tasks/change.md', kind: 'task' }] })"
+  // 真实事故：裁掉测分与跑用例，只留实现 + 交付校验
+  expect(lintWorkflowSource(flow(`${implement}, ${gateNode}`))).toContainEqual(expect.objectContaining({
+    nodeId: 'delivery-check', severity: 'error', message: expect.stringContaining('用例 cases/*.json、执行结果 evidence/summary.json'),
+  }))
+  const cases = "agent({ id: 'test-design', role: 'test-designer', outputs: [{ path: 'cases/*.json', kind: 'case' }] })"
+  const runCases = "script({ id: 'run-cases', run: runCases, outputs: [{ path: 'evidence/summary.json', kind: 'evidence' }] })"
+  expect(lintWorkflowSource(flow(`${cases}, ${implement}, ${gateNode}`))).toContainEqual(expect.objectContaining({ message: expect.stringContaining('执行结果 evidence/summary.json') }))
+  expect(lintWorkflowSource(flow(`${cases}, ${implement}, ${runCases}, ${gateNode}`))).toEqual([])
+  // 产出写在变量里、或有动态展开时不猜
+  expect(lintWorkflowSource(flow(`agent({ id: 'implement', role: 'dev', outputs: caseOutputs }), ${gateNode}`))).toEqual([])
+  // 没有 acceptance 检查的门禁不受影响
+  expect(lintWorkflowSource(flow(`${implement}, gate({ id: 'g', checks: [{ id: 't', kind: 'function', fn: run }] })`))).toEqual([])
+})

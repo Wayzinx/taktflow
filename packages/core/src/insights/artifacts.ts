@@ -38,16 +38,27 @@ export async function readArtifactData(store: WorkspaceStore, requirementId: str
     if (!content && artifacts.some((artifact) => artifact.path === path)) throw new Error(`清单中的 spec 产物内容缺失：${requirementId}/${path}`)
     return content?.toString('utf8')
   }))
+  // 标题取 AC 的定义处（标题行、列表项、表格行或以 AC 编号开头的行）；修订说明等处的顺带提及只在没有定义时兜底。
+  const defined = new Set<string>()
   for (const spec of specs) {
     if (spec === undefined) continue
     for (const line of spec.split(/\r?\n/)) {
+      const lead = /^\s{0,3}(?:#{1,6}\s+|(?:[-*+]|\d+[.)])\s+|\|\s*)?[\s*_`[]*/.exec(line)![0].length
       for (const match of line.matchAll(/\bAC-\d+(?:-\d+)?\b/g)) {
         const ac = match[0]
         const title = line.slice(match.index + ac.length).replace(/^[\s:：|*`\]-]+/, '').replace(/[\s|*`]+$/, '')
-        if (!acs.has(ac) || acs.get(ac) === ac) acs.set(ac, title || ac)
+        if (match.index === lead && !defined.has(ac)) {
+          defined.add(ac)
+          acs.set(ac, title || ac)
+        } else if (!acs.has(ac) || (!defined.has(ac) && acs.get(ac) === ac)) {
+          acs.set(ac, title || ac)
+        }
       }
     }
   }
+  const sorted = [...acs].sort(([a], [b]) => a.localeCompare(b, 'en', { numeric: true }))
+  acs.clear()
+  for (const [ac, title] of sorted) acs.set(ac, title)
   const cases: CaseRecord[] = []
   const ids = new Set<string>()
   const caseFiles = artifacts.filter((artifact) => /^cases\/.*\.json$/.test(artifact.path))
