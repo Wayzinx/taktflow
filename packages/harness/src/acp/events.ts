@@ -9,7 +9,7 @@ export class AcpEvents {
   finalText = ''
   configOptions: ObjectValue[] = []
   readonly calls = new Map<string, ObjectValue>()
-  private readonly timings = new Map<string, { started: number; ended: boolean }>()
+  private readonly timings = new Map<string, { started: number; ended: boolean; announced: boolean }>()
   private readonly compactions = new Map<string, ObjectValue>()
 
   constructor(private readonly emit: (event: HarnessEvent) => void, private readonly capabilities: HarnessCapabilities) {}
@@ -55,11 +55,17 @@ export class AcpEvents {
     let timing = this.timings.get(id)
     if (!timing) {
       if (update.sessionUpdate !== 'tool_call') { this.audit('tool_call_update', merged); return }
-      timing = { started: Date.now(), ended: false }
+      timing = { started: Date.now(), ended: false, announced: false }
       this.timings.set(id, timing)
+    }
+    // claude-agent-acp 先发一个 rawInput 为空的 tool_call，下一条更新才带上命令 / 路径；等输入到了（或已不再 pending）再报开始
+    const pendingInput = merged.status === 'pending' && isEmptyObject(merged.rawInput)
+    if (!timing.announced && !pendingInput) {
+      timing.announced = true
       this.capabilities.toolEvents = true
       this.emit({ type: 'tool_call', tool, input, callId: id, phase: 'start' })
     }
+    if (!timing.announced) return
     if (timing.ended || !['completed', 'failed'].includes(String(merged.status))) return
     timing.ended = true
     this.capabilities.toolPhases = true
@@ -86,4 +92,8 @@ export class AcpEvents {
     // ACP 不提供 trigger / beforeTokens / afterTokens / dropped，不能合成 CompactionRecord。
     this.audit('compaction', state)
   }
+}
+
+function isEmptyObject(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).length === 0
 }

@@ -32,6 +32,21 @@ it('工具部分更新合并，重复完成不发重复 end，无 start 的更�
   expect(capabilities).toMatchObject({ toolEvents: true, toolPhases: true })
 })
 
+it('先发空 rawInput 的 tool_call（claude-agent-acp）时，等输入到了再报开始，耗时仍从第一次出现算', () => {
+  const events: HarnessEvent[] = [], capabilities: HarnessCapabilities = {}
+  const mapper = new AcpEvents(event => events.push(event), capabilities)
+  mapper.update({ sessionUpdate: 'tool_call', toolCallId: 'b', kind: 'execute', title: 'Terminal', status: 'pending', rawInput: {} })
+  expect(events.filter(event => event.type === 'tool_call')).toEqual([])
+  mapper.update({ sessionUpdate: 'tool_call_update', toolCallId: 'b', rawInput: { command: 'ls' } })
+  mapper.update({ sessionUpdate: 'tool_call_update', toolCallId: 'b', status: 'completed' })
+  // 无参数的工具：一直是空输入，完成时补报开始
+  mapper.update({ sessionUpdate: 'tool_call', toolCallId: 'c', kind: 'other', status: 'pending', rawInput: {} })
+  mapper.update({ sessionUpdate: 'tool_call_update', toolCallId: 'c', status: 'completed' })
+  expect(events.filter(event => event.type === 'tool_call').map(event => [event.callId, event.phase, event.input])).toEqual([
+    ['b', 'start', '{"command":"ls"}'], ['b', 'end', '{"command":"ls"}'], ['c', 'start', '{}'], ['c', 'end', '{}'],
+  ])
+})
+
 it('只有 agent 暴露的 select 选项开启模型/effort 能力；更新可撤销能力', () => {
   const capabilities: HarnessCapabilities = {}, mapper = new AcpEvents(() => {}, capabilities)
   mapper.configure([{ id: 'm', category: 'model', type: 'select' }, { id: 'e', category: 'thought_level', type: 'boolean' }])
