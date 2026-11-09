@@ -195,7 +195,7 @@ taktflow 的控制台像一间精密仪器的控制室：控制导轨固定在�
 层次以色调分层为主、阴影为辅：暖纸底 → 纸面卡片 → 浮层。凸起面有一道 1px 的内高光（`--edge-light`），像机加工件的倒角；阴影低而利落，不做漫射光晕。
 
 ### Shadow Vocabulary
-- **sm**（`inset 0 1px 0 var(--edge-light), 0 1px 2px var(--shadow-color), 0 0 0 1px var(--border)`）：卡片、按钮、空状态图标。
+- **sm**（`inset 0 1px 0 var(--edge-light), 0 1px 2px var(--shadow-color), 0 0 0 1px var(--border)`）：卡片、按钮。
 - **md**（`0 6px 18px -6px …, 0 2px 5px -2px …, 0 0 0 1px var(--border)`）：悬浮卡片、下拉。
 - **lg**（`0 28px 60px -16px …, 0 10px 20px -10px …, 0 0 0 1px var(--border-strong)`）：命令面板、抽屉、窄屏导轨。
 
@@ -203,7 +203,7 @@ taktflow 的控制台像一间精密仪器的控制室：控制导轨固定在�
 | 层 | 底色 | 阴影 token | 用途 |
 |---|---|---|---|
 | 页面底 | `--bg` | 无 | 工作区背景 |
-| 卡片 | `--surface` / `--surface-raised` | `--elev-1`（7% 描边环 + 1px 近影 + `0 8px 24px -14px` 低漫射；卡片不再叠 `border`） | 卡片、表格容器、读数格、空状态图标 |
+| 卡片 | `--surface` / `--surface-raised` | `--elev-1`（7% 描边环 + 1px 近影 + `0 8px 24px -14px` 低漫射；卡片不再叠 `border`） | 卡片、表格容器、读数格 |
 | 浮层 | `--surface-overlay` | `--elev-2`（下拉、菜单、气泡）/ `--elev-3`（对话框、抽屉、停靠面板、⌘K、toast） | 浮在内容之上的一切 |
 
 浅色主题靠细阴影区分层次；深色主题阴影几乎看不见，所以**浮层更亮（`--surface-overlay`）+ 描边更实（`--border-strong`）**。三个 `--elev-*` 都自带 1px 描边与顶部内高光，不要再叠 `border`。
@@ -228,12 +228,13 @@ taktflow 的控制台像一间精密仪器的控制室：控制导轨固定在�
 
 ### Navigation（控制导轨）
 - 导轨跟随主题；顶部"Solo / 空间"模式标签（文字 + 当前项下划线，收起时换图标）；条目 13px/500，图标 16px、描边 1.75。
-- hover：`--rail-hover` 底；当前页：`--rail-active` 底 + 左缘 3px 节拍橙刻度 + 图标变橙，`aria-current="page"`。
+- hover：`--rail-hover` 底，图标各做一次 300ms 的小动作（总览方块错位、需求下沉、待办弹一下、知识库翻开、Workflow 前推、评测晃瓶、设置拧半格；`data-motion`，减少动效时不动）；当前页：`--rail-active` 底 + 左缘 3px 节拍橙刻度 + 图标变橙，`aria-current="page"`。
 - 待办数用节拍橙胶囊角标；其他计数用 rail-text-3 等宽数字。
 - 底部：三段主题切换（跟随系统 / 浅色 / 深色）与版本号。
 
 ### 顶栏与面包屑
 - 半透明暖纸底 + 模糊；面包屑是 `<ol>`，分隔用 chevron，当前页 500 字重。
+- 下沿平时没有线；内容滚到顶栏下面时才出现 1px `--border` 分隔线（docs/design/30 §1，原来的刻度传送带已去掉）。
 - 右侧：演示数据（虚线中性描边，不是告警）、节拍指示（"N 个需求在跑"，有运行时橙点按拍子跳）、⌘K 按钮。
 
 ### 命令面板（⌘K / Ctrl+K）
@@ -244,9 +245,9 @@ taktflow 的控制台像一间精密仪器的控制室：控制导轨固定在�
 
 ### 节拍尺（Signature）
 - 一排 2px 刻度，每 4 格一根长刻度。
-- **运行中**：光点按拍子逐格点亮（传送带）；顶栏下沿的刻度带上，一段橙色光带按 `steps()` 一格格推进。
+- **运行中**：光点按拍子逐格点亮（传送带）；只出现在真的有东西在进行的地方（群聊 Lead 思考中、任务卡运行中）。
 - **加载**（`TaktLoader`）：节拍尺快拍（110ms 一格）+ 一句说明在等什么；120ms 后才淡入，快速返回不闪。
-- **空状态**（`EmptyState`）：图标 + 标题 + 说明 + 可选操作，底部一把静止的节拍尺，表示"这里没有在跑的东西"。
+- 不当装饰：空状态下面、顶栏下沿都不画节拍尺（docs/design/30 §1）。
 
 ### Cards / Containers
 - `rounded.md`（14px）圆角、纸面底、`--elev-1` 阴影（无描边）；卡片头 48px、左右 20px，标题 14px/600。
@@ -261,7 +262,7 @@ taktflow 的控制台像一间精密仪器的控制室：控制导轨固定在�
 
 ### 动作行与 Agent 形象（M4.6，docs/design/25）
 - **动作行** `ActionText` / `ActionRow`（`components/action-row.tsx`，动词表在 `lib/actions.ts`）：工具调用写成"动词 + 对象 + 结果"（读取 / 搜索 / 修改 / 运行 / 访问 / 检索 / 派给 / 调用），动词加粗、路径等宽、`+A −D` 红绿、`通过 / 失败` 着色；连续同动词合并 `×N`，失败的不合并。管家动作清单、运行页滚动条、节点"过程"共用。
-- **Agent 形象** `AgentMark`（`components/agent-mark.tsx`）：原创圆角方块 + 头顶节拍刻度 + 两只眼；待命闭眼、干活睁眼眨眼（刻度变节拍橙）、求助上看 + `!`/`?`、完成眯眼笑、失败 `✕`。颜色按 harness 固定（`harnessHue`），管家用节拍橙。**不使用任何第三方品牌图形。**
+- **Agent 形象** `AgentMark`（`components/agent-mark.tsx`）：节拍蜂（docs/design/27、30 §1）。**角色定道具**（`role` → `lib/roles.ts`：产品便签、架构尺子、开发扳手、测试试管、评审放大镜、判决法槌、规划信封、Lead 指挥棒、管家铃铛），< 40px 画成右下角的道具角标，≥ 40px 拿在手里；**harness 定身体色**（`harnessHue`，同一家的 CLI 与 ACP 同色，琥珀 `--c-4` 不分给 harness，免得和管家的蜂蜜色混）。状态：待命、干活（按动作换表情 / 手上工具）、求助（`!`/`?` 角标）、完成、失败。**不使用任何第三方品牌图形。**
 
 ### Inputs
 - `rounded.sm`（6px）圆角、strong 描边；focus 时描边变节拍橙 + 3px 柔和外环。
@@ -397,9 +398,29 @@ reduced-motion：边不描线、不流动，在跑的边用实色；回放仍能
 | 克制 | 品牌标 5 个轻量动作、间隔 ×1.8；DAG 只有在跑 / 等人的节点挑动作；管家历史头像静止；后台 / 视口外不挑动作 |
 | 减少动态效果 | 循环、动作、姿势过渡全停，只留每个状态的静态表情 |
 
+## 组件清单（docs/design/30 §1）
+
+组件库就是 `packages/web/src/components/ui/`（加 `components/ui.tsx`、`agent-mark.tsx`、`identity.tsx`）。**新页面只用这里有的写法；没有的，先补进组件库、放上 `/ui` 陈列页，再在页面里用。** 打开 `/ui`（⌘K 搜"组件"）能看到每个组件的实际样子。
+
+| 要表达的东西 | 只用 | 不要 |
+|---|---|---|
+| 人 | `Avatar`（首字母实色圆，16 / 20 / 24 / 32 四档，传 `id` 定颜色）、`AvatarStack` | 自己画圆 + 字母、淡色底 |
+| Agent / 子 Agent | `AgentMark`（`role` + `hue={harnessHue(h)}`） | lucide `Bot`、统一的机器人 / 方块图标 |
+| 管家 / Lead | `StewardMark` / `LeadMark` | `✦`、lucide `Sparkles`、深色方块里的星号 |
+| 按钮 / 菜单里的"管家" | `BeeGlyph`（lucide 同规格线稿） | 彩色的蜂塞进按钮 |
+| 节点类型、系统事件 | `KindIcon` / lucide 线稿 | — |
+| 状态 | `StatusBadge` / `StatusDot`（`--st-*`） | 自己写颜色的小圆点、胶囊 |
+| 空 / 错误 | `EmptyState`（`compact` 用 48px 蜂）/ `ErrorState` | 灰框图标、页面里自己写 `empty-state` 类名 |
+| 加载 | `Skeleton*`；整页首屏 `TaktLoader` | "加载中…"文案、空态下的节拍尺 |
+| 选择 / 标签 / Tab | `Segmented`、`Chip(s)`、`Tabs` + `TabPanel`、`Menu`、`Popover` | 自写 radio 组、下拉 |
+| 浮层 | `Dialog`、`Drawer`、`ReasonDialog`（写操作要原因） | 自写遮罩 |
+| 颜色 | `tokens.css` 的变量（`--c-1..8`、`--st-*`、`--accent`…） | 有彩色的裸色值（黑 / 白 / 灰做遮罩阴影可以） |
+
+`npm run ux:audit -w @taktflow/web` 拦这些写法（CI 必过）：`identity-icon`（引 lucide 的 Bot / Sparkles）、`adhoc-empty`（自己拼空态）、`raw-color`（CSS 里的有彩色裸色值），以及原有的 `loading-text`、`async-empty`、`cli-hint`。确有理由时在该行或上一行写 `ux-audit: ok <原因>`。
+
 ## Iconography
 
-lucide-react，线性图标；导航 16px / 描边 1.75，正文与按钮 14px，徽章 12px。图标只做识别，不做装饰；状态图标与状态色成对出现。
+lucide-react，线性图标；导航 16px / 描边 1.75，正文与按钮 14px，徽章 12px。图标只做识别，不做装饰；状态图标与状态色成对出现。"管家"在按钮、菜单、标签里用 `BeeGlyph`（圆身、两道纹、带圆点的触角，和 lucide 同为 24 网格 2px 描边）；lucide 的 `Bot`、`Sparkles` 不表示任何东西的身份。
 
 ## Do's and Don'ts
 

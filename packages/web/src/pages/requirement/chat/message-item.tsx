@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Activity, Bot, Cog, CornerUpLeft, Info, Sparkles } from 'lucide-react'
+import { Activity, Cog, CornerUpLeft, Info } from 'lucide-react'
 import type { AttentionItem, RoomMember, RoomMessage } from '@taktflow/core'
+import { AgentMark, harnessHue } from '../../../components/agent-mark'
+import { LeadMark } from '../../../components/identity'
 import { RouteCard } from '../../../components/route-card'
 import { Avatar } from '../../../components/ui'
 import { fmtTime } from '../../../lib/format'
@@ -32,13 +34,17 @@ function authorLabel(m: RoomMessage, member?: RoomMember): { name: string; tag?:
   return { name: member?.name ?? a.id, tag: member?.role, kind: 'human' }
 }
 
-/** 头像：真人用首字母，Lead 和子 Agent 用图标，一眼分清是人还是 AI。 */
-export function MemberAvatar({ kind, name }: { kind: RoomMember['kind'] | 'system'; name: string }) {
-  if (kind === 'human') return <Avatar name={name} size={28} />
-  const Icon = kind === 'lead' ? Sparkles : kind === 'system' ? Cog : Bot
+/**
+ * 头像（docs/design/30 §1）：真人是首字母头像，Lead 是拿指挥棒的蜂，子 Agent 是按角色拿道具、按 harness 着色的蜂；
+ * 引擎这类系统消息用线稿图标。一眼分清是人、是哪个 Agent。
+ */
+export function MemberAvatar({ kind, name, id, role, harness, size = 24, busy }: { kind: RoomMember['kind'] | 'system'; name: string; id?: string; role?: string; harness?: string; size?: number; busy?: boolean }) {
+  if (kind === 'human') return <Avatar name={name} id={id} size={size} />
+  if (kind === 'lead') return <LeadMark size={size} harness={harness} label={name} />
+  if (kind === 'agent') return <AgentMark state={busy ? 'work' : 'idle'} role={role ?? name} hue={harnessHue(harness)} size={size} label={name} />
   return (
-    <span className={`chat-avatar who-${kind}`} title={name} aria-label={name}>
-      <Icon strokeWidth={2} />
+    <span className="chat-avatar who-system" style={{ width: size, height: size }} title={name} aria-label={name}>
+      <Cog strokeWidth={2} />
     </span>
   )
 }
@@ -108,7 +114,7 @@ export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: bool
             {fmtTime(m.at).slice(0, 5)}
           </time>
         ) : (
-          <MemberAvatar kind={who.kind} name={who.name} />
+          <MemberAvatar kind={who.kind} name={who.name} id={m.author.type === 'agent' ? undefined : m.author.id} role={m.author.type === 'agent' ? m.author.role : undefined} harness={m.author.type === 'agent' ? m.author.harness : undefined} size={28} />
         )}
       </div>
       <div className="chat-msg-main">

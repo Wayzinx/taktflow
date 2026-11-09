@@ -80,25 +80,18 @@
 }
 
 /* ---- 头像：Lead / 子 Agent 用图标块，与真人的字母头像区分 */
+/* 系统消息（引擎）的头像：线稿图标放在圆里，和人、蜂的圆形轮廓一致 */
 .chat-avatar {
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
+  border-radius: 50%;
   background: var(--surface-2);
   color: var(--text-2);
 }
 .chat-avatar svg {
-  width: 15px;
-  height: 15px;
-}
-.chat-avatar.who-lead {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--accent);
+  width: 60%;
+  height: 60%;
 }
 
 /* ---- 主区 */

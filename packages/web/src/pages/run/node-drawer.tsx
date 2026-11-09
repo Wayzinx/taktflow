@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react'
-import { Bot, ClipboardCheck, FileDiff, FileInput, Fingerprint, Layers, ListChecks, ListTree, Scale, ScanSearch, ScrollText, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ClipboardCheck, FileDiff, FileInput, Fingerprint, Layers, ListChecks, ListTree, MessageSquareText, Scale, ScanSearch, ScrollText, ShieldCheck, X } from 'lucide-react'
 import type { Expansion, GraphNode } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, KindIcon, Skeleton, StatusBadge, TabPanel, Tabs, type TabDef } from '../../components/ui'
@@ -15,6 +15,8 @@ import { ReviewTab } from './review/review-tab'
 import { CheckpointsTab } from './checkpoints-tab'
 import { ChangesCard } from './changes/changes-card'
 import './drawer.css'
+import { BeeGlyph } from '../../components/identity'
+import { AgentMark, harnessHue, markOf } from '../../components/agent-mark'
 
 const MIN_W = 440
 const DEFAULT_W = 580
@@ -81,7 +83,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
     { id: 'review', label: '评审', icon: ClipboardCheck, hidden: d?.kind !== 'review', count: d?.review?.rounds.length },
     { id: 'checkpoints', label: '检查点', icon: ScanSearch, hidden: !d?.checkpoints?.length, count: d?.checkpoints?.length },
     { id: 'changes', label: '改动', icon: FileDiff, hidden: !d?.changes?.files.length, count: d?.changes?.files.length },
-    { id: 'prompt', label: 'Prompt', icon: Bot, hidden: !d?.prompt },
+    { id: 'prompt', label: 'Prompt', icon: MessageSquareText, hidden: !d?.prompt },
     { id: 'recipe', label: '配方', icon: Fingerprint, hidden: !d?.recipe },
   ]
   const visible = tabs.filter((t) => !t.hidden).map((t) => t.id)
@@ -98,9 +100,13 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
         {/* 换节点时标题与摘要交叉淡化（150ms），不是硬切 */}
         <TabPanel key={nodeId} className="drawer-node-swap">
         <div className="drawer-title-row">
-          {kind && <KindIcon kind={kind} size={28} />}
+          {kind === 'agent' || kind === 'judge' ? (
+            <AgentMark {...markOf(status ?? 'pending')} role={d?.role ?? graphNode?.role ?? (kind === 'judge' ? 'judge' : undefined)} hue={harnessHue(graphNode?.harness)} size={32} label={`${d?.role ?? graphNode?.role ?? kind} · ${graphNode?.harness ?? ''}`} />
+          ) : (
+            kind && <KindIcon kind={kind} size={28} />
+          )}
           <div style={{ minWidth: 0, flex: 1 }}>
-            <div className={`drawer-title truncate${status === 'running' ? ' shimmer-text' : ''}`}>{title ?? <Skeleton w={160} h={16} />}</div>
+            <div className="drawer-title truncate">{title ?? <Skeleton w={160} h={16} />}</div>
             <div className="drawer-sub">
               <span className="mono truncate">{nodeId}</span>
               {(d?.role ?? graphNode?.role) && <span className="mono">{d?.role ?? graphNode?.role}</span>}
@@ -114,7 +120,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
             aria-label="问管家这个节点"
             title="问管家这个节点"
           >
-            <Sparkles />
+            <BeeGlyph />
           </button>
           <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setQuery({ node: undefined, dtab: undefined })} aria-label="关闭" title="关闭（Esc）">
             <X />

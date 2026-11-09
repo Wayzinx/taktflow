@@ -1,10 +1,11 @@
-import { Settings2, Sparkles } from 'lucide-react'
+import { Settings2 } from 'lucide-react'
 import { useAsync } from '../api'
 import { useCrumbs } from '../components/layout'
 import { ErrorState, PageHeader, Skeleton, useStewardSuggestions } from '../components/ui'
 import { Link } from '../lib/router'
 import { askSteward } from '../lib/ui-store'
 import { WorkflowTable } from './workflows-list-table'
+import { BeeGlyph } from '../components/identity'
 
 /** /workflows：当前空间的 workflow 列表（ds.workflows()），点进 /workflows/:id 编辑器。 */
 export function WorkflowsListPage() {
@@ -32,7 +33,7 @@ export function WorkflowsListPage() {
         actions={
           <>
             <button type="button" className="btn btn-sm" onClick={() => askSteward('帮我新建一条 workflow：')}>
-              <Sparkles />
+              <BeeGlyph />
               让管家新建
             </button>
             <Link to="/settings?tab=workflows" className="btn btn-sm btn-ghost">

@@ -121,16 +121,7 @@
 .wfc-remote-icon {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
   flex: none;
-  border-radius: var(--radius-sm);
-  background: var(--st-running-soft);
-  color: var(--st-running);
-}
-.wfc-remote-icon svg {
-  width: 16px;
-  height: 16px;
 }
 .wfc-remote-main {
   flex: 1;

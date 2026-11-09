@@ -72,7 +72,7 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
           <ul className="member-list">
             {draft.map((m, i) => (
               <li key={m.id} className={`member-row ${st(i).className ?? ''} ${flash(m.id)}`} style={st(i).style}>
-                <Avatar name={m.name} size={28} />
+                <Avatar name={m.name} id={m.id} size={32} />
                 <div className="member-text">
                   <span className="member-name">{m.name}</span>
                   <span className="faint mono">{m.email ?? m.id}</span>

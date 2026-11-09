@@ -1,5 +1,6 @@
 import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type Ref } from 'react'
-import { ArrowDown, Sparkles } from 'lucide-react'
+import { ArrowDown } from 'lucide-react'
+import { LeadMark } from '../../../components/identity'
 import type { RoomMessage } from '@taktflow/core'
 import { TaktRuler } from '../../../components/takt'
 import { MessageItem, type MessageCtx } from './message-item'
@@ -148,9 +149,7 @@ export function MessageFeed({ messages, ctx, leadThinking, apiRef }: { messages:
           })}
           {leadThinking && (
             <div className="chat-thinking" role="status">
-              <span className="chat-avatar who-lead" aria-hidden="true">
-                <Sparkles strokeWidth={2} />
-              </span>
+              <LeadMark size={28} state="work" label="Lead" />
               <span>Lead 正在看进度</span>
               <TaktRuler ticks={8} running className="chat-thinking-ruler" />
             </div>

@@ -1,5 +1,5 @@
 import { useRef, useState, type CSSProperties } from 'react'
-import { ArrowUpRight, BellOff, BellRing, Clock, EyeOff, OctagonAlert, Sparkles, TriangleAlert } from 'lucide-react'
+import { ArrowUpRight, BellOff, BellRing, Clock, EyeOff, OctagonAlert, TriangleAlert } from 'lucide-react'
 import type { Risk, RiskAction, StewardContextRef } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Menu, toast } from '../ui'
@@ -8,6 +8,7 @@ import { hm } from './fmt'
 import { askSteward } from '../../lib/ui-store'
 import { jumpTo } from './jump'
 import './cards.css'
+import { BeeGlyph } from '../identity'
 
 export const RISK_LEVEL = {
   high: { label: '高', icon: OctagonAlert, tone: 'failed' },
@@ -125,7 +126,7 @@ export function RiskCard({ risk, onChange, onAsk, compact, className, style }: {
         {risk.state === 'open' &&
           risk.actions.slice(0, compact ? 1 : 2).map((a, i) => (
             <button key={a.label} type="button" className={`btn btn-sm${i === 0 && !compact ? ' btn-primary' : ''}`} onClick={() => act(a)}>
-              {a.ask || a.commandId ? <Sparkles /> : <ArrowUpRight />}
+              {a.ask || a.commandId ? <BeeGlyph /> : <ArrowUpRight />}
               {a.label}
             </button>
           ))}

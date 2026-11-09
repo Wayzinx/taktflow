@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react'
-import { Sparkles } from 'lucide-react'
+
 import type { StewardContextRef } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { withShortcut } from '../../components/ui'
 import './edit-fallback.css'
 import { openSteward, previewWorkflowProposal, type WorkflowStep } from '../../lib/ui-store'
+import { BeeGlyph } from '../../components/identity'
 
 /**
  * 编辑器右上角"问管家"：打开停靠面板，上下文带上 workflow 与选中节点。
@@ -33,7 +34,7 @@ export function AskStewardButton({ workflowId, selectedNodeId }: { workflowId: s
   const tip = first ? `有 ${mine.length} 个改这个 workflow 的提案等你决定：${first.p.title}` : `${withShortcut('问管家', 'mod+j')}：会带上这个 workflow${selectedNodeId ? `和选中的 ${selectedNodeId}` : ''}`
   return (
     <button type="button" className="btn btn-sm" title={tip} onClick={open}>
-      <Sparkles />
+      <BeeGlyph />
       问管家
       {mine.length > 0 && (
         <span className="wf-ask-count num" aria-label={`${mine.length} 个提案待决定`}>

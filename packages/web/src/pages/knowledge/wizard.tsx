@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { KnowledgeBaseSummary, KnowledgeIntent, KnowledgeKindInfo, KnowledgeTestResult } from '@taktflow/core'
-import { ArrowLeft, ArrowRight, Check, Sparkles } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { useAsync, useSource } from '../../api'
 import { Dialog, ErrorState, SkeletonGrid, toast } from '../../components/ui'
 import { navigate } from '../../lib/router'
@@ -13,6 +13,7 @@ import { StepBuild, StepData, StepTest } from './wizard-steps'
 import { QueryPanel } from './query-panel'
 import { PublishFlow } from './publish'
 import { kbId } from './meta'
+import { BeeGlyph } from '../../components/identity'
 
 const STEPS = ['类型', '数据', '测试', '构建', '检索测试', '发布'] as const
 
@@ -142,7 +143,7 @@ export function CreateWizard({ open, initialKind, onClose, onCreated }: { open: 
                 askSteward('帮我新建一个知识库：我想让流程里的 Agent 能查到 ')
               }}
             >
-              <Sparkles aria-hidden />
+              <BeeGlyph aria-hidden />
               不确定选哪种？告诉管家要查什么，让它来配
             </button>
           )}

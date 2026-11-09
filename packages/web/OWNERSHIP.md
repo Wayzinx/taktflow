@@ -2,7 +2,7 @@
 
 每个组只改自己名下的文件（可以在名下目录新建文件）。名下没有、又必须改的共享文件，写进交付说明的 knownIssues，由汇总合入。路径都相对 `packages/web/src/`。只用演示数据（`?mock=1`）。
 
-**体验基线是验收项**（docs/dev/m4-web.md「体验基线」）：页头用 `PageHeader`、四种状态用骨架 / `EmptyState` / `ErrorState` / `toast`、列表首屏 `useStagger`、新行 `useFlashRows`、数字 `CountUp`、Tab 用 `Tabs` + `TabPanel`。`npm run ux:audit -w @taktflow/web` 检查"…""加载中"与 CLI 指引。
+**体验基线是验收项**（docs/dev/m4-web.md「体验基线」）：页头用 `PageHeader`、四种状态用骨架 / `EmptyState` / `ErrorState` / `toast`、列表首屏 `useStagger`、新行 `useFlashRows`、数字 `CountUp`、Tab 用 `Tabs` + `TabPanel`。`npm run ux:audit -w @taktflow/web` 检查"…""加载中"、CLI 指引、身份图标、自拼空态与裸色值。**先看 `/ui` 陈列页和 DESIGN.md「组件清单」**，那里没有的写法先补进组件库再用（docs/design/30 §1）。
 
 | 组 | 负责文件 |
 |---|---|
@@ -67,7 +67,8 @@
 
 - **PageHeader**：`<PageHeader title="需求" description="7 个需求，4 个进行中" actions={<NewRequirementButton />} suggestions={useStewardSuggestions('requirements')} />`（`titleTransitionName`、`eyebrow`、`icon` 可选；旧 `sub` 仍可用；`SuggestionChips items` 可单独放在卡片里）
 - **Skeleton**：`{!q.data ? <SkeletonRows rows={6} /> : <Table />}`；还有 `<Skeleton w h r />`、`<SkeletonText lines={3} />`、`<SkeletonCard />`、`<SkeletonGrid count={6} min={260} />`（120ms 后才淡入）
-- **EmptyState**：`<EmptyState icon={BookOpen} title="还没有知识库" body="一句话说明" action={<button className="btn btn-primary">新建</button>} stewardAsk="帮我从 docs/ 建一个文档知识库" />`（`compact` 用于卡片内）
+- **EmptyState**：`<EmptyState title="还没有知识库" body="一句话说明" action={<button className="btn btn-primary">新建</button>} stewardAsk="帮我从 docs/ 建一个文档知识库" />`（`compact` 用于卡片内，48px 蜂；`icon` 已废弃不再画）
+- **身份**：人 `Avatar`（传 `id`），Agent `AgentMark role={…} hue={harnessHue(h)}`，管家 / Lead `StewardMark` / `LeadMark`，按钮里的管家图标 `BeeGlyph`（`components/identity.tsx`）
 - **ErrorState**：`if (q.error && !q.data) return <ErrorState error={q.error} onRetry={q.reload} />`（403 自动说明找谁，`contact` 可指定人）
 - **toast / Toaster**：`toast('已归档 REQ-007', { undo: () => ds.restoreRequirement('REQ-007', '撤销归档'), tone: 'success' })`；`action: { label, onClick }`、`duration`、`dismissToast(id)`；`<Toaster>` 已挂在 `app.tsx`
 - **CountUp**：`<CountUp value={totals.active} from0 />`、`<CountUp value={0.873} format={(v) => \`${(v * 100).toFixed(1)}%\`} />`
@@ -139,7 +140,7 @@
 ## 节拍蜂（docs/design/27 §1）
 
 - `components/mascot`：`<Bee state size hue prop tools logo calm still interactive follow onAct />`。`bee-markup.ts`（SVG 内部结构与道具）、`bee-states.ts`（8 个状态的表情 / 间隔 / 动作池、互动反应、工具轮换）、`bee-engine.ts`（挑动作、眨眼、戳、跟随指针）、`bee.css`（部件、姿势、基础循环、`bee-a-*` 动作关键帧、显示规则）。加动作：在状态表里加一条 `{ id, name, w, dur, fx: { 部件: 关键帧 } }`，关键帧写进 `bee.css`。
-- 用在：`AgentMark`（运行页节点，在跑 / 等人才挑动作，其余 `calm`）、侧栏品牌标与底部字标、`lib/pulse.ts` favicon、管家头像（历史消息 `still`）与欢迎页、`EmptyState`（大号默认睡着，`mascot={false}` 用图标）、`ErrorState`（大号失败 / 没权限求助）。
+- 用在：`AgentMark`（运行页节点，在跑 / 等人才挑动作，其余 `calm`）、侧栏品牌标与底部字标、`lib/pulse.ts` favicon、管家头像（历史消息 `still`）与欢迎页、`EmptyState`（默认睡着；`compact` 48px）、`ErrorState`（大号失败 / 没权限求助）。
 
 ## M6：DAG 动效与运行时配置（docs/design/27）
 

@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { ChevronDown, Sparkles, X } from 'lucide-react'
+import { ChevronDown, X } from 'lucide-react'
 import type { Digest } from '@taktflow/core'
 import { useAsync, useSource } from '../api'
 import { fmtRelative } from '../lib/format'
 import { Link } from '../lib/router'
 import { openSteward } from '../lib/ui-store'
 import { markDigestSeen, peekDigest } from '../components/steward/digest-session'
+import { StewardMark } from '../components/identity'
 
 const SEEN_KEY = 'taktflow.digest.seen'
 
@@ -59,9 +60,7 @@ export function SinceBanner() {
   return (
     <section className="since-banner" aria-label="自上次以来">
       <div className="since-head">
-        <span className="since-icon" aria-hidden>
-          <Sparkles />
-        </span>
+        <StewardMark size={32} className="since-icon" />
         <div className="since-main">
           <div className="since-title">
             自上次以来

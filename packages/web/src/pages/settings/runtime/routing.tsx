@@ -1,13 +1,14 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, Crown, GraduationCap, Pencil, Plus, Route, Signpost, Sparkles, Trash2, X, type LucideIcon } from 'lucide-react'
+import { ArrowDown, Crown, GraduationCap, Pencil, Plus, Route, Signpost, Trash2, X, type LucideIcon } from 'lucide-react'
 import type { HarnessInfo, HarnessSelector, RuntimeSystemRole } from '@taktflow/core'
 import { EmptyState, ReasonDialog, Segmented, toast, useFlashRows, useStagger } from '../../../components/ui'
 import { EditorDrawer, EFFORTS, Field, type RuntimeApi } from './shared'
+import { BeeGlyph } from '../../../components/identity'
 
 const SYSTEM: Array<{ id: RuntimeSystemRole; label: string; hint: string; icon: LucideIcon }> = [
   { id: 'lead', label: 'Lead', hint: '需求群里接话、拆任务、派活', icon: Crown },
   { id: 'route', label: '路由判档', hint: '新需求进来时判断走哪一档流程', icon: Signpost },
-  { id: 'steward', label: '管家', hint: '空间管家：查数据、起草改动、转达', icon: Sparkles },
+  { id: 'steward', label: '管家', hint: '空间管家：查数据、起草改动、转达', icon: BeeGlyph },
   { id: 'learner', label: '经验提炼', hint: '运行结束后提炼经验条目', icon: GraduationCap },
 ]
 

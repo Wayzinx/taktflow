@@ -36,7 +36,7 @@ function NowRow({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
   const mark = markOf(cur.status)
   return (
     <div className="ent-now">
-      <AgentMark state={mark.state} sign={mark.sign} act={actOf(activity)} hue={harnessHue(g?.harness)} size={30} />
+      <AgentMark state={mark.state} sign={mark.sign} act={actOf(activity)} role={g?.role} hue={harnessHue(g?.harness)} size={30} />
       <div className="ent-now-main">
         <span className="ent-now-head">
           <b>{cur.title}</b>

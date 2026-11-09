@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react'
-import { AlertTriangle, Lock, RotateCw, Sparkles, WifiOff, type LucideIcon } from 'lucide-react'
+import { RotateCw, type LucideIcon } from 'lucide-react'
 import type { StewardContextRef } from '@taktflow/core'
 import { askSteward } from '../../lib/ui-store'
+import { BeeGlyph } from '../identity'
 import { Bee, type BeeState } from '../mascot'
-import { TaktRuler } from '../takt'
 import './primitives.css'
 
 export interface EmptyStateProps {
-  icon: LucideIcon
+  /** @deprecated 空态统一画睡着的节拍蜂（docs/design/30 §1），不再画图标；留着只为不改调用方。 */
+  icon?: LucideIcon
   title: string
   /** 一句话：为什么是空的、下一步做什么。不教用户改文件或跑 CLI（ux:audit 会警告）。 */
   body?: ReactNode
@@ -18,28 +19,22 @@ export interface EmptyStateProps {
   /** "让管家帮我"：点击打开停靠面板并预填这句话。 */
   stewardAsk?: string
   stewardContext?: StewardContextRef[]
+  /** 卡片 / 面板里的小号空态：48px 蜂、更紧的间距。 */
   compact?: boolean
-  /** 大号空状态默认是睡着的节拍蜂（点它会醒）；false 用图标。紧凑版总是图标。 */
-  mascot?: BeeState | false
+  /** 蜂的状态，默认睡着（点它会醒）。 */
+  mascot?: BeeState
   className?: string
 }
 
 /**
- * 空状态（体验基线 2）：单色线稿图标 + 一句话 + 一个主动作 + 可选"让管家帮我"。
- *   <EmptyState icon={BookOpen} title="还没有知识库" body="知识库让节点查到业务规则和接口。" action={<button className="btn btn-primary">新建知识库</button>} stewardAsk="帮我从 docs/ 建一个文档知识库" />
+ * 空状态（体验基线 2、docs/design/30 §1）：节拍蜂 + 一句话 + 一个主动作 + 可选"让管家帮我"。全站只有这一种空态，页面里不要自己拼。
+ *   <EmptyState title="还没有知识库" body="知识库让节点查到业务规则和接口。" action={<button className="btn btn-primary">新建知识库</button>} stewardAsk="帮我从 docs/ 建一个文档知识库" />
  */
-export function EmptyState({ icon: Icon, title, body, hint, action, stewardAsk, stewardContext, compact, mascot, className }: EmptyStateProps) {
+export function EmptyState({ title, body, hint, action, stewardAsk, stewardContext, compact, mascot = 'sleep', className }: EmptyStateProps) {
   const text = body ?? hint
-  const bee = compact ? false : (mascot ?? 'sleep')
   return (
     <div className={`empty-state${compact ? ' compact' : ''}${className ? ` ${className}` : ''}`}>
-      {bee ? (
-        <Bee className="empty-bee" state={bee} size={76} interactive />
-      ) : (
-        <span className="empty-icon" aria-hidden>
-          <Icon strokeWidth={1.5} />
-        </span>
-      )}
+      <Bee className="empty-bee" state={mascot} size={compact ? 48 : 76} calm={compact} interactive />
       <div className="empty-title">{title}</div>
       {text && <div className="empty-hint">{text}</div>}
       {(action || stewardAsk) && (
@@ -47,13 +42,12 @@ export function EmptyState({ icon: Icon, title, body, hint, action, stewardAsk, 
           {action}
           {stewardAsk && (
             <button type="button" className="btn btn-ghost btn-sm empty-ask" onClick={() => askSteward(stewardAsk, stewardContext)}>
-              <Sparkles aria-hidden />
+              <BeeGlyph aria-hidden />
               让管家帮我
             </button>
           )}
         </div>
       )}
-      {!compact && <TaktRuler ticks={9} className="empty-ruler" />}
     </div>
   )
 }
@@ -82,18 +76,11 @@ export function ErrorState({ error, onRetry, title, contact, compact }: ErrorSta
   const status = statusOf(error)
   const forbidden = status === 401 || status === 403
   const offline = !status && /fetch|network|Failed to fetch/i.test(error.message)
-  const Icon = forbidden ? Lock : offline ? WifiOff : AlertTriangle
   const head = title ?? (forbidden ? '没有权限查看' : offline ? '连不上服务' : '加载失败')
   const why = forbidden ? `需要更高的空间角色${contact ? `，请联系 ${contact}` : '，请联系空间 owner'}。` : offline ? '检查网络或服务是否在运行，然后重试。' : undefined
   return (
     <div className={`empty-state error-state${compact ? ' compact' : ''}`} role="alert">
-      {compact ? (
-        <span className="empty-icon" aria-hidden>
-          <Icon strokeWidth={1.5} />
-        </span>
-      ) : (
-        <Bee className="empty-bee" state={forbidden ? 'ask' : 'failed'} size={76} interactive />
-      )}
+      <Bee className="empty-bee" state={forbidden || offline ? 'ask' : 'failed'} size={compact ? 48 : 76} calm={compact} interactive />
       <div className="empty-title">{head}</div>
       <div className="empty-hint">
         {why && <div>{why}</div>}

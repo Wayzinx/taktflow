@@ -28,25 +28,36 @@ export function KindIcon({ kind, size = 22 }: { kind: NodeKind; size?: number })
   )
 }
 
-const AVATAR_HUES = [248, 190, 152, 32, 330, 270, 210]
-export function Avatar({ name, size = 22 }: { name: string; size?: number }) {
-  const hue = AVATAR_HUES[[...name].reduce((s, c) => s + c.charCodeAt(0), 0) % AVATAR_HUES.length]
-  // 小于 20px 放不下 11px 的字，只留色块，名字在 title / aria-label 里
-  const tiny = size < 20
+/** 人的头像色：图表色板去掉灰（灰留给"未知 harness"），按 id 稳定取。 */
+const AVATAR_COLORS = [1, 2, 3, 4, 5, 6, 8]
+/** 头像只有四档（docs/design/30 §1）：16 行内、20 列表、24 卡片、32 详情；别的尺寸就近取。 */
+const AVATAR_SIZES = [16, 20, 24, 32] as const
+export const avatarColor = (key: string) => `var(--c-${AVATAR_COLORS[[...key].reduce((s, c) => (s * 31 + c.charCodeAt(0)) >>> 0, 7) % AVATAR_COLORS.length]})`
+
+/** 头像里的字：16px 一个字母；汉字名 24px 以下只放最后一个字（两个字挤不进圆里）。 */
+function avatarText(name: string, px: number): string {
+  const t = initials(name)
+  if (px <= 16) return /[一-龥]/.test(t) ? t.slice(-1) : t.slice(0, 1)
+  return /[一-龥]/.test(t) && px < 24 ? t.slice(-1) : t
+}
+
+/** 人：首字母实色圆。id 定颜色（改名不变色），name 出字。agent 不用它，用 AgentMark。 */
+export function Avatar({ name, id, size = 20, className }: { name: string; id?: string; size?: number; className?: string }) {
+  const px = AVATAR_SIZES.reduce((a, b) => (Math.abs(b - size) < Math.abs(a - size) ? b : a))
   return (
-    <span className="avatar" title={name} aria-label={name} style={{ width: size, height: size, fontSize: tiny ? undefined : Math.max(11, size * 0.42), '--hue': hue } as CSSProperties}>
-      {tiny ? null : initials(name)}
+    <span className={`avatar s${px}${className ? ` ${className}` : ''}`} title={name} role="img" aria-label={name} style={{ '--av': avatarColor(id ?? name) } as CSSProperties}>
+      {avatarText(name, px)}
     </span>
   )
 }
 
-export function AvatarStack({ names, max = 4 }: { names: string[]; max?: number }) {
+export function AvatarStack({ names, max = 4, size = 20 }: { names: string[]; max?: number; size?: number }) {
   return (
     <span className="avatar-stack">
       {names.slice(0, max).map((n) => (
-        <Avatar key={n} name={n} />
+        <Avatar key={n} name={n} size={size} />
       ))}
-      {names.length > max && <span className="avatar more">+{names.length - max}</span>}
+      {names.length > max && <span className={`avatar more s${size}`}>+{names.length - max}</span>}
     </span>
   )
 }

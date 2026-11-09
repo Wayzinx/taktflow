@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePresence } from '../lib/motion'
-import { Boxes, BookOpen, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sparkles, Sun, Workflow, X } from 'lucide-react'
+import { BookOpen, Boxes, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Workflow, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
 import { spacePath } from '../lib/space'
@@ -18,6 +18,7 @@ import { Bee } from './mascot'
 import './layout.css'
 import './topbar.css'
 import { usePulse } from './pulse'
+import { BeeGlyph } from './identity'
 
 // ---------------------------------------------------------------- 面包屑：页面声明，顶栏渲染
 
@@ -131,7 +132,7 @@ const lastHref: Record<RailMode, string> = { solo: '/solo', space: '/' }
 function Sidebar({ open, onClose, mode }: { open: boolean; onClose: () => void; mode: RailMode }) {
   const collapsed = useSidebarCollapsed()
   const modes = [
-    { mode: 'solo' as const, label: 'Solo', icon: Sparkles, title: '和管家直接对话，跨空间看需求、运行和节点' },
+    { mode: 'solo' as const, label: 'Solo', icon: BeeGlyph, title: '和管家直接对话，跨空间看需求、运行和节点' },
     { mode: 'space' as const, label: '空间', icon: Boxes, title: '当前空间的总览、需求、待办与设置' },
   ]
   return (
@@ -172,13 +173,13 @@ function SpaceRail({ collapsed }: { collapsed: boolean }) {
   const project = useAsync((ds) => ds.project(), [])
   const pending = project.data?.attention.length ?? 0
   const items = [
-    { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
-    { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements, create: true },
-    { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
-    { to: '/knowledge', label: '知识库', icon: BookOpen, active: path.startsWith('/knowledge') },
-    { to: '/workflows', label: 'Workflow', icon: Workflow, active: path.startsWith('/workflows') },
-    { to: '/eval', label: '评测', icon: FlaskConical, active: path === '/eval' },
-    { to: '/settings', label: '空间设置', icon: Settings, active: path.startsWith('/settings') },
+    { to: '/', label: '总览', icon: LayoutDashboard, motion: 'tiles', active: path === '/' },
+    { to: '/requirements', label: '需求', icon: ListTodo, motion: 'drop', active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements, create: true },
+    { to: '/attention', label: '待办', icon: Inbox, motion: 'pop', active: path === '/attention', badge: pending },
+    { to: '/knowledge', label: '知识库', icon: BookOpen, motion: 'open', active: path.startsWith('/knowledge') },
+    { to: '/workflows', label: 'Workflow', icon: Workflow, motion: 'shift', active: path.startsWith('/workflows') },
+    { to: '/eval', label: '评测', icon: FlaskConical, motion: 'swing', active: path === '/eval' },
+    { to: '/settings', label: '空间设置', icon: Settings, motion: 'turn', active: path.startsWith('/settings') },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []
   const [navRef, glide] = useGlide<HTMLElement>('.sb-item.active')
@@ -189,10 +190,10 @@ function SpaceRail({ collapsed }: { collapsed: boolean }) {
       </div>
       <nav ref={navRef} className={`sb-nav${glide ? ' has-glide' : ''}`} aria-label="空间">
         <GlideMark glide={glide} className="sb-glide" />
-        {items.map(({ to, label, icon: Icon, active, badge, count, create }) => (
+        {items.map(({ to, label, icon: Icon, motion, active, badge, count, create }) => (
           <div key={to} className={`sb-row${create ? ' has-create' : ''}`}>
             <Link to={to} className={`sb-item${active ? ' active' : ''}`} aria-current={active ? 'page' : undefined} title={collapsed ? label : undefined}>
-              <Icon aria-hidden />
+              <Icon aria-hidden data-motion={motion} />
               <span className="sb-label">{label}</span>
               {badge ? <span className="sb-badge num" aria-label={`${badge} 项待办`}>{badge}</span> : null}
               {count !== undefined && !badge ? <span className="sb-count num">{count}</span> : null}
@@ -226,8 +227,19 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
   const ds = useSource()
   const project = useAsync((d) => d.project(), [])
   const running = project.data?.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length ?? 0
+  // 分隔线只在内容滚到顶栏下面时出现（docs/design/30 §1）；滚动容器是外壳的工作区面板
+  const bar = useRef<HTMLElement>(null)
+  const [scrolled, setScrolled] = useState(false)
+  useEffect(() => {
+    const scroller = bar.current?.closest('.shell-main')
+    if (!scroller) return
+    const on = () => setScrolled(scroller.scrollTop > 2)
+    on()
+    scroller.addEventListener('scroll', on, { passive: true })
+    return () => scroller.removeEventListener('scroll', on)
+  }, [])
   return (
-    <header className="topbar">
+    <header ref={bar} className={`topbar${scrolled ? ' is-scrolled' : ''}`}>
       <button className="btn btn-ghost btn-icon topbar-menu" onClick={onMenu} aria-label="打开导航">
         <Menu aria-hidden />
       </button>
@@ -258,7 +270,6 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
         <Search aria-hidden />
         <span className="kbd">{isMac ? '⌘K' : 'Ctrl K'}</span>
       </button>
-      <span className={`takt-track${running > 0 ? ' running' : ''}`} aria-hidden />
     </header>
   )
 }

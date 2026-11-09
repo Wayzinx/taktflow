@@ -1,0 +1,71 @@
+/* 组件陈列页（docs/design/30 §1）：只排版，不定义任何新组件样式。 */
+.uig-section {
+  margin-top: var(--sp-8);
+}
+.uig-head h2 {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+.uig-head p {
+  margin: var(--sp-1) 0 var(--sp-4);
+  max-width: 760px;
+  color: var(--text-2);
+  font-size: var(--text-ui);
+  line-height: 1.6;
+}
+.uig-sub {
+  margin: var(--sp-5) 0 var(--sp-2);
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.uig-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.uig-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 72px;
+  margin: 0;
+  padding: var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.uig-cell-art {
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+}
+.uig-cell figcaption {
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+.uig-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.uig-icons {
+  color: var(--text-2);
+}
+.uig-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-4);
+}
+.uig-card {
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.uig-pad {
+  padding: var(--sp-4);
+}

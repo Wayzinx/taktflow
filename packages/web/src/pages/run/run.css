@@ -1,16 +1,7 @@
 :root {
-  --edge: rgba(16, 18, 27, 0.26);
-  --mm-mask: rgba(240, 240, 244, 0.6);
-}
-:root[data-theme='dark'] {
-  --edge: rgba(255, 255, 255, 0.2);
-  --mm-mask: rgba(8, 9, 11, 0.6);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    --edge: rgba(255, 255, 255, 0.2);
-    --mm-mask: rgba(8, 9, 11, 0.6);
-  }
+  /* 依赖边与小地图遮罩：从文字色 / 底色调出来，深浅主题自动跟随 */
+  --edge: color-mix(in oklch, var(--text) 24%, transparent);
+  --mm-mask: color-mix(in oklch, var(--bg) 60%, transparent);
 }
 
 .shell-content:has(> .page-view > .run-page) {

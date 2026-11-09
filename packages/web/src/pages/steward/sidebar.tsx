@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
-import { CircleCheck, FileText, Forward, Hourglass, MessagesSquare, OctagonAlert, Search, Sparkles, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react'
+import { CircleCheck, FileText, Forward, Hourglass, MessagesSquare, OctagonAlert, Search, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react'
 import type { DelegationStatus, StewardFeedItem, StewardThread } from '@taktflow/core'
 import { useAsync, useSource, type AsyncState } from '../../api'
 import { normReceipt } from '../../components/receipt'
 import { EmptyState, ErrorState, Segmented, SkeletonRows, TabPanel, useFlashRows, useStagger } from '../../components/ui'
 import { fmtRelative } from '../../lib/format'
 import { useStewardUnread } from '../../lib/ui-store'
+import { BeeGlyph } from '../../components/identity'
 
 /** 列表预览用纯文本：去掉 Markdown 链接 / 粗体 / 行内代码与 [n] 引用标记。 */
 const plain = (t: string) => t.replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1').replace(/\*\*|`/g, '').replace(/\[\d+\]/g, '')
@@ -78,7 +79,7 @@ function feedLine(it: StewardFeedItem): { icon: LucideIcon; tone?: string; title
     case 'proposal': {
       const p = it.proposal
       const verb = { pending: '待你决定', applied: p.auto ? '已自动执行' : '已执行', rejected: '已拒绝', failed: '执行失败', reverted: '已撤销', stale: '已过期' }[p.status]
-      return { icon: p.status === 'applied' ? CircleCheck : p.status === 'reverted' ? Undo2 : Sparkles, tone: p.status === 'applied' ? 'success' : p.status === 'pending' ? 'waiting' : undefined, title: `提案${verb}：${p.title}` }
+      return { icon: p.status === 'applied' ? CircleCheck : p.status === 'reverted' ? Undo2 : BeeGlyph, tone: p.status === 'applied' ? 'success' : p.status === 'pending' ? 'waiting' : undefined, title: `提案${verb}：${p.title}` }
     }
     case 'delegation':
       return { icon: Forward, title: `${it.delegation.requirementId} 的 Lead ${DELEGATION_TITLE[normReceipt(it.delegation.status)]}`, sub: it.delegation.reply }

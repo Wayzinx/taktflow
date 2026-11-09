@@ -1,7 +1,8 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { AlertTriangle, Code2, Repeat, Sparkles } from 'lucide-react'
+import { AlertTriangle, Code2, PencilLine, Repeat } from 'lucide-react'
 import type { EditableNode } from '@taktflow/core'
 import { literalOf } from '../../../api/workflow-edit'
+import { AgentMark, harnessHue } from '../../../components/agent-mark'
 import { KindIcon } from '../../../components/ui'
 import { NODE_KIND } from '../../../lib/status'
 import type { LaneData, LoopData, WfNodeData } from './build-flow'
@@ -53,7 +54,7 @@ function Badges({ data }: { data: WfNodeData }) {
     <span className="wf-badges">
       {data.changed && (
         <span className="wf-badge wf-badge-changed">
-          <Sparkles />
+          <PencilLine />
           刚修改
         </span>
       )}
@@ -89,7 +90,7 @@ export function WfNodeView({ data }: NodeProps<Node<WfNodeData, 'wf'>>) {
       <Handles />
       <div className="wf-node-card">
         <div className="wf-row">
-          <KindIcon kind={n.kind} size={22} />
+          {n.kind === 'agent' || n.kind === 'judge' ? <NodeMark node={n} /> : <KindIcon kind={n.kind} size={22} />}
           <span className={`wf-title truncate${t.code ? ' mono wf-code-title' : ''}`}>{t.text}</span>
         </div>
         {/* 有目标时第二行只显示目标（一行，超出省略），id 与配置摘要进 tooltip；卡片高度不变 */}
@@ -147,3 +148,11 @@ export function LaneView({ data }: NodeProps<Node<LaneData, 'lane'>>) {
 }
 
 export const nodeTypes = { wf: WfNodeView, loop: LoopView, lane: LaneView }
+
+/** Agent / 判决节点画角色蜂（docs/design/30 §1）：角色定道具、节点写了 harness 就按它着色，和运行页一致。 */
+function NodeMark({ node }: { node: EditableNode }) {
+  const role = literalOf<string>(node.props.role) ?? (node.kind === 'judge' ? 'judge' : undefined)
+  const sel = literalOf<{ harness?: string } | string>(node.props.harness)
+  const harness = typeof sel === 'string' ? sel : sel?.harness
+  return <AgentMark state="idle" role={role} hue={harnessHue(harness)} size={24} label={[role, harness].filter(Boolean).join(' · ')} />
+}

@@ -1,8 +1,9 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
-import { FileText, Save, Sparkles, UserRoundCog } from 'lucide-react'
+import { FileText, Puzzle, Save, UserRoundCog } from 'lucide-react'
 import type { SpaceDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import type { SpaceFileKind } from '../../api/source'
+import { AgentMark, harnessHue } from '../../components/agent-mark'
 import { EmptyState, ErrorState, SkeletonRows, toast, useStagger } from '../../components/ui'
 import { StewardEditButton } from './ask-steward'
 import { setQuery, useLocation } from '../../lib/router'
@@ -12,12 +13,13 @@ interface Entry {
   name: string
   title: string
   description: string
+  harness?: string
   meta: string[]
 }
 
 function entries(kind: SpaceFileKind, sp: SpaceDetail): Entry[] {
   if (kind === 'skill') return sp.skills.map((s) => ({ name: s.name, title: s.name, description: s.description, meta: [s.path] }))
-  return sp.agents.map((a) => ({ name: a.role, title: a.title, description: a.description, meta: [a.role, [a.harness.harness, a.harness.model].filter(Boolean).join(' · '), `写 ${a.writeScope.join(' ')}`] }))
+  return sp.agents.map((a) => ({ name: a.role, title: a.title, description: a.description, harness: a.harness.harness, meta: [a.role, [a.harness.harness, a.harness.model].filter(Boolean).join(' · '), `写 ${a.writeScope.join(' ')}`] }))
 }
 
 /** 粗略的改动行数：按行号逐行比较，够用来提示"改了多少"。 */
@@ -109,7 +111,7 @@ export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDe
     return (
       <div className="card">
         <EmptyState
-          icon={isSkill ? Sparkles : UserRoundCog}
+          icon={isSkill ? Puzzle : UserRoundCog}
           title={isSkill ? '还没有技能' : '还没有角色'}
           body={isSkill ? '技能是团队沉淀的做事方法，运行前会同步给每个 Agent。说说你们怎么做事，管家帮你写成技能。' : '角色决定节点由谁来做：职责说明、默认模型和写权限。'}
           action={<StewardEditButton ask={isSkill ? '帮我新建一个技能，内容是：' : '帮我新建一个角色，负责：'} label={isSkill ? '让管家写一个技能' : '让管家建一个角色'} size="md" />}
@@ -123,11 +125,12 @@ export function FilesTab({ kind, space }: { kind: SpaceFileKind; space?: SpaceDe
       <ul className="card file-list" aria-label={isSkill ? '技能列表' : '角色列表'}>
         {list.map((e, i) => (
           <li key={e.name} {...st(i)}>
-            <button className={`file-item${e.name === selected.name ? ' on' : ''}`} aria-current={e.name === selected.name ? 'true' : undefined} onClick={() => {
+            <button className={`file-item${e.name === selected.name ? ' on' : ''}${isSkill ? '' : ' has-mark'}`} aria-current={e.name === selected.name ? 'true' : undefined} onClick={() => {
                 if (e.name === selected.name) return
                 if (dirty && !window.confirm(`${selected.title} 有未保存的修改，切换后会丢失。继续？`)) return
                 setQuery({ name: e.name })
               }}>
+              {!isSkill && <AgentMark state="idle" role={e.name} hue={harnessHue(e.harness)} size={28} className="file-item-mark" />}
               <span className="file-item-title">
                 <span className={isSkill ? 'mono' : undefined}>{e.title}</span>
                 {!isSkill && <span className="faint mono">{e.name}</span>}

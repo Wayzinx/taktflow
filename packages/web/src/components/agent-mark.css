@@ -1,4 +1,4 @@
-/* Agent 形象外框（docs/design/27 §2）：蜂本体见 mascot/bee.css；这里只有小尺寸时的头顶角标。 */
+/* Agent 形象外框（docs/design/27 §2、30 §1）：蜂本体见 mascot/bee.css；这里是小尺寸时的角标（右下角色道具、右上头顶符号）。 */
 
 .amark {
   position: relative;
@@ -9,6 +9,17 @@
 .amark .bee {
   width: 100%;
   height: 100%;
+}
+
+.amark-prop {
+  position: absolute;
+  right: -3px;
+  bottom: -2px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 0 0 2.5px var(--surface);
 }
 
 .amark-sign {

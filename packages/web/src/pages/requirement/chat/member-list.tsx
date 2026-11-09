@@ -27,7 +27,7 @@ export function MemberList({ members, busy, lead, onMention }: { members: RoomMe
               {list.map((m) => (
                 <li key={m.id}>
                   <button className="chat-member" onClick={() => onMention(m.id)} title={`@${m.id}`}>
-                    <MemberAvatar kind={m.kind} name={m.name} />
+                    <MemberAvatar kind={m.kind} name={m.name} id={m.id} role={m.kind === 'agent' ? (m.role ?? m.id) : undefined} busy={busy.has(m.id)} />
                     <span className="chat-member-text">
                       <span className="chat-member-name truncate">{m.name}</span>
                       {m.role && <span className="chat-member-role truncate">{m.role}</span>}

@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from 'react'
-import { AlertTriangle, Ban, Check, ChevronRight, CircleDashed, Clock, FileLock2, FlaskConical, Gavel, HardDrive, Hourglass, Lock, LockOpen, Minus, PenLine, ScanSearch, ShieldCheck, Sparkles, Terminal, UserCheck, X } from 'lucide-react'
+import { AlertTriangle, Ban, Check, ChevronRight, CircleDashed, Clock, FileLock2, FlaskConical, Gavel, HardDrive, Hourglass, Lock, LockOpen, Minus, PenLine, Route, ScanSearch, ShieldCheck, Terminal, UserCheck, X } from 'lucide-react'
 import type { CheckpointDetail, CheckpointRole, Invocation, NodeDetail, ResolvedValue, SnapshotManifest } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { EmptyState, ErrorState, ReasonDialog, Skeleton, toast } from '../../components/ui'
@@ -24,7 +24,7 @@ const ROLE: Record<CheckpointRole, { label: string; icon: typeof Check }> = {
   acceptance: { label: '验收检查', icon: UserCheck },
   command: { label: '命令检查', icon: Terminal },
   judge: { label: '判决', icon: Gavel },
-  planner: { label: '规划', icon: Sparkles },
+  planner: { label: '规划', icon: Route },
   auditor: { label: '归因', icon: ScanSearch },
   evaluator: { label: '评测', icon: ScanSearch },
 }

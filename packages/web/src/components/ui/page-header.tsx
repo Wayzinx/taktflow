@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react'
-import { Sparkles } from 'lucide-react'
+
 import type { StewardContextRef } from '@taktflow/core'
 import { currentSpaceId } from '../../lib/space'
 import { useAsync } from '../../api'
 import { askSteward } from '../../lib/ui-store'
 import './primitives.css'
+import { BeeGlyph } from '../identity'
 
 export interface PageHeaderProps {
   title: ReactNode
@@ -57,7 +58,7 @@ export function SuggestionChips({ items, context, className, onPick }: { items: 
     <div className={`suggest-row${className ? ` ${className}` : ''}`} aria-label="让管家帮忙">
       {items.slice(0, 3).map((s) => (
         <button key={s} type="button" className="suggest-chip pressable" onClick={() => (onPick ? onPick(s) : askSteward(s, context))} title={onPick ? '用这个问题开新会话' : '打开管家并预填这个问题'}>
-          <Sparkles aria-hidden />
+          <BeeGlyph aria-hidden />
           <span className="truncate">{s}</span>
         </button>
       ))}

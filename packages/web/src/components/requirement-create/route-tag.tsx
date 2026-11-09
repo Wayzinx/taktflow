@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Route, Sparkles } from 'lucide-react'
+import { Info, Route } from 'lucide-react'
 import type { WorkflowSummary } from '@taktflow/core'
 import { useSource } from '../../api'
 import { TIER_LABEL, TierGlyph } from '../tier-glyph'
@@ -78,7 +78,7 @@ export function RouteTag({ text, workflows, value, onChange }: { text: string; w
                 </div>
                 <p className={`rc-route-reason${pending ? ' shimmer-text' : ''}`}>{est.reason}</p>
                 <p className="rc-pop-foot">
-                  <Sparkles aria-hidden className="rc-inline-icon" />
+                  <Info aria-hidden className="rc-inline-icon" />
                   按关键词的本地预估，不是路由器结论；创建时由服务端路由器决定（结果在创建提示里）。
                 </p>
               </>

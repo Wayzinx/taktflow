@@ -9,7 +9,11 @@
   padding: 0 var(--sp-8);
   background: color-mix(in oklch, var(--bg) 86%, transparent);
   backdrop-filter: saturate(1.4) blur(12px);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--dur) var(--ease);
+}
+.topbar.is-scrolled {
+  border-bottom-color: var(--border);
 }
 .topbar-spacer {
   flex: 1;

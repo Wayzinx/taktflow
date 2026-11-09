@@ -133,7 +133,7 @@ export function Composer({ members, replyTo, onCancelReply, onSend, apiRef }: { 
         <ul className="chat-mention-menu" data-state={menu.state} id={listId} role="listbox" aria-label="选择要 @ 的成员">
           {shown.map((m, i) => (
             <li key={m.id} id={`${listId}-${m.id}`} role="option" aria-selected={i === active} className={i === active ? 'active' : undefined} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(m)} onMouseEnter={() => setActive(i)}>
-              <MemberAvatar kind={m.kind} name={m.name} />
+              <MemberAvatar kind={m.kind} name={m.name} id={m.id} role={m.kind === 'agent' ? (m.role ?? m.id) : undefined} size={20} />
               <span className="mono">@{m.id}</span>
               <span className="faint truncate">{m.role ?? m.name}</span>
             </li>

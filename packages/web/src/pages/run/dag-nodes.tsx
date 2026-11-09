@@ -43,7 +43,7 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
       <Handles />
       <div className="dag-row">
         {/* ux-audit: ok sign '…' 是形象头顶的符号，不是加载文案 */}
-        {n.kind === 'agent' || (n.kind === 'judge' && activity) ? <AgentMark {...mark} act={actOf(activity)} sign={long ? '…' : mark.sign} hue={harnessHue(n.harness)} size={24} label={`${n.harness ?? 'Agent'} · ${meta.label}`} /> : <KindIcon kind={n.kind} size={22} />}
+        {n.kind === 'agent' || (n.kind === 'judge' && activity) ? <AgentMark {...mark} act={actOf(activity)} sign={long ? '…' : mark.sign} role={n.role ?? (n.kind === 'judge' ? 'judge' : undefined)} hue={harnessHue(n.harness)} size={24} label={`${n.harness ?? 'Agent'} · ${meta.label}`} /> : <KindIcon kind={n.kind} size={22} />}
         <span className="dag-title truncate">{data.label.title}</span>
         <span className="dag-status" title={meta.label}>
           <StatusIcon className={meta.spin ? 'spin' : undefined} strokeWidth={2.6} />

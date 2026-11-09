@@ -1,4 +1,4 @@
-import { BookOpen, Cpu, GitFork, Lightbulb, ScrollText, Sparkles, UserRoundCog, Users, Workflow } from 'lucide-react'
+import { BookOpen, Cpu, GitFork, Lightbulb, Puzzle, ScrollText, UserRoundCog, Users, Workflow } from 'lucide-react'
 import { useAsync } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { ErrorState, PageHeader, Skeleton, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
@@ -70,7 +70,7 @@ export function SettingsPage() {
             tabs={[
               { id: 'members', label: '成员', icon: Users, count: sp?.members.length },
               { id: 'repos', label: '代码仓库', icon: GitFork, count: sp?.repos.length },
-              { id: 'skills', label: '技能', icon: Sparkles, count: sp?.skills.length },
+              { id: 'skills', label: '技能', icon: Puzzle, count: sp?.skills.length },
               { id: 'agents', label: '角色', icon: UserRoundCog, count: sp?.agents.length },
               { id: 'workflows', label: 'Workflow', icon: Workflow, count: sp?.workflows.length },
               { id: 'knowledge', label: '知识库', icon: BookOpen, count: bindings.data?.length },

@@ -1,6 +1,5 @@
 import {
   Ban,
-  Bot,
   Check,
   Circle,
   CircleDashed,
@@ -19,6 +18,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
+import { BeeGlyph } from '../components/bee-glyph'
 import type {
   ArtifactKind,
   ContextSource,
@@ -79,7 +79,7 @@ export const STAGE_STATUS: Record<StageStatus, StatusMeta> = {
 
 export const NODE_KIND: Record<NodeKind, { label: string; icon: LucideIcon }> = {
   script: { label: '脚本', icon: SquareTerminal },
-  agent: { label: 'Agent', icon: Bot },
+  agent: { label: 'Agent', icon: BeeGlyph },
   gate: { label: '门禁', icon: ShieldCheck },
   human: { label: '人工', icon: UserRound },
   judge: { label: '判决', icon: Scale },

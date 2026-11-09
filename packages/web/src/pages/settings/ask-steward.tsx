@@ -1,6 +1,7 @@
-import { Sparkles } from 'lucide-react'
+
 import { useLocation } from '../../lib/router'
 import { askSteward } from '../../lib/ui-store'
+import { BeeGlyph } from '../../components/identity'
 
 /**
  * 设置页"让管家帮我改"（D 组）：没有写接口的配置（harness、模型、知识源绑定以外的文件项）不教人改文件，
@@ -17,7 +18,7 @@ export function StewardEditButton({ ask, label = '让管家帮我改', size = 's
       onClick={() => askSteward(ask, spaceId ? [{ type: 'space', id: spaceId, label: spaceId }] : undefined)}
       title="管家会给出一份变更提案，你确认后才写入"
     >
-      <Sparkles aria-hidden />
+      <BeeGlyph aria-hidden />
       {label}
     </button>
   )
@@ -28,7 +29,7 @@ export function StewardEditButton({ ask, label = '让管家帮我改', size = 's
 export function StewardEditNote({ what, ask, text }: { what: string; ask: string; text?: string }) {
   return (
     <div className="steward-edit-note">
-      <Sparkles aria-hidden className="steward-edit-icon" />
+      <BeeGlyph aria-hidden className="steward-edit-icon" />
       <span className="steward-edit-text">
         {text ?? `${what}还不能在页面上直接改。告诉管家想怎么改，它会出一份变更提案，你确认后才生效。`}
       </span>

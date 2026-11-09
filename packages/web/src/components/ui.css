@@ -88,34 +88,39 @@
   display: inline-grid;
   place-items: center;
   flex: none;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  font-weight: 600;
+  font: 600 10px/1 var(--font-sans);
   letter-spacing: 0;
-  color: hsl(var(--hue) 50% 28%);
-  background: hsl(var(--hue) 60% 92%);
+  color: light-dark(#fff, oklch(0.18 0.01 80));
+  background: var(--av, var(--c-7));
+  /* 一圈底色描边：叠放 / 压在别的元素上时分得开 */
   box-shadow: 0 0 0 1.5px var(--surface);
 }
-:root[data-theme='dark'] .avatar {
-  color: hsl(var(--hue) 70% 78%);
-  background: hsl(var(--hue) 30% 22%);
+.avatar.s16 {
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) .avatar {
-    color: hsl(var(--hue) 70% 78%);
-    background: hsl(var(--hue) 30% 22%);
-  }
+.avatar.s24 {
+  width: 24px;
+  height: 24px;
+  font-size: 10.5px;
+}
+.avatar.s32 {
+  width: 32px;
+  height: 32px;
+  font-size: 13px;
 }
 .avatar-stack {
   display: inline-flex;
   align-items: center;
 }
 .avatar-stack > * + * {
-  margin-left: -2px;
+  margin-left: -3px;
 }
 .avatar.more {
-  width: 22px;
-  height: 22px;
-  font-size: var(--text-label);
   color: var(--text-2);
   background: var(--surface-hover);
 }

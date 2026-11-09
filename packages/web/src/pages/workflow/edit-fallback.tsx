@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, Lock, Sparkles, Wand2 } from 'lucide-react'
+import { Check, Lock, Wand2 } from 'lucide-react'
 import type { WorkflowConvertResult } from '@taktflow/core'
 import { useSource } from '../../api'
 import { WorkflowConflictError } from '../../api/source'
@@ -8,6 +8,7 @@ import { Dialog, toast } from '../../components/ui'
 import { askSteward } from '../../lib/ui-store'
 import type { WorkflowDocState } from './state'
 import './edit-fallback.css'
+import { BeeGlyph } from '../../components/identity'
 
 /** baseRev：预览 diff 时的文件版本；写入时带上，文件在这之后被改过服务端会 409，避免写入没审阅过的改写。 */
 type Preview = { result: WorkflowConvertResult; baseRev?: string }
@@ -69,7 +70,7 @@ export function EditFallbackBanner({ workflowId, wf }: { workflowId: string; wf:
         </div>
         {failed ? (
           <button type="button" className="btn btn-primary btn-sm" onClick={askConvert}>
-            <Sparkles />
+            <BeeGlyph />
             让管家转换
           </button>
         ) : (

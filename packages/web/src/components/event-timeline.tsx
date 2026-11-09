@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import {
-  Bot,
+  Cpu,
   CheckCheck,
   ClipboardCheck,
   ChevronRight,
@@ -141,7 +141,7 @@ export function describe(e: EventEnvelope): Described {
     }
     case 'harness.started': {
       const x = d(e, 'harness.started')
-      return { icon: Bot, tone: 'neutral', title: <>启动 harness <span className="mono">{x.harness}</span>{x.model && <span className="faint mono"> · {x.model}</span>}</>, detail: x.sessionId && <span className="mono faint">session {x.sessionId}</span> }
+      return { icon: Cpu, tone: 'neutral', title: <>启动 harness <span className="mono">{x.harness}</span>{x.model && <span className="faint mono"> · {x.model}</span>}</>, detail: x.sessionId && <span className="mono faint">session {x.sessionId}</span> }
     }
     case 'harness.message': {
       const x = d(e, 'harness.message')

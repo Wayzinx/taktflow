@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Check, CheckCheck, Sparkles, X } from 'lucide-react'
+import { Check, CheckCheck, X } from 'lucide-react'
 import type { StewardStreamEvent } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { openSteward } from '../../lib/ui-store'
 import { parseAcceptance, suggestAcceptance } from './estimate'
+import { BeeGlyph } from '../identity'
 
 type Item = { id: number; text: string; state: 'pending' | 'accepted' | 'rejected' }
 
@@ -101,7 +102,7 @@ export function AcceptanceAssist({ text, title, onInsert }: { text: string; titl
   if (phase === 'idle')
     return (
       <button type="button" className="btn btn-sm btn-ghost rc-ac-trigger" onClick={start} disabled={!title} title={!title ? '先写一句要做什么' : live ? '管家按描述逐条给出验收标准，你来挑' : '管家还没配置模型：先用通用的规则模板'}>
-        <Sparkles />
+        <BeeGlyph />
         {live || !info.data ? '让管家补全验收标准' : '补全验收标准（规则模板）'}
       </button>
     )
@@ -109,7 +110,7 @@ export function AcceptanceAssist({ text, title, onInsert }: { text: string; titl
   return (
     <section className="rc-ac" aria-label="管家建议的验收标准" aria-live="polite">
       <header className="rc-ac-head">
-        <Sparkles aria-hidden />
+        <BeeGlyph aria-hidden />
         {phase === 'thinking' ? (
           <span className="shimmer-text">管家在读你的描述</span>
         ) : (

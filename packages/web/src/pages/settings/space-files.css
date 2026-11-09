@@ -151,3 +151,13 @@
     flex-basis: 100%;
   }
 }
+
+/* 角色列表：左边是角色蜂（docs/design/30 §1），文字缩进让开 */
+.file-item.has-mark {
+  padding-left: calc(var(--sp-3) + 28px + var(--sp-2));
+}
+.file-item-mark {
+  position: absolute;
+  left: var(--sp-3);
+  top: var(--sp-2);
+}

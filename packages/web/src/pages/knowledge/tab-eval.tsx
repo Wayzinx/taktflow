@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { KnowledgeBaseDetail, KnowledgeEvalCase, KnowledgeEvalRun, KnowledgeEvalVariant } from '@taktflow/core'
-import { Download, FlaskConical, Play, Sparkles } from 'lucide-react'
+import { Download, FlaskConical, Play, Wand } from 'lucide-react'
 import { useAsync, useSource } from '../../api'
 import { EmptyState, ErrorState, Segmented, SkeletonRows, toast } from '../../components/ui'
 import { fmtRelative } from '../../lib/format'
@@ -63,7 +63,7 @@ export function EvalTab({ base }: { base: KnowledgeBaseDetail }) {
   const genButtons = (
     <>
       <button type="button" className="btn btn-sm" disabled={!!gen} onClick={() => void generate('synth')} title="模型从文档块出题，只做回归，不能单独作为发布依据">
-        <Sparkles />
+        <Wand />
         <span className={gen === 'synth' ? 'shimmer-text' : undefined}>合成用例</span>
       </button>
       <button type="button" className="btn btn-sm" disabled={!!gen} onClick={() => void generate('harvest')} title="真实查询中被产物引用的命中，确认后入库">

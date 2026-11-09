@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
-import { Bot, FileDiff, UserRound, X } from 'lucide-react'
+import { FileDiff, X } from 'lucide-react'
 import type { Actor } from '@taktflow/core'
+import { AgentMark, harnessHue } from '../../../components/agent-mark'
+import { Avatar } from '../../../components/ui'
 import { actorName, fmtRelative } from '../../../lib/format'
 import type { WorkflowDocState } from '../state'
 import { diffNodes } from './changed-nodes'
@@ -19,7 +21,6 @@ export function RemoteChangeBanner({ wf, onShowDiff }: { wf: WorkflowDocState; o
   const changes = useMemo(() => diffNodes(rc?.before, rc?.after), [rc])
   if (!rc) return null
   const r = rc.event.revision
-  const Icon = r.author.type === 'agent' ? Bot : UserRound
   const chips = [
     ...changes.added.map((id) => ({ id, kind: 'add' as const, label: '新增' })),
     ...changes.modified.map((id) => ({ id, kind: 'mod' as const, label: '修改' })),
@@ -28,7 +29,7 @@ export function RemoteChangeBanner({ wf, onShowDiff }: { wf: WorkflowDocState; o
   return (
     <div className="wfc-remote" role="status" aria-live="polite">
       <span className="wfc-remote-icon">
-        <Icon />
+        {r.author.type === 'agent' ? <AgentMark state="done" role={r.author.role} hue={harnessHue(r.author.harness)} size={24} /> : <Avatar name={who(r.author)} id={r.author.type === 'system' ? undefined : r.author.id} size={24} />}
       </span>
       <div className="wfc-remote-main">
         <div className="wfc-remote-title">

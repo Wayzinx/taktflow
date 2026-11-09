@@ -333,6 +333,92 @@
   flex: none;
   stroke-width: 1.75;
 }
+/* 导航图标悬停：各做一次 300ms 的小动作（docs/design/30 §1）——总览方块错位、需求下沉、待办弹一下、知识库翻开、
+   Workflow 往前推、评测晃瓶子、设置拧半格。只在移入时播一次，减少动效时不动。 */
+@media (prefers-reduced-motion: no-preference) {
+  .sb-item:hover svg[data-motion] {
+    animation: 300ms var(--ease-out-soft) both;
+  }
+  .sb-item:hover svg[data-motion='drop'] {
+    animation-name: nav-drop;
+  }
+  .sb-item:hover svg[data-motion='pop'] {
+    animation-name: nav-pop;
+  }
+  .sb-item:hover svg[data-motion='open'] {
+    animation-name: nav-open;
+  }
+  .sb-item:hover svg[data-motion='shift'] {
+    animation-name: nav-shift;
+  }
+  .sb-item:hover svg[data-motion='swing'] {
+    transform-origin: 50% 10%;
+    animation-name: nav-swing;
+  }
+  .sb-item:hover svg[data-motion='turn'] {
+    animation-name: nav-turn;
+  }
+  .sb-item:hover svg[data-motion='tiles'] {
+    animation: none;
+  }
+  .sb-item:hover svg[data-motion='tiles'] > :nth-child(odd) {
+    transform-box: fill-box;
+    animation: nav-tile-up 300ms var(--ease-out-soft);
+  }
+  .sb-item:hover svg[data-motion='tiles'] > :nth-child(even) {
+    transform-box: fill-box;
+    animation: nav-tile-down 300ms var(--ease-out-soft);
+  }
+}
+@keyframes nav-drop {
+  45% {
+    transform: translateY(2px);
+  }
+  75% {
+    transform: translateY(-0.5px);
+  }
+}
+@keyframes nav-pop {
+  40% {
+    transform: scale(1.18);
+  }
+  75% {
+    transform: scale(0.96);
+  }
+}
+@keyframes nav-open {
+  50% {
+    transform: scaleX(1.16);
+  }
+}
+@keyframes nav-shift {
+  50% {
+    transform: translateX(2px);
+  }
+}
+@keyframes nav-swing {
+  30% {
+    transform: rotate(-12deg);
+  }
+  65% {
+    transform: rotate(7deg);
+  }
+}
+@keyframes nav-turn {
+  to {
+    transform: rotate(45deg);
+  }
+}
+@keyframes nav-tile-up {
+  50% {
+    transform: translateY(-1.5px);
+  }
+}
+@keyframes nav-tile-down {
+  50% {
+    transform: translateY(1.5px);
+  }
+}
 .sb-item:hover {
   background: var(--rail-hover);
   color: var(--rail-text);

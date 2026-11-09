@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Ban, Check, CircleAlert, Hourglass, RotateCcw, Shield, ShieldAlert, ShieldCheck, Sparkles, Undo2, X } from 'lucide-react'
+import { Ban, Check, CircleAlert, Hourglass, RotateCcw, Shield, ShieldAlert, ShieldCheck, Undo2, X } from 'lucide-react'
 import type { Proposal, ProposalStep } from '@taktflow/core'
 import { useSource } from '../../api'
 import { toast } from '../ui'
 import { askSteward, previewWorkflowProposal } from '../../lib/ui-store'
 import { confirmTargetOf, previewFor, ProposalStepView } from './proposal-step'
 import './cards.css'
+import { BeeGlyph } from '../identity'
 
 const RISK = {
   low: { label: '低风险', icon: ShieldCheck, tone: 'success' },
@@ -131,7 +132,7 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
   return (
     <section className={`stw-proposal${animate ? ' stw-in' : ''}`} data-status={p.status} aria-label={`提案：${p.title}`} data-steward-anchor={p.id}>
       <header className="stw-proposal-head">
-        {p.status === 'applied' ? justApplied ? <DoneCheck /> : <Check className="stw-proposal-ok" aria-hidden /> : <Sparkles className="stw-proposal-icon" aria-hidden />}
+        {p.status === 'applied' ? justApplied ? <DoneCheck /> : <Check className="stw-proposal-ok" aria-hidden /> : <BeeGlyph className="stw-proposal-icon" aria-hidden />}
         <div className="stw-proposal-titles">
           <h3 className="stw-proposal-title">{p.title}</h3>
           <div className="stw-proposal-meta">

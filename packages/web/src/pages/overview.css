@@ -290,18 +290,7 @@
   min-width: 0;
 }
 .since-icon {
-  display: inline-grid;
-  place-items: center;
-  flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--r-md);
-  background: var(--surface-2);
-  color: var(--text-2);
-}
-.since-icon svg {
-  width: 16px;
-  height: 16px;
+  margin-top: 1px;
 }
 .since-main {
   flex: 1;
