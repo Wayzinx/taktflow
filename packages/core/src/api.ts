@@ -139,6 +139,9 @@
  * | GET  | /api/steward/metrics                           | ProductMetric[]（产品健康：每个功能的效率与迭代信号） |
  * | POST | /api/steward/events                            | 请求体 ProductEvent → 204（页面上报的交互事件：对话框打开 / 提交、建议点击、汇报打开；只存本机） |
  * | GET  | /api/steward/stream                            | text/event-stream，data 为 StewardFeedItem（全局动态与未读数） |
+ * —— 管家 Solo（docs/design/28）；跨调用者看得见的全部空间 ——
+ * | GET  | /api/steward/find?q=&types=&space=&limit=      | StewardFindResult（编号精确 > 标题模糊 > 最近有动静；types 逗号分隔，limit 默认 8、最多 20） |
+ * | GET  | /api/steward/picks?limit=                      | { items: StewardPick[] }（Solo 首页"你可能想看"：等你 > 失败 > 有风险 > 刚变化 > 在跑；limit 默认 6） |
  *
  * —— 知识库（docs/design/23）；空间内，可加 /api/s/:spaceId 前缀 ——
  * | GET  | /api/knowledge/kinds                           | KnowledgeKindInfo[] |
@@ -1223,6 +1226,51 @@ export type StewardBlock =
   | { type: 'timeline'; title?: string; items: Array<{ at: string; title: string; detail?: string; tone?: StewardTone; ref?: StewardContextRef }> }
   | { type: 'callout'; tone: StewardTone; title: string; body?: string }
   | { type: 'actions'; items: StewardAction[] }
+  /**
+   * 实时实体视图（docs/design/28 §2）：模型只给 view + ref，服务端校验 ref 看得见、补齐 spaceId、从存储写 snapshot（模型写的 snapshot 一律丢弃）。
+   * 前端按 ref 取实时数据、用页面上同一套组件渲染；取不到时显示 snapshot。一条消息最多 3 个 entity 块。
+   * 引用：card / stages 为需求；attention 为需求或空间；dag 为运行（focus 为要高亮的节点 id）；node 为节点（parent 为运行 id）。
+   */
+  | { type: 'entity'; view: StewardEntityView; ref: StewardContextRef; focus?: string; snapshot: StewardEntitySnapshot }
+  /** 说的是哪一个？候选 2–5 个，点一个就带着它继续问（docs/design/28 §3）。一条消息最多 1 个。 */
+  | { type: 'pick'; title?: string; items: StewardEntityCandidate[] }
+
+/** 实体视图（P1）：需求卡、阶段、运行图、节点、等你决定的事。 */
+export type StewardEntityView = 'card' | 'stages' | 'dag' | 'node' | 'attention'
+
+/** 服务端出块那一刻从存储读出的样子：离线、历史消息、没权限或对象已删除时显示它；前端拿实时数据比较给"比当时"标记。 */
+export interface StewardEntitySnapshot {
+  title: string
+  /** 人话状态，例如"研发测试 · 失败判决在跑"。 */
+  status: string
+  tone: StewardTone
+  /** 一句补充，例如"1 件等你确认"。 */
+  summary?: string
+  /** 阶段格（需求 / 运行）：离线与历史消息里画泳道用。 */
+  stages?: Array<{ label: string; status: StewardStageStatus }>
+  at: string
+}
+
+export interface StewardEntityCandidate {
+  /** 带 spaceId。 */
+  ref: StewardContextRef
+  snapshot: StewardEntitySnapshot
+  /** 为什么是它：例如"编号命中"、"标题含「导出」"、"10 分钟前有动静"。 */
+  why?: string
+}
+
+export type StewardFindType = 'space' | 'requirement' | 'run' | 'node' | 'workflow' | 'knowledge'
+
+export interface StewardFindResult {
+  items: Array<StewardEntityCandidate & { score: number; match: 'id' | 'title' | 'recent' }>
+  /** 前两名分差小：调用方应出 pick 让人选，不要猜。 */
+  ambiguous: boolean
+}
+
+/** Solo 首页"你可能想看"的一张需求卡。 */
+export interface StewardPick extends StewardEntityCandidate {
+  reason: 'waiting' | 'failed' | 'risk' | 'changed' | 'running'
+}
 
 export interface StewardPostRequest {
   text: string
