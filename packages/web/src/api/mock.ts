@@ -114,6 +114,10 @@ export function createProjectMock(db: MockDb): ProjectSource {
     return [...db.runs.values()].filter((r) => r.state.requirementId === reqId).sort((a, b) => Date.parse(b.state.startedAt) - Date.parse(a.state.startedAt))
   }
 
+  // 演示"运行中断"：?mock=1&interrupted=<runId> 把一个 running 的运行当作没有进程在执行；run.resume 后恢复
+  const interrupted = new Set(typeof location === 'undefined' ? [] : new URLSearchParams(location.search).getAll('interrupted'))
+  const isInterrupted = (run: MockRun) => (run.state.status === 'running' && interrupted.has(run.state.runId) ? { interrupted: true as const } : {})
+
   function runSummary(run: MockRun): RunSummary {
     const ns = run.graph.nodes
     return {
@@ -132,6 +136,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
       kind: run.state.kind,
       origin: run.state.origin,
       tier: run.state.route?.tier,
+      ...isInterrupted(run),
     }
   }
 
@@ -267,7 +272,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
       const run = getRun(runId)
       if (!run) return fail(`运行 ${runId} 不存在`)
       const usage = runUsage(run)
-      return delay({ run: run.state, workflow: run.workflow, stages: stageProgress(run), usage, graph: { nodes: graphNodes(run), edges: run.graph.edges }, budget: budgetStatus(run, usage), quality: qualityOf(run) })
+      return delay({ run: run.state, workflow: run.workflow, stages: stageProgress(run), usage, graph: { nodes: graphNodes(run), edges: run.graph.edges }, budget: budgetStatus(run, usage), quality: qualityOf(run), ...isInterrupted(run) })
     },
     events(runId, opts = {}) {
       const run = getRun(runId)
@@ -437,6 +442,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
           'attention.list': (i) => viaRun(() => this.attention(Boolean(i.pending)).then((l) => (i.requirementId ? l.filter((a) => a.requirementId === i.requirementId) : l)), '待办列表已执行'),
           'requirement.status': (i) => viaRun(() => this.requirement(String(i.requirementId)), '需求状态已执行'),
           'run.status': (i) => viaRun(() => this.run(String(i.runId)), '运行状态已执行'),
+          'run.resume': (i) => viaRun(async () => (interrupted.delete(String(i.runId)) ? { runId: i.runId } : Promise.reject(new Error('运行仍在执行'))), '继续运行已执行'),
           'attention.answer': (i) => viaRun(() => this.answer(String(i.requestId), { decision: i.decision as string, answer: i.answer as string | undefined }), '回答待办已执行'),
           'eval.scorecards': (i) => viaRun(() => this.scorecards((i.by as never) ?? 'node', i.workflowId as string | undefined), '查询评测成绩单已执行'),
           'defect.report': (i) => viaRun(() => this.reportDefect(String(i.requirementId), i as never), '录入逃逸缺陷已执行'),

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   SkipForward,
   SquareTerminal,
+  Unplug,
   UserRound,
   X,
   type LucideIcon,
@@ -60,6 +61,10 @@ export const RUN_STATUS: Record<RunStatus, StatusMeta> = {
   waiting_human: { label: '等人处理', tone: 'waiting', icon: Pause },
   cancelled: { label: '已取消', tone: 'skipped', icon: Ban },
 }
+
+/** 状态还是 running，但没有进程在执行（serve 重启或崩溃时中断）；可以继续运行。 */
+export const RUN_INTERRUPTED: StatusMeta = { label: '已中断', tone: 'waiting', icon: Unplug }
+export const runStatusMeta = (status: RunStatus, interrupted?: boolean): StatusMeta => (interrupted ? RUN_INTERRUPTED : RUN_STATUS[status])
 
 export const REQ_STATUS: Record<RequirementStatus, StatusMeta> = {
   draft: { label: '草稿', tone: 'pending', icon: CircleDashed },

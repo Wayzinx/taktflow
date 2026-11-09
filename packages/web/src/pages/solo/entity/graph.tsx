@@ -11,7 +11,7 @@ import { useEntityFocus, type FocusTarget } from '../../../components/steward/fo
 import { KindIcon, Skeleton, StatusBadge } from '../../../components/ui'
 import { fmtDuration, fmtTime } from '../../../lib/format'
 import { Link, navigate, useSpaceHref } from '../../../lib/router'
-import { NODE_STATUS, RUN_STATUS } from '../../../lib/status'
+import { NODE_STATUS, runStatusMeta } from '../../../lib/status'
 import { useIsDark } from '../../../lib/theme'
 import { decorate, useCompletionPulses, useReplay } from '../../run/canvas-motion'
 import { layoutRun, type FlowNode } from '../../run/dag-layout'
@@ -110,7 +110,7 @@ function RunHead({ d, spaceId }: { d: RunDetail; spaceId?: string }) {
       <span className="faint num">
         {done}/{d.graph.nodes.length}
       </span>
-      <StatusBadge meta={RUN_STATUS[d.run.status]} subtle />
+      <StatusBadge meta={runStatusMeta(d.run.status, d.interrupted)} subtle />
     </div>
   )
 }

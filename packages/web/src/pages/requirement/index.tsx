@@ -7,7 +7,7 @@ import type { RequirementDetail, RunDetail } from '@taktflow/core'
 import { TierGlyph, TIER_LABEL } from '../../components/tier-glyph'
 import { ErrorState, Skeleton, StatusDot, SuggestionChips, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
 import { Link, navigate, setQuery, useLocation } from '../../lib/router'
-import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
+import { NODE_STATUS, runStatusMeta } from '../../lib/status'
 import { ActivityTab } from './activity-tab'
 import { ArtifactsTab } from './artifacts-tab'
 import { ChatTab } from './chat-tab'
@@ -73,7 +73,7 @@ function StatusLine({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
         </span>
       </div>
     )
-  const st = run ? RUN_STATUS[run.run.status] : undefined
+  const st = run ? runStatusMeta(run.run.status, run.interrupted) : undefined
   return (
     <div className="req-summary">
       {st && <StatusDot tone={st.tone} />}

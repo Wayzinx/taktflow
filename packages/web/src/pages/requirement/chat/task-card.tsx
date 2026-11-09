@@ -7,7 +7,7 @@ import { KindIcon, SkeletonRows, StatusBadge, toast } from '../../../components/
 import { TaktRuler } from '../../../components/takt'
 import { fmtCost, fmtTokens } from '../../../lib/format'
 import { Link } from '../../../lib/router'
-import { NODE_STATUS, RUN_STATUS } from '../../../lib/status'
+import { NODE_STATUS, runStatusMeta } from '../../../lib/status'
 import { ArtifactChip } from './message-refs'
 
 function sumUsage(list: Array<Usage | undefined>): Usage | undefined {
@@ -62,7 +62,7 @@ export function TaskCard({ m, pulse, onRoles, requirementId, resent, onJump }: {
         <ListChecks aria-hidden="true" />
         <span className="chat-task-kicker">临时任务</span>
         <h4 className="chat-task-title truncate">{m.text}</h4>
-        {d && <StatusBadge meta={RUN_STATUS[d.run.status]} />}
+        {d && <StatusBadge meta={runStatusMeta(d.run.status, d.interrupted)} />}
       </header>
       {receipt && (
         <div className={`chat-task-receipt${problem ? ' is-problem' : ''}`}>

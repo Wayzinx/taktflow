@@ -19,7 +19,8 @@ const SOURCES: Array<{ key: keyof QualityMetrics['interceptedBy']; label: string
 export function RunCounters({ detail }: { detail: RunDetail }) {
   const q = detail.quality
   const status = detail.run.status
-  const live = status === 'running' || status === 'waiting_human'
+  // 中断的运行状态还是 running，但没有进程在跑，不算活着
+  const live = !detail.interrupted && (status === 'running' || status === 'waiting_human')
   if (!q && !live) return null
   return (
     <span className="run-counters">

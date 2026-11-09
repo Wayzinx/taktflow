@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, Play, Square, Workflow } from 'lucide-react'
+import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, Play, Square, Unplug, Workflow } from 'lucide-react'
 import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { StageRail } from '../../components/stage-rail'
-import { CountUp, ErrorState, Segmented, Skeleton, StatusBadge, SuggestionChips, useStewardSuggestions } from '../../components/ui'
+import { CountUp, ErrorState, Segmented, Skeleton, StatusBadge, SuggestionChips, toast, useStewardSuggestions } from '../../components/ui'
 import { fmtCost, fmtDate, fmtDuration, fmtTokens, totalTokens } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
-import { NODE_STATUS, RUN_STATUS } from '../../lib/status'
+import { NODE_STATUS, runStatusMeta } from '../../lib/status'
 import { useIsDark } from '../../lib/theme'
 import { layoutRun, type FlowNode } from './dag-layout'
 import { decorate, useCompletionPulses, useReplay } from './canvas-motion'
@@ -143,7 +143,7 @@ export function RunPage({ runId }: { runId: string }) {
     ],
     [runId, d?.run.requirementId],
   )
-  const running = d?.run.status === 'running'
+  const running = d?.run.status === 'running' && !d.interrupted
   const now = useNow(running)
   const stages = d?.stages ?? []
   const drawer = useLinger(selected, DRAWER_EXIT_MS)
@@ -165,7 +165,7 @@ export function RunPage({ runId }: { runId: string }) {
         <div className="run-title-row">
           <h1 className="run-title">{d ? d.workflow.title : <Skeleton w={160} h={18} />}</h1>
           {d && <span className="mono run-wf">{d.workflow.id}@{d.workflow.version}</span>}
-          {d && <StatusBadge meta={RUN_STATUS[d.run.status]} />}
+          {d && <StatusBadge meta={runStatusMeta(d.run.status, d.interrupted)} />}
           {d && <RunCounters detail={d} />}
           <span style={{ flex: 1 }} />
           {d && counts && (
@@ -202,6 +202,7 @@ export function RunPage({ runId }: { runId: string }) {
             </div>
           )}
         </div>
+        {d?.interrupted && <InterruptedBar detail={d} onResumed={q.reload} />}
         <div className="run-stage-row">
           {d ? <StageRail size="sm" stages={stages} empty="这个流程没有划分阶段" onStage={(id) => setQuery({ stage: id === stageFocus ? undefined : id })} activeId={stageFocus} /> : <Skeleton h={26} />}
         </div>
@@ -226,6 +227,45 @@ export function RunPage({ runId }: { runId: string }) {
         )}
       </div>
       {d && <EventTicker runId={runId} live={live} liveTick={liveTick} onLocate={(node) => setQuery({ node, dtab: undefined })} />}
+    </div>
+  )
+}
+
+/** 运行状态还是 running，但没有进程在执行（serve 重启或崩溃时停下的）：说清楚停在哪，一键续跑。 */
+function InterruptedBar({ detail, onResumed }: { detail: RunDetail; onResumed: () => void }) {
+  const ds = useSource()
+  const [busy, setBusy] = useState(false)
+  const runId = detail.run.runId
+  const stopped = Object.values(detail.run.nodes).filter((n) => n.status === 'running').map((n) => n.id)
+  const resume = async () => {
+    setBusy(true)
+    try {
+      const r = await ds.runCommand('run.resume', { input: { runId }, reason: `继续被中断的运行 ${runId}` })
+      if (!r.ok) throw new Error(r.message)
+      toast('已继续运行', { body: stopped.length ? `从 ${stopped.join('、')} 重新开始。` : undefined })
+      onResumed()
+    } catch (e) {
+      toast('没继续成', { tone: 'failed', body: (e as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="run-interrupted" role="status">
+      <Unplug aria-hidden />
+      <span>
+        <b>运行中断了</b>：没有进程在执行它，通常是 serve 重启或崩溃时停下的。
+        {stopped.length > 0 && (
+          <>
+            停在 <span className="mono">{stopped.join('、')}</span>，继续会从这里重跑。
+          </>
+        )}
+      </span>
+      <span className="spacer" />
+      <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void resume()}>
+        <Play aria-hidden />
+        {busy ? '继续中…' : '继续运行'}
+      </button>
     </div>
   )
 }

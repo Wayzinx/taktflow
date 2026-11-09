@@ -4,7 +4,7 @@ import { TierGlyph } from '../../components/tier-glyph'
 import { EmptyState, SkeletonRows, StatusBadge, useFlashRows, useStagger } from '../../components/ui'
 import { durationBetween, fmtCost, fmtDate, fmtDuration, fmtRelative, fmtTokens, totalTokens } from '../../lib/format'
 import { Link, navigate } from '../../lib/router'
-import { RUN_STATUS } from '../../lib/status'
+import { runStatusMeta } from '../../lib/status'
 
 export function RunsTab({ runs, reqId }: { runs?: RunSummary[]; reqId?: string }) {
   const st = useStagger(runs?.length ?? 0)
@@ -52,7 +52,7 @@ export function RunsTab({ runs, reqId }: { runs?: RunSummary[]; reqId?: string }
                   </div>
                 </td>
                 <td>
-                  <StatusBadge meta={RUN_STATUS[r.status]} />
+                  <StatusBadge meta={runStatusMeta(r.status, r.interrupted)} />
                 </td>
                 <td>
                   <div className="run-progress">
