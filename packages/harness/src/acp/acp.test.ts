@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type { HarnessEvent, HarnessRequest } from '@taktflow/core'
 import { createAcpHarness } from './index.js'
 import { ACP_PRESETS, acpCommand } from './presets.js'
@@ -213,7 +213,8 @@ it('取消回收继承输出管道且忽略 SIGTERM 的后代进程', async () =
   expect(result.ok).toBe(false)
   const pid = Number(await readFile(descendant, 'utf8'))
   expect(pid).toBeGreaterThan(0)
-  expect(() => process.kill(pid, 0)).toThrow()
+  // SIGKILL 之后进程可能还要片刻才被回收（僵尸状态下 kill 0 仍成功）
+  await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 3000 })
 })
 
 it('没有 allow_once 时不能误选 allow_always；无路径与错误会话的权限也留痕', async () => {
