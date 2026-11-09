@@ -321,6 +321,11 @@ export interface Engine {
    * 想"开始了就返回"的调用方（界面上的继续 / 回答待办）等它，不等整个 Promise。
    */
   resume(runId: RunId, workflow: WorkflowDefinition, opts?: { onStarted?: () => void }): Promise<RunState>
+  /**
+   * 重试：把失败 / 阻塞的节点（默认全部，或 nodeIds 指定的）重置为待跑，运行状态回到 running，记 run.retried，然后同 resume 续跑。
+   * 已成功或已取消的运行不能重试。
+   */
+  retry(runId: RunId, workflow: WorkflowDefinition, opts?: { nodeIds?: NodeId[]; reason?: string; onStarted?: () => void }): Promise<RunState>
   cancel(runId: RunId): Promise<void>
   /** 公共存放区产物被人改了：把读过它的节点及其下游标记为 stale。 */
   markStale(runId: RunId, cause: ArtifactRef): Promise<NodeId[]>

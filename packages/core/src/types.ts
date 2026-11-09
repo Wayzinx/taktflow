@@ -784,6 +784,8 @@ export interface RunState {
 export interface EventPayloads {
   'run.started': { workflowId: string; workflowVersion: string; args: Record<string, unknown> }
   'run.finished': { status: RunStatus }
+  /** 人工重试失败 / 阻塞的节点：这些节点重置为待跑，运行回到 running（docs/dev/m8-backend-c6.md）。 */
+  'run.retried': { nodeIds: NodeId[]; reason?: string }
   'node.ready': Record<string, never>
   /** rewindPoint：节点开始前的文件状态（docs/design/26 §5），回退用。 */
   'node.started': { attempt: number; iteration?: number; rewindPoint?: RewindPoint }
@@ -1467,6 +1469,8 @@ export type LeadAction =
   /** workflowId 为 'auto' 时先走路由器，并把路由卡发到群里。 */
   | { type: 'start_run'; workflowId: string; args?: Record<string, unknown>; budget?: RunBudget }
   | { type: 'resume_run'; runId: RunId }
+  /** 重试失败 / 阻塞的节点后续跑；nodeIds 省略 = 全部失败和阻塞的节点。 */
+  | { type: 'retry_run'; runId: RunId; nodeIds?: NodeId[] }
   | { type: 'cancel_run'; runId: RunId; reason: string }
   /** assumption / timebox 同 HumanNodeDef：只有 answer 带假设时才会到时交还（docs/design/26 §3）。 */
   | { type: 'request_human'; to: string; ask: string; form: HumanNodeDef['form']; choices?: string[]; assumption?: string; timebox?: HumanTimebox }
