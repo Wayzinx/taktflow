@@ -153,11 +153,17 @@
   height: 32px;
   margin-bottom: var(--sp-2);
 }
+.empty-bee {
+  margin-bottom: var(--sp-2);
+}
 .empty-icon svg {
   width: 20px;
   height: 20px;
 }
-.empty-state.compact .empty-icon svg {
+.empty-state.compact .empty-bee {
+  margin-bottom: var(--sp-2);
+}
+.empty-icon svg {
   width: 16px;
   height: 16px;
 }

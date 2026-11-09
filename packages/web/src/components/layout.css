@@ -39,16 +39,6 @@
 .sidebar :focus-visible {
   outline-color: var(--accent);
 }
-.logo-plate {
-  fill: var(--rail-hover);
-  stroke: oklch(0.95 0.01 80 / 0.14);
-}
-.logo-tick {
-  fill: var(--rail-text-2);
-}
-.logo-beat {
-  fill: var(--accent);
-}
 .sb-brand {
   display: flex;
   align-items: center;
@@ -56,8 +46,8 @@
   padding: var(--sp-1) 0 var(--sp-4) var(--sp-1);
 }
 .sb-brand .logo {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   flex: none;
 }
 .sb-brand .space-switcher {
@@ -325,7 +315,14 @@
   padding: var(--sp-3) var(--sp-1) 0;
   border-top: 1px solid var(--rail-border);
 }
+.sb-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .sb-version {
+  white-space: nowrap;
   font-size: var(--text-label);
   color: var(--rail-text-3);
 }
@@ -404,7 +401,7 @@
   .sidebar.collapsed .sb-count,
   .sidebar.collapsed .sb-create,
   .sidebar.collapsed .sb-section,
-  .sidebar.collapsed .sb-version,
+  .sidebar.collapsed .sb-lockup,
   .sidebar.collapsed .theme-switch {
     display: none;
   }

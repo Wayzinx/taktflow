@@ -1,46 +1,14 @@
-/* Agent 形象（docs/design/25 §2）：只有"干活 / 求助"会动；减少动态时全部静止，形状照样区分状态。 */
+/* Agent 形象外框（docs/design/27 §2）：蜂本体见 mascot/bee.css；这里只有小尺寸时的头顶角标。 */
 
 .amark {
   position: relative;
   display: inline-grid;
   place-items: center;
   flex: none;
-  color: var(--amark-hue);
 }
-.amark svg {
+.amark .bee {
   width: 100%;
   height: 100%;
-  overflow: visible;
-}
-.amark-head {
-  fill: color-mix(in oklch, var(--amark-hue) 16%, var(--surface));
-  stroke: color-mix(in oklch, var(--amark-hue) 70%, var(--text));
-  stroke-width: 1.5;
-}
-.amark-tick {
-  stroke: color-mix(in oklch, var(--amark-hue) 70%, var(--text));
-  stroke-width: 1.6;
-}
-.amark-eyes {
-  stroke: color-mix(in oklch, var(--amark-hue) 35%, var(--text));
-  transform-box: fill-box;
-  transform-origin: center;
-}
-/* 待命：整体退后一点 */
-.amark[data-state='idle'] .amark-head {
-  fill: var(--surface-2);
-  stroke: var(--border-strong);
-}
-.amark[data-state='idle'] .amark-tick,
-.amark[data-state='idle'] .amark-eyes {
-  stroke: var(--text-3);
-}
-/* 干活：头顶刻度亮成节拍橙 */
-.amark[data-state='work'] .amark-tick {
-  stroke: var(--accent);
-}
-.amark[data-state='failed'] .amark-eyes {
-  stroke: var(--st-failed);
 }
 
 .amark-sign {
@@ -65,52 +33,6 @@
 .amark-sign[data-sign='z'] {
   background: var(--text-3);
 }
-
-@media (prefers-reduced-motion: no-preference) {
-  /* 每 4 拍眨一次眼 */
-  .amark[data-state='work'] .amark-eyes {
-    animation: amark-blink calc(var(--takt) * 4) linear infinite;
-  }
-  /* 随节拍轻微起伏 */
-  .amark[data-state='work'] .amark-body {
-    animation: amark-bob var(--takt) var(--ease-in-out) infinite;
-  }
-  /* 求助：符号每 2 拍轻跳一次 */
-  .amark[data-state='ask'] .amark-sign {
-    animation: amark-hop calc(var(--takt) * 2) var(--ease-out-soft) infinite;
-  }
-}
-@keyframes amark-blink {
-  0%,
-  90%,
-  100% {
-    transform: none;
-  }
-  94% {
-    transform: scaleY(0.15);
-  }
-}
-@keyframes amark-bob {
-  0%,
-  100% {
-    transform: none;
-  }
-  50% {
-    transform: translateY(-0.6px);
-  }
-}
-@keyframes amark-hop {
-  0%,
-  30%,
-  100% {
-    transform: none;
-  }
-  12% {
-    transform: translateY(-2px);
-  }
-}
-
-/* ---------- 运行中细分（docs/design/26 §1）：静态姿态在外面，动起来的部分在 no-preference 里 ---------- */
 .amark-sign[data-sign='…'] {
   top: -5px;
   right: -6px;
@@ -121,115 +43,21 @@
   font-size: 9px;
   letter-spacing: -0.5px;
 }
-/* 思考：眼睛看右上 */
-.amark[data-act='think'] .amark-eyes {
-  translate: 0.8px -1px;
-}
-/* 改：低头 */
-.amark[data-act='edit'] .amark-eyes {
-  translate: 0 1.6px;
-}
-.amark[data-act='edit'] .amark-tick {
-  rotate: -14deg;
-  transform-origin: 12px 6.2px;
-}
-/* 跑命令：专注（眼睛压扁） */
-.amark[data-act='run'] .amark-eyes {
-  scale: 1 0.55;
-}
-/* 等工具：半闭眼 */
-.amark[data-act='wait'] .amark-eyes {
-  scale: 1 0.4;
-  translate: 0 0.6px;
-}
-.amark[data-act='wait'] .amark-tick {
-  stroke: color-mix(in oklch, var(--amark-hue) 70%, var(--text));
-}
-/* 有了具体动作就不再按节拍眨眼 / 起伏，换成各自的动作 */
-.amark[data-act] .amark-eyes,
-.amark[data-act] .amark-body {
-  animation: none;
-}
 
 @media (prefers-reduced-motion: no-preference) {
-  .amark-eyes {
-    transition: translate 240ms var(--ease-out-soft), scale 240ms var(--ease-out-soft);
-  }
-  .amark[data-act='think'] .amark-eyes {
-    animation: amark-ponder calc(var(--takt) * 3) var(--ease-in-out) infinite;
-  }
-  .amark[data-act='read'] .amark-eyes {
-    animation: amark-scan calc(var(--takt) * 2) var(--ease-in-out) infinite;
-  }
-  .amark[data-act='edit'] .amark-body {
-    animation: amark-nod var(--takt) var(--ease-in-out) infinite;
-  }
-  .amark[data-act='run'] .amark-tick {
-    animation: amark-tick-flash calc(var(--takt) / 2) steps(2, jump-none) infinite;
-  }
-  .amark[data-act='compact'] .amark-head {
-    transform-box: fill-box;
-    transform-origin: center;
-    animation: amark-squeeze calc(var(--takt) * 1.5) var(--ease-in-out) infinite;
-  }
-  .amark[data-act='wait'] .amark-eyes {
-    animation: amark-drowse calc(var(--takt) * 4) var(--ease-in-out) infinite;
-  }
+  /* 求助 / 长步骤：符号每 2 拍轻跳一次 */
+  .amark[data-state='ask'] .amark-sign,
   .amark-sign[data-sign='…'] {
     animation: amark-hop calc(var(--takt) * 2) var(--ease-out-soft) infinite;
   }
 }
-@keyframes amark-ponder {
+@keyframes amark-hop {
   0%,
-  100% {
-    translate: 0.8px -1px;
-  }
-  50% {
-    translate: -0.6px -1.2px;
-  }
-}
-@keyframes amark-scan {
-  0%,
-  100% {
-    translate: -1.6px 0;
-  }
-  50% {
-    translate: 1.6px 0;
-  }
-}
-@keyframes amark-nod {
-  0%,
+  30%,
   100% {
     transform: none;
   }
-  50% {
-    transform: translateY(0.8px);
-  }
-}
-@keyframes amark-tick-flash {
-  0% {
-    stroke: var(--accent);
-  }
-  100% {
-    stroke: color-mix(in oklch, var(--amark-hue) 70%, var(--text));
-  }
-}
-@keyframes amark-squeeze {
-  0%,
-  100% {
-    transform: none;
-  }
-  50% {
-    transform: scale(0.9, 1.04);
-  }
-}
-@keyframes amark-drowse {
-  0%,
-  80%,
-  100% {
-    scale: 1 0.4;
-  }
-  90% {
-    scale: 1 0.1;
+  12% {
+    transform: translateY(-2px);
   }
 }

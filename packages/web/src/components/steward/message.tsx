@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Copy, CornerDownRight, Forward, ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Proposal, StewardDelegation, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
-import { AgentMark } from '../agent-mark'
+import { Bee } from '../mascot'
 import { normReceipt, ReceiptRail, ResendButton } from '../receipt'
 import { Link } from '../../lib/router'
 import { spacePath } from '../../lib/space'
@@ -158,7 +158,8 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
   const delegations = m.delegations ?? []
   return (
     <article className={`stw-msg stw-msg-steward${animate ? ' stw-in' : ''}`} data-steward-anchor={m.id} aria-busy={live}>
-      <AgentMark className="stw-avatar" state={live ? 'work' : m.status === 'error' ? 'failed' : 'done'} hue="var(--accent)" size={28} />
+      {/* 只有正在回复的那条头像会动，历史消息静止 */}
+      <Bee className="stw-avatar" state={live ? 'think' : m.status === 'error' ? 'failed' : 'idle'} still={!live} size={30} />
       <div className="stw-msg-main">
         <div className="stw-msg-meta">
           <span className="stw-msg-who">管家</span>

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { AlertTriangle, Lock, RotateCw, Sparkles, WifiOff, type LucideIcon } from 'lucide-react'
 import type { StewardContextRef } from '@taktflow/core'
 import { askSteward } from '../../lib/ui-store'
+import { Bee, type BeeState } from '../mascot'
 import { TaktRuler } from '../takt'
 import './primitives.css'
 
@@ -18,6 +19,8 @@ export interface EmptyStateProps {
   stewardAsk?: string
   stewardContext?: StewardContextRef[]
   compact?: boolean
+  /** 大号空状态默认是睡着的节拍蜂（点它会醒）；false 用图标。紧凑版总是图标。 */
+  mascot?: BeeState | false
   className?: string
 }
 
@@ -25,13 +28,18 @@ export interface EmptyStateProps {
  * 空状态（体验基线 2）：单色线稿图标 + 一句话 + 一个主动作 + 可选"让管家帮我"。
  *   <EmptyState icon={BookOpen} title="还没有知识库" body="知识库让节点查到业务规则和接口。" action={<button className="btn btn-primary">新建知识库</button>} stewardAsk="帮我从 docs/ 建一个文档知识库" />
  */
-export function EmptyState({ icon: Icon, title, body, hint, action, stewardAsk, stewardContext, compact, className }: EmptyStateProps) {
+export function EmptyState({ icon: Icon, title, body, hint, action, stewardAsk, stewardContext, compact, mascot, className }: EmptyStateProps) {
   const text = body ?? hint
+  const bee = compact ? false : (mascot ?? 'sleep')
   return (
     <div className={`empty-state${compact ? ' compact' : ''}${className ? ` ${className}` : ''}`}>
-      <span className="empty-icon" aria-hidden>
-        <Icon strokeWidth={1.5} />
-      </span>
+      {bee ? (
+        <Bee className="empty-bee" state={bee} size={76} interactive />
+      ) : (
+        <span className="empty-icon" aria-hidden>
+          <Icon strokeWidth={1.5} />
+        </span>
+      )}
       <div className="empty-title">{title}</div>
       {text && <div className="empty-hint">{text}</div>}
       {(action || stewardAsk) && (
@@ -79,9 +87,13 @@ export function ErrorState({ error, onRetry, title, contact, compact }: ErrorSta
   const why = forbidden ? `需要更高的空间角色${contact ? `，请联系 ${contact}` : '，请联系空间 owner'}。` : offline ? '检查网络或服务是否在运行，然后重试。' : undefined
   return (
     <div className={`empty-state error-state${compact ? ' compact' : ''}`} role="alert">
-      <span className="empty-icon" aria-hidden>
-        <Icon strokeWidth={1.5} />
-      </span>
+      {compact ? (
+        <span className="empty-icon" aria-hidden>
+          <Icon strokeWidth={1.5} />
+        </span>
+      ) : (
+        <Bee className="empty-bee" state={forbidden ? 'ask' : 'failed'} size={76} interactive />
+      )}
       <div className="empty-title">{head}</div>
       <div className="empty-hint">
         {why && <div>{why}</div>}

@@ -50,12 +50,19 @@ const BASE_TITLE = 'taktflow 控制台'
 /** 标签页标题：括号里是等你决定的数量。 */
 export const pulseTitle = (waiting: number) => (waiting > 0 ? `(${waiting}) ${BASE_TITLE}` : BASE_TITLE)
 
-/** 图标三态：空闲（品牌图标）、运行中（右上节拍橙点）、等你（右上琥珀点，优先）。 */
+/** 浏览器标签页图标：节拍蜂（小尺寸只画轮廓、条纹、眼睛）。index.html 里的静态图标与它的 idle 一致。 */
+export const BEE_FAVICON_BODY =
+  "<path d='M25 31C15 17 3 21 6.6 30c2.4 6 12 6 18.4 1z' fill='#e6edf3' stroke='#2a241f' stroke-width='3.4' stroke-linejoin='round'/>" +
+  "<path d='M39 31c10-14 22-10 18.4-1-2.4 6-12 6-18.4 1z' fill='#e6edf3' stroke='#2a241f' stroke-width='3.4' stroke-linejoin='round'/>" +
+  "<path d='M27 25Q25 15 21 10.5M37 25Q39 15 43 10.5' fill='none' stroke='#2a241f' stroke-width='3.6' stroke-linecap='round'/>" +
+  "<circle cx='21' cy='10.5' r='3.8' fill='#2a241f'/><circle cx='43' cy='10.5' r='3.8' fill='#2a241f'/>" +
+  "<ellipse cx='32' cy='40.5' rx='19' ry='18' fill='#f0b14a'/>" +
+  "<path d='M14.6 44q17.4 4.8 34.8 0l-.9 5.2q-16.5 4.4-33 0zM17.4 51.2q14.6 4 29.2 0l-3.6 4.8q-11 3-22 0z' fill='#2a241f'/>" +
+  "<ellipse cx='32' cy='40.5' rx='19' ry='18' fill='none' stroke='#2a241f' stroke-width='3.6'/>" +
+  "<ellipse cx='25.6' cy='34.6' rx='3.2' ry='3.8' fill='#2a241f'/><ellipse cx='38.4' cy='34.6' rx='3.2' ry='3.8' fill='#2a241f'/>"
+
+/** 图标三态：空闲（节拍蜂）、运行中（右上节拍橙点）、等你（右上琥珀点，优先）。 */
 export function pulseIcon(state: 'idle' | 'running' | 'waiting'): string {
-  const dot = state === 'idle' ? '' : `<circle cx='22.5' cy='5.5' r='5' fill='${state === 'waiting' ? '%23e0a526' : '%23e8743b'}' stroke='%23ffffff' stroke-width='1.6'/>`
-  return (
-    "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect width='28' height='28' rx='6.5' fill='%2328231f'/%3E%3Crect x='7' y='9' width='2.6' height='10' rx='1.3' fill='%23c9c2b8'/%3E%3Crect x='12.7' y='9' width='2.6' height='10' rx='1.3' fill='%23c9c2b8'/%3E%3Crect x='18.4' y='6' width='2.6' height='16' rx='1.3' fill='%23e8743b'/%3E" +
-    dot.replace(/</g, '%3C').replace(/>/g, '%3E') +
-    '%3C/svg%3E'
-  )
+  const dot = state === 'idle' ? '' : `<circle cx='54' cy='10' r='9' fill='${state === 'waiting' ? '#e0a526' : '#e8743b'}' stroke='#ffffff' stroke-width='3'/>`
+  return `data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>${BEE_FAVICON_BODY}${dot}</svg>`)}`
 }

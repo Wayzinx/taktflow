@@ -1,0 +1,283 @@
+/* 节拍蜂（docs/design/27 §2）：部件、姿势、基础循环与单次动作关键帧。
+   单次动作（bee-a-*）由 bee-engine.ts 按动作表挂到部件的 style.animation 上；表情 / 叠加物 / 道具只看根节点 data-*。 */
+:root {
+  --honey: oklch(0.8 0.14 70);
+  --m-line: light-dark(oklch(0.26 0.012 60), oklch(0.2 0.01 60));
+  --m-blush: oklch(0.72 0.12 15 / 0.55);
+  --m-wing: oklch(0.97 0.01 230 / 0.82);
+  --m-bubble: light-dark(oklch(0.99 0.004 80), oklch(0.95 0.005 80));
+}
+.bee { display: block; overflow: visible; --hue: var(--honey); }
+.bee * { transform-box: view-box; }
+.bee .act, .bee .pose, .bee .fly, .bee .breath { transform-origin: 32px 57px; }
+.bee .pose, .bee .shadow, .bee .wlP, .bee .wrP, .bee .antL, .bee .antR, .bee .hl, .bee .hr { transition: transform 460ms var(--ease-spring); }
+.bee .shadow { transform-origin: 32px 61.6px; }
+.bee .wlP, .bee .wl { transform-origin: 24.5px 29.5px; }
+.bee .wrP, .bee .wr { transform-origin: 39.5px 29.5px; }
+.bee .antL, .bee .aL { transform-origin: 27.4px 24.4px; }
+.bee .antR, .bee .aR { transform-origin: 36.6px 24.4px; }
+.bee .wl, .bee .aL { --s: 1; }
+.bee .wr, .bee .aR { --s: -1; }
+.bee .hl { transform-origin: 15.4px 46.6px; }
+.bee .hr, .bee .pr { transform-origin: 48.6px 46.6px; }
+
+/* 脸：眼睛、眉毛、嘴、腮红，按 data-eyes / data-mouth / data-blush 切换（显示规则由 JS 生成） */
+.bee .eye, .bee .brow, .bee .mo, .bee .ov, .bee .pp { display: none; }
+/* 显示规则：眼睛变体 = 左眼部件 + 右眼部件 (+ 眉毛)；嘴、叠加物、道具按 data-* 一一对应 */
+.bee[data-eyes="open"] .eye.eo.L,
+.bee[data-eyes="open"] .eye.eo.R { display: inline; }
+.bee[data-eyes="wide"] .eye.eo.L,
+.bee[data-eyes="wide"] .eye.eo.R { display: inline; }
+.bee[data-eyes="focus"] .eye.eo.L,
+.bee[data-eyes="focus"] .eye.eo.R,
+.bee[data-eyes="focus"] .brow.bf { display: inline; }
+.bee[data-eyes="sad"] .eye.eo.L,
+.bee[data-eyes="sad"] .eye.eo.R,
+.bee[data-eyes="sad"] .brow.bw { display: inline; }
+.bee[data-eyes="closed"] .eye.ec.L,
+.bee[data-eyes="closed"] .eye.ec.R { display: inline; }
+.bee[data-eyes="happy"] .eye.eh.L,
+.bee[data-eyes="happy"] .eye.eh.R { display: inline; }
+.bee[data-eyes="x"] .eye.ex.L,
+.bee[data-eyes="x"] .eye.ex.R { display: inline; }
+.bee[data-eyes="squeeze"] .eye.eq.L,
+.bee[data-eyes="squeeze"] .eye.eq.R { display: inline; }
+.bee[data-eyes="wink"] .eye.eo.L,
+.bee[data-eyes="wink"] .eye.eh.R { display: inline; }
+.bee[data-eyes="peek"] .eye.ec.L,
+.bee[data-eyes="peek"] .eye.eo.R { display: inline; }
+.bee[data-mouth="smile"] .mo-smile,
+.bee[data-mouth="o"] .mo-o,
+.bee[data-mouth="wave"] .mo-wave,
+.bee[data-mouth="big"] .mo-big,
+.bee[data-mouth="flat"] .mo-flat,
+.bee[data-mouth="yawn"] .mo-yawn,
+.bee[data-mouth="cat"] .mo-cat,
+.bee[data-mouth="pout"] .mo-pout,
+.bee[data-mouth="sad"] .mo-sad { display: inline; }
+.bee[data-ov~="ask"] .ov-ask,
+.bee[data-ov~="think"] .ov-think,
+.bee[data-ov~="bulb"] .ov-bulb,
+.bee[data-ov~="z"] .ov-z,
+.bee[data-ov~="note"] .ov-note,
+.bee[data-ov~="heart"] .ov-heart,
+.bee[data-ov~="drop"] .ov-drop,
+.bee[data-ov~="stars"] .ov-stars,
+.bee[data-ov~="bang"] .ov-bang,
+.bee[data-ov~="puff"] .ov-puff,
+.bee[data-ov~="confetti"] .ov-confetti,
+.bee[data-ov~="dizzy"] .ov-dizzy,
+.bee[data-ov~="snore"] .ov-snore,
+.bee[data-ov~="tear"] .ov-tear,
+.bee[data-ov~="ding"] .ov-ding,
+.bee[data-ov~="sweat"] .ov-sweat { display: inline; }
+.bee[data-prop="baton"] .pp-baton,
+.bee[data-prop="note"] .pp-note,
+.bee[data-prop="ruler"] .pp-ruler,
+.bee[data-prop="wrench"] .pp-wrench,
+.bee[data-prop="lens"] .pp-lens,
+.bee[data-prop="tube"] .pp-tube,
+.bee[data-prop="gavel"] .pp-gavel,
+.bee[data-prop="bell"] .pp-bell,
+.bee[data-prop="mail"] .pp-mail { display: inline; }
+.bee .eo { transition: transform 160ms ease-out; }
+.bee .bl { transition: transform 70ms ease-in; }
+.bee[data-blink] .bl { transform: scaleY(.1); }
+.bee .look { transform: translate(calc(var(--lx, 0) * 1px), calc(var(--ly, 0) * 1px)); transition: transform 220ms cubic-bezier(.3, .7, .4, 1); }
+.bee[data-eyes="wide"] .eo { transform: scale(1.2); }
+.bee[data-eyes="focus"] .eo { transform: scale(1.05, .58); }
+.bee[data-eyes="sad"] .eo { transform: scale(.86) translateY(.6px); }
+.bee .blush { transition: transform 260ms var(--ease-spring), opacity 260ms; opacity: .85; }
+.bee[data-blush="1"] .blush { transform: scale(1.45); opacity: 1; }
+
+/* 每个状态的静止姿势：切状态时用弹簧过渡过去 */
+.bee[data-state="ask"] .pose { transform: rotate(6deg) translateX(1.5px); }
+.bee[data-state="failed"] .pose { transform: translateY(3px) rotate(-4deg); }
+.bee[data-state="sleep"] .pose { transform: translateY(4.5px) rotate(-3deg); }
+.bee[data-state="failed"] .shadow, .bee[data-state="sleep"] .shadow { transform: scale(1.14); }
+.bee[data-state="sleep"] .wlP { transform: rotate(14deg) scale(.86); }
+.bee[data-state="sleep"] .wrP { transform: rotate(-14deg) scale(.86); }
+.bee[data-state="failed"] .wlP { transform: rotate(-16deg) scale(.9); }
+.bee[data-state="failed"] .wrP { transform: rotate(16deg) scale(.9); }
+.bee[data-state="think"] .wlP { transform: rotate(6deg); }
+.bee[data-state="think"] .wrP { transform: rotate(-6deg); }
+.bee[data-state="sleep"] .antL { transform: rotate(-26deg); }
+.bee[data-state="sleep"] .antR { transform: rotate(26deg); }
+.bee[data-state="failed"] .antL { transform: rotate(-18deg); }
+.bee[data-state="failed"] .antR { transform: rotate(18deg); }
+.bee[data-state="ask"] .antL, .bee[data-state="done"] .antL, .bee[data-state="greet"] .antL { transform: rotate(7deg); }
+.bee[data-state="ask"] .antR, .bee[data-state="done"] .antR, .bee[data-state="greet"] .antR { transform: rotate(-7deg); }
+
+/* 小尺寸：只留轮廓、条纹、眼睛 */
+.bee.tiny .blush, .bee.tiny .hl, .bee.tiny .hr, .bee.tiny .ov, .bee.tiny .mouth, .bee.tiny .shadow, .bee.tiny .vein, .bee.tiny .brow { display: none !important; }
+.bee.tiny .ln { stroke-width: 4.4; }
+.bee.small .ln { stroke-width: 2.6; }
+.bee.small .vein, .bee.small .shadow { display: none; }
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 基础循环：都按一拍（--takt）的整数倍走 */
+  .bee[data-state="idle"] .fly, .bee[data-state="greet"] .fly { animation: bee-hover calc(var(--takt) * 2) ease-in-out infinite; }
+  .bee[data-state="idle"] .shadow, .bee[data-state="greet"] .shadow { animation: bee-shadow calc(var(--takt) * 2) ease-in-out infinite; }
+  .bee[data-state="idle"] .breath { animation: bee-breathe calc(var(--takt) * 4) ease-in-out infinite; }
+  .bee[data-state="idle"] .wl, .bee[data-state="idle"] .wr, .bee[data-state="greet"] .wl, .bee[data-state="greet"] .wr { animation: bee-buzz calc(var(--takt) * 2) linear infinite; }
+  .bee[data-state="idle"] .aL, .bee[data-state="think"] .aL, .bee[data-state="greet"] .aL { animation: bee-sway calc(var(--takt) * 2) ease-in-out infinite; }
+  .bee[data-state="idle"] .aR, .bee[data-state="think"] .aR, .bee[data-state="greet"] .aR { animation: bee-sway calc(var(--takt) * 2) ease-in-out -300ms infinite; }
+
+  .bee[data-state="work"] .fly { animation: bee-bob var(--takt) ease-in-out infinite; }
+  .bee[data-state="work"] .shadow { animation: bee-shadow var(--takt) ease-in-out infinite; }
+  .bee[data-state="work"] .wl, .bee[data-state="work"] .wr { animation: bee-flap var(--takt) linear infinite; }
+  .bee[data-state="work"] .hr { animation: bee-tap var(--takt) ease-out infinite; }
+
+  .bee[data-state="think"] .fly { animation: bee-hover calc(var(--takt) * 3) ease-in-out infinite; }
+  .bee[data-state="think"] .shadow { animation: bee-shadow calc(var(--takt) * 3) ease-in-out infinite; }
+  .bee[data-state="think"] .wl, .bee[data-state="think"] .wr { animation: bee-slow calc(var(--takt) * 2) ease-in-out infinite; }
+  .bee[data-state="think"] .breath { animation: bee-breathe calc(var(--takt) * 4) ease-in-out infinite; }
+
+  .bee[data-state="ask"] .fly { animation: bee-hover calc(var(--takt) * 1.5) ease-in-out infinite; }
+  .bee[data-state="ask"] .shadow { animation: bee-shadow calc(var(--takt) * 1.5) ease-in-out infinite; }
+  .bee[data-state="ask"] .wl, .bee[data-state="ask"] .wr { animation: bee-flap calc(var(--takt) * 2) linear infinite; }
+
+  .bee[data-state="done"] .fly { animation: bee-bounce var(--takt) cubic-bezier(.3, .7, .4, 1) infinite; }
+  .bee[data-state="done"] .shadow { animation: bee-shadow var(--takt) cubic-bezier(.3, .7, .4, 1) infinite; }
+  .bee[data-state="done"] .wl, .bee[data-state="done"] .wr { animation: bee-happy 240ms linear infinite; }
+
+  .bee[data-state="failed"] .fly { animation: bee-hover calc(var(--takt) * 3) ease-in-out infinite; }
+  .bee[data-state="failed"] .breath { animation: bee-breathe calc(var(--takt) * 3) ease-in-out infinite; }
+
+  .bee[data-state="sleep"] .fly { animation: bee-hover calc(var(--takt) * 4) ease-in-out infinite; }
+  .bee[data-state="sleep"] .breath { animation: bee-breathe-deep calc(var(--takt) * 3) ease-in-out infinite; }
+
+  /* 叠加物出现时自己播一遍入场 */
+  .bee .ov-ask { animation: bee-nudge var(--takt) ease-in-out infinite; }
+  .bee .ov-think .dot { animation: bee-dots calc(var(--takt) * 1.5) ease-in-out infinite; }
+  .bee .ov-think .dot:nth-child(2) { animation-delay: 200ms; }
+  .bee .ov-think .dot:nth-child(3) { animation-delay: 400ms; }
+  .bee .ov-think .puffs { animation: bee-pop 420ms var(--ease-spring) both; }
+  .bee .ov-stars .spark { animation: bee-spark calc(var(--takt) * 2) ease-out infinite; }
+  .bee .ov-stars .spark:nth-child(2) { animation-delay: 220ms; }
+  .bee .ov-stars .spark:nth-child(3) { animation-delay: 440ms; }
+  .bee .ov-drop path { animation: bee-drip calc(var(--takt) * 2) ease-in infinite; }
+  .bee .ov-z text { animation: bee-zz calc(var(--takt) * 3) ease-out infinite; opacity: 0; }
+  .bee .ov-z text:nth-child(2) { animation-delay: 1200ms; }
+  .bee .ov-z text:nth-child(3) { animation-delay: 2400ms; }
+  .bee .ov-note .n { animation: bee-note-up calc(var(--takt) * 2) ease-out both; }
+  .bee .ov-note .n:nth-child(2) { animation-delay: 600ms; }
+  .bee .ov-note .n:nth-child(3) { animation-delay: 1100ms; }
+  .bee .ov-heart path { animation: bee-heart-up 1400ms ease-out both; }
+  .bee .ov-bulb { animation: bee-pop 480ms var(--ease-spring) both; }
+  .bee .ov-bulb .rays { animation: bee-rays 600ms ease-out 200ms both; }
+  .bee .ov-bang { animation: bee-pop 360ms var(--ease-spring) both; }
+  .bee .ov-puff { animation: bee-puff 1500ms ease-out both; }
+  .bee .ov-confetti .cf { animation: bee-burst 1300ms cubic-bezier(.2, .7, .3, 1) both; }
+  .bee .ov-dizzy .orbit { animation: bee-orbit 900ms linear infinite; }
+  .bee .ov-snore circle { animation: bee-snore 2400ms ease-in-out both; }
+  .bee .ov-tear path { animation: bee-tear 1500ms ease-in both; }
+  .bee .ov-ding { animation: bee-ding 600ms ease-out both; }
+  .bee .ov-sweat path { animation: bee-sweat 1400ms ease-in both; }
+}
+
+.bee.still,
+.bee.still * {
+  animation: none !important;
+}
+/* 安静：基础循环停掉，单次动作（行内 style）照常 */
+.bee.calm :is(.fly, .shadow, .breath, .wl, .wr, .aL, .aR, .hr, .ov *) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bee * {
+    transition: none !important;
+  }
+}
+
+@keyframes bee-hover { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2.2px); } }
+@keyframes bee-shadow { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(.86); opacity: .7; } }
+@keyframes bee-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-1.6px); } }
+@keyframes bee-bounce { 0%, 60%, 100% { transform: translateY(0) scale(1); } 12% { transform: translateY(0) scale(1.04, .95); } 30% { transform: translateY(-4px) scale(.98, 1.03); } }
+@keyframes bee-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.025, .975); } }
+@keyframes bee-breathe-deep { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045, .95); } }
+@keyframes bee-buzz { 0%, 4%, 8%, 12%, 16%, 100% { transform: rotate(0); } 2%, 6%, 10%, 14% { transform: rotate(calc(var(--s) * -20deg)) scale(.92, .84); } }
+@keyframes bee-flap { 0%, 6%, 12%, 18%, 24%, 100% { transform: rotate(0); } 3%, 9%, 15%, 21% { transform: rotate(calc(var(--s) * -24deg)) scale(.9, .8); } }
+@keyframes bee-slow { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(calc(var(--s) * -10deg)); } }
+@keyframes bee-happy { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(calc(var(--s) * -26deg)) scale(.9, .8); } }
+@keyframes bee-sway { 0%, 100% { transform: rotate(calc(var(--s) * -3deg)); } 50% { transform: rotate(calc(var(--s) * 3deg)); } }
+@keyframes bee-tap { 0%, 40%, 100% { transform: rotate(0); } 12% { transform: rotate(-9deg) translateY(-1px); } }
+@keyframes bee-nudge { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-2px) rotate(8deg); } }
+@keyframes bee-dots { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 25% { opacity: 1; transform: translateY(-1px); } }
+@keyframes bee-pop { 0% { transform: scale(.05); } 100% { transform: scale(1); } }
+@keyframes bee-spark { 0% { opacity: 0; transform: scale(.3); } 25% { opacity: 1; transform: scale(1.1); } 60%, 100% { opacity: 0; transform: scale(.8); } }
+@keyframes bee-drip { 0% { transform: translateY(-2px); opacity: 0; } 20% { opacity: 1; } 80% { transform: translateY(5px); opacity: 1; } 100% { transform: translateY(7px); opacity: 0; } }
+@keyframes bee-zz { 0% { transform: translate(0, 3px) scale(.6); opacity: 0; } 25% { opacity: 1; } 100% { transform: translate(5px, -7px) scale(1); opacity: 0; } }
+@keyframes bee-note-up { 0% { transform: translate(0, 3px) rotate(0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translate(3px, -9px) rotate(12deg); opacity: 0; } }
+@keyframes bee-heart-up { 0% { transform: scale(.05); opacity: 1; } 22% { transform: scale(1.2); } 32% { transform: scale(1); } 70% { opacity: 1; } 100% { transform: translateY(-9px) scale(.9); opacity: 0; } }
+@keyframes bee-rays { 0% { opacity: 0; transform: scale(.6); } 40% { opacity: 1; transform: scale(1.1); } 100% { opacity: .9; transform: scale(1); } }
+@keyframes bee-puff { 0% { transform: translate(-15px, 2px) scale(.3); opacity: 0; } 25% { opacity: .95; } 100% { transform: translate(2px, -4px) scale(1.15); opacity: 0; } }
+@keyframes bee-burst { 0% { transform: translate(0, 0) rotate(0) scale(.4); opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(var(--tx), var(--ty)) rotate(var(--r)) scale(1); opacity: 0; } }
+@keyframes bee-orbit { to { transform: rotate(360deg); } }
+@keyframes bee-snore { 0% { transform: scale(.15); } 30% { transform: scale(.85); } 45% { transform: scale(.55); } 80% { transform: scale(1.15); opacity: 1; } 86% { transform: scale(1.4); opacity: 0; } 100% { transform: scale(1.4); opacity: 0; } }
+@keyframes bee-tear { 0% { transform: translateY(0) scale(.4); opacity: 0; } 20% { transform: scale(1); opacity: 1; } 100% { transform: translateY(9px); opacity: 0; } }
+@keyframes bee-ding { 0% { opacity: 0; transform: scale(.5); } 35% { opacity: 1; transform: scale(1.15); } 100% { opacity: 0; transform: scale(1); } }
+@keyframes bee-sweat { 0% { transform: translateY(-1px) scale(.4); opacity: 0; } 25% { transform: scale(1); opacity: 1; } 100% { transform: translateY(6px); opacity: 0; } }
+
+/* ── 单次动作 ── 整体（.act）：都从原位出发、回到原位 */
+@keyframes bee-a-hop { 0%, 100% { transform: none; } 12% { transform: translateY(0) scale(1.08, .9); } 36% { transform: translateY(-9px) scale(.95, 1.06); } 60% { transform: translateY(0) scale(1.06, .94); } 76% { transform: translateY(0) scale(.98, 1.02); } }
+@keyframes bee-a-double { 0%, 50%, 100% { transform: none; } 8%, 58% { transform: scale(1.07, .91); } 22%, 72% { transform: translateY(-7px) scale(.96, 1.05); } 38%, 88% { transform: scale(1.04, .96); } }
+@keyframes bee-a-spin { 0% { transform: translateY(-17px) rotate(0) translateY(17px); } 22% { transform: translateY(-24px) rotate(0) translateY(17px); } 70% { transform: translateY(-24px) rotate(360deg) translateY(17px); } 100% { transform: translateY(-17px) rotate(360deg) translateY(17px); } }
+@keyframes bee-a-loop { 0%, 100% { transform: translate(0, 0); } 25% { transform: translate(5px, -3px) rotate(6deg); } 50% { transform: translate(0, -6px); } 75% { transform: translate(-5px, -3px) rotate(-6deg); } }
+@keyframes bee-a-tilt { 0%, 100% { transform: none; } 25%, 75% { transform: rotate(9deg); } }
+@keyframes bee-a-lean { 0%, 100% { transform: none; } 25%, 75% { transform: translateX(-3px) rotate(-10deg); } }
+@keyframes bee-a-wiggle { 0%, 100% { transform: none; } 16% { transform: rotate(8deg); } 33% { transform: rotate(-8deg); } 50% { transform: rotate(7deg); } 66% { transform: rotate(-7deg); } 83% { transform: rotate(3deg); } }
+@keyframes bee-a-shake { 0%, 100% { transform: none; } 14% { transform: rotate(-6deg); } 28% { transform: rotate(6deg); } 42% { transform: rotate(-5deg); } 56% { transform: rotate(5deg); } 70% { transform: rotate(-2deg); } }
+@keyframes bee-a-nod { 0%, 50%, 100% { transform: none; } 20%, 70% { transform: translateY(1.6px) rotate(2deg); } }
+@keyframes bee-a-bow { 0%, 100% { transform: none; } 35%, 62% { transform: translateY(2px) scale(1.04, .9); } }
+@keyframes bee-a-jiggle { 0%, 100% { transform: none; } 12% { transform: scale(1.07, .93); } 26% { transform: scale(.96, 1.04) rotate(-4deg); } 40% { transform: scale(1.05, .95) rotate(4deg); } 54% { transform: scale(.97, 1.03) rotate(-3deg); } 68% { transform: scale(1.03, .97) rotate(2deg); } }
+@keyframes bee-a-jump { 0%, 100% { transform: none; } 14% { transform: scale(1.12, .84); } 40% { transform: translateY(-11px) scale(.9, 1.12); } 70% { transform: translateY(0) scale(1.08, .92); } 85% { transform: scale(.98, 1.02); } }
+@keyframes bee-a-squish { 0%, 100% { transform: none; } 18% { transform: scale(1.24, .72); } 42% { transform: scale(.9, 1.12); } 62% { transform: scale(1.05, .96); } 80% { transform: scale(.99, 1.01); } }
+@keyframes bee-a-dip { 0%, 100% { transform: none; } 60% { transform: translateY(3px) rotate(5deg); } 67% { transform: translateY(-2.4px) rotate(-2deg); } 80% { transform: none; } }
+@keyframes bee-a-roll { 0%, 100% { transform: none; } 40%, 62% { transform: translateX(2px) rotate(14deg); } }
+@keyframes bee-a-perk { 0%, 100% { transform: none; } 22%, 66% { transform: translateY(-4px) rotate(4deg); } }
+@keyframes bee-a-sway { 0%, 100% { transform: none; } 12.5%, 62.5% { transform: rotate(-6deg); } 37.5%, 87.5% { transform: rotate(6deg); } }
+@keyframes bee-a-bounce2 { 0%, 50%, 100% { transform: none; } 22%, 72% { transform: translateY(-4px) scale(.98, 1.03); } }
+@keyframes bee-a-focus { 0%, 100% { transform: none; } 20%, 80% { transform: translateY(-1px) scale(1.045); } }
+@keyframes bee-a-flinch { 0%, 100% { transform: none; } 10% { transform: translateX(3px) scale(.94, 1.05); } 30% { transform: translateX(-1px); } }
+
+/* 身体（.breath） */
+@keyframes bee-a-yawn { 0%, 100% { transform: none; } 30%, 72% { transform: scale(1.04, 1.08); } }
+@keyframes bee-a-sigh { 0%, 100% { transform: none; } 25% { transform: scale(.97, 1.05); } 60% { transform: scale(1.07, .91); } }
+@keyframes bee-a-hmm { 0%, 100% { transform: none; } 50% { transform: scale(1.025, .975); } }
+
+/* 翅膀、天线（--s 左右镜像） */
+@keyframes bee-a-stretch { 0%, 100% { transform: none; } 30% { transform: rotate(calc(var(--s) * 28deg)) scale(1.16); } 46% { transform: rotate(calc(var(--s) * -12deg)); } 58% { transform: rotate(calc(var(--s) * 24deg)) scale(1.1); } 74% { transform: rotate(calc(var(--s) * -8deg)); } }
+@keyframes bee-a-flutter { 0%, 10%, 20%, 30%, 40%, 50%, 60%, 70%, 80%, 90%, 100% { transform: none; } 5%, 15%, 25%, 35%, 45%, 55%, 65%, 75%, 85%, 95% { transform: rotate(calc(var(--s) * -26deg)) scale(.9, .8); } }
+@keyframes bee-a-clap { 0%, 100% { transform: none; } 15%, 48%, 81% { transform: rotate(calc(var(--s) * 30deg)) scale(1.1); } 31%, 64% { transform: rotate(calc(var(--s) * -22deg)) scale(.9, .82); } }
+@keyframes bee-a-antwig { 0%, 100% { transform: none; } 15% { transform: rotate(calc(var(--s) * -14deg)); } 30% { transform: rotate(calc(var(--s) * 12deg)); } 45% { transform: rotate(calc(var(--s) * -9deg)); } 60% { transform: rotate(calc(var(--s) * 6deg)); } 76% { transform: rotate(calc(var(--s) * -3deg)); } }
+@keyframes bee-a-swirl { 0%, 100% { transform: none; } 25% { transform: rotate(calc(var(--s) * 14deg)); } 50% { transform: rotate(calc(var(--s) * -6deg)); } 75% { transform: rotate(calc(var(--s) * 10deg)); } }
+@keyframes bee-a-ding { 0%, 100% { transform: none; } 20%, 70% { transform: rotate(calc(var(--s) * 13deg)); } }
+@keyframes bee-a-droop { 0%, 100% { transform: none; } 40% { transform: rotate(calc(var(--s) * -14deg)); } 56% { transform: rotate(calc(var(--s) * -7deg)); } 72% { transform: rotate(calc(var(--s) * -14deg)); } }
+@keyframes bee-a-twitch { 0%, 60%, 100% { transform: none; } 14% { transform: rotate(-12deg); } 30% { transform: rotate(5deg); } 44% { transform: rotate(-3deg); } }
+
+/* 左手（.hl） */
+@keyframes bee-a-scratch { 0%, 100% { transform: none; } 25%, 80% { transform: translate(6px, -18px); } 36%, 58% { transform: translate(7.6px, -19px); } 47%, 69% { transform: translate(5.4px, -18px); } }
+@keyframes bee-a-headtap { 0%, 100% { transform: none; } 22%, 50%, 78% { transform: translate(5.6px, -17.6px); } 36%, 64% { transform: translate(6.4px, -19.4px); } }
+@keyframes bee-a-wipe { 0%, 100% { transform: none; } 25% { transform: translate(8.6px, -18.4px); } 60% { transform: translate(21px, -19px); } 75% { transform: translate(21px, -19px); } }
+@keyframes bee-a-rub { 0%, 100% { transform: none; } 25%, 80% { transform: translate(5.4px, -7.6px); } 40%, 64% { transform: translate(6.6px, -8.8px); } 52% { transform: translate(5px, -7.2px); } }
+
+/* 右手（.hr）与道具（.pr） */
+@keyframes bee-a-wave { 0%, 100% { transform: none; } 16% { transform: translate(3px, -14px); } 30%, 58% { transform: translate(5.5px, -15px) rotate(14deg); } 44%, 72% { transform: translate(1.5px, -14px) rotate(-10deg); } 86% { transform: translate(3px, -14px); } }
+@keyframes bee-a-raise { 0%, 100% { transform: none; } 18%, 82% { transform: translate(2px, -16px); } 36%, 64% { transform: translate(2.6px, -17.4px); } 50% { transform: translate(1.6px, -16px); } }
+@keyframes bee-a-yeah { 0%, 100% { transform: none; } 20%, 70% { transform: translate(1px, -12px) rotate(-12deg) scale(1.08); } }
+@keyframes bee-a-read { 0%, 100% { transform: none; } 18%, 82% { transform: translate(-10px, -6px) rotate(-10deg); } 50% { transform: translate(-10px, -5.2px) rotate(-8deg); } }
+@keyframes bee-a-scan { 0%, 100% { transform: none; } 20% { transform: translate(-14px, -10.5px); } 44%, 60% { transform: translate(-26px, -10.5px); } 82% { transform: translate(-14px, -10.5px); } }
+@keyframes bee-a-measure { 0%, 100% { transform: none; } 25%, 75% { transform: translate(-5px, -2px) rotate(-10deg); } 50% { transform: translate(-2px, -2px) rotate(-6deg); } }
+@keyframes bee-a-toss { 0%, 100% { transform: none; } 45% { transform: translateY(-14px) rotate(-200deg); } 55% { transform: translateY(-14px) rotate(-250deg); } }
+@keyframes bee-a-twist { 0%, 50%, 100% { transform: none; } 25%, 75% { transform: rotate(-34deg); } }
+@keyframes bee-a-shaketube { 0%, 100% { transform: none; } 10%, 30%, 50%, 70% { transform: rotate(-18deg); } 20%, 40%, 60%, 80% { transform: rotate(16deg); } }
+@keyframes bee-a-send { 0% { transform: none; opacity: 1; } 45% { transform: translate(16px, -22px) rotate(30deg) scale(.5); opacity: 0; } 55% { transform: scale(.05); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes bee-a-conduct { 0%, 100% { transform: none; } 25%, 75% { transform: rotate(-32deg); } 50% { transform: rotate(10deg); } }
+@keyframes bee-a-gavel { 0%, 100% { transform: none; } 38% { transform: rotate(-42deg); } 52% { transform: rotate(12deg); } 64% { transform: rotate(0); } }
+@keyframes bee-a-ring { 0%, 100% { transform: none; } 12%, 36%, 60% { transform: rotate(-22deg); } 24%, 48%, 72% { transform: rotate(20deg); } }
+
+.bee.is-interactive {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}

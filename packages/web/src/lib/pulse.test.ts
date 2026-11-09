@@ -31,7 +31,8 @@ describe('脉搏', () => {
   it('标题与图标', () => {
     expect(pulseTitle(0)).toBe('taktflow 控制台')
     expect(pulseTitle(3)).toBe('(3) taktflow 控制台')
-    expect(pulseIcon('idle')).not.toContain('circle')
-    expect(decodeURIComponent(pulseIcon('waiting'))).toContain("<circle cx='22.5'")
+    expect(decodeURIComponent(pulseIcon('idle'))).not.toContain("<circle cx='54'")
+    expect(decodeURIComponent(pulseIcon('waiting'))).toContain("<circle cx='54' cy='10' r='9' fill='#e0a526'")
+    expect(decodeURIComponent(pulseIcon('running'))).toContain("fill='#e8743b'")
   })
 })

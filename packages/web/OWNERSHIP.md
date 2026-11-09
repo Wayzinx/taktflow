@@ -135,6 +135,11 @@
 | `mock-m5-quality.ts` | 质量日志链完整、锚点落后 14 条（可修复）；`?mockQuality=broken` 演示链被篡改（不给修复）；管家转达重发 |
 | `mock-data.ts` / `mock-m3-runs.ts` / `mock-chat.ts` / `mock-steward-seed.ts` | 待办时限（接近交还、已交还的假设、只提醒的 approve）；群聊 uncertain 与 refused（跳数超限）任务卡、回执逐站推进与重发；管家 uncertain 转达 |
 
+## 节拍蜂（docs/design/27 §1）
+
+- `components/mascot`：`<Bee state size hue prop tools logo calm still interactive follow onAct />`。`bee-markup.ts`（SVG 内部结构与道具）、`bee-states.ts`（8 个状态的表情 / 间隔 / 动作池、互动反应、工具轮换）、`bee-engine.ts`（挑动作、眨眼、戳、跟随指针）、`bee.css`（部件、姿势、基础循环、`bee-a-*` 动作关键帧、显示规则）。加动作：在状态表里加一条 `{ id, name, w, dur, fx: { 部件: 关键帧 } }`，关键帧写进 `bee.css`。
+- 用在：`AgentMark`（运行页节点，在跑 / 等人才挑动作，其余 `calm`）、侧栏品牌标与底部字标、`lib/pulse.ts` favicon、管家头像（历史消息 `still`）与欢迎页、`EmptyState`（大号默认睡着，`mascot={false}` 用图标）、`ErrorState`（大号失败 / 没权限求助）。
+
 ## M6：DAG 动效与运行时配置（docs/design/27）
 
 - **DAG 动效**（`pages/run/canvas-motion.ts`）：`useCompletionPulses(nodes)`（节点刚完成 → 出边送信号）、`useReplay(detail)`（已结束运行 6 秒回放）、`decorate(layout, focus, pulses, replay)`（只加类名与 `edge.data`，不重算布局）。边的叠层在 `pages/run/dag-edges.tsx`（`edge-sweep` / `edge-hl` / `edge-comet`），Workflow 编辑器在 `pages/workflow/canvas/canvas-edges.tsx`（`wf-sweep` / `wf-flow`）；共用关键帧在 `styles/motion.css`。

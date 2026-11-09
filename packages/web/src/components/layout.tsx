@@ -13,6 +13,7 @@ import { CommandPalette, setPaletteOpen } from './command-palette'
 import { SpaceSwitcher } from './space-switcher'
 import { TaktBeat } from './takt'
 import { GlideMark, StatusDot, useGlide } from './ui'
+import { Bee } from './mascot'
 import './layout.css'
 import './topbar.css'
 import { usePulse } from './pulse'
@@ -42,16 +43,9 @@ function useCrumbState() {
   )
 }
 
-/** 品牌标：三道节拍刻度，最后一拍是节拍橙。 */
+/** 品牌标：节拍蜂，只做轻量动作（张望、天线、伸翅膀、小跳、绕圈），间隔拉长。 */
 function Logo() {
-  return (
-    <svg className="logo" viewBox="0 0 28 28" width="26" height="26" aria-hidden>
-      <rect x="0.5" y="0.5" width="27" height="27" rx="6.5" className="logo-plate" />
-      <rect x="7" y="9" width="2.6" height="10" rx="1.3" className="logo-tick" />
-      <rect x="12.7" y="9" width="2.6" height="10" rx="1.3" className="logo-tick" />
-      <rect x="18.4" y="6" width="2.6" height="16" rx="1.3" className="logo-beat" />
-    </svg>
-  )
+  return <Bee className="logo" size={28} logo gapScale={1.8} interactive label="taktflow" />
 }
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -176,7 +170,10 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
       )}
       <div className="sb-foot">
         <ThemeSwitch />
-        <span className="sb-version mono">taktflow v0.1.0</span>
+        <span className="sb-lockup">
+          <Bee size={22} logo gapScale={2.2} />
+          <span className="sb-version mono">taktflow v0.1.0</span>
+        </span>
       </div>
     </aside>
   )

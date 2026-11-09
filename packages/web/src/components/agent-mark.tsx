@@ -1,11 +1,10 @@
-import type { CSSProperties } from 'react'
 import type { NodeActivity, NodeStatus } from '@taktflow/core'
 import { actionKind } from '../lib/actions'
+import { Bee, type BeeFace, type BeeProp, type BeeState } from './mascot'
 import './agent-mark.css'
 
 /**
- * Agent 形象（docs/design/25 §2）：原创小形象——圆角方块 + 头顶一根节拍刻度 + 两只眼。
- * 眼睛表达状态：待命闭眼、干活睁眼（按节拍眨眼）、求助上看 + 头顶符号、完成眯眼笑、失败 ✕。
+ * Agent 形象（docs/design/25 §2 → 27 §2）：节拍蜂。状态：待命、干活、求助（头顶符号）、完成、失败；
  * 不用任何第三方品牌图形；颜色按 harness 稳定分配，名字在 label / 悬停提示里。
  */
 export type MarkState = 'idle' | 'work' | 'ask' | 'done' | 'failed'
@@ -51,33 +50,27 @@ export function harnessHue(harness?: string): string {
   return `var(--c-${n})`
 }
 
-const EYES: Record<MarkState, string> = {
-  // 两条短横
-  idle: 'M7.4 14.2h3.2M13.4 14.2h3.2',
-  // 两个圆点（用零长度圆头线画，便于统一 stroke）
-  work: 'M9 13.6v.01M15 13.6v.01',
-  ask: 'M9.4 12.4v.01M15.4 12.4v.01',
-  // 两道上弧 ^ ^
-  done: 'M7.4 14.6q1.6-2.2 3.2 0M13.4 14.6q1.6-2.2 3.2 0',
-  // 两个小叉
-  failed: 'M7.8 12.4l2.4 2.4M10.2 12.4l-2.4 2.4M13.8 12.4l2.4 2.4M16.2 12.4l-2.4 2.4',
+/** 运行中细分 → 蜂的状态、手里的工具与常驻表情（docs/design/27 §2）。 */
+const ACT_LOOK: Record<MarkAct, { state: BeeState; prop?: BeeProp; face?: BeeFace }> = {
+  think: { state: 'think' },
+  read: { state: 'work', prop: 'lens' },
+  edit: { state: 'work', prop: 'wrench' },
+  run: { state: 'work', prop: 'tube', face: { eyes: 'focus' } },
+  compact: { state: 'work', face: { eyes: 'squeeze', mouth: 'flat' } },
+  wait: { state: 'work', face: { eyes: 'focus', mouth: 'flat' } },
 }
-/** 压缩上下文：两条更短的横线（眯眼）。 */
-const SQUINT = 'M7.9 13.9h2.3M13.8 13.9h2.3'
 
+/**
+ * Agent 形象 = 节拍蜂，身体按 harness 着色。只有在跑 / 等人的会自己挑小动作，其余安静（只在切状态时播入场动作：完成蹦一下、失败叹气）。
+ * 小尺寸（≤ 24px）蜂身上的叠加物不画，头顶符号用角标补上。
+ */
 export function AgentMark({ state, sign, act, hue = 'var(--c-7)', size = 22, label, className }: { state: MarkState; sign?: MarkSign; act?: MarkAct; hue?: string; size?: number; label?: string; className?: string }) {
-  const squint = state === 'work' && act === 'compact'
-  const dots = (state === 'work' || state === 'ask') && !squint
+  const look = state === 'work' && act ? ACT_LOOK[act] : undefined
+  const busy = state === 'work' || state === 'ask'
   return (
-    <span className={`amark${className ? ` ${className}` : ''}`} data-state={state} data-act={state === 'work' ? act : undefined} style={{ '--amark-hue': hue, width: size, height: size } as CSSProperties} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true} title={label}>
-      <svg viewBox="0 0 24 24" fill="none" strokeLinecap="round" strokeLinejoin="round">
-        <g className="amark-body">
-          <path className="amark-tick" d="M12 6.2V3.4" />
-          <rect className="amark-head" x="3.6" y="6.2" width="16.8" height="14.6" rx="5.4" />
-          <path className="amark-eyes" d={squint ? SQUINT : EYES[state]} strokeWidth={dots ? 3.1 : 1.7} />
-        </g>
-      </svg>
-      {sign && (
+    <span className={`amark${className ? ` ${className}` : ''}`} data-state={state} style={{ width: size, height: size }} role={label ? 'img' : undefined} aria-label={label} aria-hidden={label ? undefined : true} title={label}>
+      <Bee state={look?.state ?? state} prop={look?.prop} face={look?.face} hue={hue} size={size} calm={!busy} />
+      {sign && size <= 24 && (
         <span className="amark-sign" data-sign={sign} aria-hidden>
           {sign}
         </span>
