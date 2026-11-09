@@ -63,6 +63,12 @@ it.each([{ crash: true }, { crashInit: true }, { badJson: true }, { version: 2 }
   expect(result.ok).toBe(false); expect(result.error).toMatch(/ACP/); expect(result.error).toMatch(/[\u4e00-\u9fff]/)
 })
 
+it('诊断分开"不是 JSON"和"处理不了"，空行跳过', async () => {
+  expect((await (await fixture({ badJson: true })).run()).error).toContain('收到「not-json」')
+  expect((await (await fixture({ wrongSession: true })).run()).error).toContain('ACP 消息处理失败：ACP 会话更新不匹配')
+  expect(await (await fixture({ blankLines: true })).run()).toMatchObject({ ok: true })
+})
+
 it('agent RPC 错误与输出脱敏，不回传环境密钥', async () => {
   const f = await fixture({ rpcError: 'synthetic-acp-key-value' })
   const result = await f.run({ env: { API_KEY: 'synthetic-acp-key-value' } })

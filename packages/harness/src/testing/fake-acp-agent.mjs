@@ -29,6 +29,7 @@ createInterface({ input: process.stdin }).on('line', async line => {
     if (scenario.handshakeHang) return
     if (scenario.crashInit) process.exit(17)
     if (scenario.badJson) { process.stdout.write('not-json\n'); return }
+    if (scenario.blankLines) process.stdout.write('\n  \n')
     respond(id, { protocolVersion: scenario.version ?? 1, agentInfo: { name: 'fake-acp', version: 'test-1' },
       agentCapabilities: scenario.capabilities ?? { loadSession: true, sessionCapabilities: { resume: {} } } })
   } else if (['session/new', 'session/load', 'session/resume'].includes(method)) {

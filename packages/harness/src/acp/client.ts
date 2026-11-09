@@ -30,9 +30,17 @@ export class AcpClient {
     this.lines = createInterface({ input: this.child.stdout!, crlfDelay: Infinity })
     this.lines.on('error', () => this.fail(new Error('ACP 输出读取失败，请重新启动 agent')))
     this.lines.on('line', line => {
-      if (this.failure) return
-      try { this.receive(object(JSON.parse(line))) }
-      catch { this.fail(new Error('ACP 协议错误：stdout 必须逐行输出有效 JSON-RPC 2.0，请检查启动参数')) }
+      if (this.failure || !line.trim()) return
+      let message: ObjectValue
+      try { message = object(JSON.parse(line)) }
+      catch {
+        const head = this.redact(line.trim().slice(0, 120))
+        this.fail(new Error(`ACP 协议错误：stdout 必须逐行输出有效 JSON-RPC 2.0（收到「${head}」），请检查启动参数`))
+        return
+      }
+      // 能解析但处理不了（字段缺失、会话不匹配、事件回调出错）是另一类问题，原因要带出来
+      try { this.receive(message) }
+      catch (error) { this.fail(new Error(`ACP 消息处理失败：${this.redact(error instanceof Error ? error.message : String(error))}`)) }
     })
   }
 
