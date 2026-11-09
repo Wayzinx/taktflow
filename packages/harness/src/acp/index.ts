@@ -148,6 +148,7 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
         return result(true)
       } catch (error) { return result(false, redact((error as Error).message)) }
       finally {
+        events.flush()
         operations.abort()
         clearTimeout(timer); clearTimeout(cancellationTimer)
         req.signal?.removeEventListener('abort', abort)

@@ -11,11 +11,25 @@ export class AcpEvents {
   readonly calls = new Map<string, ObjectValue>()
   private readonly timings = new Map<string, { started: number; ended: boolean; announced: boolean }>()
   private readonly compactions = new Map<string, ObjectValue>()
+  private thought = ''
 
-  constructor(private readonly emit: (event: HarnessEvent) => void, private readonly capabilities: HarnessCapabilities) {}
+  constructor(private readonly sink: (event: HarnessEvent) => void, private readonly capabilities: HarnessCapabilities) {}
 
   audit(kind: string, data: unknown): void {
     this.emit({ type: 'message', role: 'system', text: `[ACP ${kind}] ${JSON.stringify(data)}` })
+  }
+
+  /** 思考按 token 一条条推送（一个节点几万条）：连续的片段攒成一条，遇到别的事件、攒够 4000 字或运行结束时再记 */
+  flush(): void {
+    if (!this.thought) return
+    const text = this.thought
+    this.thought = ''
+    this.sink({ type: 'message', role: 'system', text: `[ACP thought] ${JSON.stringify({ type: 'text', text })}` })
+  }
+
+  private emit(event: HarnessEvent): void {
+    this.flush()
+    this.sink(event)
   }
 
   update(update: ObjectValue): void {
@@ -28,7 +42,13 @@ export class AcpEvents {
         this.emit({ type: 'message', role: 'assistant', text })
         break
       }
-      case 'agent_thought_chunk': this.audit('thought', update.content); break
+      case 'agent_thought_chunk': {
+        const content = object(update.content)
+        if (content.type !== 'text') { this.audit('thought', content); break }
+        this.thought += string(content.text)
+        if (this.thought.length >= 4000) this.flush()
+        break
+      }
       case 'tool_call': case 'tool_call_update': this.tool(update); break
       case 'config_option_update': this.configure(update.configOptions); break
       case 'compaction_update': case 'compaction_summary_chunk': this.compaction(update); break

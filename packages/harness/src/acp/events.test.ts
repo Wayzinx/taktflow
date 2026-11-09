@@ -54,3 +54,22 @@ it('只有 agent 暴露的 select 选项开启模型/effort 能力；更新可�
   mapper.update({ sessionUpdate: 'config_option_update', configOptions: [] })
   expect(capabilities).toEqual({ modelOverride: false, effortOverride: false })
 })
+
+it('思考片段攒成一条：遇到别的事件先落盘保持顺序，攒够 4000 字或 flush 时落，非文本照旧记录', () => {
+  const events: HarnessEvent[] = []
+  const mapper = new AcpEvents(event => events.push(event), {})
+  const thought = (text: string) => mapper.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } })
+  thought('先'); thought('看'); thought('看')
+  expect(events).toEqual([])
+  mapper.update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: '好' } })
+  thought('x'.repeat(4000)); thought('尾')
+  mapper.update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'image', data: '' } })
+  mapper.flush(); mapper.flush()
+  expect(events).toEqual([
+    { type: 'message', role: 'system', text: '[ACP thought] {"type":"text","text":"先看看"}' },
+    { type: 'message', role: 'assistant', text: '好' },
+    { type: 'message', role: 'system', text: `[ACP thought] {"type":"text","text":"${'x'.repeat(4000)}"}` },
+    { type: 'message', role: 'system', text: '[ACP thought] {"type":"text","text":"尾"}' },
+    { type: 'message', role: 'system', text: '[ACP thought] {"type":"image","data":""}' },
+  ])
+})
