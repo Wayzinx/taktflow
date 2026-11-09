@@ -316,7 +316,11 @@ export interface StartRunInput {
  */
 export interface Engine {
   start(input: StartRunInput): Promise<RunState>
-  resume(runId: RunId, workflow: WorkflowDefinition): Promise<RunState>
+  /**
+   * 续跑到下一个人工节点或结束。opts.onStarted 在拿到运行租约、校验通过、即将执行第一个节点时调用一次；
+   * 想"开始了就返回"的调用方（界面上的继续 / 回答待办）等它，不等整个 Promise。
+   */
+  resume(runId: RunId, workflow: WorkflowDefinition, opts?: { onStarted?: () => void }): Promise<RunState>
   cancel(runId: RunId): Promise<void>
   /** 公共存放区产物被人改了：把读过它的节点及其下游标记为 stale。 */
   markStale(runId: RunId, cause: ArtifactRef): Promise<NodeId[]>
