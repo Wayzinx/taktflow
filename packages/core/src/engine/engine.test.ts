@@ -191,6 +191,33 @@ describe('core-engine：简报六类基本验收', () => {
     expect(await reopened.events.verify(paused.runId)).toEqual({ ok: true })
   })
 
+  it.each([true, false])('人工节点：别的分支还在跑时回答，通知=%s 都不会停在 waiting_human；通知了下游立刻接着跑', async (notify) => {
+    const { stores, requirementId, deps } = await fixture()
+    let release!: () => void
+    const slow = new Promise<void>((resolve) => { release = resolve })
+    const order: string[] = []
+    const engine = createEngine(deps)
+    const running = engine.start({ requirementId, workflow: workflow([
+      script({ id: 'slow', title: '长分支', run: async () => { await slow; order.push('slow') } }),
+      human({ id: 'gate', title: '确认', form: 'approve', ask: '放行？' }),
+      script({ id: 'after', title: '确认后', needs: ['gate'], run: async () => { order.push('after') } }),
+    ]) })
+    const wait = async (ready: () => Promise<boolean> | boolean) => { for (let i = 0; i < 400 && !await ready(); i++) await new Promise((resolve) => setTimeout(resolve, 5)) }
+    let item: Awaited<ReturnType<typeof stores.attention.list>>[number] | undefined
+    await wait(async () => Boolean(item = (await stores.attention.list({ pending: true }))[0]))
+    await stores.attention.answer(item!.requestId, { decision: 'approve', by: tester })
+    if (notify) {
+      expect(engine.notifyAnswered!(item!.runId)).toBe(true)
+      await wait(() => order.includes('after'))
+      expect(order).toEqual(['after'])
+    }
+    release()
+    const state = await running
+    expect(state.status).toBe('succeeded')
+    expect(order).toEqual(notify ? ['after', 'slow'] : ['slow', 'after'])
+    expect(engine.notifyAnswered!(state.runId)).toBe(false)
+  })
+
   it('loop + judge：首轮 product_bug 只修代码，第二轮无失败，未命中的路由 skipped', async () => {
     const verdict = { subject: 'TC-1', category: 'product_bug', confidence: 0.99, rationale: '返回值违反 AC-1', evidence: ['evidence/TC-1.txt'] }
     const { stores, requirementId, harness, deps } = await fixture((req) => {

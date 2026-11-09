@@ -330,6 +330,11 @@ export interface Engine {
    */
   retry(runId: RunId, workflow: WorkflowDefinition, opts?: { nodeIds?: NodeId[]; reason?: string; onStarted?: () => void }): Promise<RunState>
   cancel(runId: RunId): Promise<void>
+  /**
+   * 待办已回答、运行还在本进程执行（别的分支在跑）：把回答送进正在跑的调度，返回 true。
+   * 运行不在本进程或已经收尾时返回 false，调用方改走 resume。
+   */
+  notifyAnswered?(runId: RunId): boolean
   /** 公共存放区产物被人改了：把读过它的节点及其下游标记为 stale。 */
   markStale(runId: RunId, cause: ArtifactRef): Promise<NodeId[]>
 }

@@ -110,6 +110,9 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true, retryOptions?.onStarted, { nodeIds, reason: retryOptions?.reason })
       })
     },
+    notifyAnswered(runId) {
+      return active.get(runId)?.notifyAnswered() ?? false
+    },
     async cancel(runId) {
       const runtime = active.get(runId)
       const state = runtime?.state ?? await deps.stores.runs.get(runId)

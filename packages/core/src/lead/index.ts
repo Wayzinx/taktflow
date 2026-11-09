@@ -411,6 +411,8 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     if (input.kind === 'assumption') { await reconcileAssumptions(stores); return true }
     const state = await stores.runs.get(input.runId)
     if (state?.workflowId.startsWith('task:')) { await resumeTask(state.runId); return true }
+    // 运行还在本进程跑（别的分支没完）：回答直接送进调度，不走 resume（那会因"运行仍在执行"失败，回答落了盘却没人接）
+    if (state && state.workflowId !== 'lead' && engines.get(input.runId)?.notifyAnswered?.(input.runId)) return true
     if (state?.workflowId !== 'lead') return false
     return serial(state.requirementId, () => withFileLock(join(stores.taktDir, 'runs', input.runId, 'lead-approval'), async () => {
       const item = (await stores.attention.list()).find((item) => item.requestId === input.requestId)

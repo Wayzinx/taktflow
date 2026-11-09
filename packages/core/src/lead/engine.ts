@@ -48,6 +48,7 @@ export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<s
     resume: (runId, workflow, opts) => execute(scope, () => engine.resume(runId, workflow, opts), runId),
     retry: (runId, workflow, opts) => execute(scope, () => engine.retry(runId, workflow, opts), runId),
     cancel: (runId) => invocation.run(scope, () => engine.cancel(runId)),
+    notifyAnswered: (runId) => engine.notifyAnswered?.(runId) ?? false,
     markStale: (runId, cause) => invocation.run(scope, () => engine.markStale(runId, cause)),
   })
 }

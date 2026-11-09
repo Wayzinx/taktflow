@@ -54,6 +54,12 @@ export class Runtime implements HarnessHost {
   private readonly attempts: Record<string, number> = {}
   private readonly reservedAttempts: Record<string, number> = {}
   private logs: Promise<void>[] = []
+  // 运行中回答待办（docs/dev/m8-backend-c5.md 之后的补丁）：answered 记"有新回答"，wake 叫醒正在等节点的顶层调度；closed 之后交回调用方续跑
+  private answered = false
+  private wake?: () => void
+  private closed = false
+  /** 本进程里已经按回答处理过的待办；「交给人处理」之后节点仍挂着同一个待办，不能再处理一遍。 */
+  private readonly consumed = new Set<string>()
   constructor(readonly deps: EngineDeps, readonly state: RunState, readonly workflow: WorkflowDefinition, readonly options: EngineOptions, guard?: WriteGuard) {
     this.semaphore = new Semaphore(Math.max(1, Math.floor(Math.min(options.concurrency ?? 4, state.budget?.concurrency ?? Infinity))))
     this.budget = new BudgetGuard(this, () => this.persistGraph())
@@ -235,6 +241,7 @@ export class Runtime implements HarnessHost {
   }
   private async consume(entry: Entry, item: AttentionItem, actor = item.answeredBy ?? system): Promise<void> {
     const ns = this.state.nodes[entry.def.id]!
+    this.consumed.add(item.requestId)
     await this.recordAnswer(item, actor)
     if (item.kind === 'retry') {
       if (item.decision === 'choice' && item.answer === '再试一次') {
@@ -381,10 +388,44 @@ export class Runtime implements HarnessHost {
       await this.consume(entry, answered, actor)
     }
   }
-  async schedule(ids: string[]): Promise<void> {
+  /** 运行中有待办被回答：顶层调度还在就叫醒它接着跑并返回 true；已经收尾返回 false，调用方改走续跑。 */
+  notifyAnswered(): boolean {
+    if (this.closed) return false
+    this.answered = true
+    this.wake?.()
+    return true
+  }
+  /**
+   * 把已经回答、但节点还在等人的待办接上：节点按回答继续，没有自己待办的 loop / planner 容器重新排队，
+   * 由调度再进去跑后续子节点。有变化返回 true。
+   */
+  private async consumeAnswered(): Promise<boolean> {
+    const attention = await this.deps.stores.attention.list({ requirementId: this.state.requirementId })
+    const containers: NodeState[] = []
+    let changed = false
+    for (const entry of this.graph.values()) {
+      const ns = this.state.nodes[entry.def.id]!
+      if (!(ns.status === 'waiting_human' || ns.status === 'blocked' && this.requests[ns.id])) continue
+      const requestId = this.requests[ns.id]
+      const item = requestId ? attention.find((current) => current.requestId === requestId) : undefined
+      if (item?.answeredAt && !this.consumed.has(item.requestId)) {
+        changed = true
+        try { await this.consume(entry, item) } catch (error) { await this.fail(ns, error) }
+      } else if (!item && (entry.def.kind === 'loop' || entry.def.kind === 'planner')) containers.push(ns)
+    }
+    if (!changed) return false
+    for (const ns of containers) if (ns.status === 'waiting_human') ns.status = 'pending'
+    await this.save()
+    return true
+  }
+  async schedule(ids: string[], top = false): Promise<void> {
     const running = new Map<string, Promise<void>>()
     while (!this.signal.aborted) {
       if (!await this.budget.check()) break
+      if (top && this.answered) {
+        this.answered = false
+        await this.consumeAnswered()
+      }
       for (const id of ids) {
         const ns = this.state.nodes[id]!
         if (ns.status !== 'pending' || running.has(id)) continue
@@ -394,8 +435,10 @@ export class Runtime implements HarnessHost {
         running.set(id, task)
       }
       if (!running.size) break
-      const result = await Promise.race([...running].map(async ([id, task]) => { await task; return id }))
-      running.delete(result)
+      const woken = top ? new Promise<undefined>((resolve) => { this.wake = () => resolve(undefined) }) : undefined
+      const result = await Promise.race([...[...running].map(async ([id, task]) => { await task; return id }), ...(woken ? [woken] : [])])
+      if (top) this.wake = undefined
+      if (result !== undefined) running.delete(result)
     }
     await Promise.all(running.values())
   }
@@ -682,7 +725,19 @@ export class Runtime implements HarnessHost {
       void pending.catch(() => undefined)
       this.logs.push(pending)
     }, Math.max(10, Math.min(1000, this.state.budget.minutes * 6000))) : undefined
-    try { await this.schedule(this.workflow.nodes.map((node) => node.id)) } finally {
+    try {
+      const ids = this.workflow.nodes.map((node) => node.id)
+      for (;;) {
+        await this.schedule(ids, true)
+        if (this.signal.aborted) break
+        // 收尾前再扫一遍：别的分支还在跑时回答的待办，回答已落盘但没送到节点
+        this.answered = false
+        if (await this.consumeAnswered() || this.answered) continue
+        this.closed = true
+        break
+      }
+    } finally {
+      this.closed = true
       if (monitor) clearInterval(monitor)
       await this.flushLogs()
     }
