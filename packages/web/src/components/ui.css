@@ -286,6 +286,12 @@
   display: grid;
   gap: 8px;
   width: 360px;
+  /* 通知只是状态反馈，不接收点击：避免挡住吸底保存条等操作。 */
+  pointer-events: none;
+}
+/* 有吸底保存条时把通知抬到其上方，避免视觉遮挡保存按钮（transformCss 会把 :root 映射为 .takt-root）。 */
+:root:has(.sk-savebar) .toaster {
+  bottom: 84px;
 }
 .toast {
   display: flex;
@@ -295,6 +301,7 @@
   background: var(--surface);
   border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-lg);
+  pointer-events: none;
 }
 /* 进场：上浮 6px 淡入；退出：右移 8px 淡出（data-state="exit"） */
 @keyframes toast-in {

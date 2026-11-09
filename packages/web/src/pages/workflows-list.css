@@ -19,6 +19,7 @@
   min-width: 0;
 }
 .wf-default {
+  flex: none;
   font-size: var(--text-label);
   color: var(--accent-text);
   background: var(--accent-soft);
@@ -31,6 +32,10 @@
 }
 .wf-title {
   display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 500;
   color: var(--text);
   text-decoration: none;

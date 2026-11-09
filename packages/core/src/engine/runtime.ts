@@ -22,7 +22,7 @@ import { bindEnvironment } from './environment-config.js'
 import { finalizeEnvironment } from './environment-cleanup.js'
 import { validateWorkflowHarnesses } from './selection.js'
 
-export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
+export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean; guard?: WriteGuard }
 export type GraphRecord = RunGraphNode
 export interface RuntimeRecord { failureHistory?: Record<string, FailureRecord[]>; retryFingerprints?: Record<string, string>; budgetAnswers?: string[]; reviews?: Record<string, ReviewProgress>; feedback?: Record<string, string>; nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
 export { system } from './actor.js'

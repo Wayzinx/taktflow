@@ -140,6 +140,26 @@ it('运行策略：白名单字段校验后落盘，未知字段保留，修订�
   expect(revisions.length).toBeGreaterThanOrEqual(3)
 })
 
+it('环境变量：空串/空白值原样落盘；null、number 和非法变量名拒绝且不落盘', async () => {
+  const { root, stores } = await upgraded()
+  const file = join(root, 'takt.config.json')
+  const value = await api.write(stores, 'space.config.update', {}, { patch: {
+    environment: { deploy: 'npm start', env: { QA_EMPTY: '', QA_SPACE: '   ' } },
+  }, reason: '保留合法空值' }, owner) as SpaceSettings
+  expect(value.config.environment?.env).toEqual({ QA_EMPTY: '', QA_SPACE: '   ' })
+  const saved = JSON.parse(await readFile(file, 'utf8'))
+  expect(saved.environment.env).toEqual({ QA_EMPTY: '', QA_SPACE: '   ' })
+  const persisted = await readFile(file, 'utf8')
+
+  for (const env of [{ QA_NULL: null }, { QA_NUMBER: 1 }, { '1BAD': 'x' }]) {
+    await expect(api.write(stores, 'space.config.update', {}, { patch: { environment: { deploy: 'npm start', env } }, reason: '非法值' }, owner)).rejects.toMatchObject({ status: 400 })
+  }
+  expect(await readFile(file, 'utf8')).toBe(persisted)
+
+  const reread = await settings(await openProject(root))
+  expect(reread.config.environment?.env).toEqual({ QA_EMPTY: '', QA_SPACE: '   ' })
+})
+
 it('流程：从模板新建、复制、改名、设默认、删除；唯一流程和运行中的流程不能删', async () => {
   const { root, stores } = await upgraded()
   await api.write(stores, 'workflow.create', {}, { id: 'hotfix', title: '线上热修', from: { template: 'quick-fix' }, reason: '加热修流程' }, owner)

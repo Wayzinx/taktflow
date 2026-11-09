@@ -116,12 +116,32 @@ export async function environmentFailure(ctx: NodeContext): Promise<NodeResult |
   return { data: { total: 0, failures: [failure] } }
 }
 
-export async function runEnvironmentCaseCommand(ctx: NodeContext, cwd: string, text: string): Promise<void> {
+export interface EnvironmentCommandResult {
+  command: string
+  code: number
+  durationMs: number
+  output: string
+  timedOut?: boolean
+  cancelled?: boolean
+}
+
+/** 取消/超时仍保留实际测量结果，调用方可以落盘诚实 receipt 后再按原语义中断。 */
+export class EnvironmentCommandCancelledError extends Error {
+  readonly result: EnvironmentCommandResult
+  constructor(result: EnvironmentCommandResult) {
+    super(result.timedOut === true ? `用例命令超时（${result.durationMs}ms）` : '用例命令已取消')
+    this.name = 'EnvironmentCommandCancelledError'
+    this.result = result
+  }
+}
+
+export async function runEnvironmentCaseCommand(ctx: NodeContext, cwd: string, text: string): Promise<EnvironmentCommandResult> {
   const vars = environmentVariables(await environmentConfig(ctx), ctx)
   const result = await measured(text, cwd, vars, ctx.signal)
-  ctx.signal?.throwIfAborted()
   if (result.output) ctx.log(result.output)
   if (result.code !== 0) ctx.log(`用例命令退出非零：${result.code}（用例结论以本轮汇总为准）`)
+  if (ctx.signal?.aborted) throw new EnvironmentCommandCancelledError(result)
+  return result
 }
 
 export async function teardownEnvironment(ctx: NodeContext): Promise<void> {

@@ -5,6 +5,7 @@ import { useAsync, useSource } from '../../api'
 import { Dialog } from '../../components/ui/dialog'
 import { ReasonDialog } from '../../components/ui/reason-dialog'
 import { EmptyState, toast } from '../../components/ui'
+import { useDraftForm, useUnsavedWarning } from '../../lib/draft'
 import { setQuery, useLocation } from '../../lib/router'
 import { FileEditor } from './files-tab'
 import { Field, RevisionsButton, SaveBar, Section, TagInput } from './settings-kit'
@@ -87,7 +88,7 @@ export function RolesTab({ settings, onChanged }: { settings: SpaceSettings; onC
         </ul>
       </aside>
       {selected ? (
-        <RoleForm key={`${selected.role}:${selected.hash}`} role={selected} settings={settings} onChanged={onChanged} onCopy={() => setCreating(true)} />
+        <RoleForm key={selected.role} role={selected} settings={settings} onChanged={onChanged} onCopy={() => setCreating(true)} />
       ) : (
         <div className="card">
           <EmptyState icon={UserRoundCog} title="还没有角色" hint="角色决定流程节点由谁来做。新建一个，或在 Workflow 页从模板新建流程时自动补齐默认角色。" action={<button className="btn btn-primary btn-sm" onClick={() => setCreating(true)}><Plus />新建角色</button>} />
@@ -101,19 +102,20 @@ export function RolesTab({ settings, onChanged }: { settings: SpaceSettings; onC
 function RoleForm({ role, settings, onChanged, onCopy }: { role: SpaceRoleSettings; settings: SpaceSettings; onChanged: () => void; onCopy: () => void }) {
   const ds = useSource()
   const original = useMemo(() => toForm(role), [role])
-  const [form, setForm] = useState(original)
+  const { form, setForm, dirty, reset, markSaved } = useDraftForm(`role:${role.role}`, original, role.hash)
+  useUnsavedWarning(dirty)
   const [deleting, setDeleting] = useState(false)
-  useEffect(() => setForm(original), [original])
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }))
-  const dirty = JSON.stringify(form) !== JSON.stringify(original)
   const hostRuns = ds.host?.manageRuntime === false
   const models = useAsync((d) => d.host?.models?.() ?? Promise.resolve(undefined), [])
   const readOnly = form.writeScope.length === 0
 
   const save = async (reason: string) => {
+    const submitted = form
     try {
       await ds.saveRole(role.role, toBody(form, original, role.hash, reason))
-      toast(`已保存 ${form.title}`, { body: '之后启动的运行按新档案组装这个角色。' })
+      markSaved(submitted)
+      toast(`已保存 ${submitted.title}`, { body: '之后启动的运行按新档案组装这个角色。' })
       onChanged()
     } catch (e) {
       toast('保存失败', { body: (e as Error).message, tone: 'failed' })
@@ -200,7 +202,7 @@ function RoleForm({ role, settings, onChanged, onCopy }: { role: SpaceRoleSettin
         <FileEditor kind="agent" name={role.role} onSaved={onChanged} />
       </details>
 
-      <SaveBar dirty={dirty} onSave={save} onReset={() => setForm(original)} />
+      <SaveBar dirty={dirty} onSave={save} onReset={reset} />
 
       <ReasonDialog
         open={deleting}

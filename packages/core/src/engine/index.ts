@@ -25,7 +25,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   const concurrency = opts.concurrency ?? 4
   if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error('concurrency 必须是正整数')
   const active = new Map<string, Runtime>()
-  const guard = new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements), relative(deps.stores.projectDir, deps.stores.paths.evals ?? `${deps.stores.taktDir}/evals`))
+  const guard = opts.guard ?? new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements), relative(deps.stores.projectDir, deps.stores.paths.evals ?? `${deps.stores.taktDir}/evals`))
   const timestamp = () => (opts.now?.() ?? new Date()).toISOString()
   async function execute(runtime: Runtime, resume = false): Promise<RunState> {
     const id = runtime.state.runId
@@ -87,7 +87,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       if (state.status === 'cancelled' || state.status === 'succeeded' || state.status === 'failed') return
       state.status = 'cancelled'
       state.endedAt = timestamp()
-      for (const node of Object.values(state.nodes)) if (node.status === 'running' || node.status === 'ready' || node.status === 'waiting_human') {
+      for (const node of Object.values(state.nodes)) if (node.status === 'running' || node.status === 'ready' || node.status === 'waiting_human' || node.status === 'blocked') {
         node.status = 'cancelled'
         node.endedAt = timestamp()
       }
@@ -97,8 +97,15 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       } else {
         await deps.stores.runs.save(state)
       }
-      for (const item of await deps.stores.attention.list({ pending: true, requirementId: state.requirementId })) {
+      // 已落账的真人回答也必须进入审计：只扫 pending 会让冷取消后的答案永远
+      // 没有 human.answered。recordAnswerOnce 按 requestId 去重，并保留原始
+      // answeredBy/decision/answer；pending 记录继续使用系统取消语义。
+      for (const item of await deps.stores.attention.list({ requirementId: state.requirementId })) {
         if (item.runId !== runId) continue
+        if (item.answeredAt !== undefined) {
+          await recordAnswerOnce(deps.stores, runId, item)
+          continue
+        }
         const answered = await answerOrRead(deps.stores, item, { decision: 'cancelled', by: system })
         await recordAnswerOnce(deps.stores, runId, answered)
       }

@@ -1,5 +1,6 @@
+import { useEffect, useRef } from 'react'
 import { Activity, ArrowUpRight, Bug, ChartNoAxesColumn, ClipboardCheck, FolderOpen, GitBranch, MessagesSquare, Network, Play } from 'lucide-react'
-import { useAsync } from '../../api'
+import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { BudgetBar } from '../../components/budget-bar'
 import { StageBar } from '../../components/stage-bar'
@@ -19,6 +20,7 @@ import { ReviewsTab } from './reviews-tab'
 import { RunsTab } from './runs-tab'
 import { TraceTab } from './trace-tab'
 import { isEmbedded } from '../../lib/embed'
+import { startRequirementLiveRefresh } from './live-refresh'
 import './requirement.css'
 
 const CURRENT_VERB: Record<string, string> = { running: '正在', waiting_human: '等你处理', blocked: '卡在', failed: '卡在', stale: '需要重跑' }
@@ -84,12 +86,36 @@ function StatusLine({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
 const LINK_LABEL: Record<string, string> = { meego: 'Meego', feishu: '飞书', github: 'GitHub', jira: 'Jira' }
 
 export function RequirementPage({ id }: { id: string }) {
+  const ds = useSource()
   const { query } = useLocation()
   const tab = query.get('tab') ?? 'artifacts'
   const q = useAsync((ds) => ds.requirement(id), [id])
   const r = q.data
   // 最近一次流水线运行：预算条与"需要你决策"用它的 budget
   const latest = useAsync((ds) => (r?.latestRunId ? ds.run(r.latestRunId) : Promise.resolve(undefined)), [r?.latestRunId])
+  const latestRunId = r?.latestRunId
+  const latestStatus = latest.data?.run.status
+  // 运行结束后服务端状态就定了：只有还在跑（或状态还没读到）的运行需要订阅。
+  // 已交付/归档的需求不再开长连接，避免重放整段历史事件。
+  const live =
+    latestRunId !== undefined &&
+    r?.status !== 'delivered' &&
+    r?.status !== 'archived' &&
+    (latestStatus === undefined || latestStatus === 'running' || latestStatus === 'waiting_human')
+  // useAsync 的 reload 每次渲染都是新函数；用 ref 保住最新的，避免 effect 因函数身份变化反复重订阅。
+  const reload = useRef({ requirement: q.reload, run: latest.reload })
+  reload.current = { requirement: q.reload, run: latest.reload }
+  useEffect(() => {
+    if (!live || latestRunId === undefined) return
+    return startRequirementLiveRefresh({
+      runId: latestRunId,
+      subscribe: (runId, onEvent) => ds.subscribe(runId, onEvent),
+      refresh: () => {
+        reload.current.requirement()
+        reload.current.run()
+      },
+    })
+  }, [ds, latestRunId, live])
   useCrumbs([{ label: '需求', to: '/requirements' }, { label: <span className="mono">{id}</span> }], [id])
 
   if (q.error && !r) return <ErrorState error={q.error} onRetry={q.reload} />
@@ -133,7 +159,7 @@ export function RequirementPage({ id }: { id: string }) {
                 <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens · <span className="mono">{fmtCost(r.usage.costUsd)}</span>
               </span>
               <span className="req-fact">
-                公共存放区 <span className="mono">.takt/workspaces/{id}/</span>
+                <Link to={`/req/${id}?tab=artifacts`}>查看公共产物</Link>
               </span>
             </>
           ) : (

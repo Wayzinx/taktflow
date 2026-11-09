@@ -10,6 +10,7 @@ import { Dialog } from '../../components/ui/dialog'
 import { ReasonDialog } from '../../components/ui/reason-dialog'
 import { EmptyState, ErrorState, SkeletonRows, toast } from '../../components/ui'
 import { fmtDate, fmtRelative } from '../../lib/format'
+import { splitTagDraft } from './settings-tags'
 import './settings-kit.css'
 
 export function Section({ title, hint, actions, children }: { title: ReactNode; hint?: ReactNode; actions?: ReactNode; children: ReactNode }) {
@@ -27,24 +28,30 @@ export function Section({ title, hint, actions, children }: { title: ReactNode; 
   )
 }
 
-export function Field({ label, hint, children, wide }: { label: ReactNode; hint?: ReactNode; children: ReactNode; wide?: boolean }) {
+export function Field({ label, hint, error, children, wide }: { label: ReactNode; hint?: ReactNode; error?: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <label className={`sk-field${wide ? ' wide' : ''}`}>
       <span className="field-label">{label}</span>
       {children}
+      {error && <span className="sk-field-error" role="alert">{error}</span>}
       {hint && <span className="sk-field-hint">{hint}</span>}
     </label>
   )
 }
 
-/** 字符串列表输入：回车或逗号添加，退格删最后一个；presets 是一键添加的常用值。 */
-export function TagInput({ value, onChange, placeholder, presets, mono, ariaLabel }: {
+/**
+ * 字符串列表输入：默认回车或逗号添加，退格删最后一个；presets 是一键添加的常用值。
+ * split="enter" 用于命令等本身就带空格/逗号的精确值：只按回车添加，整条保留。
+ * Enter 和失焦使用同一套切分规则，避免“回车切成三段、失焦又成一整条”。
+ */
+export function TagInput({ value, onChange, placeholder, presets, mono, ariaLabel, split = 'comma' }: {
   value: string[]
   onChange: (next: string[]) => void
   placeholder?: string
   presets?: Array<{ label: string; values: string[] }>
   mono?: boolean
   ariaLabel?: string
+  split?: 'comma' | 'enter'
 }) {
   const [draft, setDraft] = useState('')
   const add = (items: string[]) => {
@@ -52,11 +59,14 @@ export function TagInput({ value, onChange, placeholder, presets, mono, ariaLabe
     for (const item of items.map((x) => x.trim()).filter(Boolean)) if (!next.includes(item)) next.push(item)
     onChange(next)
   }
+  const commit = () => {
+    add(splitTagDraft(draft, split))
+    setDraft('')
+  }
   const onKey = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
+    if (e.key === 'Enter' || (split === 'comma' && (e.key === ',' || e.key === '，'))) {
       e.preventDefault()
-      add(draft.split(/[,，\s]+/))
-      setDraft('')
+      commit()
     } else if (e.key === 'Backspace' && !draft && value.length) onChange(value.slice(0, -1))
   }
   return (
@@ -77,7 +87,7 @@ export function TagInput({ value, onChange, placeholder, presets, mono, ariaLabe
           placeholder={value.length ? '' : placeholder}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
-          onBlur={() => { if (draft.trim()) { add([draft]); setDraft('') } }}
+          onBlur={commit}
         />
       </div>
       {presets && presets.length > 0 && (
@@ -108,6 +118,7 @@ export function SaveBar({ dirty, busy, onSave, onReset, extra, savedHint }: {
 }) {
   const [reason, setReason] = useState('')
   const [saving, setSaving] = useState(false)
+  const reasonRef = useRef<HTMLInputElement>(null)
   useEffect(() => { if (!dirty) setReason('') }, [dirty])
   const can = dirty && reason.trim() !== '' && !saving && !busy
   const save = async () => {
@@ -115,18 +126,39 @@ export function SaveBar({ dirty, busy, onSave, onReset, extra, savedHint }: {
     setSaving(true)
     try { await onSave(reason.trim()) } finally { setSaving(false) }
   }
+  const requestSave = () => {
+    if (!dirty || saving || busy) return
+    if (!reason.trim()) {
+      reasonRef.current?.focus()
+      toast('先填写修改原因', { body: '保存会写进修改记录，原因必填。' })
+      return
+    }
+    void save()
+  }
+  const requestSaveRef = useRef(requestSave)
+  requestSaveRef.current = requestSave
+  // 快捷键挂在 document 上：焦点在正文表单里也能保存；嵌套编辑器（源文件）先 preventDefault 时不重复触发。
+  useEffect(() => {
+    if (!dirty) return
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 's') return
+      if (e.defaultPrevented) return
+      if ((e.target as HTMLElement | null)?.closest('[role="dialog"]')) return
+      e.preventDefault()
+      requestSaveRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [dirty])
   return (
-    <div
-      className={`sk-savebar${dirty ? ' dirty' : ''}`}
-      onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 's') { e.preventDefault(); void save() } }}
-    >
+    <div className={`sk-savebar${dirty ? ' dirty' : ''}`}>
       {extra}
       <span className="spacer" />
       {dirty ? (
         <>
-          <input className="input sk-reason" placeholder="修改原因（必填，写进修改记录）" value={reason} onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void save() }} aria-label="修改原因" />
+          <input ref={reasonRef} className="input sk-reason" placeholder="修改原因（必填，写进修改记录）" value={reason} onChange={(e) => setReason(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') requestSave() }} aria-label="修改原因" />
           <button type="button" className="btn btn-sm" onClick={onReset} disabled={saving}>还原</button>
-          <button type="button" className="btn btn-primary btn-sm" onClick={() => void save()} disabled={!can} title="⌘S / Ctrl+S">
+          <button type="button" className="btn btn-primary btn-sm" onClick={requestSave} disabled={!can} title="⌘S / Ctrl+S">
             <Save />
             {saving ? '保存中…' : '保存'}
           </button>

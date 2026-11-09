@@ -21,7 +21,8 @@ export { summarizeRun } from './insights/run.js'
 export { summarizeUsage } from './insights/usage.js'
 export { FsInsights, createInsights } from './insights/fs-insights.js'
 export { createEngine, type EngineOptions } from './engine/index.js'
-export { validateEnvironment } from './engine/environment-config.js'
+export { WriteGuard } from './engine/guard.js'
+export { validateEnvironment, environmentCommandVariable, type EnvironmentCommandVariableResult } from './engine/environment-config.js'
 export { assertRunId, assertRequirementId, assertNodeId, assertArtifactPath } from './store/paths.js'
 export { withLock } from './store/locks.js'
 export {
@@ -75,3 +76,31 @@ export { assertAnswerFreshness, AttentionStaleError } from './store/attention-fr
 export { createLeaseScope, withSpaceLease, LeaseHeldError, type LeaseScopeOptions } from './store/lease-scope.js'
 
 export * from './engine/environment.js'
+export {
+  archiveCaseEvidence,
+  captureGitSnapshot,
+  diffExecutionAssets,
+  executionEvidenceDir,
+  newExecutionId,
+  readExecutionReceipts,
+  snapshotExecutionAssets,
+  writeExecutionArchiveText,
+  writeExecutionReceipt,
+  type ExecutionArchiveFile,
+  type ExecutionArchiveResult,
+  type ExecutionAssetDiff,
+  type ExecutionAssetFile,
+  type ExecutionAssetSnapshot,
+  type ExecutionGitSnapshot,
+  type ExecutionReceiptReadResult,
+  type ExecutionReceiptRecord,
+  type ExecutionReceiptRef,
+} from './engine/execution-evidence.js'
+export {
+  bindWorkspaceQaCommand,
+  normalizeWorkspaceQaScript,
+  selectWorkspaceQaIntegration,
+  type WorkspaceQaCommandBinding,
+  type WorkspaceQaIntegration,
+  type WorkspaceQaIntegrationSelection,
+} from './engine/qa-command.js'

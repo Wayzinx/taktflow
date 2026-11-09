@@ -4,6 +4,7 @@ import { AppShell } from './components/layout'
 import { TaktLoader } from './components/takt'
 import { Toaster } from './components/ui'
 import { setEmbedded, setPortalRoot } from './lib/embed'
+import { DraftScopeProvider } from './lib/draft'
 import { createMemoryRouter, setRouter } from './lib/router'
 import { setThemeHost, useIsDark, type ThemeHost } from './lib/theme'
 import { Routes } from './routes'
@@ -23,6 +24,8 @@ export interface TaktflowEmbedProps {
   theme: ThemeHost
   /** 初始页面，例如 `/req/REQ-1`；默认总览。 */
   initialPath?: string
+  /** 设置表单草稿的隔离键（空间路径 / 会话）；不传时按挂载实例隔离。 */
+  draftScope?: string
 }
 
 function Root() {
@@ -41,7 +44,7 @@ function Root() {
  * 嵌入宿主（dsh 主面板 / 会话 Tab）用的根组件。路由在内存里、主题跟随宿主、数据源由宿主注入；
  * 不写 history、documentElement 和 body，不注册全局快捷键。同一时刻只支持挂载一个实例。
  */
-export function TaktflowEmbed({ source, theme, initialPath = '/' }: TaktflowEmbedProps) {
+export function TaktflowEmbed({ source, theme, initialPath = '/', draftScope }: TaktflowEmbedProps) {
   const [ready, setReady] = useState(false)
   // 路由、主题和嵌入开关要在子组件第一次读取之前就位
   useLayoutEffect(() => {
@@ -53,8 +56,10 @@ export function TaktflowEmbed({ source, theme, initialPath = '/' }: TaktflowEmbe
   }, [initialPath, theme])
   if (!ready) return null
   return (
-    <DataProvider source={source} fallback={<TaktLoader label="正在连接 taktflow" />}>
-      <Root />
-    </DataProvider>
+    <DraftScopeProvider scope={draftScope}>
+      <DataProvider source={source} fallback={<TaktLoader label="正在连接 taktflow" />}>
+        <Root />
+      </DataProvider>
+    </DraftScopeProvider>
   )
 }

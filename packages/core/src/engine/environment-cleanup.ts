@@ -21,13 +21,15 @@ export async function finalizeEnvironment(stores: ProjectStores, state: RunState
   node.status = 'running'
   node.startedAt = new Date().toISOString()
   delete node.error
-  await stores.runs.save(state)
+  // 必须像 Runtime.save 一样提交新快照：store 的合并基线按对象身份记录，恢复时 get 返回的
+  // state 仍带着旧的 waiting_human 基线，直接保存会让磁盘上的 running 压掉本次 failed。
+  await stores.runs.save(structuredClone(state))
   await stores.events.append(state.runId, { type: 'node.started', nodeId: node.id, actor: system, data: { attempt: node.attempts } })
   try { await teardownEnvironment(ctx) }
   catch { ctx.log('环境回收未完成（仅记录），请人工检查环境资源') }
   await Promise.all(logs)
   node.status = stores.config.environment?.teardown ? 'succeeded' : 'skipped'
   node.endedAt = new Date().toISOString()
-  await stores.runs.save(state)
+  await stores.runs.save(structuredClone(state))
   await stores.events.append(state.runId, { type: 'node.finished', nodeId: node.id, actor: system, data: { status: node.status, outputs: node.outputs } })
 }

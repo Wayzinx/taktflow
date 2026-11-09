@@ -39,6 +39,44 @@ export async function environmentConfig(ctx: NodeContext): Promise<TaktConfig['e
   return config?.environment
 }
 
+export interface EnvironmentCommandVariableResult {
+  /** 用例命令实际拿到的值；缺失或不可解析时为空。 */
+  value?: string
+  /** 值来源：config.env（含 ${} 解析）或宿主进程环境（命令子进程会继承）。 */
+  source?: 'environment.env' | 'host-process'
+  error?: string
+}
+
+/**
+ * 用例命令实际会拿到的单个环境变量值。
+ *
+ * 与 environmentVariables 相同的合并顺序：config.env（含 ${宿主变量} 解析）
+ * 优先，其次是宿主进程环境（命令子进程会继承）；两者都没有时明确报告缺失，
+ * 不猜测、不读取无关默认值。只解析单个变量，避免完整环境或凭据进入证据。
+ */
+export async function environmentCommandVariable(ctx: NodeContext, name: string): Promise<EnvironmentCommandVariableResult> {
+  const config = await environmentConfig(ctx)
+  const template = config?.env?.[name]
+  if (template !== undefined) {
+    const missing: string[] = []
+    const value = template.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (_, key: string) => {
+      const host = process.env[key]
+      if (host === undefined) {
+        missing.push(key)
+        return ''
+      }
+      return host
+    })
+    if (missing.length > 0) {
+      return { source: 'environment.env', error: `environment.env.${name} 引用的宿主变量未设置：${missing.join(', ')}` }
+    }
+    return { value, source: 'environment.env' }
+  }
+  const inherited = process.env[name]
+  if (inherited === undefined || inherited === '') return {}
+  return { value: inherited, source: 'host-process' }
+}
+
 export function environmentVariables(config: TaktConfig['environment'], ctx: NodeContext) {
   const secrets = new Set<string>()
   const extra: Record<string, string> = {}

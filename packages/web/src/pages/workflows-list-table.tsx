@@ -39,7 +39,7 @@ export function WorkflowTable({ workflows, defaultId, renderActions }: { workflo
             <tr key={w.id} className="clickable" onClick={(e) => !(e.target as HTMLElement).closest('a') && navigate(`/workflows/${encodeURIComponent(w.id)}`)}>
               <td className="wf-cell-title">
                 <span className="wf-title-row">
-                  <Link to={`/workflows/${encodeURIComponent(w.id)}`} className="wf-title">
+                  <Link to={`/workflows/${encodeURIComponent(w.id)}`} className="wf-title" title={w.title}>
                     {w.title}
                   </Link>
                   {w.id === defaultId && <span className="chip wf-default">默认</span>}

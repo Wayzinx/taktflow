@@ -5,6 +5,7 @@ import { useSource } from '../../api'
 import { Dialog } from '../../components/ui/dialog'
 import { ReasonDialog } from '../../components/ui/reason-dialog'
 import { EmptyState, toast } from '../../components/ui'
+import { useDraftForm, useUnsavedWarning } from '../../lib/draft'
 import { setQuery, useLocation } from '../../lib/router'
 import { Field, RevisionsButton, SaveBar, Section } from './settings-kit'
 
@@ -44,7 +45,7 @@ export function SkillsTab({ settings, onChanged }: { settings: SpaceSettings; on
               ))}
             </ul>
           </aside>
-          {selected && <SkillForm key={`${selected.name}:${selected.hash}`} skill={selected} onChanged={onChanged} />}
+          {selected && <SkillForm key={selected.name} skill={selected} onChanged={onChanged} />}
         </div>
       )}
       <NewSkillDialog open={creating} onClose={() => setCreating(false)} onCreated={(name) => { setCreating(false); onChanged(); setQuery({ name }) }} />
@@ -55,13 +56,14 @@ export function SkillsTab({ settings, onChanged }: { settings: SpaceSettings; on
 function SkillForm({ skill, onChanged }: { skill: SpaceSkillSettings; onChanged: () => void }) {
   const ds = useSource()
   const original = useMemo(() => ({ description: skill.description, body: skill.body }), [skill])
-  const [form, setForm] = useState(original)
+  const { form, setForm, dirty, reset, markSaved } = useDraftForm(`skill:${skill.name}`, original, skill.hash)
+  useUnsavedWarning(dirty)
   const [deleting, setDeleting] = useState(false)
-  useEffect(() => setForm(original), [original])
-  const dirty = form.description !== original.description || form.body !== original.body
   const save = async (reason: string) => {
+    const submitted = form
     try {
       await ds.saveSkill(skill.name, { description: form.description, body: form.body, baseHash: skill.hash, reason })
+      markSaved(submitted)
       toast(`已保存技能 ${skill.name}`, { body: '运行前会同步到用它的角色。' })
       onChanged()
     } catch (e) {
@@ -88,7 +90,7 @@ function SkillForm({ skill, onChanged }: { skill: SpaceSkillSettings; onChanged:
       <Section title="正文" hint="具体做法、约定、正反例。支持 Markdown。">
         <textarea className="textarea sk-instructions sk-field wide" value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })} spellCheck={false} aria-label="技能正文" />
       </Section>
-      <SaveBar dirty={dirty} onSave={save} onReset={() => setForm(original)} />
+      <SaveBar dirty={dirty} onSave={save} onReset={reset} />
       <ReasonDialog
         open={deleting}
         onClose={() => setDeleting(false)}

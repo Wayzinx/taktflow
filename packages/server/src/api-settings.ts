@@ -336,7 +336,11 @@ function applyConfigPatch(stores: ProjectStores, config: TaktConfig, patch: Reco
 /** 去掉值为 null / 空串的字段，便于表单直接提交。 */
 function clean(value: unknown, name: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ApiError(400, `${name} 必须是对象`)
-  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== null && v !== '').map(([k, v]) => [k, v && typeof v === 'object' && !Array.isArray(v) ? clean(v, `${name}.${k}`) : v]))
+  const entries = Object.entries(value)
+  // 环境变量值由 core validateEnvironment 校验：空串/空白是合法 string，null/number 必须报错而不是被静默删除。
+  // Object.fromEntries 用 CreateDataProperty 构造，__proto__ 等键不会污染原型。
+  if (name === 'environment.env') return Object.fromEntries(entries)
+  return Object.fromEntries(entries.filter(([, v]) => v !== null && v !== '').map(([k, v]) => [k, v && typeof v === 'object' && !Array.isArray(v) ? clean(v, `${name}.${k}`) : v]))
 }
 
 export function knowledgeList(value: unknown): NonNullable<TaktConfig['knowledge']> {
