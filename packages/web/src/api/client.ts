@@ -66,7 +66,16 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     }
     return data as T
   }
-  const get = <T,>(path: string) => req<T>('GET', path)
+  // 同一地址正在请求时直接共用：运行页一打开，十来个组件各自要 /project、运行详情，重复请求会在服务端排队
+  const inflight = new Map<string, Promise<unknown>>()
+  const get = <T,>(path: string): Promise<T> => {
+    const key = scoped(path)
+    const pending = inflight.get(key)
+    if (pending) return pending as Promise<T>
+    const request = req<T>('GET', path).finally(() => inflight.delete(key))
+    inflight.set(key, request)
+    return request
+  }
 
   const bound = new Map<string, DataSource>()
   return {

@@ -7,6 +7,7 @@ import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
 import { chainHash, ZERO_HASH } from '../quality/chain.js'
 import { appendLine, isEnoent } from './fs-utils.js'
 import { withFileLock } from './file-lock.js'
+import { withLock } from './locks.js'
 import { eventsFile } from './paths.js'
 
 // 用 Record 穷举：协议里新增事件类型而这里漏写时编译报错，不会在回读时才发现
@@ -60,7 +61,12 @@ function hashPayload(envelope: EventEnvelope): Record<string, unknown> {
 interface FileStamp { size: number; ino: number; mtimeMs: number; ctimeMs: number }
 interface AppendTail extends FileStamp { seq: number; hash: string; start: number }
 interface Checkpoint { offset: number; seq: number; lines: number }
-interface ReadTail extends FileStamp, Checkpoint { checkpoints: Checkpoint[] }
+interface ReadTail extends FileStamp, Checkpoint {
+  checkpoints: Checkpoint[]
+  /** 从文件开头到 offset 的全部事件（已跳过旧版 thinking 行）；有它时读取只解析新追加的字节。 */
+  events?: EventEnvelope[]
+  eventBytes?: number
+}
 interface VerifyTail extends FileStamp { offset: number; seq: number; hash: string }
 // 三种状态独立取文件签名：append 只在签名完全相同时复用；read（含检查点）和 verify
 // 仅在同 inode 变长或签名未变时复用。任何一方都不能把另一方尚未处理的前缀标为已处理。
@@ -69,6 +75,28 @@ function tails(file: string) {
   let value = fileTails.get(file)
   if (!value) { value = {}; fileTails.set(file, value) }
   return value
+}
+
+/**
+ * 解析好的事件常驻内存：运行页一次打开会并发十来个请求（节点详情、事件、运行详情……），每个都从头解析几百 MB 的
+ * 日志会让 serve 排队十几秒。按文件缓存，读时只解析追加部分；总量超过上限按最近使用淘汰（淘汰后退回检查点读取）。
+ */
+const EVENT_CACHE_LIMIT = 256 * 1024 * 1024
+const cachedEventBytes = new Map<string, number>()
+function rememberEvents(file: string, bytes: number): boolean {
+  cachedEventBytes.delete(file)
+  if (bytes > EVENT_CACHE_LIMIT / 2) return false
+  cachedEventBytes.set(file, bytes)
+  let total = 0
+  for (const value of cachedEventBytes.values()) total += value
+  for (const [other, value] of cachedEventBytes) {
+    if (total <= EVENT_CACHE_LIMIT || other === file) break
+    const read = fileTails.get(other)?.read
+    if (read) { delete read.events; delete read.eventBytes }
+    cachedEventBytes.delete(other)
+    total -= value
+  }
+  return true
 }
 
 function fileStamp(info: Stats): FileStamp {
@@ -272,8 +300,13 @@ export class FsEventStore implements EventStore {
     return verifyFile(path.resolve(eventsFile(this.taktDir, runId)), runId)
   }
 
-  private async readEvents(runId: string, afterSeq?: number): Promise<EventEnvelope[]> {
+  private readEvents(runId: string, afterSeq?: number): Promise<EventEnvelope[]> {
+    // 同一文件的读取排队：常驻缓存是共享数组，并发读会把同一段追加解析两遍
     const file = path.resolve(eventsFile(this.taktDir, runId))
+    return withLock(`${file}#read`, () => this.readEventsLocked(file, runId, afterSeq))
+  }
+
+  private async readEventsLocked(file: string, runId: string, afterSeq?: number): Promise<EventEnvelope[]> {
     let handle
     try { handle = await open(file, 'r') } catch (error) {
       if (!isEnoent(error)) throw error
@@ -284,11 +317,15 @@ export class FsEventStore implements EventStore {
       const info = await handle.stat()
       const state = currentTails(file, info)
       const cached = state.read
-      const from = afterSeq === undefined || !cached ? undefined : afterSeq >= cached.seq
+      // 有常驻缓存就接着它往后读；没有时整份读一遍并建缓存，只有建不了（太大）且带 afterSeq 才走检查点
+      const resident = cached?.events
+      const from = resident ? cached : afterSeq === undefined || !cached ? undefined : afterSeq >= cached.seq
         ? cached : checkpointBefore(cached.checkpoints, afterSeq)
+      const building = resident !== undefined || !from || from.offset === 0
       let offset = from?.offset ?? 0, lines = from?.lines ?? 0, seq = from?.seq ?? 0
+      let eventBytes = resident ? cached!.eventBytes ?? 0 : 0
       const checkpoints = [...(cached?.checkpoints ?? [])]
-      const events: EventEnvelope[] = []
+      const events: EventEnvelope[] = resident ?? []
       await scanLines(handle, info.size, offset, runId, (line, end, complete) => {
         if (!complete) return true
         offset = end
@@ -301,7 +338,8 @@ export class FsEventStore implements EventStore {
             if (!isEnvelope(envelope, runId)) throw new Error('事件信封结构或 runId 不合法')
             // read 允许非连续 seq；检查点记录前缀最大值，才能安全跳过整个前缀。
             seq = Math.max(seq, envelope.seq)
-            if (afterSeq === undefined || envelope.seq > afterSeq) events.push(envelope)
+            if (building) { events.push(envelope); eventBytes += line.length }
+            else if (afterSeq === undefined || envelope.seq > afterSeq) events.push(envelope)
           } catch (err) {
             throw new Error(`事件日志第 ${lines} 行不是合法事件：${eventsFile(this.taktDir, runId)}`, { cause: err })
           }
@@ -309,8 +347,11 @@ export class FsEventStore implements EventStore {
         if (lines % 1000 === 0 && offset > (checkpoints.at(-1)?.offset ?? 0)) checkpoints.push({ offset, lines, seq })
         return true
       })
-      state.read = { ...fileStamp(info), offset, lines, seq, checkpoints }
-      return events
+      const keep = building && rememberEvents(file, eventBytes)
+      state.read = { ...fileStamp(info), offset, lines, seq, checkpoints, ...(keep ? { events, eventBytes } : {}) }
+      if (!building) return events
+      // 缓存数组不外借：调用方拿到的是副本
+      return afterSeq === undefined ? events.slice() : events.filter((e) => e.seq > afterSeq)
     } finally { await handle.close() }
   }
 }
