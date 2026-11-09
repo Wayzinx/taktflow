@@ -127,7 +127,7 @@ export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, 
   answer(requestId: string, body: { decision?: string; answer?: string }): Promise<AttentionItem>
   harnesses(): Promise<HarnessInfo[]>
   models(): Promise<ModelInfo[]>
-  /** 订阅运行的实时事件；返回取消订阅函数。 */
+  /** 订阅运行之后的新事件（不回放历史，界面只当"有变化"信号用）；返回取消订阅函数。 */
   subscribe(runId: string, onEvent: (e: EventEnvelope) => void): () => void
 
   // ---- 项目空间（docs/design/14）。除 spaces() 外都作用于当前 URL 的空间（/s/:spaceId）。

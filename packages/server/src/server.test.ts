@@ -654,6 +654,29 @@ it('SSE 先推历史事件、再推实时事件，断开后清理订阅', async 
   }
 })
 
+it('SSE ?from=tail 不回放历史，只推之后的新事件；带 after 时仍按游标补', async () => {
+  const fixture = await makeFixture()
+  const server = await startServer({ projectDir: fixture.root })
+  const controller = new AbortController()
+  const res = await fetch(`${server.url}/api/runs/${fixture.runId}/stream?from=tail`, { headers: { accept: 'text/event-stream' }, signal: controller.signal })
+  expect(res.status).toBe(200)
+  const reader = res.body!.getReader()
+  await fixture.stores.events.append(fixture.runId, { type: 'log', actor: { type: 'system', id: 'fixture' }, data: { level: 'info', message: '新事件' } })
+  let buffer = ''
+  while (sseData(buffer).length < 1) buffer += await readChunk(reader)
+  expect(sseData(buffer).map((data) => (JSON.parse(data) as EventEnvelope).seq)).toEqual([11])
+  controller.abort()
+
+  const resumed = new AbortController()
+  const again = await fetch(`${server.url}/api/runs/${fixture.runId}/stream?from=tail&after=9`, { headers: { accept: 'text/event-stream' }, signal: resumed.signal })
+  const r2 = again.body!.getReader()
+  let b2 = ''
+  while (sseData(b2).length < 2) b2 += await readChunk(r2)
+  expect(sseData(b2).map((data) => (JSON.parse(data) as EventEnvelope).seq)).toEqual([10, 11])
+  resumed.abort()
+  await server.close()
+})
+
 it('回答按表单校验；重复和并发回答返回 409，回调仅执行一次', async () => {
   const { root, stores, runId, requirementId } = await makeFixture()
   let callbacks = 0

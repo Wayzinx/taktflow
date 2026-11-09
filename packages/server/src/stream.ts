@@ -1,11 +1,11 @@
 import type { ServerResponse } from 'node:http'
 import type { EventStore } from '@taktflow/core'
 
-export async function stream<T extends { seq: number } = Awaited<ReturnType<EventStore['read']>>[number]>(events: { read(id: string, opts?: { afterSeq?: number }): Promise<T[]>; subscribe(id: string, onEvent: (event: T) => void): () => void }, runId: string, after: number, response: ServerResponse, connections: Set<() => void>): Promise<void> {
+export async function stream<T extends { seq: number } = Awaited<ReturnType<EventStore['read']>>[number]>(events: { read(id: string, opts?: { afterSeq?: number }): Promise<T[]>; subscribe(id: string, onEvent: (event: T) => void): () => void }, runId: string, after: number | 'tail', response: ServerResponse, connections: Set<() => void>): Promise<void> {
   if (response.destroyed) return
   let replaying = true
   let closed = false
-  let last = after
+  let last = after === 'tail' ? 0 : after
   const buffered: T[] = []
   let unsubscribe: () => void = () => {}
   let timer: ReturnType<typeof setInterval> | undefined
@@ -26,9 +26,9 @@ export async function stream<T extends { seq: number } = Awaited<ReturnType<Even
   response.once('error', cleanup)
   connections.add(close)
   try {
-    // 先订阅，补上历史读取期间的新增事件；重复部分用 seq 去重。
+    // 先订阅，补上历史读取期间的新增事件；重复部分用 seq 去重。'tail' 只要订阅之后的新事件，不读历史。
     unsubscribe = events.subscribe(runId, (event) => { if (replaying) buffered.push(event); else send(event) })
-    const history = await events.read(runId, { afterSeq: after })
+    const history = after === 'tail' ? [] : await events.read(runId, { afterSeq: after })
     if (closed || response.destroyed) { cleanup(); return }
     response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache', connection: 'keep-alive', 'x-accel-buffering': 'no' })
     response.flushHeaders()

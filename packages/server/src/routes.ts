@@ -134,8 +134,10 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   })
   add('GET', '/api/runs/:runId/stream', async ({ stores, params, url, response, request }) => {
     await run(stores, params.runId!)
+    // ?from=tail：只推之后的新事件（界面只拿它当"有变化"信号，长运行的历史可能几十万条）；断线重连带 Last-Event-ID 时按游标补。
     const cursor = url.searchParams.get('after') ?? (typeof request.headers['last-event-id'] === 'string' ? request.headers['last-event-id'] : null)
-    await stream(stores.events, params.runId!, integer(cursor, 'after') ?? 0, response, connections)
+    const after = cursor === null && url.searchParams.get('from') === 'tail' ? 'tail' : integer(cursor, 'after') ?? 0
+    await stream(stores.events, params.runId!, after, response, connections)
     return STREAMING
   })
   add('GET', '/api/runs/:runId/nodes/:nodeId', ({ stores, params }) => nodeDetail(stores, params.runId!, params.nodeId!))

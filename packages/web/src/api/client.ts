@@ -91,7 +91,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     answer: (requestId, body) => req('POST', `/attention/${enc(requestId)}`, body),
     harnesses: () => get('/harnesses'),
     models: () => get('/models'),
-    subscribe: (runId, onEvent) => stream(scoped(`/runs/${enc(runId)}/stream`), onEvent),
+    subscribe: (runId, onEvent) => stream(scoped(`/runs/${enc(runId)}/stream?from=tail`), onEvent),
     spaces: (opts) => get(`/spaces${qs({ archived: opts?.archived ? 1 : undefined })}`),
     space: () => get('/space'),
     // 服务端成员接口接受数组 + x-takt-reason 头，或 { members, reason }；用 body 形式，避免非 ASCII 原因放进请求头
