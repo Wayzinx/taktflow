@@ -666,7 +666,17 @@ export class Runtime implements HarnessHost {
     this.signal.throwIfAborted()
     if (ids.every((id) => done(this.state.nodes[id]!))) return
     if (this.budget.paused || ids.some((id) => this.state.nodes[id]!.status === 'waiting_human' || this.state.nodes[id]!.status === 'blocked' && this.requests[id])) ns.status = 'waiting_human'
-    else throw new Error(`子 DAG 未完成：${ids.filter((id) => !done(this.state.nodes[id]!)).join(', ')}`)
+    else {
+      const unfinished = ids.filter((id) => !done(this.state.nodes[id]!))
+      // 指纹按失败的子节点和它们各自的失败算：不同子节点、不同原因的失败不能算成"同样的失败"
+      const causes = unfinished.flatMap((id) => {
+        const child = this.state.nodes[id]!
+        if (child.status !== 'failed' && child.status !== 'blocked') return []
+        const latest = [...child.failures ?? []].sort((a, b) => a.lastAt.localeCompare(b.lastAt)).at(-1)
+        return [`${id}@${latest?.fingerprint ?? child.status}`]
+      })
+      throw new FailureError(`子 DAG 未完成：${unfinished.join(', ')}`, 'subdag', causes.sort().join(',') || undefined)
+    }
   }
   private resetReview(id: string): void {
     const progress = this.reviews[id]

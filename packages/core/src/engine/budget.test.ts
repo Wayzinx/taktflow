@@ -317,6 +317,23 @@ describe('预算、派发与挂点', () => {
     expect(state.nodes['plan/b/code']?.status).toBe('succeeded')
     expect(f.events.some((event) => event.type === 'log' && JSON.stringify(event.data).includes('写权限相交'))).toBe(true)
   })
+  it('planner 两次失败的子节点不同就不算"同样的失败"：照常失败可重试，不提前停', async () => {
+    let failing = 'plan/a/code'
+    const f = await fixture(async (req) => {
+      if (req.env?.TAKT_NODE === 'plan') return { ok: true, finalText: '', structured: { items: [{ key: 'a', title: 'a' }, { key: 'b', title: 'b' }] } }
+      if (req.env?.TAKT_NODE === failing) throw new Error(failing === 'plan/a/code' ? '写权限越界' : '402 余额不足')
+      return { ok: true, finalText: '完成' }
+    })
+    const def = workflow([planner({ id: 'plan', title: '', role: 'dev', prompt: '', maxItems: 2, expand: () => [agent({ id: 'code', title: '', role: 'dev', prompt: '', writeScope: ['src/**'] })] })])
+    const first = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def })
+    expect(first.nodes.plan).toMatchObject({ status: 'failed' })
+    failing = 'plan/b/code'
+    const second = await createEngine(f.deps).retry(first.runId, def, { reason: '换一个子节点失败' })
+    expect(second.nodes['plan/a/code']?.status).toBe('succeeded')
+    expect(second.nodes.plan).toMatchObject({ status: 'failed' })
+    expect(second.nodes.plan?.error).not.toContain('同样的失败')
+    expect(second.nodes.plan?.failures?.map((failure) => [failure.code, failure.target?.split('@')[0], failure.count])).toEqual([['subdag', 'plan/a/code', 1], ['subdag', 'plan/b/code', 1]])
+  })
   it('快照包括 workflow 元数据、节点目标/标准以及 review 早停和裁决者', () => {
     const snapshot = snapshotWorkflow({ ...workflow([
       agent({ id: 'a', title: '', role: 'dev', prompt: '', goal: '目标', owner: 'rd', completion: ['测试必须全部通过'] }),

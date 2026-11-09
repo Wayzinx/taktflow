@@ -735,7 +735,7 @@ export interface NodeState {
 export interface FailureRecord {
   /** sha256(节点 : 失败码 : 目标 : 输入身份) 的前 16 位。 */
   fingerprint: string
-  /** 失败码：completion.unmet / gate:<检查 id> / judge:<类别> / exit:<码> / error …… */
+  /** 失败码：completion.unmet / gate:<检查 id> / judge:<类别> / exit:<码> / subdag（容器的子节点没完成，target 是失败的子节点及其指纹）/ error …… */
   code: string
   target?: string
   /** 输入身份：输入产物版本 + worktree HEAD 的摘要。 */
