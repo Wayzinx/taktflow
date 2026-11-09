@@ -242,9 +242,21 @@ it('claude 预设能改接 anthropic 协议的 API：地址、令牌、模型走
   expect(events).toContainEqual(expect.objectContaining({ type: 'started', model: 'ds-flash' }))
   const sent = (await readFile(join(dir, 'claude.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
   expect(sent.some(m => m.method === 'session/set_config_option')).toBe(false)
+  expect(sent.find(m => m.method === 'session/new')?.params._meta).toEqual({ claudeCode: { options: { settingSources: ['project', 'local'] } } })
   expect(await claude.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, model: 'ds-flash', provider }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('TAKT_ACP_DS_KEY') })
 
   const gemini = create('gemini')
   expect(gemini.capabilities.customProvider).toBe(false)
   expect(await gemini.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, provider }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('不支持改接模型 API') })
+})
+
+it('引擎给的本机沙箱照常运行并带上沙箱环境变量；真隔离沙箱明确拒绝', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'takt-acp-')); dirs.push(dir)
+  const harness = createAcpHarness({ id: 'acp', kind: 'acp', command: [process.execPath, script],
+    env: { FAKE_ACP_SCENARIO: JSON.stringify({ echoEnv: ['TAKT_NODE'] }) } }, { projectDir: dir, handshakeTimeoutMs: 1000 })
+  const sandbox = (provider: string) => ({ id: 's', provider, spec: { env: { TAKT_NODE: 'clarify' } } }) as unknown as HarnessRequest['sandbox']
+  const ok = await harness.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, sandbox: sandbox('local') }, () => {})
+  expect(ok.ok).toBe(true)
+  expect(JSON.parse(ok.finalText)).toEqual({ TAKT_NODE: 'clarify' })
+  expect(await harness.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, sandbox: sandbox('bwrap') }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('bwrap 沙箱') })
 })

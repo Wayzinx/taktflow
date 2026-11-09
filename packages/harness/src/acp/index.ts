@@ -6,7 +6,7 @@ import { collectSecrets, createRedactor, redactValue } from '../redact.js'
 import { AcpClient } from './client.js'
 import { AcpEvents } from './events.js'
 import { AcpFiles } from './files.js'
-import { ACP_PROVIDER_ENV, acpCommand } from './presets.js'
+import { ACP_PROVIDER_ENV, acpCommand, acpSessionMeta } from './presets.js'
 import { array, object, optionalObject, string, type ObjectValue } from './protocol.js'
 import { clientRequests } from './requests.js'
 
@@ -56,7 +56,9 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
       return value
     },
     async run(input, onEvent) {
-      const base: HarnessRequest = { ...input, env: { ...config.env, ...input.env } }
+      // 本机"沙箱"只是在宿主上起进程：并入它的环境变量照常跑；真隔离（bwrap / docker）下面明确拒绝
+      const local = input.sandbox?.provider === 'local'
+      const base: HarnessRequest = { ...input, ...(local ? { sandbox: undefined } : {}), env: { ...config.env, ...(local ? input.sandbox!.spec.env : {}), ...input.env } }
       const key = base.provider ? readProviderApiKey(base) : {}
       const req: HarnessRequest = base.provider && providerEnv ? { ...base, env: { ...base.env, ...providerEnv.env(base, key.value) } } : base
       const redact = createRedactor(collectSecrets(req))
@@ -83,7 +85,7 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
         if (req.signal?.aborted) throw new Error('ACP 启动前已取消（cancelled）')
         if (req.provider && !providerEnv) throw new Error('这个 ACP agent 不支持改接模型 API，请在 agent 自身配置中设置')
         if (key.name && !key.value) throw new Error(`缺少模型 API 密钥：环境变量 ${key.name} 未设置`)
-        if (req.sandbox) throw new Error('ACP 暂不支持沙箱传输，请使用本机运行或其他 harness')
+        if (req.sandbox) throw new Error(`ACP 暂不支持 ${req.sandbox.provider} 沙箱，请改用本机运行或其他 harness`)
         const operationRequest = { ...req, signal: operations.signal }
         const files = await AcpFiles.create(operationRequest)
         client = new AcpClient(command, req, redact, (method, params) => {
@@ -103,7 +105,8 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
         const method = req.sessionId ? optionalObject(agent.sessionCapabilities).resume != null ? 'session/resume' : 'session/load' : 'session/new'
         if (req.sessionId && !capabilities.resume) throw new Error('该 ACP agent 未声明续会话能力，请创建新会话')
         replaying = method === 'session/load'
-        const session = await client.request(method, { cwd: req.cwd, mcpServers: [], ...(req.sessionId ? { sessionId: req.sessionId } : {}) }, options.handshakeTimeoutMs ?? HANDSHAKE_MS)
+        const meta = acpSessionMeta(config.preset, req.env)
+        const session = await client.request(method, { cwd: req.cwd, mcpServers: [], ...(req.sessionId ? { sessionId: req.sessionId } : {}), ...(meta ? { _meta: meta } : {}) }, options.handshakeTimeoutMs ?? HANDSHAKE_MS)
         replaying = false
         if (!req.sessionId) sessionId = string(session.sessionId)
         events.configure(session.configOptions ?? events.configOptions)

@@ -19,6 +19,13 @@ export const ACP_PROVIDER_ENV: Record<string, { protocols: ProviderProtocol[]; e
   claude: { protocols: ['anthropic-messages'], env: claudeProviderEnv },
 }
 
+/** 建会话时附带的预设专属参数。claude：和 CLI 一样不加载个人 ~/.claude 设置（适配器把 _meta.claudeCode.options 盖在默认值上）。 */
+export function acpSessionMeta(preset: string | undefined, env: Record<string, string> | undefined): Record<string, unknown> | undefined {
+  if (preset !== 'claude') return undefined
+  const sources = (env?.TAKT_CLAUDE_SETTING_SOURCES ?? process.env.TAKT_CLAUDE_SETTING_SOURCES ?? 'project,local').split(',').map(s => s.trim()).filter(Boolean)
+  return { claudeCode: { options: { settingSources: sources } } }
+}
+
 export function acpCommand(config: AcpHarnessConfig): string[] {
   const preset = ACP_PRESETS.find(item => item.id === config.preset)
   const command = config.command ?? preset?.command

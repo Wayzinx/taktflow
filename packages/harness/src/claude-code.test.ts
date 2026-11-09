@@ -135,17 +135,24 @@ describe('Claude adapter', () => {
     const events: HarnessEvent[] = []
     const result = await createClaudeCodeHarness({ bin: '/custom/claude' }).run(request, event => events.push(event))
     expect(runProcess).toHaveBeenCalledWith('/custom/claude', ['-p', '--output-format', 'stream-json', '--verbose',
-      '--model', 'opus', '--resume', 'old', '--append-system-prompt', 'system', '--permission-mode', 'bypassPermissions'],
+      '--model', 'opus', '--resume', 'old', '--append-system-prompt', 'system', '--permission-mode', 'bypassPermissions', '--setting-sources', 'project,local'],
     request, { stdin: req.prompt, onLine: expect.any(Function) })
     expect(result.ok).toBe(true)
     expect(events.some(event => event.type === 'usage')).toBe(true)
+  })
+
+  it('不加载个人 ~/.claude 设置；TAKT_CLAUDE_SETTING_SOURCES 可放开', async () => {
+    mockOutput('{"type":"result","result":"done"}')
+    await createClaudeCodeHarness().run({ ...req, env: { TAKT_CLAUDE_SETTING_SOURCES: 'user,project,local' } }, () => {})
+    const args = vi.mocked(runProcess).mock.calls[0]![1]
+    expect(args.slice(args.indexOf('--setting-sources'), args.indexOf('--setting-sources') + 2)).toEqual(['--setting-sources', 'user,project,local'])
   })
 
   it('新会话不附加 resume/model/system 参数', async () => {
     mockOutput(fixture)
     await createClaudeCodeHarness().run(req, () => {})
     expect(vi.mocked(runProcess).mock.calls[0]?.slice(0, 2)).toEqual(['claude',
-      ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions']])
+      ['-p', '--output-format', 'stream-json', '--verbose', '--permission-mode', 'bypassPermissions', '--setting-sources', 'project,local']])
   })
 
   it('合并进程失败、解析错误、exitCode/transcript', async () => {

@@ -99,6 +99,8 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
       if (req.sessionId) args.push('--resume', req.sessionId)
       if (req.systemAppend) args.push('--append-system-prompt', req.systemAppend)
       args.push('--permission-mode', 'bypassPermissions')
+      // 流水线里的 agent 不加载个人 ~/.claude 设置（钩子、插件、env、个人 skills）：结果可复现，也不会被个人钩子拖到超时
+      args.push('--setting-sources', processReq.env?.TAKT_CLAUDE_SETTING_SOURCES ?? process.env.TAKT_CLAUDE_SETTING_SOURCES ?? 'project,local')
       // 接别家 API 时 Claude Code 仍按 Anthropic 价目算 total_cost_usd，不能当真；成本由引擎按模型价格算
       const sink = req.provider ? withoutCost(onEvent) : onEvent
       const parser = createClaudeCodeParser(sink)
