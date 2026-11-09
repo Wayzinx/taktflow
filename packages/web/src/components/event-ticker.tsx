@@ -19,7 +19,7 @@ const onTicker = (e: EventEnvelope) => !QUIET.has(e.type) && !machineLog(e) && !
 
 /**
  * 运行页底部实时事件滚动条：最近 N 条事件（新的在左），等宽时间戳，悬停暂停（暂停期间新事件攒着、显示条数），
- * 点击带节点的事件定位到该节点。数据自己取（ds.events，首次全量、之后按 after 游标增量），liveTick 变化时刷新；live 为 false 时只是静态的最近几条。
+ * 点击带节点的事件定位到该节点。数据自己取（ds.events，首次取最后一段、之后按 after 游标增量），liveTick 变化时刷新；live 为 false 时只是静态的最近几条。
  */
 export function EventTicker({ runId, live, liveTick, onLocate }: { runId: string; live: boolean; liveTick: number; onLocate(nodeId: string): void }) {
   const ds = useSource()
@@ -30,13 +30,13 @@ export function EventTicker({ runId, live, liveTick, onLocate }: { runId: string
   const seen = useRef<number | undefined>(undefined)
   const [freshFrom, setFreshFrom] = useState(Number.POSITIVE_INFINITY)
 
-  // 首次取一次完整日志；之后 liveTick 每变一次只用 after 游标取增量，按 seq 去重合并后保留最近 KEEP 条（长运行不会反复拉几千条）。
+  // 首次只取最后 200 条（够过滤出 KEEP 条，长运行的完整日志可能几百 MB）；之后 liveTick 每变一次只用 after 游标取增量，按 seq 去重合并后保留最近 KEEP 条。
   // 请求可能重叠（节拍比请求快），所以不丢弃旧请求的结果，而是统一去重合并；切换运行时清空。
   const cursor = useRef<{ runId: string; seq?: number }>({ runId })
   if (cursor.current.runId !== runId) cursor.current = { runId }
   useEffect(() => {
     const from = cursor.current.seq
-    ds.events(runId, from === undefined ? undefined : { after: from })
+    ds.events(runId, from === undefined ? { last: 200 } : { after: from })
       .then((batch) => {
         if (cursor.current.runId !== runId) return
         const last = batch[batch.length - 1]?.seq

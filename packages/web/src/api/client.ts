@@ -84,7 +84,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     metrics: (id) => get(`/requirements/${enc(id)}/metrics`),
     runs: (requirement) => get(`/runs${qs({ requirement })}`),
     run: (runId) => get(`/runs/${enc(runId)}`),
-    events: (runId, opts = {}) => get(`/runs/${enc(runId)}/events${qs({ after: opts.after, node: opts.node })}`),
+    events: (runId, opts = {}) => get(`/runs/${enc(runId)}/events${qs({ after: opts.after, node: opts.node, types: opts.types?.join(','), last: opts.last })}`),
     node: (runId, nodeId) => get(`/runs/${enc(runId)}/nodes/${enc(nodeId)}`),
     audit: (runId) => get(`/runs/${enc(runId)}/audit`),
     attention: (pending) => get(`/attention${qs({ pending: pending ? 1 : undefined })}`),

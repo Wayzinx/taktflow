@@ -287,7 +287,8 @@ export function createProjectMock(db: MockDb): ProjectSource {
     events(runId, opts = {}) {
       const run = getRun(runId)
       if (!run) return fail(`运行 ${runId} 不存在`)
-      return delay(run.events.filter((e) => e.seq > (opts.after ?? 0) && (!opts.node || e.nodeId === opts.node)))
+      const events = run.events.filter((e) => e.seq > (opts.after ?? 0) && (!opts.node || e.nodeId === opts.node) && (!opts.types || opts.types.includes(e.type)))
+      return delay(opts.last === undefined ? events : events.slice(-opts.last))
     },
     node(runId, nodeId) {
       const run = getRun(runId)

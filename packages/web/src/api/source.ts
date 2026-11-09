@@ -120,7 +120,8 @@ export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, 
   metrics(id: string): Promise<RequirementMetrics>
   runs(requirementId?: string): Promise<RunSummary[]>
   run(runId: string): Promise<RunDetail>
-  events(runId: string, opts?: { after?: number; node?: string }): Promise<EventEnvelope[]>
+  /** last：只要（过滤后的）最后 N 条；types：只要这些类型。长运行的完整日志可能几百 MB，界面别整份取。 */
+  events(runId: string, opts?: { after?: number; node?: string; types?: string[]; last?: number }): Promise<EventEnvelope[]>
   node(runId: string, nodeId: string): Promise<NodeDetail>
   audit(runId: string): Promise<{ ok: boolean; brokenAt?: number }>
   attention(pending?: boolean): Promise<AttentionItem[]>

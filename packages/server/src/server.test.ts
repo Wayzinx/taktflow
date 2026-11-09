@@ -654,6 +654,19 @@ it('SSE 先推历史事件、再推实时事件，断开后清理订阅', async 
   }
 })
 
+it('事件接口 types 只取指定类型、last 只取过滤后的最后 N 条', async () => {
+  const fixture = await makeFixture()
+  const server = await startServer({ projectDir: fixture.root })
+  const url = `${server.url}/api/runs/${fixture.runId}/events`
+  const all = (await getJson<EventEnvelope[]>(url)).body
+  expect((await getJson<EventEnvelope[]>(`${url}?last=3`)).body.map((e) => e.seq)).toEqual(all.slice(-3).map((e) => e.seq))
+  const started = (await getJson<EventEnvelope[]>(`${url}?types=node.started,run.finished`)).body
+  expect(new Set(started.map((e) => e.type))).toEqual(new Set(['node.started', 'run.finished']))
+  expect((await getJson<EventEnvelope[]>(`${url}?types=node.started&last=1`)).body).toEqual(started.filter((e) => e.type === 'node.started').slice(-1))
+  expect((await fetch(`${url}?last=0`)).status).toBe(400)
+  await server.close()
+})
+
 it('SSE ?from=tail 不回放历史，只推之后的新事件；带 after 时仍按游标补', async () => {
   const fixture = await makeFixture()
   const server = await startServer({ projectDir: fixture.root })

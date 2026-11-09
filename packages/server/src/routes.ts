@@ -5,7 +5,7 @@ import { qualityRoutes } from './quality-routes.js'
 import { runInsightRoutes } from './run-insight-routes.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isUtf8 } from 'node:buffer'
-import { runLiveness, nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
+import { runLiveness, nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type EventType, type ProjectStores } from '@taktflow/core'
 import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
 import { registerEvalRoutes } from './eval-routes.js'
 import { commandExecutor, m3Routes, type M3Callbacks } from './m3-routes.js'
@@ -130,7 +130,11 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   add('GET', '/api/runs/:runId/events', async ({ stores, params, url }) => {
     await run(stores, params.runId!)
     const nodeId = url.searchParams.has('node') ? relativePath(url.searchParams.get('node')) : undefined
-    return stores.events.read(params.runId!, { afterSeq: integer(url.searchParams.get('after'), 'after'), nodeId })
+    // types 只取这些类型、last 只要最后 N 条：长运行的完整日志可能几百 MB，界面不能整份下载。
+    const types = url.searchParams.get('types')?.split(',').filter(Boolean) as EventType[] | undefined
+    const last = integer(url.searchParams.get('last'), 'last', 1)
+    const events = await stores.events.read(params.runId!, { afterSeq: integer(url.searchParams.get('after'), 'after'), nodeId, types })
+    return last === undefined ? events : events.slice(-last)
   })
   add('GET', '/api/runs/:runId/stream', async ({ stores, params, url, response, request }) => {
     await run(stores, params.runId!)
