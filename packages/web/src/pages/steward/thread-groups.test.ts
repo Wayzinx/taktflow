@@ -27,7 +27,7 @@ describe('groupThreads（docs/design/30 §2）', () => {
   })
 
   it('按需求：两个空间的同号需求不合并', () => {
-    const list = [th('a', { spaceId: 'a', requirementId: 'REQ-001', requirementTitle: '登录' }), th('b', { spaceId: 'b', requirementId: 'REQ-001', requirementTitle: '导出' })]
+    const list = [th('a', { spaceId: 'a', requirementId: 'REQ-001', requirementTitle: '登录' }), th('b', { spaceId: 'b', requirementId: 'REQ-001', requirementTitle: '导出', updatedAt: iso(1) })]
     expect(shape(list, 'requirement')).toEqual([
       ['REQ-001 登录', ['a']],
       ['REQ-001 导出', ['b']],

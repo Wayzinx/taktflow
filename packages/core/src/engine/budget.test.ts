@@ -211,8 +211,8 @@ it('分钟预算在长脚本执行中发出通知，已运行的脚本正常收�
   const state = await createEngine(f.deps, { now: () => new Date(now) }).start({ requirementId: f.requirementId, budget: { minutes: 0.001 }, workflow: workflow([
     script({ id: 'long', title: '', run: async () => {
       now = 100
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      expect(f.events.some((event) => event.type === 'budget.exhausted')).toBe(true)
+      // 预算计时器按间隔检查，负载高时会晚到：等通知出现，而不是固定睡 100ms
+      await vi.waitFor(() => expect(f.events.some((event) => event.type === 'budget.exhausted')).toBe(true), { timeout: 5000 })
     } }),
     script({ id: 'after', title: '', needs: ['long'], run: async () => { throw new Error('不应执行') } }),
   ]) })
