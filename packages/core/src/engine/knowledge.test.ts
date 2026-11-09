@@ -52,3 +52,27 @@ it('挂上空知识库存储后，未迁移的旧知识源继续预取', async (
   expect(prompt).toContain('旧 Wiki 七天退款')
   expect((await stores.events.read(run.runId)).find(e => e.type === 'knowledge.query')?.data).toMatchObject({ sources: ['legacy-wiki'], hits: 1 })
 })
+
+it.each([
+  { node: ['node'], role: ['role'], expected: ['node'] },
+  { node: undefined, role: ['role'], expected: ['role'] },
+  { node: undefined, role: undefined, expected: ['node', 'role', 'space'] },
+  { node: undefined, role: [], expected: [] },
+])('知识选择优先级 节点 $node > 角色 $role > 空间', async ({ node, role, expected }) => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-role-kb-')); roots.push(root)
+  const stores = await initProject(root), by = { type: 'human' as const, id: 'test' }
+  const kind: import('../interfaces.js').KnowledgeKind = { kind: 'fixture', title: '', summary: '', intents: ['business'], needsBuild: false, configSchema: {}, test: async () => ({ ok: true, message: '' }), query: async kb => [{ sourceId: kb.id, ref: kb.id, title: kb.id, snippet: kb.id }] }
+  stores.kb = createKnowledgeStore(stores, { kinds: [kind] })
+  for (const id of ['node', 'role', 'space']) { await stores.kb.create({ id, name: id, kind: 'fixture', config: {} }, by, '创建'); await stores.kb.publish(id, { by, reason: '发布' }) }
+  await stores.kb.setBindings(['node', 'role', 'space'].map(baseId => ({ baseId, scope: 'space' as const, enabled: true, priority: 0 })), by, '绑定')
+  const req = await stores.workspaces.createRequirement({ title: '优先级' })
+  let prompt = ''
+  const harness: HarnessAdapter = { id: 'mock', displayName: 'mock', available: async () => ({ ok: true }), run: async input => { prompt = input.prompt; return { ok: true, finalText: '完成' } } }
+  const profile: AgentProfile = { role: 'dev', title: '开发', description: '', instructions: '', skills: [], writeScope: [], harness: { harness: 'mock' }, knowledge: role }
+  const workflow = defineWorkflow({ id: 'priority', title: '优先级', version: '1', stages: [], nodes: [agent({ id: 'work', title: '查询', role: 'dev', prompt: '查询', knowledge: { bases: node, prefetch: [{ text: 'query', intent: 'business' }] } })] })
+  const run = await createEngine({ stores, profiles: { dev: profile }, harnesses: { mock: harness }, knowledge: [] }).start({ workflow, requirementId: req.id })
+  expect(run.status).toBe('succeeded')
+  const event = (await stores.events.read(run.runId)).find(e => e.type === 'knowledge.query')!
+  expect((event.data as { bases: Array<{ id: string }> }).bases.map(b => b.id).sort()).toEqual(expected)
+  for (const id of ['node', 'role', 'space']) expect(prompt.includes(`${id} — ${id}`)).toBe(expected.includes(id))
+})

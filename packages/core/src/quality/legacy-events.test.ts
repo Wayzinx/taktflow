@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -25,12 +25,16 @@ it('旧事件 fixture 原哈希不变，新追加可接续，篡改仍定位到�
   expect(await store.verify('legacy-run')).toEqual({ ok: false, brokenAt: 2 })
 })
 
-it('旧 verify 允许空行、无末尾换行与非业务信封扩展字段', async () => {
+it('旧 verify 允许空行、无末尾换行与扩展字段；read 等待完整换行', async () => {
   const root = await mkdtemp(join(tmpdir(), 'takt-legacy-events-')); roots.push(root)
   const store = new FsEventStore(root), file = eventsFile(root, 'legacy-run')
   await mkdir(dirname(file), { recursive: true })
   const lines = legacy.trimEnd().split('\n').map(line => JSON.stringify({ ...JSON.parse(line), legacyExtension: true }))
   await writeFile(file, `\n  \n${lines.join('\n\n')}`)
   expect(await store.verify('legacy-run')).toEqual({ ok: true })
+  expect(await store.read('legacy-run')).toHaveLength(1)
+  await appendFile(file, '\n')
+  expect((await store.read('legacy-run', { afterSeq: 1 })).map(event => event.seq)).toEqual([2])
   expect(await store.read('legacy-run')).toHaveLength(2)
+  expect(await store.verify('legacy-run')).toEqual({ ok: true })
 })

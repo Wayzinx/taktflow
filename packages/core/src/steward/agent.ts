@@ -1,3 +1,4 @@
+import { validateStewardRuntime } from './runtime.js'
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { ChatMessage } from '../types.js'
@@ -102,10 +103,11 @@ export class StewardAgent {
   }> {
     await this.ready
     this.validate(input)
+    if (!threadId) await validateStewardRuntime(input.runtime, this.deps, this.store)
     const initial = await this.store.serial(async () => {
       const thread = threadId
         ? await this.store.thread(stewardId(threadId))
-        : await this.store.createThread(input.text, timestamp(this.deps), input.context)
+        : await this.store.createThread(input.text, timestamp(this.deps), input.context, input.runtime ?? undefined)
       const message: StewardMessage = {
         id: randomUUID(),
         threadId: thread.id,

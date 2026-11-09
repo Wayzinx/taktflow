@@ -14,9 +14,10 @@ async function space(dir: string) {
   const stores = await initProject(dir)
   stores.config.workflows = []
   stores.config.lead = { harness: { harness: 'mock' } }
+  stores.config.roles = { dev: { harness: 'mock' } }
   await writeFile(join(dir, 'takt.config.json'), JSON.stringify(stores.config))
   await writeFile(join(dir, 'package.json'), '{"type":"module"}')
-  await writeFile(join(stores.paths.agents, 'dev.md'), '---\nrole: dev\nharness: mock\n---\n开发角色')
+  await writeFile(join(stores.paths.agents, 'dev.md'), '---\nrole: dev\n---\n开发角色')
   await writeFile(join(stores.taktDir, 'mock.json'), JSON.stringify({ steps: [
     { match: { role: 'dev' }, finalText: 'old-task' },
     { match: { role: 'lead' }, structured: { reply: 'mock-lead', actions: [] } },

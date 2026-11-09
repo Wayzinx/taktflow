@@ -37,7 +37,11 @@ it.each(['space', 'legacy'])('init %s 按 stores.paths 复制完整模板且运�
   await writeFile(join(custom, 'custom.md'), '---\nharness: mock\n---\n定制角色')
   stores.config.paths = { ...stores.config.paths, agents: 'custom-roles' }
   await writeFile(join(root, 'takt.config.json'), JSON.stringify(stores.config))
-  expect(Object.keys((await loadRuntime(root)).profiles)).toEqual(['custom'])
+  await writeFile(join(stores.paths.agents, 'only-old.md'), '---\nharness: mock\n---\n旧目录角色')
+  const profiles = (await loadRuntime(root)).profiles
+  expect(profiles.custom?.instructions).toBe('定制角色')
+  expect(profiles.dev).toBeDefined()
+  expect(profiles['only-old']).toBeUndefined()
   await writeFile(join(stores.paths.workflows, 'sdlc.workflow.ts'), '// 用户定制')
   await cli(root, ['init'])
   stores = await openProject(root)

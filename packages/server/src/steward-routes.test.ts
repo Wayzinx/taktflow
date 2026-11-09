@@ -203,3 +203,34 @@ it('M8 runtime PATCH 验证可用性并回读；启动恢复没有偏好文件�
   await restarted.ready
   expect((await restarted.agents.get('alice')!.store.thread(thread.id)).status).toBe('interrupted')
 })
+
+it('新建会话与 PATCH 共用 runtime 校验，不可用时不落会话，已有会话忽略请求 runtime', async () => {
+  const f = await fixture()
+  await f.request('/threads')
+  const agent = f.registration.agents.get('alice')!
+  agent.deps.runtimeChoices = async () => [
+    { harness: 'codex', harnessLabel: 'Codex', model: 'ready', modelLabel: 'Ready', available: true },
+    { harness: 'codex', harnessLabel: 'Codex', model: 'missing', modelLabel: 'Missing', available: false, reason: '缺少密钥，请配置后重试' },
+  ]
+  const selected: unknown[] = []
+  agent.deps.resolveRuntime = async (_, runtime) => { selected.push(runtime); return { run: async () => '所选 harness 回复' } }
+  for (const runtime of [{ harness: 'codex', model: 'missing' }, [], 'bad', { harness: 3 }, { model: false }, { extra: true }]) {
+    const response = await f.request('/threads', 'alice', 'POST', { text: 'test', runtime })
+    expect(response.status).toBe(400)
+    if (!Array.isArray(runtime) && typeof runtime === 'object' && 'model' in runtime && runtime.model === 'missing')
+      expect(await response.text()).toContain('缺少密钥')
+    expect(await agent.store.threads()).toEqual([])
+  }
+  const runtime = { harness: 'codex', model: 'ready' }
+  const response = await f.request('/threads', 'alice', 'POST', { text: '第一轮', runtime })
+  expect(response.status).toBe(200)
+  const created = await response.json()
+  expect(created.thread.runtime).toEqual(runtime)
+  await agent.drain()
+  expect(selected).toEqual([runtime])
+  expect((await agent.store.messages(created.thread.id)).find(m => m.role === 'steward')?.text).toBe('所选 harness 回复')
+  expect((await f.request(`/threads/${created.thread.id}/messages`, 'alice', 'POST', { text: '第二轮', runtime: ['ignored'] })).status).toBe(200)
+  await agent.drain()
+  expect(selected).toEqual([runtime, runtime])
+  expect((await agent.store.thread(created.thread.id)).runtime).toEqual(runtime)
+})

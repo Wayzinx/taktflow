@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -249,6 +249,67 @@ describe('FsEventStore', () => {
     const before = await readFile(file, 'utf8')
     await expect(store.append(runId, logEvent('must-not-write'))).rejects.toThrow('断链')
     expect(await readFile(file, 'utf8')).toBe(before)
+  })
+
+  it('增量读取保留过滤语义，旧游标回读不影响后续增量读取', async () => {
+    await store.append(runId, logEvent('一'))
+    expect(await store.read(runId, { afterSeq: 0 })).toHaveLength(1)
+    await store.append(runId, { ...logEvent('二'), nodeId: 'a' })
+    await store.append(runId, { ...logEvent('三'), nodeId: 'b' })
+    expect((await store.read(runId, { afterSeq: 1, nodeId: 'b', types: ['log'] })).map(e => e.seq)).toEqual([3])
+    expect((await store.read(runId, { afterSeq: 1 })).map(e => e.seq)).toEqual([2, 3])
+    expect(await store.read(runId, { afterSeq: 3 })).toEqual([])
+    await store.append(runId, logEvent('四'))
+    expect((await store.read(runId, { afterSeq: 3 })).map(e => e.seq)).toEqual([4])
+  })
+
+  it('增量读取等待完整换行，保留跨块 UTF-8，报错保持完整文件行号', async () => {
+    const first = await store.append(runId, logEvent('一'))
+    await store.read(runId)
+    const file = eventsFile(taktDir, runId)
+    const bytes = Buffer.from(JSON.stringify({ ...first, seq: 2, data: { message: '你'.repeat(30000) } }) + '\n')
+    const cut = bytes.indexOf(Buffer.from('你')) + 1
+    await appendFile(file, bytes.subarray(0, cut))
+    expect(await store.read(runId, { afterSeq: 1 })).toEqual([])
+    await appendFile(file, bytes.subarray(cut, -1))
+    expect(await store.read(runId, { afterSeq: 1 })).toEqual([])
+    await appendFile(file, '\n')
+    const events = await store.read(runId, { afterSeq: 1 })
+    expect(events).toHaveLength(1)
+    expect(events[0]!.data).toEqual({ message: '你'.repeat(30000) })
+    await appendFile(file, '\n{bad}\n')
+    await expect(store.read(runId, { afterSeq: 2 })).rejects.toThrow(`事件日志第 4 行不是合法事件：${file}`)
+  })
+
+  it('读取缓存遇到替换或截断失效，同大小原地重写也重新校验', async () => {
+    const first = await store.append(runId, logEvent('first'))
+    await store.append(runId, logEvent('second'))
+    await store.read(runId)
+    const file = eventsFile(taktDir, runId)
+    const replacement = JSON.stringify({ ...first, seq: 10 }) + '\n'
+    await writeFile(file + '.new', replacement)
+    await rename(file + '.new', file)
+    expect((await store.read(runId, { afterSeq: 2 })).map(e => e.seq)).toEqual([10])
+    await writeFile(file, '')
+    expect(await store.read(runId, { afterSeq: 10 })).toEqual([])
+    await appendFile(file, JSON.stringify({ ...first, seq: 11 }) + '\n')
+    expect((await store.read(runId, { afterSeq: 10 })).map(e => e.seq)).toEqual([11])
+    await writeFile(file, JSON.stringify({ ...first, seq: 12 }) + '\n')
+    expect((await store.read(runId, { afterSeq: 11 })).map(e => e.seq)).toEqual([12])
+  })
+
+  it('5 万行热缓存连续 100 次尾部补读不重解析，累计小于 1 秒', async () => {
+    const first = await store.append(runId, logEvent('大文件'))
+    const file = eventsFile(taktDir, runId)
+    await writeFile(file, Array.from({ length: 50000 }, (_, i) => JSON.stringify({ ...first, seq: i + 1 })).join('\n') + '\n')
+    expect(await store.read(runId)).toHaveLength(50000)
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      const began = performance.now()
+      for (let i = 0; i < 100; i++) expect(await store.read(runId, { afterSeq: 50000 })).toEqual([])
+      expect(performance.now() - began).toBeLessThan(1000)
+      expect(parse).not.toHaveBeenCalled()
+    } finally { parse.mockRestore() }
   })
 
 })

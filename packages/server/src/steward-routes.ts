@@ -1,3 +1,4 @@
+import { validateStewardRuntime } from '@taktflow/core'
 import { StewardMcp } from './steward-mcp.js'
 import { stewardRuntime } from './steward-runtime.js'
 import { dirname, join, resolve } from 'node:path'
@@ -297,15 +298,7 @@ export function registerStewardRoutes(
   route('PATCH', '/threads/:id', async ({ request, params }, { agent, store }) => {
     await store.thread(params.id!)
     const patch = await body(request)
-    if (patch.runtime !== undefined && patch.runtime !== null) {
-      const runtime = patch.runtime as import('@taktflow/core').StewardRuntime
-      if (typeof runtime !== 'object' || Array.isArray(runtime) || Object.keys(runtime).some(key => !['harness', 'model'].includes(key)) ||
-        runtime.harness !== undefined && typeof runtime.harness !== 'string' || runtime.model !== undefined && typeof runtime.model !== 'string')
-        throw new StewardError(400, '运行配置格式错误，请重新选择 harness 和模型')
-      const choices = await agent.deps.runtimeChoices?.(await store.prefs()) ?? []
-      const choice = choices.find(choice => choice.harness === (runtime.harness ?? 'native') && choice.model === runtime.model)
-      if (!choice?.available) throw new StewardError(400, choice?.reason ?? '这个 harness 与模型组合不存在，请重新选择')
-    }
+    await validateStewardRuntime(patch.runtime, agent.deps, store)
     return store.patchThread(params.id!, patch as import('@taktflow/core').StewardThreadPatch)
   })
   route('DELETE', '/threads/:id', async ({ response, params }, { store }) => {

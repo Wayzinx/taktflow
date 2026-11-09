@@ -125,3 +125,16 @@ it.each([false, true])('mock harness 经真实 MCP 工具产生实体和提案�
     else expect(await agent.store.thread(message.threadId)).toMatchObject({ status: 'error', error: expect.stringContaining('请检查配置后重试') })
   } finally { agent.close() }
 })
+
+it('新会话第一轮直接使用请求指定的 mock harness，覆盖默认选择', async () => {
+  const f = await fixture()
+  const agent = new StewardAgent({ ...f.deps, ...f.runtime }, 'alice')
+  try {
+    const posted = await agent.post({ text: '第一轮', runtime: { harness: 'codex', model: 'good' } })
+    expect(posted.thread.runtime).toEqual({ harness: 'codex', model: 'good' })
+    expect((await posted.done).status).toBe('done')
+    expect(f.adapters.codex.run).toHaveBeenCalledOnce()
+    expect(f.adapters.native.run).not.toHaveBeenCalled()
+    expect(vi.mocked(f.adapters.codex.run).mock.calls[0]![0].model).toBe('g')
+  } finally { await agent.drain(); agent.close() }
+})

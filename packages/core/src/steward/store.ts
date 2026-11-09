@@ -163,6 +163,7 @@ export class StewardStore {
     text: string,
     at: string,
     context?: StewardThread['context'],
+    runtime?: StewardThread['runtime'],
   ): Promise<StewardThread> {
     const thread: StewardThread = {
       id: randomUUID(),
@@ -170,6 +171,7 @@ export class StewardStore {
       createdAt: at,
       updatedAt: at,
       context,
+      ...(runtime === undefined ? {} : { runtime }),
     }
     Object.assign(thread, await this.metadata(thread, []))
     await this.write(`threads/${thread.id}.json`, thread)

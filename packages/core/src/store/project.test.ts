@@ -81,7 +81,7 @@ describe('project / profiles', () => {
     expect(results.map((result) => JSON.parse(result.stdout))).toEqual(Array(4).fill(persisted))
   })
 
-  it('loadProfiles 解析 frontmatter 和正文，缺 harness 报错', async () => {
+  it('loadProfiles 解析 frontmatter 和正文，缺 harness 使用默认', async () => {
     const taktDir = path.join(root, '.takt')
     await mkdir(path.join(taktDir, 'agents'), { recursive: true })
     await writeFile(
@@ -112,7 +112,7 @@ describe('project / profiles', () => {
     expect(profiles.qa?.writeScope).toEqual([])
 
     await writeFile(path.join(taktDir, 'agents', 'broken.md'), agentDoc('role: broken\n', '缺 harness'))
-    await expect(loadProfiles(taktDir)).rejects.toThrow('harness')
+    expect((await loadProfiles(taktDir)).broken?.harness).toEqual({ harness: 'mock' })
     expect(await loadProfiles(path.join(root, 'no-agents'))).toEqual({})
   })
 

@@ -65,7 +65,14 @@ function verifyContent(buf: Buffer, runId: string): { ok: boolean; brokenAt?: nu
 }
 
 interface AppendTail { size: number; ino: number; mtimeMs: number; ctimeMs: number; seq: number; hash: string; start: number }
-const appendTails = new Map<string, AppendTail>()
+interface ReadTail { size: number; ino: number; mtimeMs: number; ctimeMs: number; offset: number; seq: number; lines: number }
+// 追加只校验尾部，读取必须校验所有完整信封；共用文件缓存，但不能用追加游标跳过尚未读过的行。
+const fileTails = new Map<string, { append?: AppendTail; read?: ReadTail }>()
+function tails(file: string) {
+  let value = fileTails.get(file)
+  if (!value) { value = {}; fileTails.set(file, value) }
+  return value
+}
 
 function checkedLine(line: string, runId: string): EventEnvelope {
   let value: unknown
@@ -79,10 +86,10 @@ async function appendTail(file: string, runId: string): Promise<AppendTail> {
   let info: Stats
   try { info = await stat(file) } catch (error) {
     if (!isEnoent(error)) throw error
-    appendTails.delete(file)
+    fileTails.delete(file)
     return { size: 0, ino: 0, mtimeMs: 0, ctimeMs: 0, seq: 0, hash: ZERO_HASH, start: 0 }
   }
-  const cached = appendTails.get(file)
+  const cached = tails(file).append
   if (cached && cached.ino === info.ino && cached.size === info.size && cached.mtimeMs === info.mtimeMs && cached.ctimeMs === info.ctimeMs) return cached
   const base = { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs }
   if (info.size === 0) return { ...base, seq: 0, hash: ZERO_HASH, start: 0 }
@@ -121,7 +128,7 @@ async function appendTail(file: string, runId: string): Promise<AppendTail> {
         if (index !== 0 || !continuing) throw error
         const full = await readFileIfExists(file)
         if (!full || !verifyContent(full, runId).ok) throw new Error(`事件日志替换后断链：${runId}`, { cause: error })
-        appendTails.delete(file)
+        fileTails.delete(file)
         return appendTail(file, runId)
       }
       if (last && (next.seq !== last.seq + 1 || next.prevHash !== last.hash)) throw new Error(`事件日志尾部断链：${runId}`)
@@ -157,7 +164,7 @@ export class FsEventStore implements EventStore {
       envelope.hash = chainHash(envelope, hashPayload(envelope))
       await appendLine(file, JSON.stringify(envelope))
       const info = await stat(file)
-      appendTails.set(file, { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, seq: envelope.seq, hash: envelope.hash, start: last.size })
+      tails(file).append = { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, seq: envelope.seq, hash: envelope.hash, start: last.size }
       return envelope
     })
   }
@@ -166,7 +173,7 @@ export class FsEventStore implements EventStore {
     runId: string,
     opts?: { afterSeq?: number; nodeId?: string; types?: EventType[] },
   ): Promise<EventEnvelope[]> {
-    let events = await this.readEvents(runId)
+    let events = await this.readEvents(runId, opts?.afterSeq)
     const afterSeq = opts?.afterSeq
     if (afterSeq !== undefined) events = events.filter((e) => e.seq > afterSeq)
     const nodeId = opts?.nodeId
@@ -190,21 +197,56 @@ export class FsEventStore implements EventStore {
     return verifyContent(buf, runId)
   }
 
-  private async readEvents(runId: string): Promise<EventEnvelope[]> {
-    const buf = await readFileIfExists(eventsFile(this.taktDir, runId))
-    if (buf === undefined) return []
-    const lines = buf.toString('utf8').split('\n')
-    const events: EventEnvelope[] = []
-    for (const [i, line] of lines.entries()) {
-      if (line.trim() === '') continue
-      try {
-        const envelope: unknown = JSON.parse(line)
-        if (!isEnvelope(envelope, runId)) throw new Error('事件信封结构或 runId 不合法')
-        events.push(envelope)
-      } catch (err) {
-        throw new Error(`事件日志第 ${i + 1} 行不是合法事件：${eventsFile(this.taktDir, runId)}`, { cause: err })
-      }
+  private async readEvents(runId: string, afterSeq?: number): Promise<EventEnvelope[]> {
+    const file = path.resolve(eventsFile(this.taktDir, runId))
+    let handle
+    try { handle = await open(file, 'r') } catch (error) {
+      if (!isEnoent(error)) throw error
+      fileTails.delete(file)
+      return []
     }
-    return events
+    try {
+      const info = await handle.stat()
+      let cached = tails(file).read
+      if (cached && (cached.ino !== info.ino || info.size < cached.size ||
+        info.size === cached.size && (info.mtimeMs !== cached.mtimeMs || info.ctimeMs !== cached.ctimeMs))) {
+        fileTails.delete(file)
+        cached = undefined
+      }
+      const incremental = cached && afterSeq !== undefined && afterSeq >= cached.seq
+      let offset = incremental ? cached!.offset : 0
+      let lines = incremental ? cached!.lines : 0
+      let seq = incremental ? cached!.seq : 0
+      let position = offset
+      let partial = Buffer.alloc(0)
+      const chunk = Buffer.alloc(64 * 1024)
+      const events: EventEnvelope[] = []
+      while (position < info.size) {
+        const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, info.size - position), position)
+        if (!bytesRead) throw new Error(`读取事件日志时文件被截断：${runId}`)
+        position += bytesRead
+        const bytes = partial.length ? Buffer.concat([partial, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead)
+        let start = 0
+        for (let end = bytes.indexOf(10); end !== -1; end = bytes.indexOf(10, start)) {
+          const line = bytes.subarray(start, end).toString('utf8')
+          offset += end - start + 1
+          start = end + 1
+          lines++
+          if (line.trim() === '') continue
+          try {
+            const envelope: unknown = JSON.parse(line)
+            if (!isEnvelope(envelope, runId)) throw new Error('事件信封结构或 runId 不合法')
+            seq = Math.max(seq, envelope.seq)
+            if (afterSeq === undefined || envelope.seq > afterSeq) events.push(envelope)
+          } catch (err) {
+            throw new Error(`事件日志第 ${lines} 行不是合法事件：${eventsFile(this.taktDir, runId)}`, { cause: err })
+          }
+        }
+        // 保留字节而非字符串，避免 UTF-8 多字节字符被块边界截断。
+        partial = Buffer.from(bytes.subarray(start))
+      }
+      tails(file).read = { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, offset, lines, seq }
+      return events
+    } finally { await handle.close() }
   }
 }

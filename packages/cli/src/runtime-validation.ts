@@ -10,8 +10,8 @@ export function validateRuntimeWorkflow(context: ProjectContext, workflow: Workf
 
 export function validateRuntime(context: ProjectContext, warn?: (message: string) => void): void {
   if (warn) {
-    for (const [role, profile] of Object.entries(context.profiles)) {
-      try { validateHarnessSelector(profile.harness, context.stores.config, context.harnesses) }
+    for (const role of Object.keys(context.profiles)) {
+      try { validateHarnessSelector(selectHarness(role, undefined, { config: context.stores.config, profiles: context.profiles, harnesses: context.harnesses }), context.stores.config, context.harnesses) }
       catch (error) {
         delete context.profiles[role]
         warn(`跳过角色 ${role}：${error instanceof Error ? error.message : String(error)}`)
@@ -23,7 +23,7 @@ export function validateRuntime(context: ProjectContext, warn?: (message: string
     }
     return
   }
-  for (const selector of [...Object.values(context.stores.config.roles ?? {}), ...Object.values(context.profiles).map((profile) => profile.harness)]) {
+  for (const selector of [...Object.values(context.stores.config.roles ?? {}), ...Object.keys(context.profiles).map(role => selectHarness(role, undefined, { config: context.stores.config, profiles: context.profiles, harnesses: context.harnesses }))]) {
     validateHarnessSelector(selector, context.stores.config, context.harnesses)
   }
   for (const workflow of context.workflows) validateRuntimeWorkflow(context, workflow)

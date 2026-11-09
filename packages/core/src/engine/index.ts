@@ -1,3 +1,5 @@
+import { roleSources } from '../store/role-sources.js'
+import { parseRoleProfile } from '../store/role-profile.js'
 import { mergeBudget } from '../util/budget.js'
 import { relative } from 'node:path'
 import type { Engine, EngineDeps } from '../interfaces.js'
@@ -36,10 +38,19 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       return await runtime.run()
     } finally { active.delete(id) }
   }
+  const currentProfiles = async (): Promise<EngineDeps> => {
+    const profiles = { ...deps.profiles }
+    for (const [role, source] of Object.entries(await roleSources(deps.stores))) {
+      // 保留调用方注入的角色；空间和插件档案优先，内置只补缺失角色。
+      if (source.origin !== 'builtin' || !profiles[role]) profiles[role] = parseRoleProfile(source.markdown, role)
+    }
+    return { ...deps, profiles }
+  }
   return {
     async start(input) {
+      const runtimeDeps = await currentProfiles()
       input = { ...input, workflow: configureRepositories(configureReviews(input.workflow, input.args ?? {}), input.args ?? {}) }
-      validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
+      validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
       const now = opts.now?.() ?? new Date()
@@ -61,17 +72,18 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         const routed = await deps.stores.events.append(state.runId, { type: 'route.decided', actor: system, data: state.route })
         await postEventMessage(deps.stores, state, routed)
       }
-      return execute(new Runtime(deps, state, input.workflow, opts, guard))
+      return execute(new Runtime(runtimeDeps, state, input.workflow, opts, guard))
     },
     async resume(runId, workflow) {
+      const runtimeDeps = await currentProfiles()
       if (active.has(runId)) throw new Error(`运行正在执行：${runId}`)
       const state = await deps.stores.runs.get(runId)
       if (!state) throw new Error(`运行不存在：${runId}`)
       if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
       if (state.status === 'cancelled') return state
       workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
-      validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
-      return execute(new Runtime(deps, state, workflow, opts, guard), true)
+      validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
+      return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true)
     },
     async cancel(runId) {
       const runtime = active.get(runId)

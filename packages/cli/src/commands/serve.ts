@@ -1,3 +1,4 @@
+import { loadRuntimeProfiles } from '../runtime-profiles.js'
 import { access } from 'node:fs/promises'
 import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
 import { RuntimeConfigError, validateHarnessSelector, type AttentionItem, type ProjectStores, type TaktConfig } from '@taktflow/core'
@@ -44,9 +45,7 @@ function liveView<T extends object>(read: () => T): T {
 
 /** 注册表在节点取适配器时读最新版本；已取出的适配器、provider 和请求不变。 */
 export function liveRuntime(initial: ProjectContext) {
-  const withRoles = (context: ProjectContext): ProjectContext => ({ ...context, profiles: Object.fromEntries(Object.entries(context.profiles)
-    .map(([role, profile]) => [role, { ...profile, harness: context.stores.config.roles?.[role] ?? profile.harness }])) })
-  let current = withRoles(initial)
+  let current = initial
   const wrap = (read: () => ProjectContext): ProjectContext => ({ ...initial,
     stores: { ...initial.stores, config: liveView(() => read().stores.config) },
     harnesses: liveView(() => read().harnesses), profiles: liveView(() => read().profiles),
@@ -69,14 +68,18 @@ export function liveRuntime(initial: ProjectContext) {
       if (Object.hasOwn(harnesses, id)) throw new Error(`harness 名称冲突：${id}`)
       Object.defineProperty(harnesses, id, { value: harness, enumerable: true, configurable: true })
     }
-    const next = withRoles({ ...initial, stores: { ...initial.stores, config: normalized }, providers, harnesses })
+    const next = { ...current, stores: { ...current.stores, config: normalized }, providers, harnesses }
     for (const selector of [...Object.values(normalized.roles ?? {}), normalized.lead?.harness, normalized.route?.harness, normalized.steward?.harness, normalized.lessons?.learner]) {
       if (selector) validateHarnessSelector(selector, normalized, harnesses)
     }
     let activated = false
     return { context: wrap(() => activated ? current : next), activate() { current = next; activated = true } }
   }
-  return { context, syncNonRuntime, prepare }
+  async function refreshProfiles() {
+    const profiles = await loadRuntimeProfiles(current.stores.paths.agents, current.plugins.roles)
+    current = { ...current, profiles }
+  }
+  return { context, syncNonRuntime, prepare, refreshProfiles }
 }
 
 export async function createLiveProject(initial: ProjectContext,
@@ -94,12 +97,14 @@ export async function createLiveProject(initial: ProjectContext,
   return {
     context,
     get lead() { return lead },
-    resolveRuntime(stores: ProjectStores) {
+    async resolveRuntime(stores: ProjectStores) {
       runtime.syncNonRuntime(stores.config)
+      await runtime.refreshProfiles()
       return engineDependencies(context)
     },
-    getCommands(stores: ProjectStores) {
+    async getCommands(stores: ProjectStores) {
       runtime.syncNonRuntime(stores.config)
+      await runtime.refreshProfiles()
       return lead.commands
     },
     async prepareRuntime(config: TaktConfig) {
@@ -123,6 +128,38 @@ export async function createLiveProject(initial: ProjectContext,
   }
 }
 
+export function liveProjects(initial: ProjectContext[],
+  onPresence: (dir: string, id: string, presence: import('@taktflow/core').LeadPresence) => void,
+  invalidate: (dir: string) => void) {
+  const runtimes = new Map<string, Awaited<ReturnType<typeof createLiveProject>>>()
+  const loading = new Map<string, Promise<Awaited<ReturnType<typeof createLiveProject>>>>()
+  const seeds = new Map(initial.map(context => [context.stores.projectDir, context]))
+  const ensure = (dir: string) => {
+    const ready = runtimes.get(dir)
+    if (ready) return Promise.resolve(ready)
+    let pending = loading.get(dir)
+    if (!pending) {
+      pending = (async () => {
+        const context = seeds.get(dir) ?? await loadRuntime(dir, { warn: console.warn })
+        const runtime = await createLiveProject(context, (id, presence) => onPresence(dir, id, presence), invalidate)
+        runtimes.set(dir, runtime)
+        seeds.delete(dir)
+        return runtime
+      })().finally(() => { loading.delete(dir) })
+      loading.set(dir, pending)
+    }
+    return pending
+  }
+  const remove = async (dir: string) => {
+    const runtime = await loading.get(dir) ?? runtimes.get(dir)
+    if (runtime) { runtimes.delete(dir); await runtime.stop(); invalidate(dir) }
+  }
+  return { runtimes, ensure, remove, async close() {
+    await Promise.allSettled([...loading.values()])
+    await Promise.all([...runtimes.keys()].map(remove))
+  } }
+}
+
 export async function runServe(options: ServeOptions): Promise<void> {
   if (options.project && options.spaces) throw new Error('--project 与 --spaces 不能同时指定')
   const loaded = options.spaces
@@ -130,25 +167,26 @@ export async function runServe(options: ServeOptions): Promise<void> {
     : [await loadRuntime(options.project, { warn: console.warn })]
   const listeners = new Map<string, Set<(presence: import('@taktflow/core').LeadPresence) => void>>()
   const catalog = createRuntimeCatalog()
-  const runtimes = new Map(await Promise.all(loaded.map(async (context) => [context.stores.projectDir,
-    await createLiveProject(context, (id, presence) => {
-      for (const send of listeners.get(`${context.stores.projectDir}:${id}`) ?? []) send(presence)
-    }, catalog.invalidate),
-  ] as const)))
-  const contexts = [...runtimes.values()].map(runtime => runtime.context)
-  const stops = [...runtimes.values()].map(runtime => runtime.stop)
-  const context = contexts[0]!
+  const projects = liveProjects(loaded, (dir, id, presence) => {
+    for (const send of listeners.get(`${dir}:${id}`) ?? []) send(presence)
+  }, catalog.invalidate)
+  const { runtimes } = projects
+  try { await Promise.all(loaded.map(context => projects.ensure(context.stores.projectDir))) }
+  catch (error) { await projects.close(); throw error }
+  const projectDir = loaded[0]?.stores.projectDir ?? options.spaces!
   const printer = createPrinter(options.json)
   const dir = await webDirectory()
   if (dir === undefined) {
     printer.warn(`Web 控制台未构建（${webDir} 不存在），先运行 npm run build -w @taktflow/web；API 仍可用。`)
   }
   const serverOptions: ServerOptions = {
+    onSpaceLoad: async stores => { await projects.ensure(stores.projectDir) },
+    onSpaceUnload: projects.remove,
     onLeadMention: options.onLeadMention,
     onSpaceLeadMention: options.onSpaceLeadMention ?? (options.onLeadMention
       ? (_, id, message) => options.onLeadMention!(id, message)
       : async (dir, id, message) => { await runtimes.get(dir)!.lead.onMessage(id, message) }),
-    ...(options.spaces ? { spacesDir: options.spaces } : { projectDir: context.stores.projectDir }),
+    ...(options.spaces ? { spacesDir: options.spaces } : { projectDir }),
     ...(options.port === undefined ? {} : { port: options.port }),
     ...(options.host === undefined ? {} : { host: options.host }),
     ...(dir === undefined ? {} : { webDir: dir }),
@@ -174,9 +212,9 @@ export async function runServe(options: ServeOptions): Promise<void> {
   }
   let server: Awaited<ReturnType<typeof createServer>>
   try { server = await createServer(serverOptions) }
-  catch (error) { await Promise.all(stops.map((stop) => stop())); throw error }
-  if (options.json) printer.data({ url: server.url, projectDir: context.stores.projectDir })
-  else printer.text(`${printer.colors.green('✔')} takt 已启动：${server.url}  ${printer.colors.dim(context.stores.projectDir)}`)
+  catch (error) { await projects.close(); throw error }
+  if (options.json) printer.data({ url: server.url, projectDir })
+  else printer.text(`${printer.colors.green('✔')} takt 已启动：${server.url}  ${printer.colors.dim(projectDir)}`)
   // serve 常驻：等待进程信号，收到后关闭。
   await new Promise<void>((resolve) => {
     const stop = () => {
@@ -187,8 +225,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     process.on('SIGINT', stop)
     process.on('SIGTERM', stop)
   })
-  await server.close()
-  await Promise.all(stops.map((stop) => stop()))
+  try { await server.close() } finally { await projects.close() }
 }
 
 /**

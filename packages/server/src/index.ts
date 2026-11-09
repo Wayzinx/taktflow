@@ -1,3 +1,4 @@
+import { AutomationRuntime } from './automation-runtime.js'
 import type { RuntimeCallbacks } from './runtime-routes.js'
 import { startMaintenance } from './maintenance.js'
 import { createServer as httpServer } from 'node:http'
@@ -20,6 +21,9 @@ import type { M3Callbacks } from './m3-routes.js'
 import { staticFile } from './static.js'
 
 export interface ServerOptions extends CatalogCallbacks, M3Callbacks, RuntimeCallbacks {
+  onSpaceLoad?: (stores: import('@taktflow/core').ProjectStores) => Promise<void>
+  onSpaceUnload?: (projectDir: string) => Promise<void>
+  automationFetch?: typeof fetch
   projectDir?: string
   spacesDir?: string
   onLeadMention?: LeadMention
@@ -36,24 +40,53 @@ export interface RunningServer { url: string; close(): Promise<void> }
 export async function createServer(options: ServerOptions): Promise<RunningServer> {
   if (options.spacesDir && options.projectDir) throw new Error('projectDir 与 spacesDir 不能同时指定')
   let spaces = options.spacesDir ? await discoverSpaces(options.spacesDir) : [await openProject(options.projectDir ?? process.cwd())]
+  for (const space of spaces) await options.onSpaceLoad?.(space)
   const byId = new Map(spaces.map((space) => [spaceId(space), space]))
+  const rememberStores = (stores: import('@taktflow/core').ProjectStores) => {
+    const index = spaces.findIndex(space => space.projectDir === stores.projectDir)
+    if (index !== -1) { spaces[index] = stores; byId.set(spaceId(stores), stores) }
+  }
   const connections = new Set<() => void>()
+  let automationUrl = ''
+  const automations = new Map<string, Promise<AutomationRuntime>>()
+  const automationRuntime = (stores: import('@taktflow/core').ProjectStores): Promise<AutomationRuntime> => {
+    rememberStores(stores)
+    let pending = automations.get(stores.projectDir)
+    if (!pending) {
+      const runtime = new AutomationRuntime(stores.projectDir, { ...options, publicUrl: automationUrl, multiSpace: !!options.spacesDir, fetch: options.automationFetch,
+        getStores: () => spaces.find(space => space.projectDir === stores.projectDir) ?? stores,
+        onError: () => { process.stderr.write('自动化维护失败，请检查空间配置与文件权限后重试\n') } })
+      pending = runtime.start().then(() => runtime).catch(async error => { automations.delete(stores.projectDir); await runtime.close(); throw error })
+      automations.set(stores.projectDir, pending)
+    }
+    return pending
+  }
+  const routeOptions = { ...options, automationRuntime }
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
-    options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, options,
+    options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, routeOptions,
     options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
   let refreshedAt = Date.now()
-  const refresh = async () => {
+  let refreshing: Promise<void> | undefined
+  const refreshSpaces = async () => {
     refreshedAt = Date.now()
-    spaces = options.spacesDir ? await discoverSpaces(options.spacesDir) : await Promise.all(spaces.map(space => openProject(space.projectDir)))
+    const next = options.spacesDir ? await discoverSpaces(options.spacesDir) : await Promise.all(spaces.map(space => openProject(space.projectDir)))
+    for (const space of next) if (!spaces.some(current => current.projectDir === space.projectDir)) await options.onSpaceLoad?.(space)
+    for (const space of spaces) if (!next.some(current => current.projectDir === space.projectDir)) {
+      const pending = automations.get(space.projectDir)
+      if (pending) { await (await pending).close(); automations.delete(space.projectDir) }
+      await options.onSpaceUnload?.(space.projectDir)
+    }
+    spaces = next
     byId.clear()
     for (const space of spaces) {
       byId.set(spaceId(space), space)
       if (!routers.has(spaceId(space))) routers.set(spaceId(space), routes(connections,
-        options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, options,
+        options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, routeOptions,
         options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention))
     }
     for (const id of routers.keys()) if (!byId.has(id)) routers.delete(id)
   }
+  const refresh = () => refreshing ??= refreshSpaces().finally(() => { refreshing = undefined })
   const admin = createRouter<Handler>()
   const modelSpaces = async () => (await Promise.all(spaces.map(space =>
     openProject(space.projectDir).catch(() => undefined)))).filter(space => space !== undefined)
@@ -135,6 +168,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         attachKnowledge(fresh, options.spacesDir)
         attachLessons(fresh)
         attachCrudServices(fresh)
+        rememberStores(fresh)
         if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname) && url.pathname !== '/api/route/preview') authorize(request, fresh)
         const result = await matched.handler({ stores: fresh, request, response, url, params: matched.params })
         if (url.pathname === '/api/space' && request.method === 'GET') {
@@ -159,13 +193,32 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const maintenance = startMaintenance(() => spaces, (stores, item) => options.onSpaceAnswer ? options.onSpaceAnswer(stores.projectDir, item) : options.onAnswer?.(item))
   const address = server.address() as AddressInfo
   stewardMcpUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/steward/mcp`
+  automationUrl = `http://${address.address.includes(':') ? `[${address.address}]` : address.address}:${address.port}`
+  const syncAutomations = async () => {
+    const dirs = new Set(spaces.map(s => s.projectDir))
+    for (const [dir, pending] of automations) if (!dirs.has(dir)) { await (await pending).close(); automations.delete(dir); await options.onSpaceUnload?.(dir) }
+    for (const space of spaces) await automationRuntime(space)
+  }
+  try { await syncAutomations() } catch (error) {
+    await maintenance.close(); await steward.close()
+    for (const pending of automations.values()) await (await pending).close()
+    await new Promise<void>(resolve => server.close(() => resolve()))
+    throw error
+  }
+  let automationRefresh: Promise<void> | undefined
+  const automationScanner = setInterval(() => {
+    if (closing || automationRefresh) return
+    automationRefresh = refresh().then(syncAutomations).catch(() => { process.stderr.write('自动化空间刷新失败，请检查空间配置后重试\n') }).finally(() => { automationRefresh = undefined })
+  }, 5000)
+  automationScanner.unref()
   let closePromise: Promise<void> | undefined
   return {
     url: `http://${address.address.includes(':') ? `[${address.address}]` : address.address}:${address.port}`,
     close() {
       if (closePromise) return closePromise
       closing = true
-      closePromise = maintenance.close().then(() => steward.close()).then(() => new Promise<void>((resolve, reject) => {
+      clearInterval(automationScanner)
+      closePromise = Promise.all([automationRefresh, refreshing]).then(async () => { for (const pending of automations.values()) await (await pending).close() }).then(() => maintenance.close()).then(() => steward.close()).then(() => new Promise<void>((resolve, reject) => {
         for (const close of connections) close()
         server.close((error) => { if (error) reject(error); else resolve() })
         server.closeAllConnections()
@@ -192,3 +245,6 @@ export { registerKnowledgeRoutes } from './knowledge-routes.js'
 
 export { StewardMcp } from './steward-mcp.js'
 export { stewardRuntime } from './steward-runtime.js'
+
+export { sendToChannel } from './channel-delivery.js'
+export { AutomationRuntime } from './automation-runtime.js'

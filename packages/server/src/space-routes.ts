@@ -1,5 +1,7 @@
 import { serialize } from './stale.js'
 import { join } from 'node:path'
+import { spaceLock } from './space-lock.js'
+import { systemWrite } from '@taktflow/core'
 import { access } from 'node:fs/promises'
 import { assertTaskResendable, TaskResendConflictError, listReviews, type RoomMember, type RoomMessage } from '@taktflow/core'
 import { authorize, actor, body, jsonBody, HttpError, integer, text } from './http.js'
@@ -79,14 +81,17 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
     return file
   })
   add('PUT', '/api/space/files', async ({ stores, url, request }) => {
-    authorize(request, stores, 'maintainer')
+    authorize(request, stores, url.searchParams.get('kind') === 'agent' ? 'owner' : 'maintainer')
     const input = await body(request)
     const content = text(input.content, 'content', true)
     const reason = text(input.reason, 'reason')
     const file = await spaceFile(stores, url.searchParams.get('kind'), url.searchParams.get('name'))
-    await auditSpace(stores, actor(request, stores), reason, `编辑 ${file.path}`)
-    await atomicWrite(join(stores.projectDir, file.path), content)
-    return { ...file, content }
+    const save = () => systemWrite(stores.projectDir, [file.path, `${file.path}.*.tmp`, '.takt/space-events.jsonl*'], async () => {
+      await auditSpace(stores, actor(request, stores), reason, `编辑 ${file.path}`)
+      await atomicWrite(join(stores.projectDir, file.path), content)
+      return { ...file, content }
+    })
+    return file.kind === 'agent' ? spaceLock(join(stores.taktDir, 'agent-edit'), save) : save()
   })
   add('GET', '/api/requirements/:id/reviews', async ({ stores, params }) => {
     await requirement(stores, params.id!)

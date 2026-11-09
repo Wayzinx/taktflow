@@ -61,7 +61,8 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const skills = `技能清单：${profile.skills.join(', ') || '（无）'}`
     add('skill', '技能清单', skills)
     const summaries: string[] = []
-    const spec = Array.isArray(node.knowledge) ? { prefetch: node.knowledge, mode: 'prefetch' as const } : node.knowledge
+    const declared = Array.isArray(node.knowledge) ? { prefetch: node.knowledge, mode: 'prefetch' as const } : node.knowledge
+    const spec = declared || profile.knowledge !== undefined ? { ...declared, bases: declared?.bases ?? profile.knowledge } : undefined
     const prefetch = Array.isArray(node.knowledge) ? node.knowledge : node.knowledge?.mode === 'tool' ? [] : node.knowledge?.prefetch ?? []
     // 接上空的 KnowledgeStore 不代表已迁移；批准绑定之前仍使用旧知识源。
     const hasBindings = stores.kb && (await stores.kb.bindings()).length > 0

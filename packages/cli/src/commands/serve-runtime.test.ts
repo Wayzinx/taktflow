@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import { initProject, type TaktConfig, type WorkflowDefinition } from '@taktflow/core'
+import { initProject, parseRoleProfile, selectHarness, type TaktConfig, type WorkflowDefinition } from '@taktflow/core'
 import { createHarnesses } from '@taktflow/harness'
 import { liveRuntime } from './serve.js'
 import { createRunEngine, type ProjectContext } from '../project.js'
@@ -29,6 +29,7 @@ it('热更新后同一运行的新节点选新 harness，在途节点仍返回�
   const pending = new Promise<void>(resolve => { release = resolve })
   const entered = new Promise<void>(resolve => { started = resolve })
   context.harnesses.mock!.run = async () => { started(); await pending; return { ok: true, finalText: 'old-result' } }
+  context.profiles.dev = parseRoleProfile('---\ntitle: dev\n---\n', 'dev')
   const live = liveRuntime(context)
   const req = await context.stores.workspaces.createRequirement({ title: 'hot reload' })
   const workflow: WorkflowDefinition = { id: 'hot', title: 'hot', version: '1', stages: [], nodes: [
@@ -41,9 +42,9 @@ it('热更新后同一运行的新节点选新 harness，在途节点仍返回�
     { id: 'new-agent', kind: 'cli', command: [process.execPath, '-e', "console.log('new-result')"], available: [process.execPath, '--version'], output: { format: 'text' } },
   ] }
   const prepared = live.prepare(config)
-  expect(live.context.profiles.dev!.harness.harness).toBe('mock')
+  expect(selectHarness('dev', undefined, { ...live.context, config: live.context.stores.config }).harness).toBe('mock')
   prepared.activate()
-  expect(live.context.profiles.dev!.harness.harness).toBe('new-agent')
+  expect(selectHarness('dev', undefined, { ...live.context, config: live.context.stores.config }).harness).toBe('new-agent')
   release()
   const state = await running
   expect(state.status, JSON.stringify(state.nodes)).toBe('succeeded')
@@ -51,7 +52,7 @@ it('热更新后同一运行的新节点选新 harness，在途节点仍返回�
   expect(state.nodes.second!.result).toBe('new-result\n')
   const next = live.prepare({ ...config, roles: { dev: { harness: 'mock' } } })
   next.activate()
-  expect(prepared.context.profiles.dev!.harness.harness).toBe('mock')
+  expect(selectHarness('dev', undefined, { ...prepared.context, config: prepared.context.stores.config }).harness).toBe('mock')
 })
 it('停用项不探测且可重新启用；模型目录读取本机来源和 embedding kind', async () => {
   const { context } = await fixture()

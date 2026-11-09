@@ -1,8 +1,9 @@
+import { parseRoleProfile } from './role-profile.js'
 import { mkdir, readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createQualityStore } from '../quality/index.js'
 import type { ProjectStores } from '../interfaces.js'
-import type { AgentProfile, HarnessSelector, SkillRecord, TaktConfig } from '../types.js'
+import type { AgentProfile, SkillRecord, TaktConfig } from '../types.js'
 import { parseFrontmatter } from '../util/frontmatter.js'
 import { FsChatStore } from './fs-chat.js'
 import { FsAttentionStore } from './fs-attention.js'
@@ -84,8 +85,7 @@ export async function loadProfiles(source: string | ProjectStores['paths']): Pro
   )
   for (const entry of files) {
     const file = path.join(dir, entry.name)
-    const { data, body } = parseFrontmatter(await readFile(file, 'utf8'))
-    const profile = toProfile(file, entry.name, data, body)
+    const profile = parseRoleProfile(await readFile(file, 'utf8'), entry.name.replace(/\.md$/, ''))
     if (profiles[profile.role] !== undefined) throw new Error(`角色重复：${profile.role}（${file}）`)
     profiles[profile.role] = profile
   }
@@ -111,48 +111,9 @@ function assertConfig(value: unknown, file: string): TaktConfig {
   return config
 }
 
-function toProfile(file: string, fileName: string, data: Record<string, unknown>, body: string): AgentProfile {
-  const role = readString(data, 'role') ?? fileName.replace(/\.md$/, '')
-  const profile: AgentProfile = {
-    role,
-    title: readString(data, 'title') ?? role,
-    description: readString(data, 'description') ?? '',
-    harness: readHarness(data, file),
-    skills: readStringList(data, 'skills', file),
-    writeScope: readStringList(data, 'writeScope', file),
-    instructions: body.trim(),
-  }
-  const readScope = data.readScope
-  if (readScope !== undefined) {
-    if (!Array.isArray(readScope) || readScope.some((item) => typeof item !== 'string')) {
-      throw new Error(`角色档案 readScope 必须是字符串数组：${file}`)
-    }
-    profile.readScope = readScope as string[]
-  }
-  return profile
-}
-
 function readString(data: Record<string, unknown>, key: string): string | undefined {
   const value = data[key]
   return typeof value === 'string' && value !== '' ? value : undefined
-}
-
-function readStringList(data: Record<string, unknown>, key: string, file: string): string[] {
-  const value = data[key]
-  if (value === undefined) return []
-  if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
-    throw new Error(`角色档案 ${key} 必须是字符串数组：${file}`)
-  }
-  return value as string[]
-}
-
-function readHarness(data: Record<string, unknown>, file: string): HarnessSelector {
-  const value = data.harness
-  if (typeof value === 'string' && value !== '') return { harness: value }
-  if (typeof value === 'object' && value !== null && typeof (value as { harness?: unknown }).harness === 'string') {
-    return value as HarnessSelector
-  }
-  throw new Error(`角色档案缺 harness（或格式不对）：${file}`)
 }
 
 export async function listSkills(skillsDir: string): Promise<SkillRecord[]> {

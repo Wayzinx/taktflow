@@ -1,4 +1,4 @@
-import { providerProtocols, resolveSecret } from '@taktflow/core'
+import { providerProtocols, resolveSecret, selectHarness } from '@taktflow/core'
 import { createHarnesses, harnessCommand, collectSecrets, createRedactor } from '@taktflow/harness'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -26,7 +26,7 @@ function catalogHarnesses(context: ProjectContext) {
 export async function runtimeHarnesses(context: ProjectContext, onProbeError?: () => void): Promise<HarnessInfo[]> {
   const { config } = context.stores
   const roles = { ...config.roles }
-  for (const [role, profile] of Object.entries(context.profiles)) roles[role] = config.roles?.[role] ?? profile.harness
+  for (const role of Object.keys(context.profiles)) roles[role] = selectHarness(role, undefined, { ...context, config })
   const registry = catalogHarnesses(context)
   const harnesses = await Promise.all(Object.entries(registry).map(async ([id, harness]): Promise<HarnessInfo> => {
     let availability: { ok: boolean; reason?: string }
@@ -95,8 +95,6 @@ export function createRuntimeCatalog(options: {
     const entry: RuntimeEntry = {
       mtime: modified, expires: Infinity,
       promise: Promise.resolve().then(() => load(dir)).then((context) => {
-        context = { ...context, profiles: Object.fromEntries(Object.entries(context.profiles).map(([role, profile]) =>
-          [role, { ...profile, harness: context.stores.config.roles?.[role] ?? profile.harness }])) }
         // 目录要能展示被停用的默认角色；执行注册表仍保持移除状态。
         validate({ ...context, harnesses: catalogHarnesses(context) })
         entry.expires = now() + ttl

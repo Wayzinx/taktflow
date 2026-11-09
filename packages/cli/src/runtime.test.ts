@@ -157,7 +157,7 @@ it.each(['module', 'factory'])('doctor %s 异常按 apiKeyEnv 脱敏', async (bo
   expect(result.stdout).toContain('[REDACTED]')
 })
 
-it('角色 allowBash 保留 boolean，错误类型拒绝；本地与插件角色冲突拒绝', async () => {
+it('角色 allowBash 保留 boolean，错误类型拒绝；本地覆盖同名插件角色', async () => {
   const dir = await fixture()
   await writeFile(join(dir, '.takt/agents/dev.md'), '---\nharness: mock\nallowBash: true\n---\nDev')
   expect((await loadRuntime(dir)).profiles.dev?.allowBash).toBe(true)
@@ -165,7 +165,7 @@ it('角色 allowBash 保留 boolean，错误类型拒绝；本地与插件角色
   await expect(loadRuntime(dir)).rejects.toThrow('allowBash')
   const other = await pluginProject()
   await writeFile(join(other, '.takt/agents/plug-role.md'), '---\nharness: mock\n---\nDuplicate')
-  await expect(loadRuntime(other)).rejects.toThrow('角色名称冲突')
+  expect((await loadRuntime(other)).profiles['plug-role']?.instructions).toBe('Duplicate')
 })
 
 it('直接文件 workflow 的能力错误在创建 run 前失败；mock override 使用生效的选择', async () => {

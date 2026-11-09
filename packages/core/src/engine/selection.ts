@@ -1,3 +1,4 @@
+import { explicitRoleHarness } from '../store/role-profile.js'
 import type { AgentProfile, HarnessAdapter, HarnessCapabilities, HarnessRequest, HarnessSelector, ModelConfig, NodeDef, ProviderConfig, ProviderProtocol, TaktConfig, WorkflowDefinition } from '../types.js'
 
 
@@ -26,7 +27,7 @@ export function harnessSelectors(selector: HarnessSelector): HarnessSelector[] {
 export function selectHarness(role: string, selector: HarnessSelector | undefined, context: SelectionContext, override?: string): HarnessSelector {
   const profile = context.profiles[role]
   if (!profile) throw new Error(`角色不存在：${role}`)
-  const base = selector ?? profile.harness ?? context.config.roles?.[role] ?? { harness: 'mock' }
+  const base = selector ?? explicitRoleHarness(profile) ?? context.config.roles?.[role] ?? { harness: 'mock' }
   return override ? { ...base, harness: override, fallback: undefined } : base
 }
 
