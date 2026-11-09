@@ -29,7 +29,13 @@ export function checkCompletion(criteria: string[], data: unknown): { checks: Co
 }
 
 export function resultSummary(data: unknown, finalText: string): string {
-  const summary = data && typeof data === 'object' && 'summary' in data && typeof data.summary === 'string' ? data.summary : finalText.split(/\r?\n/)[0] ?? ''
+  const record = data && typeof data === 'object' ? data as { summary?: unknown; items?: unknown } : {}
+  let summary = typeof record.summary === 'string' ? record.summary : finalText.split(/\r?\n/)[0] ?? ''
+  // 原生结构约束时最终回复本身就是 JSON：规划写成条目，其余不把原始 JSON 当小结
+  if (typeof record.summary !== 'string' && Array.isArray(record.items)) {
+    const titles = record.items.map(item => item && typeof item === 'object' && typeof (item as { title?: unknown }).title === 'string' ? (item as { title: string }).title : '').filter(Boolean)
+    summary = `规划 ${record.items.length} 个条目${titles.length ? `：${titles.join('、')}` : ''}`
+  } else if (typeof record.summary !== 'string' && /^\s*[[{]/.test(summary)) summary = ''
   return [...summary].slice(0, 80).join('')
 }
 

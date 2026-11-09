@@ -30,6 +30,12 @@ describe('完成标准契约', () => {
     expect([...resultSummary({ summary: '😀'.repeat(81) }, '')]).toHaveLength(80)
     expect(resultSummary(undefined, '完成\n详情')).toBe('完成')
   })
+  it('原生结构约束时最终回复就是 JSON：规划写成条目，其余不把原始 JSON 当小结', () => {
+    const plan = { items: [{ key: 'a', title: '逻辑骨架' }, { key: 'b', title: '移动碰撞' }] }
+    expect(resultSummary(plan, JSON.stringify(plan))).toBe('规划 2 个条目：逻辑骨架、移动碰撞')
+    expect(resultSummary({ checks: [] }, '{"checks":[]}')).toBe('')
+    expect(resultSummary({ summary: '照用', items: [] }, '')).toBe('照用')
+  })
 })
 
 it('真实存储回读 node.checks 并验证审计链（M3 事件接入回归）', async () => {
