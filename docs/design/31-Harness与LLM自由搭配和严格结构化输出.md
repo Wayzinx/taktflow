@@ -3,6 +3,7 @@
 > 状态：第一版已实现。协议桥与搭配 e39bd18（docs/dev/m8-backend-c7.md）；严格结构化输出 65abe33（docs/dev/m8-backend-c8.md）；设置页搭配矩阵、统一选择器 e03aed7。
 > 真实验收（DeepSeek）：claude-code / codex / trae 的直连与桥接各跑通一次工具往返，三者的原生结构约束（`--json-schema` / `--output-schema`）各跑通一次。Pi 本机未安装，只有单测。
 > 范围：第一版覆盖 Claude Code（CLI + ACP）、Codex、TRAE CLI、Pi 四个 harness，以及国内外常见的 LLM API。
+> 补充：管家换 harness × 模型、保存角色时的搭配校验，与节点调用用同一套判断（补全 provider 预设入口、可经协议桥）；管家只列接 MCP 的 harness（Claude Code、Codex、TRAE CLI；Pi 不接 MCP）。planner 条目的 `params.paths` 展开前先和改代码节点的写权限核对。
 
 ## 1. 结论
 

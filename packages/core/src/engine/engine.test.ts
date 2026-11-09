@@ -295,6 +295,20 @@ describe('core-engine：简报六类基本验收', () => {
     expect(await stores.events.verify(state.runId)).toEqual({ ok: true })
   })
 
+  it('planner：条目 params.paths 超出改代码节点的写权限时整体失败，不展开、不等实现被守卫拦', async () => {
+    const items = [{ key: 'game', title: '小游戏', role: 'dev', params: { repo: 'app', paths: ['games/tank/logic.js', 'src/ok.ts'] } }]
+    const { requirementId, harness, deps } = await fixture(() => jsonResult({ items }))
+    deps.profiles.dev = { ...deps.profiles.dev!, writeScope: ['src/**'] }
+    const state = await createEngine(deps).start({ requirementId, workflow: workflow([
+      planner({ id: 'plan', title: '规划', role: 'architect', prompt: '规划', maxItems: 3, allowedRoles: ['dev'], expand: () => [agent({ id: 'code', title: '实现', role: 'dev', repo: 'app', prompt: '实现' })] }),
+    ]) })
+    expect(state.nodes.plan?.status).toBe('failed')
+    expect(state.nodes.plan?.error).toContain('game 要改 games/tank/logic.js，角色 dev 只能写 src/**')
+    expect(state.nodes.plan?.error).not.toContain('src/ok.ts')
+    expect(state.expansions).toEqual([])
+    expect(harness.calls).toHaveLength(1)
+  })
+
   it('planner：超过 maxItems 整体失败，不截断展开，下游保持 pending', async () => {
     const items = ['a', 'b', 'c', 'd'].map((key) => ({ key, title: key, role: 'dev' }))
     const { stores, requirementId, harness, deps } = await fixture(() => jsonResult({ items }))

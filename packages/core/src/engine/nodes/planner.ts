@@ -10,6 +10,7 @@ import { intersectWriteScopes } from '../scope.js'
 import { scopesOverlap } from '../fingerprint.js'
 import { validateDependencies } from '../graph.js'
 import { PLANNER_SCHEMA } from './schemas.js'
+import { matchGlob } from '../../util/glob.js'
 
 export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promise<void> {
   const node = entry.def
@@ -23,6 +24,8 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
     try {
       value = await withCapture(host, node.id, { role: 'planner', checkpointId: point.id }, () => host.model(entry, ctx, node.role, node.prompt, PLANNER_SCHEMA)) as { items: PlannedItem[] }
       const groups = expandPlanner(node, value.items)
+      const outside = plannedScopeProblems(groups, host.deps.profiles)
+      if (outside.length) throw new Error(`规划的条目要改的文件不在写权限里：${outside.join('；')}。改角色的写权限，或调整设计里的文件位置后重试这个节点`)
       for (const message of serializePlannerGroups(groups, host.deps.profiles)) await host.emit('log', { level: 'info', message }, node.id)
       const definitions = groups.flatMap((group) => group.nodes)
       const workflow = { id: node.id, title: node.title, version: '1', stages: [], nodes: definitions }
@@ -41,6 +44,25 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
   host.containerState(ns, expansion.nodeIds)
   await host.save()
 
+}
+
+/**
+ * 条目在 params.paths 里列了要改的文件时，展开前先和改代码节点（带 repo 的 agent）的写权限对一遍：
+ * 对不上的实现必然被写权限守卫拦下，不如现在就失败，别等实现跑完。
+ */
+export function plannedScopeProblems(groups: ReturnType<typeof expandPlanner>, profiles: Record<string, AgentProfile> = {}): string[] {
+  const problems: string[] = []
+  for (const group of groups) {
+    const paths = group.item.params?.paths
+    if (!Array.isArray(paths) || !paths.every((path): path is string => typeof path === 'string')) continue
+    for (const child of group.nodes) {
+      if (child.kind !== 'agent' || !child.repo || !profiles[child.role]) continue
+      const scope = intersectWriteScopes(profiles[child.role]!.writeScope, child.writeScope)
+      const outside = paths.filter((path) => !scope.some((pattern) => matchGlob(pattern, path)))
+      if (outside.length) problems.push(`${group.item.key} 要改 ${outside.join('、')}，角色 ${child.role} 只能写 ${scope.join('、') || '（无）'}`)
+    }
+  }
+  return problems
 }
 
 export function serializePlannerGroups(groups: ReturnType<typeof expandPlanner>, profiles: Record<string, AgentProfile> = {}): string[] {
