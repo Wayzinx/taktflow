@@ -293,7 +293,9 @@ export class FsEventStore implements EventStore {
         if (!complete) return true
         offset = end
         lines++
-        if (line.trim()) {
+        const legacy = legacyThinkingSeq(line)
+        if (legacy !== undefined) seq = Math.max(seq, legacy)
+        else if (line.trim()) {
           try {
             const envelope: unknown = JSON.parse(line)
             if (!isEnvelope(envelope, runId)) throw new Error('事件信封结构或 runId 不合法')
@@ -311,4 +313,16 @@ export class FsEventStore implements EventStore {
       return events
     } finally { await handle.close() }
   }
+}
+
+/**
+ * 旧版 claude-code 解析器把每个 thinking token 记成一条 harness.message（5bf083e 起不再写入）。一次长运行能攒下
+ * 几十万条、几百 MB，读取时整份解析会把 serve 撑到堆上限崩溃。读取时不解析、不返回它们，只取 seq 维持检查点；
+ * 哈希链校验照常逐行计入。按旧解析器写出的 data 前缀精确匹配，真实事件不会命中。
+ */
+const LEGACY_THINKING = '"data":{"role":"system","text":"{\\"type\\":\\"system\\",\\"subtype\\":\\"thinking_tokens\\"'
+function legacyThinkingSeq(line: string): number | undefined {
+  if (!line.includes(LEGACY_THINKING) || !line.includes('"type":"harness.message"')) return undefined
+  const match = /^\{"seq":(\d+),/.exec(line)
+  return match ? Number(match[1]) : undefined
 }

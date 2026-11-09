@@ -312,4 +312,22 @@ describe('FsEventStore', () => {
     } finally { parse.mockRestore() }
   })
 
+
+  it('旧版 claude-code 逐 token 记下的 thinking 事件读取时跳过，游标和哈希链校验不受影响', async () => {
+    const thinking = (n: number) => ({
+      type: 'harness.message' as const,
+      actor: { type: 'agent' as const, role: 'pm', harness: 'claude-code' },
+      data: { role: 'system' as const, text: JSON.stringify({ type: 'system', subtype: 'thinking_tokens', estimated_tokens: n, estimated_tokens_delta: 1 }) },
+    })
+    await store.append(runId, logEvent('开始'))
+    for (let n = 1; n <= 1500; n++) await store.append(runId, thinking(n))
+    // 真实事件里提到 thinking_tokens（比如 Agent 自己说的话）不能被误跳过
+    await store.append(runId, { ...thinking(0), data: { role: 'assistant' as const, text: '{"type":"system","subtype":"thinking_tokens"}' } })
+    await store.append(runId, logEvent('结束'))
+    const all = await store.read(runId)
+    expect(all.map((e) => e.seq)).toEqual([1, 1502, 1503])
+    expect((await store.read(runId, { afterSeq: 1200 })).map((e) => e.seq)).toEqual([1502, 1503])
+    expect((await new FsEventStore(taktDir).read(runId, { afterSeq: 1 })).map((e) => e.seq)).toEqual([1502, 1503])
+    expect(await store.verify(runId)).toEqual({ ok: true })
+  })
 })
