@@ -1,9 +1,10 @@
-import { Fragment, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
+import { parseMarkdown, type MdBlock } from './markdown-parse'
 import './markdown.css'
 
 /**
  * 轻量 Markdown 渲染：标题、段落、列表（可嵌套）、代码块（diff 着色）、表格、引用、分隔线、
- * 行内代码、粗体、斜体、链接。直接生成 React 元素，不拼 HTML，天然防注入。
+ * 行内代码、粗体、斜体、链接。直接生成 React 元素，不拼 HTML，天然防注入。块结构的解析在 markdown-parse.ts。
  */
 
 const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)\s]+\))|(\*[^*\s][^*]*\*)/g
@@ -35,72 +36,6 @@ function inline(text: string, keyBase = ''): ReactNode[] {
   return out
 }
 
-interface ListItem {
-  text: string[]
-  children: ListNode | null
-}
-interface ListNode {
-  ordered: boolean
-  start: number
-  items: ListItem[]
-}
-
-const LIST_RE = /^(\s*)([-*+]|\d+\.)\s+(.*)$/
-
-function parseList(lines: string[]): ListNode {
-  const first = LIST_RE.exec(lines[0]!)!
-  const baseIndent = first[1]!.length
-  const ordered = /\d/.test(first[2]!)
-  const node: ListNode = { ordered, start: ordered ? parseInt(first[2]!, 10) : 1, items: [] }
-  let i = 0
-  while (i < lines.length) {
-    const m = LIST_RE.exec(lines[i]!)
-    if (m && m[1]!.length === baseIndent) {
-      node.items.push({ text: [m[3]!], children: null })
-      i++
-      continue
-    }
-    // 更深缩进：子列表或续行
-    const sub: string[] = []
-    while (i < lines.length) {
-      const mm = LIST_RE.exec(lines[i]!)
-      if (mm && mm[1]!.length <= baseIndent) break
-      sub.push(lines[i]!)
-      i++
-    }
-    const item = node.items[node.items.length - 1]
-    if (!item) break
-    const subList = sub.filter((l) => LIST_RE.test(l))
-    const cont = sub.filter((l) => !LIST_RE.test(l))
-    item.text.push(...cont.map((l) => l.trim()))
-    if (subList.length) item.children = parseList(sub.filter((l) => LIST_RE.test(l) || l.trim()))
-  }
-  return node
-}
-
-function renderList(node: ListNode, key: string): ReactNode {
-  const items = node.items.map((it, i) => (
-    <li key={i}>
-      {inline(it.text.join(' '), `${key}-${i}`)}
-      {it.children && renderList(it.children, `${key}-${i}-c`)}
-    </li>
-  ))
-  return node.ordered ? (
-    <ol key={key} start={node.start}>
-      {items}
-    </ol>
-  ) : (
-    <ul key={key}>{items}</ul>
-  )
-}
-
-const splitRow = (line: string) =>
-  line
-    .trim()
-    .replace(/^\||\|$/g, '')
-    .split('|')
-    .map((c) => c.trim())
-
 function CodeBlock({ lang, code }: { lang: string; code: string }) {
   if (lang === 'diff') {
     return (
@@ -122,93 +57,68 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
 }
 
 export function Markdown({ source }: { source: string }) {
-  const lines = source.replace(/\r\n/g, '\n').split('\n')
-  const blocks: ReactNode[] = []
-  let i = 0
-  let k = 0
-  while (i < lines.length) {
-    const line = lines[i]!
-    const key = `b${k++}`
-    if (!line.trim()) {
-      i++
-      continue
-    }
-    const fence = /^```(\w*)/.exec(line)
-    if (fence) {
-      const body: string[] = []
-      i++
-      while (i < lines.length && !lines[i]!.startsWith('```')) body.push(lines[i++]!)
-      i++
-      blocks.push(<CodeBlock key={key} lang={fence[1] ?? ''} code={body.join('\n')} />)
-      continue
-    }
-    const h = /^(#{1,4})\s+(.*)$/.exec(line)
-    if (h) {
-      const level = h[1]!.length
-      const content = inline(h[2]!, key)
-      blocks.push(level === 1 ? <h1 key={key}>{content}</h1> : level === 2 ? <h2 key={key}>{content}</h2> : level === 3 ? <h3 key={key}>{content}</h3> : <h4 key={key}>{content}</h4>)
-      i++
-      continue
-    }
-    if (/^(-{3,}|\*{3,})\s*$/.test(line)) {
-      blocks.push(<hr key={key} />)
-      i++
-      continue
-    }
-    if (line.startsWith('>')) {
-      const body: string[] = []
-      while (i < lines.length && lines[i]!.startsWith('>')) body.push(lines[i++]!.replace(/^>\s?/, ''))
-      blocks.push(
-        <blockquote key={key}>
-          <Markdown source={body.join('\n')} />
-        </blockquote>,
-      )
-      continue
-    }
-    if (line.includes('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1]!)) {
-      const head = splitRow(line)
-      const align = splitRow(lines[i + 1]!).map((c) => (c.endsWith(':') ? (c.startsWith(':') ? 'center' : 'right') : undefined))
-      i += 2
-      const rows: string[][] = []
-      while (i < lines.length && lines[i]!.includes('|') && lines[i]!.trim()) rows.push(splitRow(lines[i++]!))
-      blocks.push(
-        <div className="md-table-wrap" key={key}>
-          <table>
-            <thead>
-              <tr>
-                {head.map((c, j) => (
-                  <th key={j} style={{ textAlign: align[j] }}>
-                    {inline(c, `${key}h${j}`)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, ri) => (
-                <tr key={ri}>
-                  {head.map((_, j) => (
-                    <td key={j} style={{ textAlign: align[j] }}>
-                      {inline(r[j] ?? '', `${key}r${ri}c${j}`)}
-                    </td>
+  const blocks = useMemo(() => parseMarkdown(source), [source])
+  return <div className="md">{renderBlocks(blocks, 'b')}</div>
+}
+
+function renderBlocks(blocks: MdBlock[], keyBase: string): ReactNode[] {
+  return blocks.map((block, j) => {
+    const key = `${keyBase}${j}`
+    switch (block.type) {
+      case 'heading': {
+        const content = inline(block.text, key)
+        return block.level === 1 ? <h1 key={key}>{content}</h1> : block.level === 2 ? <h2 key={key}>{content}</h2> : block.level === 3 ? <h3 key={key}>{content}</h3> : <h4 key={key}>{content}</h4>
+      }
+      case 'paragraph':
+        return <p key={key}>{inline(block.text, key)}</p>
+      case 'hr':
+        return <hr key={key} />
+      case 'code':
+        return <CodeBlock key={key} lang={block.lang} code={block.code} />
+      case 'quote':
+        return <blockquote key={key}>{renderBlocks(block.blocks, `${key}q`)}</blockquote>
+      case 'table':
+        return (
+          <div className="md-table-wrap" key={key}>
+            <table>
+              <thead>
+                <tr>
+                  {block.head.map((c, i) => (
+                    <th key={i} style={{ textAlign: block.align[i] }}>
+                      {inline(c, `${key}h${i}`)}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>,
-      )
-      continue
+              </thead>
+              <tbody>
+                {block.rows.map((r, ri) => (
+                  <tr key={ri}>
+                    {block.head.map((_, i) => (
+                      <td key={i} style={{ textAlign: block.align[i] }}>
+                        {inline(r[i] ?? '', `${key}r${ri}c${i}`)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      case 'list': {
+        const items = block.items.map((it, i) => (
+          <li key={i}>
+            {inline(it.text, `${key}-${i}`)}
+            {renderBlocks(it.blocks, `${key}-${i}-`)}
+          </li>
+        ))
+        return block.ordered ? (
+          <ol key={key} start={block.start}>
+            {items}
+          </ol>
+        ) : (
+          <ul key={key}>{items}</ul>
+        )
+      }
     }
-    if (LIST_RE.test(line)) {
-      const body: string[] = []
-      while (i < lines.length && (LIST_RE.test(lines[i]!) || (/^\s{2,}\S/.test(lines[i]!) && body.length > 0))) body.push(lines[i++]!)
-      blocks.push(renderList(parseList(body), key))
-      continue
-    }
-    const para: string[] = []
-    while (i < lines.length && lines[i]!.trim() && !/^(#{1,4}\s|```|>|\s*([-*+]|\d+\.)\s)/.test(lines[i]!)) para.push(lines[i++]!)
-    if (para.length === 0) para.push(lines[i++]!)
-    blocks.push(<p key={key}>{inline(para.join(' '), key)}</p>)
-  }
-  return <div className="md">{blocks.map((b, j) => <Fragment key={j}>{b}</Fragment>)}</div>
+  })
 }

@@ -50,6 +50,15 @@
 .md li > ol {
   margin: 2px 0;
 }
+/* 列表项里的段落、表格、代码块收紧上下间距，跟着项走 */
+.md li > p {
+  margin: 4px 0;
+}
+.md li > .md-table-wrap,
+.md li > .md-code,
+.md li > blockquote {
+  margin: 6px 0;
+}
 .md a {
   color: var(--accent-text);
   text-decoration: underline;
