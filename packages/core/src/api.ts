@@ -1448,6 +1448,8 @@ export interface StewardPostRequest {
   context?: StewardContextRef[]
   /** 附件（文本）：作为消息上下文，不落盘。 */
   attachments?: Array<{ name: string; content: string }>
+  /** 只在新建会话时有效：第一条回复就用这个 harness × 模型（校验同 PATCH runtime）；已有会话改用 PATCH。 */
+  runtime?: StewardRuntime
 }
 
 export type StewardStreamEvent =
