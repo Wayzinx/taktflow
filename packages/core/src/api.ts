@@ -388,6 +388,8 @@ export interface RunSummary {
   kind?: RunState['kind']
   origin?: RunState['origin']
   tier?: Tier
+  /** 状态还是 running，但没有任何进程在执行它（serve 重启或崩溃留下的）；可用 run.resume 续跑。 */
+  interrupted?: true
 }
 
 /** DAG 画布用的图：静态定义 + 运行状态 + 动态展开合并后的结果。 */
@@ -440,6 +442,8 @@ export interface RunDetail {
   graph: { nodes: GraphNode[]; edges: GraphEdge[] }
   budget?: BudgetStatus
   quality?: QualityMetrics
+  /** 同 RunSummary.interrupted。 */
+  interrupted?: true
 }
 
 export interface BudgetStatus {
