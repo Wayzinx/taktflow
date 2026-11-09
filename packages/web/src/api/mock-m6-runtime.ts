@@ -9,6 +9,9 @@ import type {
   HarnessInfo,
   HarnessSelector,
   ModelInfo,
+  PairingInfo,
+  ProviderConfig,
+  ProviderProtocol,
   RuntimeConfig,
   RuntimeConfigPatch,
   RuntimeSystemRole,
@@ -30,10 +33,18 @@ interface Builtin {
   probe: { ok: true; detail: string } | { ok: false; reason: string }
 }
 
+const RESPONSES_FAMILY: HarnessCapabilities = { ...ALL, cost: false, compactionEvents: false, sandbox: false, providerProtocols: ['openai-responses'] }
+
 const BUILTINS: Builtin[] = [
-  { id: 'claude-code', displayName: 'Claude Code', source: 'builtin', command: ['claude'], capabilities: ALL, probe: { ok: true, detail: 'claude 2.4.1 · stream-json' } },
-  { id: 'codex', displayName: 'Codex', source: 'builtin', command: ['codex'], capabilities: { ...ALL, cost: false, compactionEvents: false }, probe: { ok: true, detail: 'codex-cli 0.98.0 · exec --json' } },
-  { id: 'native', displayName: 'takt native', source: 'native', capabilities: { ...ALL, customProvider: false }, probe: { ok: true, detail: '内置：直接调用 provider 的 HTTP 接口' } },
+  { id: 'claude-code', displayName: 'Claude Code', source: 'builtin', command: ['claude'], capabilities: { ...ALL, compactionEvents: false, sandbox: false, providerProtocols: ['anthropic-messages'] }, probe: { ok: true, detail: 'claude 2.6.3 · stream-json' } },
+  { id: 'codex', displayName: 'Codex', source: 'builtin', command: ['codex'], capabilities: RESPONSES_FAMILY, probe: { ok: true, detail: 'codex-cli 0.159.2 · exec --json' } },
+  { id: 'trae', displayName: 'TRAE CLI', source: 'builtin', command: ['traecli'], capabilities: RESPONSES_FAMILY, probe: { ok: true, detail: 'traecli 0.213.1 · exec --json' } },
+  {
+    id: 'pi', displayName: 'Pi', source: 'builtin', command: ['pi'],
+    capabilities: { ...ALL, structuredOutput: false, sandbox: false, providerProtocols: ['openai-chat', 'anthropic-messages', 'openai-responses', 'gemini'] },
+    probe: { ok: true, detail: 'pi 0.71.0 · --mode json' },
+  },
+  { id: 'native', displayName: 'takt native', source: 'native', capabilities: { ...ALL, sandbox: false, mcp: false, providerProtocols: ['openai-chat', 'anthropic-messages'], requiresProvider: true }, probe: { ok: true, detail: '内置：直接调用 provider 的 HTTP 接口' } },
   {
     id: 'dsh', displayName: 'DeepSeek Harness', source: 'builtin', command: ['dsh'],
     capabilities: { resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: true, customProvider: false, sandbox: true, mcp: false },
@@ -45,6 +56,31 @@ const BUILTINS: Builtin[] = [
     probe: { ok: false, reason: '未安装：PATH 中找不到 gemini（npm i -g @google/gemini-cli）' },
   },
 ]
+
+/** 预设登记过的其他协议入口（与 packages/harness 的 presets 一致，docs/design/31 §4）。 */
+const PRESET_ENDPOINTS: Record<string, Partial<Record<ProviderProtocol, string>>> = {
+  openai: { 'openai-responses': 'https://api.openai.com/v1' },
+  deepseek: { 'anthropic-messages': 'https://api.deepseek.com/anthropic' },
+  moonshot: { 'anthropic-messages': 'https://api.moonshot.cn/anthropic' },
+  zhipu: { 'anthropic-messages': 'https://open.bigmodel.cn/api/anthropic' },
+  ark: { 'openai-responses': 'https://ark.cn-beijing.volces.com/api/v3' },
+  openrouter: { 'openai-responses': 'https://openrouter.ai/api/v1', 'anthropic-messages': 'https://openrouter.ai/api' },
+  ollama: { 'anthropic-messages': 'http://localhost:11434' },
+}
+/** 内置协议桥支持的转换：harness 侧 ← provider 侧。 */
+const BRIDGE: Array<[ProviderProtocol, ProviderProtocol]> = [['anthropic-messages', 'openai-chat'], ['openai-responses', 'openai-chat'], ['openai-responses', 'anthropic-messages']]
+
+/** 与引擎的 resolvePairing 同一口径（docs/design/31 §2）。 */
+export function mockPairing(harness: string, caps: HarnessCapabilities, providerId: string | null, provider?: ProviderConfig): PairingInfo {
+  if (providerId === null) return caps.requiresProvider ? { harness, provider: null, status: 'unavailable', reason: '需要明确 provider 或模型别名' } : { harness, provider: null, status: 'builtin' }
+  if (!caps.customProvider) return { harness, provider: providerId, status: 'unavailable', reason: '不支持 customProvider，该 harness 只能用自带模型' }
+  const offered = provider ? [provider.protocol, ...Object.keys({ ...PRESET_ENDPOINTS[provider.preset ?? ''], ...provider.endpoints }) as ProviderProtocol[]] : []
+  const speaks = caps.providerProtocols ?? []
+  const direct = speaks.find((p) => offered.includes(p))
+  if (direct) return { harness, provider: providerId, status: 'direct', protocol: direct }
+  for (const upstream of offered) for (const protocol of speaks) if (BRIDGE.some(([a, b]) => a === protocol && b === upstream)) return { harness, provider: providerId, status: 'bridge', protocol, upstream, reason: '经协议桥转换；托管工具不可用' }
+  return { harness, provider: providerId, status: 'unavailable', reason: `不支持 provider 协议 ${[...new Set(offered)].join(' / ')}；支持：${speaks.join(' / ') || '无'}` }
+}
 
 const ACP_PRESETS: RuntimeConfig['presets']['acp'] = [
   { id: 'gemini', displayName: 'Gemini CLI', command: ['npx', '--no-install', '@google/gemini-cli@0.67.0', '--acp'], install: 'npm install -g @google/gemini-cli@0.67.0；先完成 Gemini 登录' },
@@ -144,9 +180,10 @@ const SYSTEM_ROLES: RuntimeSystemRole[] = ['lead', 'route', 'steward', 'learner'
 /** 真实注册表里的全部内置 id（演示只列出其中 5 个），自定义的不能重名。 */
 const BUILTIN_IDS = new Set(['native', 'mock', 'claude-code', 'codex', 'dsh', 'gemini-cli', 'cursor-agent', 'qwen-code', 'kimi-cli', 'opencode', 'pi'])
 
-export interface MockRuntime extends M6Source {
+export interface MockRuntime extends Omit<M6Source, 'pairings'> {
   harnesses(): HarnessInfo[]
   models(): ModelInfo[]
+  pairings(): PairingInfo[]
 }
 
 export function createMockRuntime(seeded: boolean): MockRuntime {
@@ -221,6 +258,11 @@ export function createMockRuntime(seeded: boolean): MockRuntime {
       }
     })
 
+  const pairings = (): PairingInfo[] =>
+    harnesses()
+      .filter((h) => !h.override?.disabled)
+      .flatMap((h) => [mockPairing(h.id, h.capabilities, null), ...Object.entries(s.providers).map(([id, p]) => mockPairing(h.id, h.capabilities, id, p))])
+
   /** 和服务端同一套校验口径：哪个字段错、下一步怎么办。 */
   function validate(next: ReturnType<typeof body>): string | undefined {
     for (const [alias, m] of Object.entries(next.models)) {
@@ -269,6 +311,7 @@ export function createMockRuntime(seeded: boolean): MockRuntime {
   return {
     harnesses,
     models,
+    pairings,
     runtimeConfig: () => delay(view(), 180),
     patchRuntime(patch: RuntimeConfigPatch) {
       if (!patch.reason?.trim()) return fail('需要写原因')

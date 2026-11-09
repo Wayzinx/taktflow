@@ -1,7 +1,12 @@
 /* 需求页 · 评审汇总 */
 .rvs {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-4);
+}
+/* 列多：窄屏时表格在卡片里横向滚，不把页面撑宽 */
+.rvs > .card:has(> .rvs-table) {
+  overflow-x: auto;
 }
 .rvs-stats {
   display: grid;

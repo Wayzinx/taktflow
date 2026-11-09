@@ -91,7 +91,7 @@ export function WfNodeView({ data }: NodeProps<Node<WfNodeData, 'wf'>>) {
       <div className="wf-node-card">
         <div className="wf-row">
           {n.kind === 'agent' || n.kind === 'judge' ? <NodeMark node={n} /> : <KindIcon kind={n.kind} size={22} />}
-          <span className={`wf-title truncate${t.code ? ' mono wf-code-title' : ''}`}>{t.text}</span>
+          <span className={`wfn-title truncate${t.code ? ' mono wf-code-title' : ''}`}>{t.text}</span>
         </div>
         {/* 有目标时第二行只显示目标（一行，超出省略），id 与配置摘要进 tooltip；卡片高度不变 */}
         {goal ? (

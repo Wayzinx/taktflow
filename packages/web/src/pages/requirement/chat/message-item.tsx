@@ -53,7 +53,9 @@ function SystemLine({ m }: { m: RoomMessage }) {
   return (
     <div className="chat-system" role="note">
       <Info aria-hidden="true" />
-      <span>{m.text}</span>
+      <span className="chat-system-text" title={m.text.length > 120 ? m.text : undefined}>
+        {m.text}
+      </span>
       <time className="mono faint" dateTime={m.at}>
         {fmtTime(m.at).slice(0, 5)}
       </time>

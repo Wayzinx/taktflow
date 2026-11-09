@@ -330,3 +330,22 @@
     transition: none;
   }
 }
+
+/* 放不下的 Tab：移出文档流但保留宽度，供下次测量；「更多」按钮同理（没有溢出时隐藏） */
+.tab.tab-spill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.tabs {
+  min-width: 0;
+}
+.tab-more svg {
+  width: 13px;
+  height: 13px;
+}
+.tab-more .tab-count:empty {
+  display: none;
+}

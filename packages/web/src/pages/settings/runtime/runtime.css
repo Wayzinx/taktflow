@@ -20,7 +20,7 @@
 }
 .rt-row-main {
   display: grid;
-  grid-template-columns: minmax(140px, 1.1fr) 150px minmax(120px, 1.6fr) minmax(150px, 1.1fr) auto;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 150px) minmax(0, 1.6fr) minmax(0, 1.1fr) auto;
   align-items: center;
   gap: var(--sp-3);
   min-height: 52px;
@@ -33,6 +33,12 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+.rt-row-name .chip {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .rt-id {
   font-size: var(--text-ui);
@@ -53,8 +59,6 @@
 }
 .rt-row:hover .rt-row-acts,
 .rt-row:focus-within .rt-row-acts,
-.harness-card:hover .hc-acts,
-.harness-card:focus-within .hc-acts,
 .models-table tr:hover .rt-row-acts,
 .models-table tr:focus-within .rt-row-acts {
   opacity: 1;
@@ -180,9 +184,6 @@
   background: var(--bg-sunken);
   box-shadow: inset 0 0 0 1px var(--divider);
 }
-.harness-card .rt-outcome {
-  margin: var(--sp-3) 0 0;
-}
 .rt-outcome > svg {
   flex: none;
   width: 14px;
@@ -245,51 +246,6 @@
   vertical-align: 1px;
   color: var(--st-stale);
   background: var(--st-stale-soft);
-}
-
-/* harness 卡片：启动命令行、操作、停用态 */
-.hc-cmd {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  margin-top: var(--sp-3);
-  padding: 5px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--text-label);
-  color: var(--text-2);
-  background: var(--bg-sunken);
-}
-.hc-cmd svg {
-  flex: none;
-  width: 13px;
-  height: 13px;
-  color: var(--text-3);
-}
-.hc-cmd-tag {
-  flex: none;
-  margin-left: auto;
-  padding: 0 6px;
-  border-radius: var(--radius-pill);
-  font-weight: 600;
-  color: var(--accent-text);
-  background: var(--accent-soft);
-}
-.hc-acts {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  opacity: 0.72;
-  transition: opacity var(--dur) var(--ease);
-}
-.harness-card.is-disabled {
-  border-style: dashed;
-}
-.harness-card.is-disabled .hc-caps,
-.harness-card.is-disabled .hc-cmd {
-  opacity: 0.5;
-  filter: saturate(0.4);
 }
 
 /* 抽屉表单 */

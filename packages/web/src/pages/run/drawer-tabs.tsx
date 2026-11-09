@@ -2,7 +2,7 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from 'react'
 import { ArrowRight, Check, ChevronDown, Copy, ExternalLink, Eye, FileText, Shrink, TriangleAlert, X } from 'lucide-react'
 import type { ContextSource, EventEnvelope, EventPayloads, JudgeVerdict, NodeDetail } from '@taktflow/core'
 import { useAsync } from '../../api'
-import { EventTimeline } from '../../components/event-timeline'
+import { EventTimeline, pairingLine } from '../../components/event-timeline'
 import { EmptyState, Meter, Segmented, Skeleton, StatusBadge, toast } from '../../components/ui'
 import { JsonView } from '../../lib/json-view'
 import { Markdown } from '../../lib/markdown'
@@ -28,6 +28,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: string; requirementId: string }) {
   const s = d.state
   const harness = eventsOf(d, 'harness.started').at(-1)?.data
+  const invocation = eventsOf(d, 'invocation.started').filter((e) => !e.data.repair).at(-1)?.data
   const ms = durationBetween(s.startedAt, s.endedAt)
   const u = s.usage
   const human = eventsOf(d, 'human.requested').at(-1)?.data
@@ -36,7 +37,12 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
   const reminded = eventsOf(d, 'human.reminded').map((e) => e.ts)
   const handedBack = eventsOf(d, 'human.handed_back').at(-1)
   const expanded = eventsOf(d, 'dag.expanded').at(-1)?.data
-  const violations = eventsOf(d, 'guard.violation')
+  // 守卫违规只算当前这次尝试的；之前失败的尝试里的只留一行提示（已经重试过）
+  const fails = eventsOf(d, 'node.failed').map((e) => e.seq)
+  const [lo, hi] = s.status === 'failed' ? [fails.at(-2) ?? -1, fails.at(-1) ?? Infinity] : [fails.at(-1) ?? -1, Infinity]
+  const allViolations = eventsOf(d, 'guard.violation')
+  const violations = allViolations.filter((v) => v.seq > lo && v.seq <= hi)
+  const earlier = allViolations.filter((v) => v.seq <= lo).length
   return (
     <div className="dpad">
       {s.error && (
@@ -54,11 +60,24 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
           <div>
             <b>守卫违规 · {v.data.action === 'reverted' ? '已还原' : v.data.action === 'blocked' ? '已拦截' : '已标记'}</b>
             <div>
-              规则 <span className="mono">{v.data.rule}</span>，越界路径 <span className="mono">{v.data.paths.join(', ')}</span>
+              规则 <span className="mono">{v.data.rule}</span>，越界路径 {v.data.paths.length} 个：
             </div>
+            <ul className="d-paths">
+              {v.data.paths.slice(0, 6).map((p) => (
+                <li key={p} className="mono" title={p}>
+                  {p}
+                </li>
+              ))}
+              {v.data.paths.length > 6 && <li className="faint">另 {v.data.paths.length - 6} 个，见 Trace</li>}
+            </ul>
           </div>
         </div>
       ))}
+      {earlier > 0 && (
+        <p className="d-note faint">
+          之前失败的尝试里有 {earlier} 条守卫违规，已重试；详情见 Trace。
+        </p>
+      )}
       <dl className="facts">
         <Fact label="状态">
           <StatusBadge meta={NODE_STATUS[s.status]} />
@@ -73,6 +92,7 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
           <Fact label="Harness">
             <span className="mono">{harness.harness}</span>
             {harness.model && <span className="faint mono"> · {harness.model}</span>}
+            {invocation?.pairing && invocation.pairing.mode !== 'builtin' && <div className="faint d-pairing">{pairingLine(invocation.harness, invocation.provider, invocation.pairing)}</div>}
           </Fact>
         )}
         {s.sessionRef && (
@@ -320,15 +340,17 @@ export function ContextTab({ d }: { d: NodeDetail }) {
   const declared = snap.items.filter((i) => i.source === 'artifact' || i.source === 'knowledge')
   const notInjected = snap.items.filter((i) => !i.included)
   const runtimeReads = snap.items.filter((i) => i.source === 'tool_result')
+  // 三个以内按「组装 / 运行中 / 压缩后」；多次尝试累积的快照多时改成可横向滚动的编号条
   const labels = ['组装', '运行中', '压缩后']
+  const many = snapshots.length > labels.length
   return (
     <div className="dpad">
       {snapshots.length > 1 && (
         <div className="d-toolbar">
-          <div className="snap-tabs">
+          <div className={`snap-tabs${many ? ' many' : ''}`} ref={(el) => el?.querySelector('.snap-tab.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })}>
             {snapshots.map((s, i) => (
               <button key={i} className={`snap-tab${i === idx ? ' on' : ''}${s.totalTokens > s.budgetTokens ? ' over' : ''}`} onClick={() => setIdx(i)}>
-                <span>{labels[i] ?? `快照 ${i + 1}`}</span>
+                <span>{many ? `#${i + 1}` : labels[i]}</span>
                 <span className="mono num">{fmtTokens(s.totalTokens)}</span>
                 <span className="faint mono">{fmtTime(s.at)}</span>
               </button>

@@ -172,6 +172,16 @@
   width: 13px;
   height: 13px;
 }
+/* 系统消息里可能是一整段原始错误：最多两行，悬停看全文 */
+.chat-system-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .chat-system .chat-refs {
   flex-basis: 100%;
   justify-content: center;

@@ -102,6 +102,7 @@
   color: var(--text-2);
 }
 .ev-detail {
+  overflow-wrap: anywhere;
   margin-top: 4px;
   font-size: var(--text-meta);
   color: var(--text-2);

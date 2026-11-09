@@ -3,6 +3,8 @@
   font-size: var(--text-meta);
 }
 .models-scroll {
+  /* 表头里的 .sr-only 是绝对定位：以滚动容器为参照，否则会溢出把整页撑宽 */
+  position: relative;
   overflow-x: auto;
 }
 .models-table {
@@ -13,7 +15,9 @@
   height: 52px;
 }
 .th-unit {
-  margin-left: 4px;
+  display: block;
+  margin-left: 0;
+  white-space: nowrap;
   font-size: var(--text-label);
   font-weight: 400;
   color: var(--text-3);
@@ -121,9 +125,6 @@
 }
 
 @media (max-width: 760px) {
-  .harness-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
   .models-note {
     display: none;
   }

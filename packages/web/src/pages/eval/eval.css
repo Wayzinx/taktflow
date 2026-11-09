@@ -1,7 +1,8 @@
 /* 评测页：成绩单、评测运行、A/B 对比（docs/design/20 §6） */
 
-.ev-body {
+.eval-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--sp-4);
   margin-top: var(--sp-4);
 }
@@ -119,31 +120,31 @@
 }
 
 /* 趋势小图 */
-.spark {
+.esp {
   display: block;
   overflow: visible;
 }
-.spark-ref {
+.esp-ref {
   stroke: var(--divider);
   stroke-dasharray: 2 2;
 }
-.spark-line {
+.esp-line {
   fill: none;
   stroke: var(--text-3);
   stroke-width: 1.5;
   stroke-linejoin: round;
 }
-.spark-drop {
+.esp-drop {
   stroke: var(--st-failed);
   stroke-width: 1.5;
 }
-.spark-dot {
+.esp-dot {
   fill: var(--text-3);
 }
-.spark-dot-last {
+.esp-dot-last {
   fill: var(--text);
 }
-.spark-dot-bad {
+.esp-dot-bad {
   fill: var(--surface);
   stroke: var(--st-failed);
   stroke-width: 1.5;

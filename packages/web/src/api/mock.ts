@@ -400,6 +400,7 @@ export function createProjectMock(db: MockDb): ProjectSource {
     },
     harnesses: () => delay(runtime.harnesses(), 140),
     models: () => delay(runtime.models(), 140),
+    pairings: () => delay(runtime.pairings(), 140),
     runtimeConfig: runtime.runtimeConfig,
     patchRuntime: runtime.patchRuntime,
     testRuntime: runtime.testRuntime,

@@ -129,7 +129,10 @@
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
+/* 列多时宁可在 .md-table-wrap 里横向滚，也不把一列挤成一个字宽 */
 .md td {
+  min-width: 6em;
+  overflow-wrap: anywhere;
   padding: 7px 12px;
   border-bottom: 1px solid var(--divider);
   vertical-align: top;

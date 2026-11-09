@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import type { LucideIcon } from 'lucide-react'
+import { ChevronDown, type LucideIcon } from 'lucide-react'
 import type { NodeKind } from '@taktflow/core'
 import { NODE_KIND, toneSoftVar, toneVar, type StatusMeta, type Tone } from '../lib/status'
 import { initials } from '../lib/format'
+import { Menu } from './ui/menu'
 import './ui.css'
 
 export function StatusBadge({ meta, subtle }: { meta: StatusMeta; subtle?: boolean }) {
@@ -79,38 +80,90 @@ let tabMove = { dir: 0, at: 0 }
 
 export function Tabs({ tabs, value, onChange, size }: { tabs: TabDef[]; value: string; onChange: (id: string) => void; size?: 'sm' }) {
   const root = useRef<HTMLDivElement>(null)
+  const more = useRef<HTMLButtonElement>(null)
   const [ind, setInd] = useState<{ x: number; w: number } | null>(null)
+  // 放不下的 Tab 收进「更多」菜单；当前 Tab 总是露在外面
+  const [spill, setSpill] = useState<string[]>([])
+  const [menu, setMenu] = useState(false)
+  const shown = tabs.filter((t) => !t.hidden)
+  const fit = () => {
+    const el = root.current
+    if (!el) return
+    const btns = [...el.querySelectorAll<HTMLElement>(':scope > .tab[data-tab]')]
+    const widths = btns.map((b) => b.offsetWidth + 2)
+    const avail = el.clientWidth
+    const total = widths.reduce((a, b) => a + b, 0)
+    let next: string[] = []
+    if (total > avail + 1) {
+      const room = avail - (more.current?.offsetWidth ?? 72) - 4
+      const ids = btns.map((b) => b.dataset.tab!)
+      const active = ids.indexOf(value)
+      let used = active >= 0 ? widths[active]! : 0
+      const keep = new Set(active >= 0 ? [ids[active]] : [])
+      ids.forEach((id, i) => {
+        if (i === active) return
+        if (used + widths[i]! <= room) {
+          keep.add(id)
+          used += widths[i]!
+        }
+      })
+      // 只从前往后连续保留，避免中间空一个
+      const cut = ids.findIndex((id, i) => i !== active && !keep.has(id))
+      next = cut < 0 ? [] : ids.filter((_, i) => i >= cut && i !== active)
+    }
+    setSpill((s) => (s.length === next.length && s.every((x, i) => x === next[i]) ? s : next))
+  }
   useLayoutEffect(() => {
+    fit()
     const el = root.current?.querySelector<HTMLElement>('.tab.active')
     if (!el) return setInd(null)
     // 与原来的 ::after 一致：左右各内缩 10px
     const next = { x: el.offsetLeft + 10, w: Math.max(0, el.offsetWidth - 20) }
     setInd((t) => (t && t.x === next.x && t.w === next.w ? t : next))
   })
+  useLayoutEffect(() => {
+    const el = root.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => fit())
+    ro.observe(el)
+    return () => ro.disconnect()
+    // fit 读最新的 value / tabs
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, tabs.length])
+  const go = (id: string) => {
+    const ids = shown.map((x) => x.id)
+    tabMove = { dir: Math.sign(ids.indexOf(id) - ids.indexOf(value)), at: performance.now() }
+    onChange(id)
+  }
+  const spilled = shown.filter((t) => spill.includes(t.id))
   return (
-    <div ref={root} className={`tabs${size === 'sm' ? ' tabs-sm' : ''}${ind ? ' has-indicator' : ''}`} role="tablist">
-      {tabs
-        .filter((t) => !t.hidden)
-        .map((t) => {
-          const Icon = t.icon
-          return (
-            <button
-              key={t.id}
-              role="tab"
-              aria-selected={t.id === value}
-              className={`tab${t.id === value ? ' active' : ''}`}
-              onClick={() => {
-                const ids = tabs.filter((x) => !x.hidden).map((x) => x.id)
-                tabMove = { dir: Math.sign(ids.indexOf(t.id) - ids.indexOf(value)), at: performance.now() }
-                onChange(t.id)
-              }}
-            >
-              {Icon && <Icon />}
-              {t.label}
-              {t.count !== undefined && <span className="tab-count num">{t.count}</span>}
-            </button>
-          )
-        })}
+    <div ref={root} className={`tabs${size === 'sm' ? ' tabs-sm' : ''}${ind ? ' has-indicator' : ''}${spilled.length ? ' has-more' : ''}`} role="tablist">
+      {shown.map((t) => {
+        const Icon = t.icon
+        const out = spill.includes(t.id)
+        return (
+          <button
+            key={t.id}
+            data-tab={t.id}
+            role="tab"
+            aria-selected={t.id === value}
+            aria-hidden={out || undefined}
+            tabIndex={out ? -1 : undefined}
+            className={`tab${t.id === value ? ' active' : ''}${out ? ' tab-spill' : ''}`}
+            onClick={() => go(t.id)}
+          >
+            {Icon && <Icon />}
+            {t.label}
+            {t.count !== undefined && <span className="tab-count num">{t.count}</span>}
+          </button>
+        )
+      })}
+      <button ref={more} type="button" className={`tab tab-more${spilled.length ? '' : ' tab-spill'}`} aria-haspopup="menu" aria-expanded={menu} tabIndex={spilled.length ? undefined : -1} aria-hidden={!spilled.length || undefined} onClick={() => setMenu(true)}>
+        更多
+        <span className="tab-count num">{spilled.length || ''}</span>
+        <ChevronDown />
+      </button>
+      <Menu open={menu} onClose={() => setMenu(false)} anchor={more} placement="bottom-end" ariaLabel="更多 Tab" items={spilled.map((t) => ({ id: t.id, label: t.label, icon: t.icon, hint: t.count, onSelect: () => go(t.id) }))} />
       {ind && <span className="tabs-indicator" aria-hidden style={{ '--tab-x': `${ind.x}px`, '--tab-s': ind.w } as CSSProperties} />}
     </div>
   )

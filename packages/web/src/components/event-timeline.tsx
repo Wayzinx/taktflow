@@ -189,6 +189,46 @@ export function describe(e: EventEnvelope): Described {
       const x = d(e, 'guard.violation')
       return { icon: ShieldAlert, tone: 'failed', title: <>守卫违规（{x.action === 'reverted' ? '已还原' : x.action === 'blocked' ? '已拦截' : '已标记'}）<span className="mono"> {x.rule}</span></>, detail: <span className="mono">{x.paths.join(', ')}</span> }
     }
+    case 'invocation.started': {
+      const x = d(e, 'invocation.started')
+      const model = x.model.reported ?? x.model.resolved ?? x.model.requested
+      return {
+        icon: Cpu,
+        tone: x.repair ? 'waiting' : 'neutral',
+        title: (
+          <>
+            {x.repair ? `修正追问第 ${x.repair} 次 · ` : ''}调起 <span className="mono">{x.harness}</span>
+            {model && <span className="mono"> · {model}</span>}
+            {x.provider && <> · {x.pairing?.mode === 'bridge' ? '桥接' : '直连'} <span className="mono">{x.provider}</span></>}
+          </>
+        ),
+        detail: x.pairing && x.pairing.mode !== 'builtin' ? <span className="faint">{pairingLine(x.harness, x.provider, x.pairing)}</span> : undefined,
+      }
+    }
+    case 'output.invalid': {
+      const x = d(e, 'output.invalid')
+      return {
+        icon: FileWarning,
+        tone: 'waiting',
+        title: <>结构化结果没通过校验（第 {x.attempt} 次）· {x.errors.length} 处问题</>,
+        detail: (
+          <>
+            <ul className="ev-list">
+              {x.errors.map((err, i) => (
+                <li key={i} className="mono">
+                  {err}
+                </li>
+              ))}
+            </ul>
+            {x.excerpt && <pre className="ev-pre">{x.excerpt}</pre>}
+          </>
+        ),
+      }
+    }
+    case 'output.repaired': {
+      const x = d(e, 'output.repaired')
+      return { icon: CheckCheck, tone: 'success', title: <>追问 {x.attempts} 次后结构化结果通过校验</> }
+    }
     case 'log': {
       const x = d(e, 'log')
       return { icon: ChevronRight, tone: x.level === 'error' ? 'failed' : x.level === 'warn' ? 'waiting' : 'neutral', title: x.message }
@@ -264,6 +304,15 @@ export function describe(e: EventEnvelope): Described {
     default:
       return describeM3(e) ?? { icon: ChevronRight, tone: 'neutral', title: <span className="mono">{e.type}</span> }
   }
+}
+
+/** "codex（Responses）→ 协议桥 → deepseek（Chat）" */
+const PROTO: Record<string, string> = { 'openai-chat': 'Chat', 'openai-responses': 'Responses', 'anthropic-messages': 'Anthropic', gemini: 'Gemini' }
+export function pairingLine(harness: string, provider: string | undefined, p: { mode: string; protocol?: string; upstream?: string }): string {
+  const side = (name: string, proto?: string) => (proto ? `${name}（${PROTO[proto] ?? proto}）` : name)
+  if (p.mode === 'bridge') return `${side(harness, p.protocol)} → 协议桥 → ${side(provider ?? '', p.upstream)}`
+  if (p.mode === 'direct') return `${side(harness, p.protocol)} → ${side(provider ?? '', p.protocol)}`
+  return `${harness} 自带`
 }
 
 export const toneColor = (t: Described['tone']) => (t === 'neutral' ? 'var(--text-3)' : t === 'accent' ? 'var(--accent)' : toneVar(t))

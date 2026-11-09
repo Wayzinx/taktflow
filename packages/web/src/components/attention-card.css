@@ -169,6 +169,10 @@
   height: 13px;
   flex: none;
 }
+.att-result > .faint:last-child {
+  flex: none;
+  white-space: nowrap;
+}
 .att-result > span:first-of-type {
   min-width: 0;
   overflow: hidden;

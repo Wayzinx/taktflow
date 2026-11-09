@@ -104,7 +104,7 @@ export function EvalPage() {
           { id: 'cases', label: '样本', icon: Crosshair },
         ]}
       />
-      <TabPanel key={tab} className="ev-body">
+      <TabPanel key={tab} className="eval-body">
         {tab === 'runs' ? <Runs /> : tab === 'cases' ? <Samples /> : <Scorecards />}
       </TabPanel>
     </div>

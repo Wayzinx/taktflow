@@ -1,8 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { CircleAlert, CircleCheck, Coins, KeyRound, LoaderCircle, PlugZap, RotateCw } from 'lucide-react'
-import type { HarnessSelector, RuntimeConfig, RuntimeConfigPatch, RuntimeTestRequest, RuntimeTestResult, SecretSource } from '@taktflow/core'
+import type { HarnessSelector, Pairing, ProviderProtocol, RuntimeConfig, RuntimeConfigPatch, RuntimeTestRequest, RuntimeTestResult, SecretSource, Usage } from '@taktflow/core'
 import { RuntimeConflictError, invalidate, useAsync, useSource } from '../../../api'
 import { Dialog, Drawer, ReasonField, reasonOk, toast } from '../../../components/ui'
+import { fmtTokens } from '../../../lib/format'
 
 /** 运行配置 + 带 baseRevision 的补丁：保存成功后让卡片、模型表一起刷新。 */
 export function useRuntime() {
@@ -168,8 +169,9 @@ export function TestOutcome({ r }: { r: RuntimeTestResult }) {
 function prettyDetail(detail?: string): string | undefined {
   if (!detail) return
   try {
-    const d = JSON.parse(detail) as { name?: string; version?: string; protocolVersion?: number; agentCapabilities?: Record<string, unknown> }
+    const d = JSON.parse(detail) as { name?: string; version?: string; protocolVersion?: number; agentCapabilities?: Record<string, unknown>; pairing?: Pairing; usage?: Usage | null }
     if (typeof d !== 'object' || !d) return detail
+    if (d.pairing) return [pairingText(d.pairing), d.usage && `输入 ${fmtTokens(d.usage.inputTokens)} · 输出 ${fmtTokens(d.usage.outputTokens)} token`].filter(Boolean).join(' · ')
     const caps = Object.entries(d.agentCapabilities ?? {}).filter(([, v]) => v === true).map(([k]) => k)
     return [d.name && `${d.name}${d.version ? ` ${d.version}` : ''}`, d.protocolVersion !== undefined && `ACP v${d.protocolVersion}`, caps.length && caps.join(' · ')].filter(Boolean).join(' · ')
   } catch {
@@ -186,7 +188,7 @@ export function TestButton({ target, onResult, label = '测试', ghost }: { targ
   const [busy, setBusy] = useState(false)
   const [confirm, setConfirm] = useState(false)
   const [allow, setAllow] = useState(false)
-  const billed = target.kind === 'model'
+  const billed = target.kind === 'model' || target.kind === 'pairing'
   const run = async (allowBilled?: boolean) => {
     setBusy(true)
     onResult(undefined)
@@ -206,7 +208,7 @@ export function TestButton({ target, onResult, label = '测试', ghost }: { targ
         disabled={busy}
         aria-busy={busy || undefined}
         onClick={() => (billed ? (setAllow(false), setConfirm(true)) : void run())}
-        title={billed ? '发一次 1 token 的请求（会计费），先确认' : target.kind === 'provider' ? '只列模型，不计费' : '跑一次可用性探测（ACP 做一次握手），不发 prompt'}
+        title={target.kind === 'pairing' ? '真跑一次最小任务（会计费），先确认' : billed ? '发一次 1 token 的请求（会计费），先确认' : target.kind === 'provider' ? '只列模型，不计费' : '跑一次可用性探测（ACP 做一次握手），不发 prompt'}
       >
         {busy ? <LoaderCircle className="spin" aria-hidden /> : <PlugZap aria-hidden />}
         {busy ? '测试中…' : label}
@@ -215,8 +217,12 @@ export function TestButton({ target, onResult, label = '测试', ghost }: { targ
         <Dialog
           open={confirm}
           onClose={() => setConfirm(false)}
-          title={`测试模型 ${target.kind === 'model' ? target.alias : ''}`}
-          description="会真的发一次最小请求（输入几 token、输出 1 token），按这个模型的价格计费。"
+          title={target.kind === 'pairing' ? `测试搭配 ${target.harness} × ${target.provider ?? '自带'}` : `测试模型 ${target.kind === 'model' ? target.alias : ''}`}
+          description={
+            target.kind === 'pairing'
+              ? `会真的让 ${target.harness} 跑一次最小任务（只读、回复 OK），${target.model ? `用模型 ${target.model}，` : ''}按实际用量计费；走协议桥的组合会顺带验证转换。`
+              : '会真的发一次最小请求（输入几 token、输出 1 token），按这个模型的价格计费。'
+          }
           size="sm"
           footer={
             <>
@@ -260,3 +266,19 @@ export function toast409(e: unknown) {
 }
 
 export type Cfg = RuntimeConfig
+
+/** 协议的短名：在搭配说明里用（「DeepSeek（Chat）」）。 */
+export const PROTOCOL_SHORT: Record<ProviderProtocol, string> = {
+  'openai-chat': 'Chat',
+  'openai-responses': 'Responses',
+  'anthropic-messages': 'Anthropic',
+  gemini: 'Gemini',
+}
+
+/** "直连 · Anthropic" / "桥接 · Responses ← Chat" / "自带" */
+export function pairingText(p: Pairing): string {
+  if (p.mode === 'builtin') return '自带'
+  if (p.mode === 'direct') return `直连 · ${p.protocol ? PROTOCOL_SHORT[p.protocol] : ''}`
+  if (p.mode === 'bridge') return `桥接 · ${p.protocol ? PROTOCOL_SHORT[p.protocol] : '?'} ← ${p.upstream ? PROTOCOL_SHORT[p.upstream] : '?'}`
+  return '不可用'
+}

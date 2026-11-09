@@ -114,7 +114,7 @@
   gap: var(--sp-2);
   min-width: 0;
 }
-.wf-title {
+.wfn-title {
   flex: 1;
   font-size: var(--text-ui);
   font-weight: 600;

@@ -1,0 +1,321 @@
+/* ---------------------------------------------------------------- 搭配矩阵（docs/design/31 §6） */
+.pm-intro {
+  max-width: 76ch;
+  margin: 0 0 var(--sp-3);
+  font-size: var(--text-ui);
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.pm-intro b {
+  font-weight: 600;
+  color: var(--text);
+}
+.pm-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.pm-legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.pm-legend svg {
+  width: 12px;
+  height: 12px;
+}
+.pm-legend .is-direct svg {
+  color: var(--st-success);
+}
+.pm-legend .is-bridge svg {
+  color: var(--accent-text);
+}
+
+.pm-card {
+  padding: 0;
+  overflow: hidden;
+}
+/* 列（harness）多时横向滚；第一列（provider）钉住 */
+.pm-scroll {
+  overflow-x: auto;
+}
+.pm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: var(--text-ui);
+}
+.pm-table th,
+.pm-table td {
+  padding: 0;
+  border-bottom: 1px solid var(--divider);
+  text-align: left;
+  vertical-align: middle;
+}
+.pm-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.pm-corner,
+.pm-row {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  min-width: 168px;
+  width: 22%;
+  background: var(--surface);
+  box-shadow: inset -1px 0 0 var(--divider);
+}
+.pm-corner {
+  padding: 10px 14px !important;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+}
+.pm-col {
+  min-width: 112px;
+  padding: 10px 10px !important;
+  font-weight: 400;
+}
+.pm-col-name,
+.pm-row-name {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
+.pm-col-sub,
+.pm-row-sub {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.pm-row {
+  padding: 8px 14px !important;
+}
+.pm-row-name.mono {
+  font-weight: 500;
+}
+.pm-builtin > * {
+  background: var(--surface-2);
+}
+.pm-builtin .pm-row {
+  background: var(--surface-2);
+}
+.pm-td {
+  padding: 4px 6px !important;
+}
+.pm-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-meta);
+  font-weight: 560;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease);
+}
+.pm-cell svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+}
+.pm-cell:hover {
+  border-color: var(--border-strong);
+}
+.pm-cell:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 1px;
+}
+.pm-cell.is-builtin {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border);
+}
+.pm-cell.is-direct {
+  color: var(--st-success);
+  background: var(--st-success-soft);
+}
+.pm-cell.is-bridge {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.pm-cell.is-unavailable {
+  color: var(--text-3);
+  font-weight: 400;
+}
+.pm-cell.no-key {
+  opacity: 0.75;
+}
+.pm-warn {
+  color: var(--st-waiting);
+}
+.pm-foot {
+  margin: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--divider);
+  font-size: var(--text-meta);
+}
+
+/* 点开一格：链路、说明、测试 */
+.pm-pop {
+  width: min(400px, calc(100vw - 32px));
+}
+.pm-pop-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px 14px;
+}
+.pm-pop-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pm-pop-head b {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-ui);
+}
+.pm-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-meta);
+  font-weight: 560;
+}
+.pm-tag svg {
+  width: 12px;
+  height: 12px;
+}
+.pm-tag.is-builtin {
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+.pm-tag.is-direct {
+  color: var(--st-success);
+  background: var(--st-success-soft);
+}
+.pm-tag.is-bridge {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.pm-tag.is-unavailable {
+  color: var(--text-3);
+  background: var(--surface-2);
+}
+.pm-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.pm-path > svg {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--text-3);
+}
+.pm-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.pm-node b {
+  font-weight: 600;
+  color: var(--text);
+}
+.pm-proto {
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  font-size: var(--text-label);
+  color: var(--text-2);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+.pm-bridge {
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  font-weight: 600;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.pm-pop-note {
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: 1.6;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.pm-pop-warn {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: 1.55;
+  color: var(--text-2);
+}
+.pm-pop-warn svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--st-waiting);
+}
+.pm-pop-test {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.pm-model {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+
+/* ---------------------------------------------------------------- 统一选择器下面的搭配说明 */
+.rt-sel-wrap {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.rt-sel-typed {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+.rt-sel-typed .input {
+  flex: 1;
+  min-width: 0;
+}
+.rt-sel-pair {
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rt-sel-pair.is-unavailable {
+  color: var(--st-failed);
+}
+.rt-sel-wrap.compact .rt-sel-pair:not(.is-unavailable) {
+  display: none;
+}

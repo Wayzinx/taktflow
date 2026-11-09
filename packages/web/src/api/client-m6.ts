@@ -17,6 +17,7 @@ export function createM6Http({ req, get }: Http): M6Source {
         if (e instanceof ApiRequestError && e.status === 409) throw new RuntimeConflictError(e.message)
         throw e
       }),
+    pairings: () => get('/pairings'),
     testRuntime: (body) => req('POST', '/space/runtime/test', body),
     putSecret: (name, value, reason) => req('PUT', `/secrets/${enc(name)}`, { value, reason }),
     deleteSecret: (name, reason) => req('DELETE', `/secrets/${enc(name)}`, { reason }),

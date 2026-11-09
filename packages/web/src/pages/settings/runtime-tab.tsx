@@ -5,10 +5,10 @@ import { useAsync } from '../../api'
 import { StatCard, StatStrip } from '../../components/stat-card'
 import { CountUp, EmptyState, ErrorState, Menu, ReasonDialog, Segmented, Skeleton, toast, useFlashRows, useStagger } from '../../components/ui'
 import { StewardEditNote } from './ask-steward'
-import { CAPABILITIES } from '../../lib/capabilities'
-import { HarnessCard } from './harness-card'
+import { DownGroup, HarnessListHead, HarnessRow } from './harness-list'
 import { CustomHarnessDrawer, OverrideDrawer } from './runtime/harness-edit'
 import { ModelsCard } from './runtime/models'
+import { PairingMatrix } from './runtime/pairing-matrix'
 import { ProvidersCard } from './runtime/providers'
 import { RoutingCard } from './runtime/routing'
 import { TestButton, TestOutcome, useRuntime, type RuntimeApi } from './runtime/shared'
@@ -78,40 +78,23 @@ function Stats({ harnesses, models, cfg }: { harnesses?: HarnessInfo[]; models?:
   )
 }
 
-function CapLegend() {
-  return (
-    <div className="cap-legend" aria-label="能力图例">
-      {CAPABILITIES.map(({ key, label, icon: Icon }) => (
-        <span key={key}>
-          <Icon strokeWidth={2} />
-          {label}
-        </span>
-      ))}
-    </div>
-  )
-}
-
 function HarnessSkeleton() {
   return (
-    <div className="harness-grid">
+    <ul className="card hx-list">
       {[0, 1, 2].map((i) => (
-        <div key={i} className="card harness-card">
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <Skeleton w={36} h={36} r={10} />
-            <div style={{ flex: 1 }}>
-              <Skeleton w="50%" h={13} />
-              <Skeleton w="30%" h={10} style={{ marginTop: 8 }} />
-            </div>
+        <li key={i} className="hx-row">
+          <div className="hx-main hx-skel">
+            <Skeleton w={30} h={30} r={8} />
+            <Skeleton w="40%" h={12} />
+            <Skeleton w="70%" h={10} />
           </div>
-          <Skeleton h={30} style={{ marginTop: 22 }} />
-          <Skeleton w="60%" h={10} style={{ marginTop: 20 }} />
-        </div>
+        </li>
       ))}
-    </div>
+    </ul>
   )
 }
 
-/** 卡片上的操作：测试（探测 / ACP 握手）+ 菜单（内置：设置、停用；自加的：编辑、删除）。 */
+/** 行上的操作：测试（探测 / ACP 握手）+ 菜单（内置：设置、停用；自加的：编辑、删除）。 */
 function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: HarnessInfo; rt: RuntimeApi; onResult: (r: RuntimeTestResult | undefined) => void; onSettings: () => void; onEdit: () => void; onRemove: () => void }) {
   const btn = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -179,12 +162,36 @@ export function RuntimeTab() {
   const [override, setOverride] = useState<{ open: boolean; h?: HarnessInfo }>({ open: false })
   const [custom, setCustom] = useState<{ open: boolean; editing?: string }>({ open: false })
   const [removing, setRemoving] = useState<HarnessInfo>()
+  const [downOpen, setDownOpen] = useState(false)
 
   const hs = hq.data
   const shown = hs?.filter((h) => filter === 'all' || (filter === 'available' ? h.available : !h.available)) ?? []
   const downCount = hs?.filter((h) => !h.available).length ?? 0
   const st = useStagger(shown.length)
   const flash = useFlashRows(shown.map((h) => h.id))
+  // 「全部」里不可用的折成一组；只看不可用时直接平铺
+  const up = filter === 'unavailable' ? [] : shown.filter((h) => h.available && !h.override?.disabled)
+  const down = filter === 'unavailable' ? shown : shown.filter((h) => !h.available || h.override?.disabled)
+  const row = (h: HarnessInfo, i: number) => {
+    const sx = st(i)
+    return (
+      <HarnessRow
+        key={h.id}
+        h={h}
+        below={results[h.id] && <div className={['hx-below', sx.className, flash(h.id)].filter(Boolean).join(' ')}><TestOutcome r={results[h.id]!} /></div>}
+        actions={
+          <HarnessActions
+            h={h}
+            rt={rt}
+            onResult={(r) => setResults((m) => ({ ...m, [h.id]: r }))}
+            onSettings={() => setOverride({ open: true, h })}
+            onEdit={() => setCustom({ open: true, editing: h.id })}
+            onRemove={() => setRemoving(h)}
+          />
+        }
+      />
+    )
+  }
 
   return (
     <>
@@ -211,7 +218,6 @@ export function RuntimeTab() {
             </button>
           )}
         </div>
-        <CapLegend />
         {hq.error && !hs ? (
           <div className="card">
             <ErrorState error={hq.error} onRetry={hq.reload} />
@@ -229,31 +235,25 @@ export function RuntimeTab() {
             />
           </div>
         ) : (
-          <div className="harness-grid">
-            {shown.map((h, i) => {
-              const sx = st(i)
-              return (
-                <div key={h.id} className={[sx.className, flash(h.id)].filter(Boolean).join(' ') || undefined} style={sx.style}>
-                  <HarnessCard
-                    h={h}
-                    below={results[h.id] && <TestOutcome r={results[h.id]!} />}
-                    actions={
-                      <HarnessActions
-                        h={h}
-                        rt={rt}
-                        onResult={(r) => setResults((m) => ({ ...m, [h.id]: r }))}
-                        onSettings={() => setOverride({ open: true, h })}
-                        onEdit={() => setCustom({ open: true, editing: h.id })}
-                        onRemove={() => setRemoving(h)}
-                      />
-                    }
-                  />
-                </div>
-              )
-            })}
-          </div>
+          <ul className="card hx-list">
+            <HarnessListHead />
+            {up.map(row)}
+            {filter === 'unavailable'
+              ? down.map((h, i) => row(h, i))
+              : down.length > 0 && (
+                  <DownGroup count={down.length} names={down.map((h) => h.id)} open={downOpen} onToggle={() => setDownOpen((x) => !x)}>
+                    {down.map((h, i) => row(h, up.length + i))}
+                  </DownGroup>
+                )}
+          </ul>
         )}
       </section>
+
+      {rt.cfg && (
+        <section className="settings-section">
+          <PairingMatrix rt={rt} harnesses={hs} models={mq.data} />
+        </section>
+      )}
 
       {rt.error && !rt.cfg ? (
         <section className="settings-section">

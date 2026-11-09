@@ -503,6 +503,8 @@
 .sb-section {
   margin-top: var(--sp-6);
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  overflow-x: hidden;
   gap: 1px;
   min-height: 0;
   overflow-y: auto;

@@ -17,13 +17,13 @@ export function Sparkline({ trend, regressed, width = 76, height = 22 }: { trend
   const last = coords.at(-1)!
   const prev = coords.at(-2)
   return (
-    <svg className={`spark${regressed ? ' spark-bad' : ''}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`配方趋势：${title.replace(/\n/g, '；')}`}>
+    <svg className={`esp${regressed ? ' esp-bad' : ''}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`配方趋势：${title.replace(/\n/g, '；')}`}>
       <title>{title}</title>
-      <line x1={pad} x2={width - pad} y1={y(0.8)} y2={y(0.8)} className="spark-ref" />
-      {head.length > 1 && <polyline points={head.map((c) => c.join(',')).join(' ')} className="spark-line" />}
-      {regressed && prev && <line x1={prev[0]} y1={prev[1]} x2={last[0]} y2={last[1]} className="spark-drop" />}
+      <line x1={pad} x2={width - pad} y1={y(0.8)} y2={y(0.8)} className="esp-ref" />
+      {head.length > 1 && <polyline points={head.map((c) => c.join(',')).join(' ')} className="esp-line" />}
+      {regressed && prev && <line x1={prev[0]} y1={prev[1]} x2={last[0]} y2={last[1]} className="esp-drop" />}
       {coords.map(([cx, cy], i) => (
-        <circle key={i} cx={cx} cy={cy} r={i === coords.length - 1 ? 2.6 : 1.8} className={i === coords.length - 1 ? (regressed ? 'spark-dot-bad' : 'spark-dot-last') : 'spark-dot'} />
+        <circle key={i} cx={cx} cy={cy} r={i === coords.length - 1 ? 2.6 : 1.8} className={i === coords.length - 1 ? (regressed ? 'esp-dot-bad' : 'esp-dot-last') : 'esp-dot'} />
       ))}
     </svg>
   )
