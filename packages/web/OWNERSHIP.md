@@ -41,6 +41,7 @@
 | 停靠面板 | `openSteward({ prefill?, context?, threadId? })`、`askSteward(text, context?)`、`closeSteward()`、`toggleSteward()`、`useStewardDock()` |
 | 页面额外上下文 | `usePageContext(refs, deps)`（卸载时清掉）、`usePageContextExtra()` |
 | 未读数 | `setStewardUnread(n)`、`useStewardUnread()`（`components/layout` 已同步 `/steward/feed` 与 `/steward/stream`） |
+| 滚动容器 | 工作区面板 `.shell-main` 自己滚动（docs/design/29）：回顶用 `lib/router` 的 `scrollToTop()`，页面定高用 `--panel-h`，不用 `100vh` / `window.scrollTo` |
 | 新建需求 | `openCreateRequirement(prefill?)`、`closeCreateRequirement()`、`useCreateRequirement()` |
 | 新建空间 | `openCreateSpace({ copyFrom? })`、`closeCreateSpace()`、`useCreateSpace()` |
 | 侧栏收起 | `toggleSidebar()`、`useSidebarCollapsed()`（本地记住） |

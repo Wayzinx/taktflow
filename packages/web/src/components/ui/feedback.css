@@ -141,9 +141,23 @@
     opacity var(--dur-dock) var(--ease-out-soft),
     transform var(--dur-dock) var(--ease-out-soft);
 }
+/* 管家停靠面板：和工作区一样是嵌在外壳里的圆角面板（docs/design/29）；宽屏与工作区并排，只描一圈边 */
 .ui-drawer-dock {
   z-index: 90;
-  border-left: 1px solid var(--border);
+  top: var(--shell-gap);
+  right: var(--shell-gap);
+  bottom: var(--shell-gap);
+  width: min(var(--drawer-w, 440px), calc(100vw - 2 * var(--shell-gap)));
+  overflow: hidden;
+  border-radius: var(--r-md);
+}
+@media (min-width: 1280px) {
+  .ui-drawer-dock {
+    background: var(--bg);
+    box-shadow:
+      0 0 0 1px var(--rail-border),
+      0 1px 3px light-dark(oklch(0.25 0.01 70 / 0.05), oklch(0 0 0 / 0.25));
+  }
 }
 .ui-drawer[data-state='enter'],
 .ui-drawer[data-state='exit'] {

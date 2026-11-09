@@ -84,7 +84,8 @@ export function SpaceSwitcher({ fallbackName }: { fallbackName?: string }) {
   return (
     <div className="space-switcher">
       <button ref={trigger} type="button" className="space-trigger" aria-haspopup="menu" aria-expanded={open} aria-label={`当前空间 ${name}，切换空间`} title={current && current.name !== current.id ? `${name}（${current.id}）` : name} onClick={toggle}>
-        {/* 产品名由 Logo 表达，这里整行给空间名；同名空间靠下拉里的 id 区分，悬停显示 id */}
+        {/* 同名空间靠下拉里的 id 区分，悬停显示 id */}
+        {current && <SpaceMark space={current} size={20} />}
         <span className="space-trigger-text">
           <span className="space-trigger-name truncate">{name || <span className="space-trigger-sk" aria-hidden />}</span>
         </span>

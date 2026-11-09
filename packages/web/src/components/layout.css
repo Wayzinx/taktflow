@@ -1,8 +1,9 @@
-/* 外壳：深石墨导轨（侧栏）+ 暖色工作区。顶栏与面包屑见 topbar.css。 */
+/* 外壳（docs/design/29）：侧栏直接画在外壳底色上，工作区是嵌进去的圆角面板、自己滚动。顶栏与面包屑见 topbar.css。 */
 .shell {
   display: flex;
-  min-height: 100vh;
-  background: var(--bg);
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--rail);
 }
 .skip-link {
   position: fixed;
@@ -20,9 +21,7 @@
 
 /* ---------------------------------------------------------------- 导轨 */
 .sidebar {
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  height: 100dvh;
   width: var(--sidebar-w);
   flex: none;
   display: flex;
@@ -30,11 +29,6 @@
   padding: var(--sp-3) var(--sp-3) var(--sp-3);
   background: var(--rail);
   color: var(--rail-text-2);
-  border-right: 1px solid var(--rail-border);
-}
-/* 导轨里的内容按深色方案取色（状态点、焦点环）；导轨底色本身仍按页面主题取 */
-.sidebar > * {
-  color-scheme: dark;
 }
 .sidebar :focus-visible {
   outline-color: var(--accent);
@@ -43,16 +37,153 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-1) 0 var(--sp-4) var(--sp-1);
+  padding: var(--sp-1) 0 var(--sp-3) var(--sp-1);
 }
 .sb-brand .logo {
   width: 28px;
   height: 28px;
   flex: none;
 }
-.sb-brand .space-switcher {
+.sb-product {
   flex: 1;
   min-width: 0;
+  color: var(--rail-text);
+  font-size: var(--text-body);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+/* ---------------------------------------------------------------- 模式：Solo（和管家对话）/ 空间（项目导航） */
+.sb-modes {
+  display: flex;
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-3);
+  padding: 0 var(--sp-1);
+  border-bottom: 1px solid var(--rail-border);
+}
+.sb-mode {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  padding: 0 2px;
+  color: var(--rail-text-3);
+  font-size: var(--text-ui);
+  font-weight: 500;
+  transition: color var(--dur-fast) var(--ease);
+}
+.sb-mode svg {
+  display: none;
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+}
+.sb-mode:hover {
+  color: var(--rail-text);
+}
+.sb-mode[aria-current='page'] {
+  color: var(--rail-text);
+  font-weight: 600;
+}
+.sb-mode::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--rail-text);
+  transform: scaleX(0);
+  transition: transform var(--dur-tab) var(--ease);
+}
+.sb-mode[aria-current='page']::after {
+  transform: none;
+}
+
+/* 空间模式：空间选择框（字母标 + 名称 + 切换箭头） */
+.sb-space {
+  flex: none;
+  margin-bottom: var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--rail-field);
+  box-shadow: 0 0 0 1px var(--rail-border);
+}
+.sb-space .space-trigger {
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 6px 8px;
+}
+.sb-space .space-trigger-name {
+  font-size: var(--text-ui);
+  font-weight: 500;
+}
+
+/* Solo 模式：新对话 + 会话 / 动态（列表样式见 pages/steward/steward-page.css，这里只换成侧栏的底色） */
+.sb-solo {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.sb-new {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 34px;
+  flex: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--rail-field);
+  box-shadow: 0 0 0 1px var(--rail-border);
+  color: var(--rail-text);
+  font: inherit;
+  font-size: var(--text-ui);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--dur-fast) var(--ease),
+    transform var(--dur-press) var(--ease-out-soft);
+}
+.sb-new svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 1.75;
+}
+.sb-new:hover {
+  background: var(--surface-hover);
+}
+.sb-new:active {
+  transform: scale(0.98); /* motion-audit: ok 体验基线 6 按压 */
+}
+.sidebar .stwp-side {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  margin: 0 calc(-1 * var(--sp-1));
+  background: none;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+}
+.sidebar .stwp-side-head {
+  padding: 0 var(--sp-1) var(--sp-2);
+}
+.sidebar .stwp-side-body {
+  padding: 0 var(--sp-1);
+}
+.sidebar .stwp-search {
+  margin: 0 0 var(--sp-2);
+  background: var(--rail-field);
+  box-shadow: 0 0 0 1px var(--rail-border);
+}
+.sidebar .stwp-item:hover {
+  background: var(--rail-hover);
+}
+.sidebar .stwp-item[aria-current='true'] {
+  background: var(--rail-active);
 }
 
 /* ---------------------------------------------------------------- 导轨顶部的三个图标按钮：管家 / 搜索 / 收起 */
@@ -177,7 +308,7 @@
   height: 15px;
 }
 .sb-create:hover {
-  background: oklch(1 0 0 / 0.08);
+  background: var(--rail-hover);
   color: var(--rail-text);
 }
 .sb-create:active {
@@ -246,7 +377,7 @@
   background: transparent;
 }
 .sb-nav.has-glide .sb-item.active:hover {
-  background: oklch(1 0 0 / 0.03);
+  background: var(--rail-hover);
 }
 .sb-nav.has-glide .sb-item.active::before {
   content: none;
@@ -312,8 +443,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex: none;
   padding: var(--sp-3) var(--sp-1) 0;
-  border-top: 1px solid var(--rail-border);
+}
+.sb-solo + .sb-foot {
+  margin-top: 0;
 }
 .sb-lockup {
   display: inline-flex;
@@ -331,8 +465,7 @@
   padding: 2px;
   gap: 2px;
   border-radius: var(--radius);
-  background: oklch(0 0 0 / 0.25);
-  border: 1px solid var(--rail-border);
+  background: var(--rail-hover);
 }
 .theme-switch button {
   display: grid;
@@ -354,20 +487,33 @@
   color: var(--rail-text);
 }
 .theme-switch button.on {
-  background: var(--rail-active);
+  background: var(--rail-field);
   color: var(--rail-text);
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.06);
+  box-shadow: 0 0 0 1px var(--rail-border);
 }
 
-/* ---------------------------------------------------------------- 工作区 */
+/* ---------------------------------------------------------------- 工作区：嵌在外壳里的圆角面板，自己滚动（顶栏吸在面板顶部） */
 .shell-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
+  height: var(--panel-h);
+  margin: var(--shell-gap) var(--shell-gap) var(--shell-gap) 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow:
+    0 0 0 1px var(--rail-border),
+    0 1px 3px light-dark(oklch(0.25 0.01 70 / 0.05), oklch(0 0 0 / 0.25));
+}
+/* 面板定高、内部滚动：顶栏和正文都不许被 flex 压扁 */
+.shell-main > .topbar {
+  flex: none;
 }
 .shell-content {
-  flex: 1;
+  flex: 1 0 auto;
   min-width: 0;
   padding: var(--sp-6) var(--sp-8) 48px;
 }
@@ -377,7 +523,7 @@
 /* 管家停靠面板打开时：宽屏把工作区让出面板宽度（不盖住页头动作）；窄屏仍浮在上面。宽度变化不做过渡。 */
 @media (min-width: 1280px) {
   .shell[data-dock='open'] .shell-main {
-    margin-right: var(--dock-w, 440px);
+    margin-right: calc(var(--dock-w, 440px) + 2 * var(--shell-gap));
   }
 }
 /* ---------------------------------------------------------------- 收起（⌘B）：只留图标的窄导轨；宽度不做过渡（不动画 width），文字淡出 */
@@ -387,16 +533,15 @@
     padding-left: var(--sp-2);
     padding-right: var(--sp-2);
   }
-  /* 展开时顶栏整行留给空间名（产品名在导轨底部）；收起时只剩 Logo 与三个图标 */
-  .sidebar:not(.collapsed) .sb-brand .logo {
-    display: none;
-  }
+  /* 收起时只剩 Logo、图标按钮、两个模式图标和导航图标 */
   .sidebar.collapsed .sb-brand {
     flex-direction: column;
     gap: var(--sp-2);
     padding: var(--sp-1) 0 var(--sp-4);
   }
-  .sidebar.collapsed .space-switcher,
+  .sidebar.collapsed .sb-product,
+  .sidebar.collapsed .sb-space,
+  .sidebar.collapsed .sb-version,
   .sidebar.collapsed .sb-label,
   .sidebar.collapsed .sb-count,
   .sidebar.collapsed .sb-create,
@@ -407,6 +552,35 @@
   }
   .sidebar.collapsed .sb-tools {
     flex-direction: column;
+  }
+  .sidebar.collapsed .sb-modes {
+    flex-direction: column;
+    gap: 2px;
+    padding: 0 0 var(--sp-2);
+  }
+  .sidebar.collapsed .sb-mode {
+    justify-content: center;
+    height: 32px;
+    border-radius: var(--r-sm);
+  }
+  .sidebar.collapsed .sb-mode svg {
+    display: block;
+  }
+  .sidebar.collapsed .sb-mode::after {
+    content: none;
+  }
+  .sidebar.collapsed .sb-mode[aria-current='page'] {
+    background: var(--rail-active);
+  }
+  .sidebar.collapsed .sb-mode:hover {
+    background: var(--rail-hover);
+  }
+  .sidebar.collapsed .sb-new {
+    width: 100%;
+    padding: 0;
+  }
+  .sidebar.collapsed .sb-foot {
+    justify-content: center;
   }
   .sidebar.collapsed .sb-item {
     justify-content: center;
@@ -459,6 +633,14 @@
     inset: 0;
     z-index: 55;
     background: var(--scrim);
+  }
+  /* 窄屏：工作区铺满窗口，不留外框（--panel-h 在 :root 上算，所以也在 :root 上改） */
+  :root {
+    --shell-gap: 0px;
+  }
+  .shell-main {
+    border-radius: 0;
+    box-shadow: none;
   }
   .shell-content {
     padding: var(--sp-5) var(--sp-4) var(--sp-10);

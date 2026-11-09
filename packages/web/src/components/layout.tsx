@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePresence } from '../lib/motion'
-import { BookOpen, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sparkles, Sun, Workflow, X } from 'lucide-react'
+import { Boxes, BookOpen, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sparkles, Sun, Workflow, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
+import { spacePath } from '../lib/space'
 import { SHORTCUTS, shortcutLabel } from '../lib/shortcuts'
 import { openCreateRequirement, setStewardUnread, toggleSidebar, toggleSteward, useSidebarCollapsed, useStewardDock, useStewardUnread } from '../lib/ui-store'
 import { PageHeader } from './ui/page-header'
@@ -12,7 +13,7 @@ import { useTheme, type ThemePref } from '../lib/theme'
 import { CommandPalette, setPaletteOpen } from './command-palette'
 import { SpaceSwitcher } from './space-switcher'
 import { TaktBeat } from './takt'
-import { GlideMark, StatusDot, useGlide } from './ui'
+import { GlideMark, SkeletonRows, StatusDot, useGlide } from './ui'
 import { Bee } from './mascot'
 import './layout.css'
 import './topbar.css'
@@ -73,17 +74,19 @@ function useStewardUnreadSync() {
   }, [ds])
 }
 
-/** 导轨顶部：空间切换器右侧的三个图标按钮（管家 ⌘J / 搜索 ⌘K / 收起 ⌘B）。 */
-function RailTools({ collapsed }: { collapsed: boolean }) {
+/** 导轨顶部的图标按钮：管家停靠面板 ⌘J（只在空间模式；Solo 本身就是管家）/ 搜索 ⌘K / 收起 ⌘B。 */
+function RailTools({ collapsed, mode }: { collapsed: boolean; mode: RailMode }) {
   const unread = useStewardUnread()
   const dock = useStewardDock()
   const Collapse = collapsed ? PanelLeftOpen : PanelLeftClose
   return (
     <div className="sb-tools">
-      <button type="button" className={`sb-tool${dock.open ? ' on' : ''}`} onClick={toggleSteward} title={tip('管家', SHORTCUTS.steward)} aria-label={`管家${unread ? `，${unread} 条未读` : ''}`} aria-pressed={dock.open}>
-        <Sparkles aria-hidden />
-        {unread > 0 && <span className="sb-tool-dot num">{unread > 9 ? '9+' : unread}</span>}
-      </button>
+      {mode === 'space' && (
+        <button type="button" className={`sb-tool${dock.open ? ' on' : ''}`} onClick={toggleSteward} title={tip('在旁边问管家', SHORTCUTS.steward)} aria-label={`在旁边问管家${unread ? `，${unread} 条未读` : ''}`} aria-pressed={dock.open}>
+          <MessagesSquare aria-hidden />
+          {unread > 0 && <span className="sb-tool-dot num">{unread > 9 ? '9+' : unread}</span>}
+        </button>
+      )}
       <button type="button" className="sb-tool" onClick={() => setPaletteOpen(true)} title={tip('搜索或跳转', SHORTCUTS.palette)} aria-label="搜索或跳转">
         <Search aria-hidden />
       </button>
@@ -112,13 +115,63 @@ function ThemeSwitch() {
   )
 }
 
-function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { path } = useLocation()
+export type RailMode = 'solo' | 'space'
+
+/** Solo 模式的左栏（新对话 + 会话 / 动态）跟着 Solo 页一起按需加载。 */
+const SoloRail = lazy(() => import('../pages/solo/rail'))
+
+/** 两种模式各记住最后去过的地址：切回来时回到原处（Solo 回到原会话，空间回到原页面）。 */
+const lastHref: Record<RailMode, string> = { solo: '/solo', space: '/' }
+
+/**
+ * 侧栏分两种模式（docs/design/29）：
+ * - Solo：和管家直接对话，左栏是新对话、会话和动态，跨空间；
+ * - 空间：空间选择 + 总览、需求、待办等导航 + 最近的需求。
+ */
+function Sidebar({ open, onClose, mode }: { open: boolean; onClose: () => void; mode: RailMode }) {
   const collapsed = useSidebarCollapsed()
+  const modes = [
+    { mode: 'solo' as const, label: 'Solo', icon: Sparkles, title: '和管家直接对话，跨空间看需求、运行和节点' },
+    { mode: 'space' as const, label: '空间', icon: Boxes, title: '当前空间的总览、需求、待办与设置' },
+  ]
+  return (
+    <aside className={`sidebar${open ? ' open' : ''}${collapsed ? ' collapsed' : ''}`} data-mode={mode} aria-label="主导航">
+      <div className="sb-brand">
+        <Logo />
+        <span className="sb-product">taktflow</span>
+        <RailTools collapsed={collapsed} mode={mode} />
+        <button className="sb-close btn-icon" onClick={onClose} aria-label="收起导航">
+          <X aria-hidden />
+        </button>
+      </div>
+      <nav className="sb-modes" aria-label="模式">
+        {modes.map(({ mode: m, label, icon: Icon, title }) => (
+          <Link key={m} to={lastHref[m]} className="sb-mode" aria-current={m === mode ? 'page' : undefined} title={collapsed ? label : title}>
+            <Icon aria-hidden />
+            <span className="sb-label">{label}</span>
+          </Link>
+        ))}
+      </nav>
+      {mode === 'solo' ? (
+        <Suspense fallback={<SkeletonRows rows={5} />}>
+          <SoloRail collapsed={collapsed} />
+        </Suspense>
+      ) : (
+        <SpaceRail collapsed={collapsed} />
+      )}
+      <div className="sb-foot">
+        <ThemeSwitch />
+        <span className="sb-version mono">v0.1.0</span>
+      </div>
+    </aside>
+  )
+}
+
+function SpaceRail({ collapsed }: { collapsed: boolean }) {
+  const { path } = useLocation()
   const project = useAsync((ds) => ds.project(), [])
   const pending = project.data?.attention.length ?? 0
   const items = [
-    { to: '/solo', label: 'Solo', icon: Sparkles, active: path === '/solo' },
     { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
     { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements, create: true },
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },
@@ -130,16 +183,11 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const recent = project.data?.requirements.slice(0, 6) ?? []
   const [navRef, glide] = useGlide<HTMLElement>('.sb-item.active')
   return (
-    <aside className={`sidebar${open ? ' open' : ''}${collapsed ? ' collapsed' : ''}`} aria-label="主导航">
-      <div className="sb-brand">
-        <Logo />
+    <>
+      <div className="sb-space">
         <SpaceSwitcher fallbackName={project.data?.name} />
-        <RailTools collapsed={collapsed} />
-        <button className="sb-close btn-icon" onClick={onClose} aria-label="收起导航">
-          <X aria-hidden />
-        </button>
       </div>
-      <nav ref={navRef} className={`sb-nav${glide ? ' has-glide' : ''}`}>
+      <nav ref={navRef} className={`sb-nav${glide ? ' has-glide' : ''}`} aria-label="空间">
         <GlideMark glide={glide} className="sb-glide" />
         {items.map(({ to, label, icon: Icon, active, badge, count, create }) => (
           <div key={to} className={`sb-row${create ? ' has-create' : ''}`}>
@@ -169,14 +217,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
           ))}
         </div>
       )}
-      <div className="sb-foot">
-        <ThemeSwitch />
-        <span className="sb-lockup">
-          <Bee size={22} logo gapScale={2.2} />
-          <span className="sb-version mono">taktflow v0.1.0</span>
-        </span>
-      </div>
-    </aside>
+    </>
   )
 }
 
@@ -224,7 +265,10 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false)
-  const { path, spaceId } = useLocation()
+  const { path, spaceId, query } = useLocation()
+  const mode: RailMode = path === '/solo' ? 'solo' : 'space'
+  const qs = query.toString()
+  lastHref[mode] = mode === 'solo' ? `/solo${qs ? `?${qs}` : ''}` : `${spaceId ? spacePath(spaceId, path) : path}${qs ? `?${qs}` : ''}`
   const collapsed = useSidebarCollapsed()
   const dockOpen = useStewardDock().open
   useStewardUnreadSync()
@@ -240,7 +284,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className={`shell${collapsed ? ' rail-collapsed' : ''}`} data-dock={dockOpen ? 'open' : undefined}>
       <a className="skip-link" href="#main">跳到正文</a>
-      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
+      <Sidebar open={navOpen} onClose={() => setNavOpen(false)} mode={mode} />
       <NavScrim open={navOpen} onClose={() => setNavOpen(false)} />
       <div className="shell-main">
         <Topbar onMenu={() => setNavOpen(true)} />

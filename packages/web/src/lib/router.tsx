@@ -55,7 +55,14 @@ export function navigate(to: string, opts: { replace?: boolean } = {}) {
   if (target === location.pathname + location.search) return
   history[opts.replace ? 'replaceState' : 'pushState'](null, '', target)
   notifyRoute()
-  if (!opts.replace) window.scrollTo({ top: 0 })
+  if (!opts.replace) scrollToTop()
+}
+
+/** 工作区面板自己滚动（docs/design/29）；没有外壳时（测试、独立页）退回窗口。 */
+export function scrollToTop() {
+  const panel = document.querySelector('.shell-main')
+  if (panel) panel.scrollTo({ top: 0 })
+  else window.scrollTo({ top: 0 })
 }
 
 /** 只改查询参数（Tab、选中的节点等），默认 replace，不产生历史记录。 */

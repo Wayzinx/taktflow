@@ -61,7 +61,7 @@
 .art-list {
   position: sticky;
   top: calc(var(--topbar-h) + 16px);
-  max-height: calc(100vh - var(--topbar-h) - 32px);
+  max-height: calc(var(--panel-h) - var(--topbar-h) - 32px);
   overflow: auto;
   padding: 6px;
 }

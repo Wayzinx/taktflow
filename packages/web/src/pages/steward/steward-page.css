@@ -4,7 +4,7 @@
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   gap: var(--sp-6);
-  height: calc(100dvh - var(--topbar-h) - 172px);
+  height: calc(var(--panel-h) - var(--topbar-h) - 172px);
   min-height: 520px;
 }
 
@@ -402,7 +402,7 @@
     display: none;
   }
   .stwp-main {
-    height: calc(100dvh - var(--topbar-h) - 140px);
+    height: calc(var(--panel-h) - var(--topbar-h) - 140px);
   }
 }
 

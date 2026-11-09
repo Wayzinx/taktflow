@@ -41,7 +41,7 @@
     position: sticky;
     top: calc(var(--topbar-h) + 16px);
     /* 吸顶时整列不能比视口高，否则最后几条待办永远滚不到 */
-    max-height: calc(100dvh - var(--topbar-h) - 32px);
+    max-height: calc(var(--panel-h) - var(--topbar-h) - 32px);
   }
 }
 @container ov (min-width: 1200px) {

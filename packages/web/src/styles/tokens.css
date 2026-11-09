@@ -93,15 +93,19 @@
   --text-3: light-dark(oklch(0.52 0.01 70), oklch(0.64 0.008 80));
   --text-inverse: light-dark(oklch(0.985 0.003 80), oklch(0.17 0.005 75));
 
-  /* 控制台导轨（侧栏）：两套主题都是深石墨，外壳的固定色 */
-  --rail: light-dark(oklch(0.215 0.007 70), oklch(0.135 0.005 75));
-  --rail-hover: oklch(0.29 0.008 70);
-  --rail-active: oklch(0.33 0.009 70);
+  /* 外壳（侧栏 + 工作区外框）：跟随主题。浅色是比工作区略深的灰，深色是比工作区略亮的石墨；
+   * 工作区是嵌在外壳里的圆角面板（docs/design/29）。 */
+  --rail: light-dark(oklch(0.948 0.004 80), oklch(0.2 0.006 75));
+  --rail-hover: light-dark(oklch(0.3 0.01 75 / 0.055), oklch(0.95 0.01 80 / 0.06));
+  --rail-active: light-dark(oklch(0.3 0.01 75 / 0.085), oklch(0.95 0.01 80 / 0.095));
+  --rail-field: light-dark(oklch(0.985 0.003 80), oklch(0.235 0.007 75)); /* 侧栏里的输入框、空间选择框 */
   --scrim: light-dark(oklch(0.25 0.01 70 / 0.28), oklch(0 0 0 / 0.5));
-  --rail-border: oklch(0.95 0.01 80 / 0.08);
-  --rail-text: oklch(0.93 0.006 80);
-  --rail-text-2: oklch(0.74 0.008 80);
-  --rail-text-3: oklch(0.67 0.008 80);
+  --rail-border: light-dark(oklch(0.3 0.01 75 / 0.09), oklch(0.95 0.01 80 / 0.08));
+  --rail-text: var(--text);
+  --rail-text-2: var(--text-2);
+  --rail-text-3: var(--text-3);
+  --shell-gap: 8px; /* 工作区面板离窗口上、右、下边的距离 */
+  --panel-h: calc(100dvh - 2 * var(--shell-gap)); /* 工作区面板高度：页面里原来写 100vh 的地方用它 */
 
   /* ---------------------------------------------------------------- 品牌：节拍橙（只用于品牌标、节拍、当前位置、焦点） */
   --accent: light-dark(oklch(0.62 0.17 47), oklch(0.72 0.155 52));

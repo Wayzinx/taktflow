@@ -1,41 +1,15 @@
-/* Solo（docs/design/28 §1）：左栏会话 / 动态 · 中间对话 · 右侧焦点面板；整页铺满工作区，不留页边距。 */
+/* Solo（docs/design/28）：对话 · 右侧焦点面板；会话 / 动态在 App 侧栏的 Solo 模式里（docs/design/29）。整页铺满工作区，不留页边距。 */
 .shell-content:has(> .page-view > .solo),
 .shell-content:has(> .solo) {
   padding: 0;
 }
 .solo {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  height: calc(100dvh - var(--topbar-h));
+  grid-template-columns: minmax(0, 1fr);
+  height: calc(var(--panel-h) - var(--topbar-h));
 }
 .solo[data-panel='open'] {
-  grid-template-columns: 280px minmax(0, 1fr) clamp(420px, 36vw, 620px);
-}
-
-/* ---------------------------------------------------------------- 左栏 */
-.solo-side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-  min-height: 0;
-  padding: var(--sp-4) var(--sp-3) var(--sp-3);
-  border-right: 1px solid var(--divider);
-}
-.solo-new {
-  justify-content: center;
-}
-.solo-side .stwp-side {
-  flex: 1;
-  background: none;
-  box-shadow: none;
-  border: 0;
-  border-radius: 0;
-}
-.solo-side .stwp-side-head {
-  padding: 0 0 var(--sp-2);
-}
-.solo-side .stwp-side-body {
-  padding: 0;
+  grid-template-columns: minmax(0, 1fr) clamp(400px, 38vw, 620px);
 }
 
 /* ---------------------------------------------------------------- 对话 */
@@ -229,23 +203,11 @@ b.solo-crumb {
   background: var(--surface);
 }
 
-/* 面板打开时，不够宽就让出左栏（会话至少留 560px） */
-@media (max-width: 1720px) {
-  .solo[data-panel='open'] {
-    grid-template-columns: minmax(0, 1fr) clamp(400px, 42vw, 560px);
-  }
-  .solo[data-panel='open'] .solo-side {
-    display: none;
-  }
-}
 /* 窄屏：面板改成从底部升起，会话保持全宽 */
 @media (max-width: 1100px) {
   .solo,
   .solo[data-panel='open'] {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .solo-side {
-    display: none;
   }
   .solo-panel {
     position: fixed;
