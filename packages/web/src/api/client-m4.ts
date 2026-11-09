@@ -35,7 +35,10 @@ export function createM4Http({ req, get, url, stream, stewardStream }: Http): Cr
     convertWorkflow: (id, body) => req('POST', `/workflows/${enc(id)}/convert`, body),
 
     // ---------------------------------------------------------------- 管家（全局，不加空间前缀）
-    stewardThreads: () => get('/steward/threads'),
+    stewardThreads: (opts) => get(`/steward/threads${qs({ archived: opts?.archived ? 1 : undefined })}`),
+    patchStewardThread: (id, patch) => req('PATCH', `/steward/threads/${enc(id)}`, patch),
+    deleteStewardThread: (id) => req<void>('DELETE', `/steward/threads/${enc(id)}`),
+    stewardRuntimeChoices: () => get('/steward/runtime-choices'),
     createStewardThread: (body) => req('POST', '/steward/threads', body),
     stewardThread: (id) => get(`/steward/threads/${enc(id)}`),
     postStewardMessage: (id, body) => req('POST', `/steward/threads/${enc(id)}/messages`, body),

@@ -1,8 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Bee } from '../mascot'
-import type { StewardContextRef, StewardThread } from '@taktflow/core'
-import { ErrorState, Skeleton, SkeletonText } from '../ui'
+import type { StewardContextRef, StewardRuntime, StewardThread } from '@taktflow/core'
+import { ErrorState, Skeleton, SkeletonText, toast } from '../ui'
 import { Composer } from './composer'
+import { RuntimePicker } from './runtime-picker'
 import { MessageView } from './message'
 import { useStewardThread } from './use-thread'
 import './steward.css'
@@ -44,6 +45,13 @@ function ThreadSkeleton() {
 /** 会话：消息列表（贴底自动滚动，用户往上翻时不打扰）+ 输入框。整页与停靠面板共用。 */
 export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context, onContext, empty, autoFocus, className, hero, globalMentions, placeholder }: ThreadViewProps) {
   const t = useStewardThread(threadId, onThreadCreated)
+  // 新会话还没有 id：选的 runtime 先记在这里，第一条消息带上（docs/design/30 §2）
+  const [draftRuntime, setDraftRuntime] = useState<StewardRuntime>()
+  const runtime = threadId ? t.thread?.runtime : draftRuntime
+  const changeRuntime = (next: StewardRuntime | null) => {
+    if (!threadId) return setDraftRuntime(next ?? undefined)
+    t.setRuntime(next).catch((e: Error) => toast('没换成', { tone: 'failed', body: e.message }))
+  }
   const list = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
   const lastSteward = [...t.messages].reverse().find((m) => m.role === 'steward')?.id
@@ -73,10 +81,10 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
 
   const send = (text: string, extra: { context: StewardContextRef[]; attachments: Array<{ name: string; content: string }> }) => {
     stick.current = true
-    return t.send(text, { context: extra.context.length ? extra.context : undefined, attachments: extra.attachments.length ? extra.attachments : undefined })
+    return t.send(text, { context: extra.context.length ? extra.context : undefined, attachments: extra.attachments.length ? extra.attachments : undefined, runtime: draftRuntime })
   }
   const showEmpty = !threadId && t.messages.length === 0
-  const composer = <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={!!t.streamingId || t.waiting} autoFocus={autoFocus} globalMentions={globalMentions} placeholder={placeholder} />
+  const composer = <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={!!t.streamingId || t.waiting} autoFocus={autoFocus} globalMentions={globalMentions} placeholder={placeholder} tools={<RuntimePicker value={runtime} onChange={changeRuntime} />} />
   const emptyBody = typeof empty === 'function' ? empty((text, c) => void send(text, { context: c ?? context, attachments: [] })) : empty
 
   if (showEmpty && hero !== undefined)

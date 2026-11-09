@@ -143,11 +143,12 @@ export function seedDigest(risks: Risk[]): Digest {
       { spaceId: 'hello-delivery', requirementId: 'REQ-002', requirementTitle: '订单导出支持 CSV', requestId: 'att-budget', ask: '预算即将用完，是否追加', since: ago(80), href: `${S}/attention` },
     ],
     risks: risks.filter((r) => r.state === 'open'),
+    // 和服务端一致：每个需求只留最新一条，按时间倒序；more 是同一需求被折叠的更早条数（docs/design/30 §2）
     progress: [
-      { spaceId: 'hello-delivery', requirementId: 'REQ-001', title: '问候语支持空名字', kind: 'delivered', at: ago(10 * 60), href: `${S}/req/REQ-001` },
-      { spaceId: 'hello-delivery', requirementId: 'REQ-002', title: '订单导出支持 CSV', kind: 'stage', from: '研发', to: '测试', at: ago(3 * 60), href: `${S}/req/REQ-002` },
       { spaceId: 'hello-delivery', requirementId: 'REQ-006', title: '用户头像裁剪与压缩', kind: 'created', at: ago(12), href: `${S}/req/REQ-006` },
-      { spaceId: 'hello-delivery', requirementId: 'REQ-004', title: '优惠券过期前 24 小时提醒', kind: 'blocked', at: ago(190), href: `${S}/req/REQ-004` },
+      { spaceId: 'hello-delivery', requirementId: 'REQ-002', title: '订单导出支持 CSV', kind: 'stage', from: '研发', to: '测试', at: ago(3 * 60), href: `${S}/req/REQ-002`, more: 3 },
+      { spaceId: 'hello-delivery', requirementId: 'REQ-004', title: '优惠券过期前 24 小时提醒', kind: 'blocked', at: ago(190), href: `${S}/req/REQ-004`, more: 1 },
+      { spaceId: 'hello-delivery', requirementId: 'REQ-001', title: '问候语支持空名字', kind: 'delivered', at: ago(10 * 60), href: `${S}/req/REQ-001`, more: 5 },
     ],
     metrics: [
       { spaceId: 'hello-delivery', label: '交付周期中位数', value: '2.6 天', delta: '-0.4' },

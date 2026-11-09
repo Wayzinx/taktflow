@@ -42,7 +42,8 @@ export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Diges
   const tag = (id?: string) => (multi && id ? <span className="stw-digest-space">{spaceName(id)}</span> : null)
   const [allProgress, setAllProgress] = useState(false)
   const PROGRESS_MAX = 8
-  const progress = allProgress ? digest.progress : digest.progress.slice(-PROGRESS_MAX)
+  // 服务端已按需求去重、按时间倒序（docs/design/30 §2），这里只截前几条
+  const progress = allProgress ? digest.progress : digest.progress.slice(0, PROGRESS_MAX)
   const go = (href: string, label?: string) => {
     void ds.reportProductEvent({ type: 'digest.click', feature: 'steward.digest', detail: { href } }).catch(() => undefined)
     jumpTo(href, label)
@@ -95,7 +96,10 @@ export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Diges
                         {tag(p.spaceId)}
                         <span className="mono">{p.requirementId}</span> {p.title}
                       </span>
-                      <span className="faint">{p.kind === 'stage' && p.from ? `${p.from} → ${p.to}` : p.kind === 'stage' && p.to ? `推进到 ${p.to}` : k.label}</span>
+                      <span className="faint">
+                        {p.kind === 'stage' && p.from ? `${p.from} → ${p.to}` : p.kind === 'stage' && p.to ? `推进到 ${p.to}` : k.label}
+                        {p.more ? ` · 之前还有 ${p.more} 条` : ''}
+                      </span>
                     </span>
                     <span className="faint num">{fmtRelative(p.at)}</span>
                   </a>

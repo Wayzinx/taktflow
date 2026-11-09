@@ -414,6 +414,8 @@ reduced-motion：边不描线、不流动，在跑的边用实色；回放仍能
 | 加载 | `Skeleton*`；整页首屏 `TaktLoader` | "加载中…"文案、空态下的节拍尺 |
 | 选择 / 标签 / Tab | `Segmented`、`Chip(s)`、`Tabs` + `TabPanel`、`Menu`、`Popover` | 自写 radio 组、下拉 |
 | 浮层 | `Dialog`、`Drawer`、`ReasonDialog`（写操作要原因） | 自写遮罩 |
+| 悬停看详情 | `HoverCard` + `useHoverCard`（400ms 后出现，贴在锚点右侧；只放补充信息，操作仍在 ⋯ 菜单里） | `title` 属性塞长文、自写定位浮层 |
+| 菜单项带说明 | `Menu` 的 `description`（例如不可用的原因，会换行）；当前项用 `checked` | 把原因塞进 `hint` 被截断 |
 | 颜色 | `tokens.css` 的变量（`--c-1..8`、`--st-*`、`--accent`…） | 有彩色的裸色值（黑 / 白 / 灰做遮罩阴影可以） |
 
 `npm run ux:audit -w @taktflow/web` 拦这些写法（CI 必过）：`identity-icon`（引 lucide 的 Bot / Sparkles）、`adhoc-empty`（自己拼空态）、`raw-color`（CSS 里的有彩色裸色值），以及原有的 `loading-text`、`async-empty`、`cli-hint`。确有理由时在该行或上一行写 `ux-audit: ok <原因>`。

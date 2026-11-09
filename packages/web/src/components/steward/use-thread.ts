@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { Proposal, StewardContextRef, StewardMessage, StewardPostRequest, StewardStreamEvent, StewardThread } from '@taktflow/core'
+import type { Proposal, StewardContextRef, StewardMessage, StewardPostRequest, StewardRuntime, StewardStreamEvent, StewardThread } from '@taktflow/core'
 import { useSource } from '../../api'
 import { applyStreamEvent, mergeDetail, settleLocal } from './thread-reducer'
 
@@ -20,7 +20,10 @@ export interface ThreadState {
   waiting: boolean
   /** 首屏就有的消息 id：它们不播入场动画。 */
   initialIds: Set<string>
-  send(text: string, opts?: { context?: StewardContextRef[]; attachments?: StewardPostRequest['attachments'] }): Promise<boolean>
+  /** runtime 只在新建会话时带上（第一条回复就用它）；已有会话用 setRuntime。 */
+  send(text: string, opts?: { context?: StewardContextRef[]; attachments?: StewardPostRequest['attachments']; runtime?: StewardRuntime }): Promise<boolean>
+  /** 已有会话换 harness × 模型（null 回到默认）；失败抛错，调用方提示。 */
+  setRuntime(runtime: StewardRuntime | null): Promise<void>
   upsertProposal(p: Proposal): void
   patchMessage(id: string, patch: Partial<StewardMessage>): void
   reload(): void
@@ -108,7 +111,7 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
 
   const send = useCallback<ThreadState['send']>(
     async (text, opts = {}) => {
-      const body: StewardPostRequest = { text, context: opts.context, attachments: opts.attachments }
+      const body: StewardPostRequest = { text, context: opts.context, attachments: opts.attachments, ...(!threadId && opts.runtime ? { runtime: opts.runtime } : {}) }
       const local: StewardMessage = { id: `local-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, threadId: threadId ?? '', role: 'user', at: new Date().toISOString(), text, context: opts.context }
       setMessages((cur) => [...cur, local])
       setWaiting(true)
@@ -144,6 +147,13 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
     waiting: waiting && !streamingId,
     initialIds: initialIds.current,
     send,
+    setRuntime: useCallback(
+      async (runtime: StewardRuntime | null) => {
+        if (!threadId) return
+        setThread(await ds.patchStewardThread(threadId, { runtime }))
+      },
+      [ds, threadId],
+    ),
     upsertProposal: useCallback((p: Proposal) => setProposals((cur) => ({ ...cur, [p.id]: p })), []),
     patchMessage: useCallback((id: string, patch: Partial<StewardMessage>) => setMessages((cur) => cur.map((m) => (m.id === id ? { ...m, ...patch } : m))), []),
     reload: useCallback(() => setTick((t) => t + 1), []),

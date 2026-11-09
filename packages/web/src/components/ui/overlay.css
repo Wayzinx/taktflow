@@ -164,6 +164,28 @@
 .ov-mi-label {
   flex: 1;
 }
+.ov-mi.has-desc {
+  height: auto;
+  min-height: 30px;
+  padding-block: 6px;
+  align-items: flex-start;
+}
+.ov-mi.has-desc > .ov-mi-icon,
+.ov-mi.has-desc > .ov-mi-check {
+  margin-top: 2px;
+}
+.ov-mi-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+.ov-mi-desc {
+  font-size: var(--text-meta);
+  line-height: 1.35;
+  color: var(--text-3);
+  white-space: normal;
+}
 .ov-mi-hint {
   flex: none;
   font-size: var(--text-meta);
@@ -195,4 +217,16 @@
 }
 .risk-tag.risk-dangerous {
   color: var(--st-failed);
+}
+
+/* ---------------------------------------------------------------- 悬停卡（docs/design/30 §2）：从侧面滑出，不挡点击 */
+.ov-hovercard {
+  width: 264px;
+  padding: var(--sp-3);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.ov-hovercard.presence-pop[data-state='enter'],
+.ov-hovercard.presence-pop[data-state='exit'] {
+  transform: translateX(var(--pop-dx, -4px)) scale(0.985);
 }

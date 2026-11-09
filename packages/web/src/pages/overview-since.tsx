@@ -114,6 +114,7 @@ export function SinceBanner() {
                     {PROGRESS_WORD[p.kind]}
                     {p.from && p.to ? `：${p.from} → ${p.to}` : `：${p.title}`}
                   </span>
+                  {p.more ? <span className="since-meta" title={`同一需求之前还有 ${p.more} 条进展`}>另 {p.more} 条</span> : null}
                   <span className="since-meta">{fmtRelative(p.at)}</span>
                 </Link>
               ))}

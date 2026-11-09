@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
 import type { StewardFeedItem } from '@taktflow/core'
 import { useAsync } from '../../api'
@@ -16,6 +17,19 @@ export default function SoloRail({ collapsed }: { collapsed: boolean }) {
   const side = query.get('side') === 'feed' ? 'feed' : 'threads'
   // 会话号变了（新建、切换）就重拉一次列表，新会话立刻出现在最上面
   const threads = useAsync((ds) => ds.stewardThreads(), [threadId])
+  // 有会话在回复时隔几秒刷新一次，状态徽标（回复中 → 完成 / 出错）跟得上
+  const replying = threads.data?.some((t) => t.status === 'replying')
+  const reload = useRef(threads.reload)
+  reload.current = threads.reload
+  useEffect(() => {
+    if (!replying) return
+    const t = setInterval(() => reload.current(), 6000)
+    return () => clearInterval(t)
+  }, [replying])
+  const changed = (deletedId?: string) => {
+    if (deletedId && deletedId === threadId) navigate('/solo')
+    threads.reload()
+  }
   const pick = (id: string | undefined) => setQuery({ thread: id, focus: undefined }, { replace: false })
   const fresh = () => navigate('/solo')
   const onFeed = (it: StewardFeedItem) => {
@@ -30,7 +44,7 @@ export default function SoloRail({ collapsed }: { collapsed: boolean }) {
         <MessageSquarePlus aria-hidden />
         <span className="sb-label">新对话</span>
       </button>
-      {!collapsed && <StewardSidebar view={side} onView={(v) => setQuery({ side: v === 'feed' ? 'feed' : undefined })} threads={threads} current={threadId} onPick={pick} onFeed={onFeed} />}
+      {!collapsed && <StewardSidebar view={side} onView={(v) => setQuery({ side: v === 'feed' ? 'feed' : undefined })} threads={threads} current={threadId} onPick={pick} onFeed={onFeed} onChanged={changed} />}
     </div>
   )
 }

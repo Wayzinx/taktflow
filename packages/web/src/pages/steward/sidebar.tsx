@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { CircleCheck, FileText, Forward, Hourglass, MessagesSquare, OctagonAlert, Search, TriangleAlert, Undo2, X, type LucideIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { CircleCheck, FileText, Forward, MessagesSquare, OctagonAlert, TriangleAlert, Undo2, type LucideIcon } from 'lucide-react'
 import type { DelegationStatus, StewardFeedItem, StewardThread } from '@taktflow/core'
 import { useAsync, useSource, type AsyncState } from '../../api'
 import { normReceipt } from '../../components/receipt'
@@ -7,57 +7,9 @@ import { EmptyState, ErrorState, Segmented, SkeletonRows, TabPanel, useFlashRows
 import { fmtRelative } from '../../lib/format'
 import { useStewardUnread } from '../../lib/ui-store'
 import { BeeGlyph } from '../../components/identity'
-
-/** 列表预览用纯文本：去掉 Markdown 链接 / 粗体 / 行内代码与 [n] 引用标记。 */
-const plain = (t: string) => t.replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1').replace(/\*\*|`/g, '').replace(/\[\d+\]/g, '')
+import { ThreadList } from './thread-list'
 
 export type SideView = 'threads' | 'feed'
-
-function ThreadList({ threads, current, onPick }: { threads: StewardThread[]; current?: string; onPick: (id: string) => void }) {
-  const [q, setQ] = useState('')
-  const list = useMemo(() => threads.filter((t) => !q.trim() || t.title.toLowerCase().includes(q.trim().toLowerCase())), [threads, q])
-  const st = useStagger(list.length)
-  const flash = useFlashRows(threads.map((t) => t.id))
-  return (
-    <>
-      <div className="stwp-search">
-        <Search aria-hidden />
-        <input className="stwp-search-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="按标题搜索会话" aria-label="搜索会话" />
-        {q && (
-          <button type="button" className="btn btn-ghost btn-icon btn-sm" aria-label="清空" onClick={() => setQ('')}>
-            <X />
-          </button>
-        )}
-      </div>
-      {list.length === 0 ? (
-        <EmptyState compact icon={MessagesSquare} title={q ? '没有匹配的会话' : '还没有会话'} body={q ? '换个关键词试试' : '在右边问一句，就会开始第一个会话'} />
-      ) : (
-        <ul className="stwp-list" aria-label="会话">
-          {list.map((t, i) => {
-            const s = st(i)
-            return (
-              <li key={t.id} className={`${s.className ?? ''} ${flash(t.id)}`} style={s.style}>
-                <button type="button" className="stwp-item pressable" aria-current={t.id === current ? 'true' : undefined} onClick={() => onPick(t.id)}>
-                  <span className="stwp-item-top">
-                    <span className="stwp-item-title truncate">{t.title}</span>
-                    <span className="faint num">{fmtRelative(t.updatedAt)}</span>
-                  </span>
-                  {t.lastMessage && <span className="stwp-item-last truncate">{plain(t.lastMessage)}</span>}
-                  {(t.pendingProposals ?? 0) > 0 && (
-                    <span className="stw-tag" data-tone="waiting">
-                      <Hourglass aria-hidden />
-                      {t.pendingProposals} 个提案待决定
-                    </span>
-                  )}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-    </>
-  )
-}
 
 const DELEGATION_TITLE: Record<DelegationStatus, string> = {
   sent: '收到转达',
@@ -130,7 +82,7 @@ function FeedList({ onOpen }: { onOpen: (it: StewardFeedItem) => void }) {
 }
 
 /** 管家页左栏：会话（可搜索）/ 动态（汇报、风险变化、提案结果、Lead 回复；实时追加并闪一下）。 */
-export function StewardSidebar({ view, onView, threads, current, onPick, onFeed }: { view: SideView; onView: (v: SideView) => void; threads: AsyncState<StewardThread[]>; current?: string; onPick: (id: string) => void; onFeed: (it: StewardFeedItem) => void }) {
+export function StewardSidebar({ view, onView, threads, current, onPick, onFeed, onChanged }: { view: SideView; onView: (v: SideView) => void; threads: AsyncState<StewardThread[]>; current?: string; onPick: (id: string) => void; onFeed: (it: StewardFeedItem) => void; onChanged: (deletedId?: string) => void }) {
   const unread = useStewardUnread()
   return (
     <aside className="stwp-side card" aria-label="会话与动态">
@@ -154,7 +106,7 @@ export function StewardSidebar({ view, onView, threads, current, onPick, onFeed 
         ) : !threads.data ? (
           <SkeletonRows rows={5} />
         ) : (
-          <ThreadList threads={threads.data} current={current} onPick={onPick} />
+          <ThreadList threads={threads.data} current={current} onPick={onPick} onChanged={onChanged} />
         )}
       </TabPanel>
     </aside>

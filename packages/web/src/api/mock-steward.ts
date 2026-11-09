@@ -318,9 +318,43 @@ export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewar
   }
 
   return {
-    stewardThreads: () => delay([...threads].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))),
+    stewardThreads: (opts) =>
+      delay(
+        threads
+          .filter((t) => Boolean(t.archivedAt) === Boolean(opts?.archived))
+          .sort((a, b) => (b.pinnedAt ?? '').localeCompare(a.pinnedAt ?? '') || b.updatedAt.localeCompare(a.updatedAt)),
+      ),
+    patchStewardThread(id, patch) {
+      const t = threads.find((x) => x.id === id)
+      if (!t) return fail(404, `会话 ${id} 不存在`)
+      if (patch.title !== undefined) {
+        const title = patch.title.trim()
+        if (!title || title.length > 80) return fail(400, '标题需要 1–80 个字')
+        Object.assign(t, { title, titleEdited: true })
+      }
+      if (patch.pinned !== undefined) t.pinnedAt = patch.pinned ? now() : undefined
+      if (patch.archived !== undefined) t.archivedAt = patch.archived ? now() : undefined
+      if (patch.runtime !== undefined) t.runtime = patch.runtime ?? undefined
+      return delay(t, 120)
+    },
+    deleteStewardThread(id) {
+      const t = threads.find((x) => x.id === id)
+      if (!t) return fail(404, `会话 ${id} 不存在`)
+      const pending = proposals.filter((p) => p.threadId === id && p.status === 'pending').length
+      if (pending) return fail(409, `这个会话还有 ${pending} 个待决定的提案，先处理或归档`)
+      threads.splice(threads.indexOf(t), 1)
+      return delay(undefined, 120)
+    },
+    stewardRuntimeChoices: () =>
+      delay([
+        { harness: 'native', harnessLabel: '内置（直连模型 API）', model: 'ds-flash', modelLabel: 'deepseek-flash', provider: 'deepseek', available: true, isDefault: true },
+        { harness: 'native', harnessLabel: '内置（直连模型 API）', model: 'ds-pro', modelLabel: 'deepseek-pro', provider: 'deepseek', available: true },
+        { harness: 'claude-code', harnessLabel: 'Claude Code', model: 'ds-flash', modelLabel: 'deepseek-flash', provider: 'deepseek', available: true },
+        { harness: 'claude-code', harnessLabel: 'Claude Code', modelLabel: 'Claude Code 自带模型', available: true },
+        { harness: 'codex', harnessLabel: 'Codex', modelLabel: 'Codex 自带模型', available: false, reason: 'Codex 未安装或不可用，请安装后重新选择' },
+      ]),
     async createStewardThread(body) {
-      const thread: StewardThread = { id: nid('th'), title: body.text.slice(0, 24), createdAt: now(), updatedAt: now(), context: body.context, lastMessage: body.text }
+      const thread: StewardThread = { id: nid('th'), title: body.text.slice(0, 24), createdAt: now(), updatedAt: now(), context: body.context, lastMessage: body.text, ...(body.runtime ? { runtime: body.runtime } : {}) }
       threads.unshift(thread)
       const message: StewardMessage = { id: nid('m'), threadId: thread.id, role: 'user', at: now(), author: ME, text: body.text, context: body.context }
       messages.push(message)

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { ArrowUp, AtSign, FileText, Paperclip, SquareSlash, X } from 'lucide-react'
 import type { StewardContextRef, StewardPostRequest } from '@taktflow/core'
 import { useSource } from '../../api'
@@ -22,6 +22,8 @@ export interface ComposerProps {
   autoFocus?: boolean
   /** @ 跨全部空间找（服务端 find 排序）；否则只列当前空间的对象。 */
   globalMentions?: boolean
+  /** 工具栏左侧附件按钮之后的额外控件（管家的 harness × 模型选择器）。 */
+  tools?: ReactNode
 }
 
 /** 跨空间 @：输入停 160ms 再查；查询期间保留上一批结果，免得每敲一个字就闪成骨架。 */
@@ -44,7 +46,7 @@ function useFoundMentions(q: string | undefined): PickItem[] | undefined {
  * 管家输入框（docs/design/22 §1.3）：@ 引用对象、/ 选命令、附件（按钮或拖入，文本文件）、Enter 发送、Shift+Enter 换行。
  * 上下文标签在输入框上方，可删；@ 选中的对象会加进上下文。
  */
-export function Composer({ draft, onDraft, context, onContext, onSend, busy, placeholder = '问管家，或让它帮你做点什么', autoFocus, globalMentions }: ComposerProps) {
+export function Composer({ draft, onDraft, context, onContext, onSend, busy, placeholder = '问管家，或让它帮你做点什么', autoFocus, globalMentions, tools }: ComposerProps) {
   const ds = useSource()
   const box = useRef<HTMLDivElement>(null)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -210,6 +212,7 @@ export function Composer({ draft, onDraft, context, onContext, onSend, busy, pla
           <Paperclip />
         </button>
         <input ref={file} type="file" multiple hidden accept=".md,.txt,.json,.ts,.tsx,.js,.yaml,.yml,.csv,.log,text/*" onChange={(e) => void addFiles(e.target.files).then(() => (e.target.value = ''))} />
+        {tools}
         <span className="stw-composer-hint faint">Enter 发送 · Shift+Enter 换行</span>
         <button type="button" className="btn btn-primary btn-icon btn-sm stw-send" title="发送（Enter）" aria-label="发送" disabled={!draft.trim() || busy} onClick={() => void send()}>
           <ArrowUp />

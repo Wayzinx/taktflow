@@ -8,6 +8,8 @@ export interface MenuItem {
   label: ReactNode
   icon?: LucideIcon
   hint?: ReactNode
+  /** 标题下面的一行小字（例如不可用的原因），会换行，不截断 */
+  description?: ReactNode
   /** 单选菜单里的当前项 */
   checked?: boolean
   danger?: boolean
@@ -104,12 +106,19 @@ export function Menu({ open, onClose, anchor, items, placement = 'bottom-start',
                 role={it.checked === undefined ? 'menuitem' : 'menuitemradio'}
                 aria-checked={it.checked}
                 aria-disabled={it.disabled || undefined}
-                className={`ov-mi${i === sel ? ' on' : ''}${it.danger ? ' danger' : ''}${it.disabled ? ' disabled' : ''}`}
+                className={`ov-mi${i === sel ? ' on' : ''}${it.danger ? ' danger' : ''}${it.disabled ? ' disabled' : ''}${it.description ? ' has-desc' : ''}`}
                 onMouseMove={() => i !== sel && !it.disabled && setSel(i)}
                 onClick={() => pick(it)}
               >
                 {Icon ? <Icon className="ov-mi-icon" aria-hidden /> : it.checked !== undefined ? <span className="ov-mi-icon" /> : null}
-                <span className="ov-mi-label truncate">{it.label}</span>
+                {it.description ? (
+                  <span className="ov-mi-text">
+                    <span className="ov-mi-label truncate">{it.label}</span>
+                    <span className="ov-mi-desc">{it.description}</span>
+                  </span>
+                ) : (
+                  <span className="ov-mi-label truncate">{it.label}</span>
+                )}
                 {it.hint && <span className="ov-mi-hint">{it.hint}</span>}
                 {it.checked && <Check className="ov-mi-check" aria-hidden />}
               </div>

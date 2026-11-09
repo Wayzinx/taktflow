@@ -416,3 +416,132 @@
   padding-top: var(--sp-6);
   border-top: 1px solid var(--divider);
 }
+
+/* ---------------------------------------------------------------- 会话分组、行操作、状态徽标（docs/design/30 §2） */
+.stwp-group + .stwp-group {
+  margin-top: var(--sp-2);
+}
+.stwp-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: var(--sp-1) var(--sp-2);
+  border: 0;
+  background: none;
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-3);
+  text-align: left;
+}
+.stwp-group-head:not(.is-static) {
+  cursor: pointer;
+  border-radius: var(--r-sm);
+}
+.stwp-group-head:not(.is-static):hover {
+  color: var(--text-2);
+  background: var(--surface-hover);
+}
+.stwp-group-head .num {
+  font-weight: 500;
+}
+.stwp-chev {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.stwp-group-head[aria-expanded='true'] .stwp-chev {
+  transform: rotate(90deg);
+}
+.stwp-group-empty {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-3) var(--sp-2);
+  font-size: var(--text-meta);
+}
+.stwp-archived {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-2);
+  border-top: 1px solid var(--border);
+}
+
+/* 行：右上角的"⋯"悬停 / 聚焦时才出现，菜单开着时保持 */
+.stwp-row {
+  position: relative;
+}
+.stwp-row .stwp-item {
+  padding-right: 30px;
+}
+.stwp-more {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.stwp-row:hover .stwp-more,
+.stwp-row:focus-within .stwp-more,
+.stwp-row.menu-open .stwp-more {
+  opacity: 1;
+}
+/* "⋯"出现时把时间让开 */
+.stwp-row:hover .stwp-item-top > .faint,
+.stwp-row.menu-open .stwp-item-top > .faint {
+  visibility: hidden;
+}
+.stwp-pin {
+  flex: none;
+  align-self: center;
+  width: 12px;
+  height: 12px;
+  color: var(--text-3);
+}
+.stwp-rename {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+}
+.stwp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.stw-tag[data-tone='running'] {
+  color: var(--st-running);
+  background: var(--st-running-soft);
+}
+.stw-tag[data-tone='stale'] {
+  color: var(--st-stale);
+  background: color-mix(in oklch, var(--st-stale) 12%, transparent);
+}
+.stw-tag .amark {
+  margin: -2px 0;
+}
+
+/* 悬停卡内容 */
+.stwp-card-title {
+  margin-bottom: var(--sp-2);
+  font-size: var(--text-ui);
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.stwp-card-facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px var(--sp-3);
+  margin: 0;
+}
+.stwp-card-facts dt {
+  color: var(--text-3);
+}
+.stwp-card-facts dd {
+  margin: 0;
+  color: var(--text);
+}
+.stwp-card-error {
+  margin: var(--sp-2) 0 0;
+  color: var(--st-failed);
+  overflow-wrap: anywhere;
+}

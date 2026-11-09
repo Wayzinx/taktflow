@@ -143,6 +143,7 @@ export function Meter({ value, tone = 'success', height = 6 }: { value: number; 
 
 export { Dialog, trapKeys, useRestoreFocus, type DialogProps } from './ui/dialog'
 export { Popover, type Placement, type PopoverProps } from './ui/popover'
+export { HoverCard, useHoverCard } from './ui/hover-card'
 export { Menu, type MenuItem } from './ui/menu'
 
 // ---------------------------------------------------------------- M4 原语（docs/dev/m4-web.md；用法见 packages/web/OWNERSHIP.md）

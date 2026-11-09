@@ -1,51 +1,4 @@
-import type {
-  Digest,
-  KnowledgeBaseDetail,
-  KnowledgeBaseSummary,
-  KnowledgeBinding,
-  KnowledgeBuild,
-  KnowledgeCreateRequest,
-  KnowledgeDoc,
-  KnowledgeEvalCase,
-  KnowledgeEvalRun,
-  KnowledgeEvalRunRequest,
-  KnowledgeEvalSet,
-  KnowledgeKindInfo,
-  KnowledgeMigration,
-  KnowledgePublishRequest,
-  KnowledgePublishResponse,
-  KnowledgeQueryRequest,
-  KnowledgeQueryResponse,
-  KnowledgeTestResult,
-  KnowledgeUpdateRequest,
-  KnowledgeUploadRequest,
-  ProductEvent,
-  ProductMetric,
-  Proposal,
-  ProposalDecisionRequest,
-  RequirementCreateRequest,
-  RouteDecision,
-  RoutePreviewDraftRequest,
-  RequirementCreateResponse,
-  RequirementSummary,
-  RequirementUpdateRequest,
-  Risk,
-  RiskStateRequest,
-  ServerInfo,
-  SpaceCreateRequest,
-  SpaceSummary,
-  SpaceUpdateRequest,
-  StewardFeedItem,
-  StewardMessage,
-  StewardPostRequest,
-  StewardPrefs,
-  StewardStreamEvent,
-  StewardThread,
-  StewardFindResult,
-  StewardFindType,
-  StewardPick,
-  WorkflowConvertResult,
-} from '@taktflow/core'
+import type { Digest, KnowledgeBaseDetail, KnowledgeBaseSummary, KnowledgeBinding, KnowledgeBuild, KnowledgeCreateRequest, KnowledgeDoc, KnowledgeEvalCase, KnowledgeEvalRun, KnowledgeEvalRunRequest, KnowledgeEvalSet, KnowledgeKindInfo, KnowledgeMigration, KnowledgePublishRequest, KnowledgePublishResponse, KnowledgeQueryRequest, KnowledgeQueryResponse, KnowledgeTestResult, KnowledgeUpdateRequest, KnowledgeUploadRequest, ProductEvent, ProductMetric, Proposal, ProposalDecisionRequest, RequirementCreateRequest, RequirementCreateResponse, RequirementSummary, RequirementUpdateRequest, Risk, RiskStateRequest, RouteDecision, RoutePreviewDraftRequest, ServerInfo, SpaceCreateRequest, SpaceSummary, SpaceUpdateRequest, StewardFeedItem, StewardFindResult, StewardFindType, StewardMessage, StewardPick, StewardPostRequest, StewardPrefs, StewardRuntimeChoice, StewardStreamEvent, StewardThread, StewardThreadPatch, WorkflowConvertResult } from '@taktflow/core'
 
 /**
  * M4 新增接口（packages/core/src/api.ts 的三节：需求与空间增删改、管家、知识库）。
@@ -85,7 +38,14 @@ export interface StewardThreadDetail {
 }
 
 export interface StewardSource {
-  stewardThreads(): Promise<StewardThread[]>
+  /** 默认不含已归档；archived 时只列已归档。置顶的在前，其余按更新时间倒序。 */
+  stewardThreads(opts?: { archived?: boolean }): Promise<StewardThread[]>
+  /** 重命名 / 置顶 / 归档 / 固定 harness 与模型（docs/design/30 §2）。 */
+  patchStewardThread(id: string, patch: StewardThreadPatch): Promise<StewardThread>
+  /** 还有待决定的提案时 409。 */
+  deleteStewardThread(id: string): Promise<void>
+  /** 管家能搭配的 harness × 模型。 */
+  stewardRuntimeChoices(): Promise<StewardRuntimeChoice[]>
   /** 新会话 + 第一条消息；管家的回复走 subscribeSteward。 */
   createStewardThread(body: StewardPostRequest): Promise<{ thread: StewardThread; message: StewardMessage }>
   stewardThread(id: string): Promise<StewardThreadDetail>
