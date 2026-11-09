@@ -26,6 +26,13 @@ function escapeRegExp(value: string): string {
 export function collectSecrets(req?: HarnessRequest, providers: Record<string, ModelProvider | ProviderConfig> = {}): string[] {
   const local = localSecretValues()
   const values: Array<string | undefined> = [...Object.values(local), ...Object.keys(local).map(name => process.env[name])]
+  for (const server of req?.mcpServers ?? []) {
+    for (const value of Object.values(server.headers ?? {})) {
+      values.push(value)
+      const auth = /^(?:Bearer|Basic)\s+(.+)$/i.exec(value)
+      if (auth) values.push(auth[1])
+    }
+  }
   for (const source of [process.env, req?.env ?? {}]) {
     for (const [name, value] of Object.entries(source)) if (SENSITIVE_ENV_NAME.test(name)) values.push(value)
   }

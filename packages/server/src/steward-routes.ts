@@ -1,3 +1,5 @@
+import { StewardMcp } from './steward-mcp.js'
+import { stewardRuntime } from './steward-runtime.js'
 import { dirname, join, resolve } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { applyEdits } from '@taktflow/workflow-source'
@@ -61,6 +63,7 @@ export interface StewardRouteDeps {
   resolveChat?: (prefs: StewardPrefs) => Promise<StewardDeps['chat']>
   prepareStores?: (stores: ProjectStores) => Promise<ProjectStores>
   connections?: Set<() => void>
+  mcpUrl?: () => string
   steward?: Partial<
     Pick<StewardDeps, 'chat' | 'now' | 'extraRisks' | 'systemPrompt' | 'leadTimeoutMs'>
   >
@@ -198,6 +201,8 @@ export function registerStewardRoutes(
   deps: StewardDeps | StewardRouteDeps,
 ) {
   const add = typeof router === 'function' ? router : router.add.bind(router)
+  const mcp = new StewardMcp()
+  add('POST', '/api/steward/mcp', mcp.handle)
   const agents = new Map<string, StewardAgent>(),
     schedulers = new Map<string, ReturnType<typeof startDigestScheduler>>()
   const connections =
@@ -209,6 +214,7 @@ export function registerStewardRoutes(
       if (agents.size >= 128)
         throw new HttpError(429, '管家活跃用户已达上限，请稍后重试或联系管理员')
       agent = new StewardAgent('dataDir' in deps ? deps : createStewardDeps(deps, id), id)
+      if (!('dataDir' in deps)) Object.assign(agent.deps, stewardRuntime(agent.deps, id, mcp, deps.mcpUrl ?? (() => { throw new StewardError(503, 'MCP 地址尚未就绪，请稍后重试') })))
       agents.set(id, agent)
       const current = agent
       schedulers.set(
@@ -253,14 +259,6 @@ export function registerStewardRoutes(
     for (const entry of entries) {
       if (closed) return
       if (!entry.isDirectory()) continue
-      const { access } = await import('node:fs/promises')
-      if (
-        !(await access(join(root, entry.name, 'prefs.json')).then(
-          () => true,
-          () => false,
-        ))
-      )
-        continue
       if (agents.size >= 128) break
       await ensureAgent(stewardUserId(entry.name)).ready
     }
@@ -293,8 +291,28 @@ export function registerStewardRoutes(
     items: await stewardPicks(agent.deps, await store.prefs(), findLimit(url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined, 6)),
   }))
   route('GET', '/threads', async ({ url }, { store }) =>
-    store.threads(url.searchParams.get('q') ?? url.searchParams.get('search') ?? ''),
+    store.threads(url.searchParams.get('q') ?? url.searchParams.get('search') ?? '', url.searchParams.get('archived') === '1'),
   )
+  route('GET', '/runtime-choices', async (_, { agent, store }) => agent.deps.runtimeChoices?.(await store.prefs()) ?? [])
+  route('PATCH', '/threads/:id', async ({ request, params }, { agent, store }) => {
+    await store.thread(params.id!)
+    const patch = await body(request)
+    if (patch.runtime !== undefined && patch.runtime !== null) {
+      const runtime = patch.runtime as import('@taktflow/core').StewardRuntime
+      if (typeof runtime !== 'object' || Array.isArray(runtime) || Object.keys(runtime).some(key => !['harness', 'model'].includes(key)) ||
+        runtime.harness !== undefined && typeof runtime.harness !== 'string' || runtime.model !== undefined && typeof runtime.model !== 'string')
+        throw new StewardError(400, '运行配置格式错误，请重新选择 harness 和模型')
+      const choices = await agent.deps.runtimeChoices?.(await store.prefs()) ?? []
+      const choice = choices.find(choice => choice.harness === (runtime.harness ?? 'native') && choice.model === runtime.model)
+      if (!choice?.available) throw new StewardError(400, choice?.reason ?? '这个 harness 与模型组合不存在，请重新选择')
+    }
+    return store.patchThread(params.id!, patch as import('@taktflow/core').StewardThreadPatch)
+  })
+  route('DELETE', '/threads/:id', async ({ response, params }, { store }) => {
+    await store.deleteThread(params.id!)
+    response.writeHead(204).end()
+    return STREAMING
+  })
   route('POST', '/threads', async ({ request }, { agent }) => {
     const result = await agent.post((await body(request)) as unknown as StewardPostRequest)
     return { thread: result.thread, message: result.message }
@@ -454,6 +472,7 @@ export function registerStewardRoutes(
       for (const scheduler of schedulers.values()) scheduler.close()
       await ready.catch(() => {})
       await Promise.allSettled([...agents.values()].map((agent) => agent.drain()))
+      mcp.close()
       for (const agent of agents.values()) agent.close()
       for (const close of connections) close()
     },

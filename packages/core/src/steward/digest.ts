@@ -140,11 +140,14 @@ export async function buildDigest(
     .sort((a, b) => b.ratio - a.ratio || Math.abs(Number(b.delta)) - Math.abs(Number(a.delta)))
     .slice(0, 3)
     .map(({ ratio: _ratio, ...item }) => item)
-  digest.progress = [
-    ...new Map(
-      digest.progress.map((p) => [`${p.spaceId}/${p.requirementId}/${p.kind}/${p.to ?? p.at}`, p]),
-    ).values(),
-  ].sort((a, b) => a.at.localeCompare(b.at))
+  const progress = new Map<string, Digest['progress'][number]>()
+  const priority = { created: 0, started: 1, stage: 2, blocked: 3, failed: 4, delivered: 5 }
+  for (const item of digest.progress.sort((a, b) => b.at.localeCompare(a.at) || priority[b.kind] - priority[a.kind])) {
+    const key = JSON.stringify([item.spaceId, item.requirementId]), latest = progress.get(key)
+    if (latest) latest.more = (latest.more ?? 0) + 1
+    else progress.set(key, item)
+  }
+  digest.progress = [...progress.values()]
   digest.summary = `有 ${digest.attention.length} 条待办、${digest.risks.length} 条新风险和 ${digest.progress.length} 项进展。`
   if (peek)
     digest.id = sha256(

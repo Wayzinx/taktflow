@@ -1,3 +1,6 @@
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { HarnessCapabilities } from '@taktflow/core'
 import type { HarnessAdapter } from '@taktflow/core'
 import { ParseState, object, string, number, readUsage, readProviderApiKey } from './parse.js'
@@ -106,7 +109,19 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
       const parser = createClaudeCodeParser(sink)
       // 自动记忆会往个人 ~/.claude/projects 写东西，流水线里关掉（env 里显式给了就按给的）
       processReq = { ...processReq, env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', ...processReq.env } }
-      const proc = await runProcess(bin, args, processReq, { stdin: req.prompt, onLine: parser.onLine })
+      let mcpDir: string | undefined
+      let proc: Awaited<ReturnType<typeof runProcess>>
+      try {
+        if (req.mcpServers?.length) {
+          mcpDir = await mkdtemp(join(tmpdir(), 'takt-mcp-'))
+          const file = join(mcpDir, 'mcp.json')
+          await writeFile(file, JSON.stringify({ mcpServers: Object.fromEntries(req.mcpServers.map(server => [server.name, { type: 'http', url: server.url, headers: server.headers }])) }), { mode: 0o600 })
+          args.push('--mcp-config', file, '--strict-mcp-config', '--allowedTools', 'mcp__takt__*', '--tools', '')
+        }
+        proc = await runProcess(bin, args, processReq, { stdin: req.prompt, onLine: parser.onLine })
+      } finally {
+        if (mcpDir) await rm(mcpDir, { recursive: true, force: true })
+      }
       const result = finalizeResult(req, parser.result(), proc)
       if (req.provider && result.usage) delete result.usage.costUsd
       // 别家模型名 Claude Code 不认识，会往 stderr 打一行诊断；不是错误原因

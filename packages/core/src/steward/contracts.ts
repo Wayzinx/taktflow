@@ -1,7 +1,7 @@
-import type { Actor, ChatRequest, ChatResponse, RoomMessage } from '../types.js'
+import type { Actor, ChatRequest, ChatResponse, RoomMessage, HarnessEvent, ToolSpec } from '../types.js'
 import type { ProjectStores } from '../interfaces.js'
 import type { CommandRegistry } from '../commands/contracts.js'
-import type { Risk, SpaceSummary, WorkflowDocument, WorkflowEdit, WorkflowSummary } from '../api.js'
+import type { Risk, SpaceSummary, WorkflowDocument, WorkflowEdit, WorkflowSummary, StewardRuntime, StewardRuntimeChoice, StewardPrefs } from '../api.js'
 
 export interface StewardSpace {
   id: string
@@ -23,6 +23,18 @@ export interface StewardDeps {
   open(spaceId: string): Promise<StewardSpace>
   serverCommands?: CommandRegistry
   chat?: (request: ChatRequest, onToken?: (text: string) => void) => Promise<ChatResponse>
+  runtimeChoices?: (prefs: StewardPrefs) => Promise<StewardRuntimeChoice[]>
+  resolveRuntime?: (prefs: StewardPrefs, runtime?: StewardRuntime) => Promise<{
+    chat?: StewardDeps['chat']
+    model?: string
+    run?: (turn: {
+      threadId: string
+      messages: ChatRequest['messages']
+      specs: ToolSpec[]
+      call(name: string, input: Record<string, unknown>): Promise<unknown>
+      onEvent(event: HarnessEvent): void
+    }) => Promise<string>
+  }>
   now?: () => Date
   extraRisks?: (space: StewardSpace) => Promise<Array<Omit<Risk, 'state'> | Risk>>
   applyWorkflowEdits?: (

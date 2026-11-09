@@ -846,19 +846,22 @@ export class StewardTools {
 
   private async saveDelegation(record: DelegationRecord, context?: ToolContext): Promise<void> {
     await this.store.write(this.delegationFile(record.delegation.messageId), record)
-    if (context) await context.onDelegation?.({ ...record.delegation })
-    for (const message of await this.store.messages(record.threadId)) {
-      if (!message.delegations?.some(item => item.messageId === record.delegation.messageId)) continue
-      message.delegations = message.delegations.map(item => item.messageId === record.delegation.messageId ? { ...record.delegation } : item)
-      await this.store.saveMessage(message)
-      this.store.emit(record.threadId, { type: 'delegation', messageId: message.id, delegation: { ...record.delegation } })
-    }
+    await this.store.serial(async () => {
+      if (!(await this.store.read(`threads/${stewardId(record.threadId)}.json`))) return
+      if (context) await context.onDelegation?.({ ...record.delegation })
+      for (const message of await this.store.messages(record.threadId)) {
+        if (!message.delegations?.some(item => item.messageId === record.delegation.messageId)) continue
+        message.delegations = message.delegations.map(item => item.messageId === record.delegation.messageId ? { ...record.delegation } : item)
+        await this.store.saveMessage(message)
+        this.store.emit(record.threadId, { type: 'delegation', messageId: message.id, delegation: { ...record.delegation } })
+      }
+    })
     await this.store.feed({ type: 'delegation', at: timestamp(this.deps), threadId: record.threadId, delegation: { ...record.delegation } })
   }
 
   async refreshDelegations(): Promise<StewardDelegation[]> {
     // 把旧消息里的 answered / failed 归一化；旧消息仍可用于显式重发。
-    for (const thread of await this.store.threads()) for (const message of await this.store.messages(thread.id)) {
+    for (const thread of await this.store.threads('', null)) for (const message of await this.store.messages(thread.id)) {
       for (const delegation of message.delegations ?? []) if (!(await this.store.read(this.delegationFile(delegation.messageId)))) {
         const space = await this.deps.open(delegation.spaceId)
         const original = (await space.stores.chat.list(delegation.requirementId)).find(item => item.id === delegation.messageId)
@@ -895,6 +898,7 @@ export class StewardTools {
     await this.refreshDelegations()
     const record = await this.store.read<DelegationRecord>(this.delegationFile(messageId))
     if (!record || !['uncertain', 'expired'].includes(delegationStatus(record.delegation.status))) throw new StewardError(409, '仅不确定或已过期的转达可重发，请刷新回执')
+    await this.store.thread(record.threadId)
     if (!record.text) throw new StewardError(409, '旧转达缺少原文，请人工重新发起')
     const result = await this.askLead(record.delegation.spaceId, record.delegation.requirementId, record.text,
       { threadId: record.threadId, messageId: randomUUID(), proposals: [], delegations: [] })

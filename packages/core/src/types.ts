@@ -959,6 +959,8 @@ export interface HarnessRequest {
   tools?: { writeScope?: string[]; allowBash?: boolean }
   /** 只读调用（回放评测、评审者）：声明了 capabilities.readOnly 的 harness 不加载写工具和 shell。 */
   readOnly?: boolean
+  /** 本轮可用的 MCP 服务（streamable HTTP）。harness 声明 capabilities.mcp 时才会收到（docs/design/30 §2，管家走外部 harness）。 */
+  mcpServers?: Array<{ name: string; url: string; headers?: Record<string, string> }>
   signal?: AbortSignal
 }
 

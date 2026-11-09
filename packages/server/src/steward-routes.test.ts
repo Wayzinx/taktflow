@@ -156,3 +156,50 @@ it('Solo find/picks 参数校验、真实快照、用户偏好与访问范围隔
   expect(await (await f.request(`/find?q=req-02&space=${spaceId}`, 'bob')).json()).toEqual({ ambiguous: false, items: [] })
   expect(await (await f.request('/picks', 'bob')).json()).toEqual({ items: [] })
 })
+
+it('M8 会话 PATCH/DELETE 按用户隔离、归档过滤、未决提案 409', async () => {
+  const f = await fixture()
+  const created = await (await f.request('/threads', 'alice', 'POST', { text: '管理会话' })).json()
+  const id = created.thread.id
+  await f.registration.agents.get('alice')!.drain()
+  for (const method of ['PATCH', 'DELETE']) expect((await f.request(`/threads/${id}`, 'bob', method, method === 'PATCH' ? { title: '坏' } : undefined)).status).toBe(404)
+  expect((await f.request(`/threads/${id}`, 'alice', 'PATCH', { title: '  ' })).status).toBe(400)
+  expect((await f.request(`/threads/${id}`, 'alice', 'PATCH', { runtime: { harness: 'unknown' } })).status).toBe(400)
+  expect((await f.request(`/threads/${id}`, 'alice', 'PATCH', { runtime: [] })).status).toBe(400)
+  const patch = await f.request(`/threads/${id}`, 'alice', 'PATCH', { title: '  已改名  ', pinned: true, archived: true, runtime: null })
+  expect(await patch.json()).toMatchObject({ title: '已改名', titleEdited: true, pinnedAt: expect.any(String), archivedAt: expect.any(String), messageCount: 2 })
+  expect(await (await f.request('/threads')).json()).toEqual([])
+  expect(await (await f.request('/threads?archived=1')).json()).toMatchObject([{ id }])
+  const agent = f.registration.agents.get('alice')!
+  const proposal = await agent.proposals.create(id, '记忆', '测试', [{ kind: 'file', path: 'profile.md', content: 'value' }])
+  const blocked = await f.request(`/threads/${id}`, 'alice', 'DELETE')
+  expect(blocked.status).toBe(409)
+  expect(await blocked.json()).toEqual({ error: '这个会话还有 1 个待决定的提案，先处理或归档' })
+  await agent.proposals.reject(proposal.id, { type: 'human', id: 'alice' })
+  expect((await f.request(`/threads/${id}`, 'alice', 'DELETE')).status).toBe(204)
+  expect((await f.request(`/threads/${id}`)).status).toBe(404)
+  expect((await f.request('/runtime-choices')).status).toBe(200)
+  expect((await f.request('/mcp', 'alice', 'POST', { jsonrpc: '2.0', id: 1, method: 'tools/list' })).status).toBe(401)
+})
+
+it('M8 runtime PATCH 验证可用性并回读；启动恢复没有偏好文件的历史会话', async () => {
+  const f = await fixture()
+  await f.request('/threads')
+  const agent = f.registration.agents.get('alice')!
+  agent.deps.runtimeChoices = async () => [
+    { harness: 'native', harnessLabel: '内置', model: 'ready', available: true },
+    { harness: 'codex', harnessLabel: 'Codex', model: 'missing', available: false, reason: '缺少密钥环境变量，请配置后重试' },
+  ]
+  const thread = await agent.store.createThread('配置', new Date().toISOString())
+  expect(await (await f.request(`/threads/${thread.id}`, 'alice', 'PATCH', { runtime: { model: 'ready' } })).json()).toMatchObject({ runtime: { model: 'ready' } })
+  const invalid = await f.request(`/threads/${thread.id}`, 'alice', 'PATCH', { runtime: { harness: 'codex', model: 'missing' } })
+  expect(invalid.status).toBe(400)
+  expect(await invalid.json()).toEqual({ error: '缺少密钥环境变量，请配置后重试' })
+  expect((await agent.store.thread(thread.id)).runtime).toEqual({ model: 'ready' })
+  await agent.store.setStatus(thread.id, 'replying')
+  await f.registration.close()
+  const restarted = registerStewardRoutes(createRouter<Handler>(), { projectDir: f.root })
+  cleanup.push(() => restarted.close())
+  await restarted.ready
+  expect((await restarted.agents.get('alice')!.store.thread(thread.id)).status).toBe('interrupted')
+})

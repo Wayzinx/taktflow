@@ -1373,3 +1373,33 @@ it('M5：未接手 30 分钟过期，旧 answered/failed 归一并持久回读',
   expect((await f.agent.store.messages(f.thread.id))[0]!.delegations!.map(item => item.status)).toEqual(['replied', 'uncertain', 'expired'])
   expect(post).not.toHaveBeenCalled()
 })
+
+it('M8：digest 按空间与需求折叠为最新进展，摘要使用去重条数', async () => {
+  const f = await fixture()
+  const first = await f.stores.workspaces.createRequirement({ title: '第一项' })
+  const second = await f.stores.workspaces.createRequirement({ title: '第二项' })
+  await f.stores.workspaces.updateRequirement(first.id, { status: 'delivered' })
+  f.clock('2099-01-01T00:00:00Z')
+  const digest = await buildDigest(f.deps, f.agent.store, undefined, false, true)
+  expect(digest.progress).toHaveLength(2)
+  const collapsed = digest.progress.find(item => item.requirementId === first.id)!
+  expect(collapsed).toMatchObject({ kind: 'delivered', more: 1 })
+  expect(digest.progress.map(item => item.at)).toEqual([...digest.progress.map(item => item.at)].sort().reverse())
+  expect(digest.progress.some(item => item.requirementId === second.id)).toBe(true)
+  expect(digest.summary).toContain('2 项进展')
+})
+
+it('M8：只给需求编号的引用补全真实标题，删除会话后迟到回执仍保留动态', async () => {
+  const f = await fixture()
+  const req = await f.stores.workspaces.createRequirement({ title: '真实需求标题' })
+  const thread = await f.agent.store.createThread('转达', new Date().toISOString(), [{ type: 'requirement', id: req.id, spaceId: 'shop' }])
+  expect(thread).toMatchObject({ spaceId: 'shop', requirementId: req.id, requirementTitle: '真实需求标题' })
+  await f.agent.store.write(`delegations/${sha256('late')}.json`, {
+    threadId: thread.id, text: '查询', sentAt: '2020-01-01T00:00:00Z',
+    delegation: { spaceId: 'shop', requirementId: req.id, messageId: 'late', status: 'sent', at: '2020-01-01T00:00:00Z' },
+  })
+  await f.agent.store.deleteThread(thread.id)
+  await f.agent.tools.refreshDelegations()
+  expect(await f.agent.store.read(`threads/${thread.id}.json`)).toBeUndefined()
+  expect(await f.agent.store.lines('feed.jsonl')).toContainEqual(expect.objectContaining({ type: 'delegation', threadId: thread.id }))
+})

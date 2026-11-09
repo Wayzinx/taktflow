@@ -58,7 +58,8 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const modelSpaces = async () => (await Promise.all(spaces.map(space =>
     openProject(space.projectDir).catch(() => undefined)))).filter(space => space !== undefined)
   const adminDeps = { spacesDir: options.spacesDir, projectDir: options.projectDir, onChange: refresh }
-  const stewardOptions = { ...adminDeps, registry: byId, connections,
+  let stewardMcpUrl = ''
+  const stewardOptions = { ...adminDeps, registry: byId, connections, mcpUrl: () => stewardMcpUrl,
     serverCommands: createServerCommandRegistry(adminDeps),
     prepareStores: async (stores: import('@taktflow/core').ProjectStores) => attachKnowledge(stores, options.spacesDir),
     commands: options.getCommands,
@@ -157,6 +158,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   } catch (error) { await steward.close(); throw error }
   const maintenance = startMaintenance(() => spaces, (stores, item) => options.onSpaceAnswer ? options.onSpaceAnswer(stores.projectDir, item) : options.onAnswer?.(item))
   const address = server.address() as AddressInfo
+  stewardMcpUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/steward/mcp`
   let closePromise: Promise<void> | undefined
   return {
     url: `http://${address.address.includes(':') ? `[${address.address}]` : address.address}:${address.port}`,
@@ -187,3 +189,6 @@ export { convertWorkflow } from './workflow-routes.js'
 export { attachKnowledge, configuredChat, stewardModel } from './knowledge-runtime.js'
 export { registerStewardRoutes, createStewardDeps } from './steward-routes.js'
 export { registerKnowledgeRoutes } from './knowledge-routes.js'
+
+export { StewardMcp } from './steward-mcp.js'
+export { stewardRuntime } from './steward-runtime.js'

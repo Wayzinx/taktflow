@@ -69,7 +69,7 @@ export function createCodexHarness(options: CodexOptions = {}): HarnessAdapter {
     },
     async run(req, onEvent) {
       if (options.env && Object.keys(options.env).length) req = { ...req, env: { ...options.env, ...req.env } }
-      const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access', '-C', req.cwd]
+      const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', req.readOnly ? 'read-only' : 'danger-full-access', '-C', req.cwd]
       if (req.provider) {
         const provider = req.provider
         if (provider.protocol !== 'openai-chat' && provider.protocol !== 'openai-responses') {
@@ -89,6 +89,18 @@ export function createCodexHarness(options: CodexOptions = {}): HarnessAdapter {
         if (key.name !== undefined) args.push('-c', `${prefix}.env_key=${tomlString(key.name)}`)
         args.push('-c', `${prefix}.wire_api=${tomlString(provider.protocol === 'openai-chat' ? 'chat' : 'responses')}`)
       }
+      for (const [index, server] of (req.mcpServers ?? []).entries()) {
+        if (!/^[A-Za-z0-9_-]+$/.test(server.name)) throw new Error('MCP 服务名不合法，请使用字母、数字、下划线或短横线')
+        const prefix = `mcp_servers.${server.name}`, envName = `TAKT_MCP_TOKEN_${index}`
+        args.push('-c', `${prefix}.url=${tomlString(server.url)}`)
+        const bearer = server.headers?.Authorization
+        if (bearer) {
+          if (!bearer.startsWith('Bearer ')) throw new Error('MCP 认证需要 Bearer 令牌，请重新发送消息')
+          req = { ...req, env: { ...req.env, [envName]: bearer.slice(7) } }
+          args.push('-c', `${prefix}.bearer_token_env_var=${tomlString(envName)}`)
+        }
+      }
+      if (req.mcpServers?.length) args.push('-c', 'features.shell_tool=false')
       if (req.model) args.push('-m', req.model)
       if (req.effort) args.push('-c', `model_reasoning_effort="${req.effort}"`)
       // 0.159.2 的 resume 子命令不接收 -C/--sandbox，公共选项必须放在它之前。

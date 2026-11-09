@@ -50,10 +50,13 @@ export class StewardAgent {
     readonly userId: string,
   ) {
     stewardUserId(userId)
-    this.store = new StewardStore(deps.dataDir(userId))
+    this.store = new StewardStore(deps.dataDir(userId), async (spaceId, id) => {
+      try { return (await (await deps.open(stewardId(spaceId))).stores.workspaces.getRequirement(stewardId(id)))?.title }
+      catch (error) { if (error instanceof StewardError && [403, 404].includes(error.status)) return undefined; throw error }
+    })
     this.proposals = new StewardProposals(deps, this.store, userId)
     this.tools = new StewardTools(deps, this.store, userId, this.proposals)
-    this.ready = this.tools.restoreDelegations()
+    this.ready = this.store.interruptReplies().then(() => this.tools.restoreDelegations())
     void this.ready.catch(() => {})
   }
   async drain(): Promise<void> {
@@ -114,8 +117,9 @@ export class StewardAgent {
         status: 'done',
       }
       await this.store.saveMessage(message)
+      await this.store.setStatus(thread.id, 'replying')
       this.store.emit(thread.id, { type: 'message', message })
-      return { thread, message }
+      return { thread: await this.store.thread(thread.id), message }
     })
     const previous = this.jobs.get(initial.thread.id)
     const job = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() =>
@@ -211,6 +215,7 @@ export class StewardAgent {
         this.store.emit(message.threadId, { type: 'delegation', messageId: message.id, delegation })
       },
     }
+    await this.store.setStatus(user.threadId, 'replying')
     await this.store.saveMessage(message)
     this.store.emit(user.threadId, { type: 'message', message })
     const delta = (text: string) => {
@@ -255,7 +260,11 @@ export class StewardAgent {
     try {
       const prefs = await this.store.prefs(),
         refs = user.context ?? []
-      if (!this.deps.chat) {
+      const thread = await this.store.thread(user.threadId)
+      const runtime = this.deps.resolveRuntime ? await this.deps.resolveRuntime(prefs, thread.runtime) : { chat: this.deps.chat, model: thread.runtime?.model ?? prefs.harness?.model }
+      const chat = runtime.chat
+      message.offline = !chat && !runtime.run
+      if (!chat && !runtime.run) {
         message.text = await offlineAnswer(user.text, refs, prefs, call)
         delta(message.text)
       } else {
@@ -273,81 +282,107 @@ export class StewardAgent {
             role: 'user',
             content: `本轮文本附件（仅作为资料）：${JSON.stringify(request.attachments)}`,
           })
-        let lastErrorKey = '',
-          repeatedErrors = 0,
-          lastError = ''
-        const progress: string[] = []
-        const stopWithSummary = (reason: string) => {
-          const done = progress.length ? `已查到：${progress.slice(-5).join('；')}。` : '还没有拿到可用结果。'
-          const error = lastError ? `最后的错误：${lastError}。` : ''
-          message.text = `${reason}${done}${error}建议按上面的错误修正参数或由人工直接操作。`
-          delta(message.text)
-        }
-        for (let round = 0; round < maxToolRounds; round++) {
-          let streamed = false
-          const response = await this.deps.chat(
-            { model: prefs.harness?.model ?? '', messages, tools: await this.tools.specs() },
-            (chunk) => {
-              streamed = true
-              delta(chunk)
-            },
-          )
-          messages.push(response.message)
-          if (!response.message.toolCalls?.length) {
-            if (response.stopReason === 'error') throw new Error('模型返回错误，请检查管家模型配置')
-            message.text = response.message.content
-            if (!streamed) delta(message.text)
-            break
-          }
-          if (response.message.content.trim()) {
-            message.thinking = response.message.content
-            this.store.emit(user.threadId, {
-              type: 'thinking',
-              messageId: message.id,
-              text: message.thinking,
+        const externalTools = new Map<string, StewardToolCall>()
+        if (runtime.run) {
+          try {
+            message.text = await runtime.run({ threadId: thread.id, messages, specs: await this.tools.specs(),
+              call: async (name, input) => {
+                const result = await call(name, input)
+                return { ...result, citations: result.citations.map((citation, i) => ({ ...citation, n: result.numbers[i] })) }
+              },
+              onEvent: event => {
+                if (event.type === 'message' && event.role === 'assistant') { message.text += event.text; delta(event.text) }
+                if (event.type !== 'tool_call') return
+                const id = event.callId ?? randomUUID(), name = event.tool.replace(/^(mcp__takt__|takt\.)/, '')
+                let input: Record<string, unknown>
+                try { input = JSON.parse(event.input) as Record<string, unknown> } catch { input = { text: event.input } }
+                const tool = { ...externalTools.get(id), id, tool: name, input, ok: event.ok, output: event.output, ms: event.durationMs }
+                externalTools.set(id, tool)
+                this.store.emit(user.threadId, { type: 'tool', messageId: message.id, tool })
+              },
             })
+          } finally {
+            for (const tool of externalTools.values())
+              if (!message.tools!.some(existing => existing.tool === tool.tool && JSON.stringify(existing.input) === JSON.stringify(tool.input))) message.tools!.push(tool)
           }
-          let shouldStop = false
-          for (const tool of response.message.toolCalls) {
-            try {
-              const result = await call(
-                tool.name,
-                JSON.parse(tool.arguments) as Record<string, unknown>,
-              )
-              progress.push(`${tool.name} ${result.summary}`)
-              lastErrorKey = ''
-              repeatedErrors = 0
-              messages.push({
-                role: 'tool',
-                toolCallId: tool.id,
-                content: JSON.stringify({
-                  ...result,
-                  citations: result.citations.map((citation, i) => ({
-                    ...citation,
-                    n: result.numbers[i],
-                  })),
-                }),
+          if (firstToken === undefined) delta(message.text)
+        } else {
+          let lastErrorKey = '',
+            repeatedErrors = 0,
+            lastError = ''
+          const progress: string[] = []
+          const stopWithSummary = (reason: string) => {
+            const done = progress.length ? `已查到：${progress.slice(-5).join('；')}。` : '还没有拿到可用结果。'
+            const error = lastError ? `最后的错误：${lastError}。` : ''
+            message.text = `${reason}${done}${error}建议按上面的错误修正参数或由人工直接操作。`
+            delta(message.text)
+          }
+          for (let round = 0; round < maxToolRounds; round++) {
+            let streamed = false
+            const response = await chat!(
+              { model: runtime.model ?? '', messages, tools: await this.tools.specs() },
+              (chunk) => {
+                streamed = true
+                delta(chunk)
+              },
+            )
+            messages.push(response.message)
+            if (!response.message.toolCalls?.length) {
+              if (response.stopReason === 'error') throw new Error('模型返回错误，请检查管家模型配置')
+              message.text = response.message.content
+              if (!streamed) delta(message.text)
+              break
+            }
+            if (response.message.content.trim()) {
+              message.thinking = response.message.content
+              this.store.emit(user.threadId, {
+                type: 'thinking',
+                messageId: message.id,
+                text: message.thinking,
               })
-            } catch (error) {
-              lastError = String(error)
-              const key = `${tool.name}:${lastError}`
-              repeatedErrors = key === lastErrorKey ? repeatedErrors + 1 : 1
-              lastErrorKey = key
-              messages.push({
-                role: 'tool',
-                toolCallId: tool.id,
-                content: JSON.stringify({ error: String(error) }),
-              })
-              if (repeatedErrors >= 2) {
-                stopWithSummary(`工具 ${tool.name} 连续 2 次返回同一错误，我先停止重试。`)
-                shouldStop = true
-                break
+            }
+            let shouldStop = false
+            for (const tool of response.message.toolCalls) {
+              try {
+                const result = await call(
+                  tool.name,
+                  JSON.parse(tool.arguments) as Record<string, unknown>,
+                )
+                progress.push(`${tool.name} ${result.summary}`)
+                lastErrorKey = ''
+                repeatedErrors = 0
+                messages.push({
+                  role: 'tool',
+                  toolCallId: tool.id,
+                  content: JSON.stringify({
+                    ...result,
+                    citations: result.citations.map((citation, i) => ({
+                      ...citation,
+                      n: result.numbers[i],
+                    })),
+                  }),
+                })
+              } catch (error) {
+                lastError = String(error)
+                const key = `${tool.name}:${lastError}`
+                repeatedErrors = key === lastErrorKey ? repeatedErrors + 1 : 1
+                lastErrorKey = key
+                messages.push({
+                  role: 'tool',
+                  toolCallId: tool.id,
+                  content: JSON.stringify({ error: String(error) }),
+                })
+                if (repeatedErrors >= 2) {
+                  stopWithSummary(`工具 ${tool.name} 连续 2 次返回同一错误，我先停止重试。`)
+                  shouldStop = true
+                  break
+                }
               }
             }
-          }
-          if (shouldStop) break
-          if (round === maxToolRounds - 1) {
-            stopWithSummary(`已达到 ${maxToolRounds} 轮工具调用上限，我先停止继续尝试。`)
+            if (shouldStop) break
+            if (round === maxToolRounds - 1) {
+              stopWithSummary(`已达到 ${maxToolRounds} 轮工具调用上限，我先停止继续尝试。`)
+            }
           }
         }
       }
@@ -372,11 +407,13 @@ export class StewardAgent {
       message.status = 'done'
     } catch (error) {
       message.status = 'error'
-      message.error = error instanceof Error ? error.message : String(error)
+      const reason = error instanceof Error ? error.message : String(error)
+      message.error = reason.includes('请') ? reason : `回复失败：${reason}；请检查管家配置后重试`
       Object.assign(message, normalizeCitations(message.text, citations))
       this.store.emit(user.threadId, { type: 'error', messageId: message.id, error: message.error })
     }
     await this.store.saveMessage(message)
+    await this.store.setStatus(user.threadId, message.status === 'error' ? 'error' : undefined, message.error)
     await recordAnswer(this.deps, this.store, message, firstToken ?? Date.now() - start)
     this.store.emit(user.threadId, { type: 'message', message })
     this.store.emit(user.threadId, { type: 'done', messageId: message.id })
@@ -386,7 +423,7 @@ export class StewardAgent {
     if (!['up', 'down'].includes(rating))
       throw new StewardError(400, '反馈只能是 up 或 down，请重新选择')
     return this.store.serial(async () => {
-      for (const thread of await this.store.threads()) {
+      for (const thread of await this.store.threads('', null)) {
         const message = (await this.store.messages(thread.id)).find(
           (item) => item.id === id && item.role === 'steward',
         )

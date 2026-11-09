@@ -117,7 +117,11 @@
  * | POST | /api/workflows/:id/convert                     | 请求体 WorkflowConvertRequest → WorkflowConvertResult（把不可编辑写法改写为 defineWorkflow；baseRev 不一致 409） |
  *
  * —— 管家（docs/design/22）；按 x-takt-user 区分用户，数据在 <spaces 根>/.steward/<userId>/ ——
- * | GET  | /api/steward/threads                           | StewardThread[] |
+ * | GET  | /api/steward/threads?archived=1                | StewardThread[]（默认不含已归档；archived=1 只列已归档。置顶的排最前，其余按 updatedAt 倒序） |
+ * | PATCH| /api/steward/threads/:id                       | 请求体 StewardThreadPatch → StewardThread（docs/design/30 §2：重命名、置顶、归档、换 harness / 模型） |
+ * | DELETE| /api/steward/threads/:id                      | → 204（连同消息删除；有未决提案的会话 409，先处理或归档） |
+ * | GET  | /api/steward/runtime-choices                   | StewardRuntimeChoice[]（管家能用的 harness × 模型组合，含不可用原因） |
+ * | POST | /api/steward/mcp                               | MCP（streamable HTTP，JSON-RPC 2.0）：把管家工具开放给外部 harness；只认本轮签发的 Bearer 令牌 |
  * | POST | /api/steward/threads                           | 请求体 StewardPostRequest → { thread, message }（新会话 + 第一条消息） |
  * | GET  | /api/steward/threads/:id                       | { thread, messages: StewardMessage[], proposals: Proposal[] } |
  * | POST | /api/steward/threads/:id/messages              | 请求体 StewardPostRequest → StewardMessage（用户消息；管家回复走 stream） |
@@ -1144,6 +1148,51 @@ export interface StewardThread {
   lastMessage?: string
   /** 有待决定的提案数。 */
   pendingProposals?: number
+  /** docs/design/30 §2。置顶时间；排序时置顶的在前。 */
+  pinnedAt?: string
+  archivedAt?: string
+  /** 用户改过标题后不再按首条消息自动起名。 */
+  titleEdited?: boolean
+  /** 这个会话固定用的 harness / 模型（模型为别名）；缺省跟随管家偏好与空间默认。 */
+  runtime?: StewardRuntime
+  /** 回复状态：replying 正在回复；error 上次回复失败（error 里是可读原因）；interrupted 服务重启或取消导致没回完。 */
+  status?: 'replying' | 'error' | 'interrupted'
+  error?: string
+  messageCount?: number
+  /** 会话最常提到的空间 / 需求（取 context 与消息里的引用），供按空间 / 需求分组。 */
+  spaceId?: string
+  requirementId?: RequirementId
+  requirementTitle?: string
+}
+
+/** 管家用哪个 harness 跑、用哪个模型。harness 缺省为 native（直连模型 API）。 */
+export interface StewardRuntime {
+  harness?: string
+  model?: string
+}
+
+export interface StewardThreadPatch {
+  title?: string
+  pinned?: boolean
+  archived?: boolean
+  /** null 表示清掉，回到默认。 */
+  runtime?: StewardRuntime | null
+}
+
+/** 管家可选的一个 harness × 模型组合（docs/design/30 §2）。 */
+export interface StewardRuntimeChoice {
+  harness: string
+  harnessLabel: string
+  /** 模型别名（models 里的 key）；harness 自带模型时为空。 */
+  model?: string
+  modelLabel?: string
+  provider?: string
+  /** 来自哪个空间的配置（多空间时同名模型以默认空间为准）。 */
+  spaceId?: string
+  available: boolean
+  reason?: string
+  /** 当前默认（偏好或空间配置）。 */
+  isDefault?: boolean
 }
 
 export interface StewardToolCall {
@@ -1386,7 +1435,8 @@ export interface Digest {
   summary: string
   attention: Array<{ spaceId: string; requirementId: RequirementId; requirementTitle: string; requestId: string; ask: string; since: string; href: string }>
   risks: Risk[]
-  progress: Array<{ spaceId: string; requirementId: RequirementId; title: string; kind: 'created' | 'started' | 'stage' | 'delivered' | 'failed' | 'blocked'; from?: string; to?: string; at: string; href: string }>
+  /** 每个需求只留最新一条（docs/design/30 §2）；more 是同一需求被折叠掉的更早条数。 */
+  progress: Array<{ spaceId: string; requirementId: RequirementId; title: string; kind: 'created' | 'started' | 'stage' | 'delivered' | 'failed' | 'blocked'; from?: string; to?: string; at: string; href: string; more?: number }>
   metrics?: Array<{ spaceId: string; label: string; value: string; delta?: string }>
 }
 
