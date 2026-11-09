@@ -8,7 +8,7 @@ import { collectOutputs, resolveInputs } from '../artifacts.js'
 import { addUsage } from '../../insights/usage.js'
 import { sha256 } from '../../util/hash.js'
 import { system } from '../actor.js'
-import { assertResponses, REVIEW_SCHEMA, RESPONSES_SCHEMA, reviewPassed } from './review-schema.js'
+import { assertResponses, normalizeResponses, REVIEW_SCHEMA, RESPONSES_SCHEMA, reviewPassed } from './review-schema.js'
 import { reviewTargets, targetFingerprint } from './review-target.js'
 import { noReviewProgress, reviewContinuity } from './review-continuity.js'
 import { normalizeRounds } from '../../review/records.js'
@@ -200,14 +200,14 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
     } else if (progress.phase === 'revise') {
       const round = progress.rounds.at(-1)!
       const extra = typeof node.author.prompt === 'function' ? await node.author.prompt(ctx) : node.author.prompt
-      const prompt = `按第 ${round.round} 轮意见修改产物，每个问题恰好一条 responses，保留 reviewer、issueId、round。\n${JSON.stringify(round.records)}\n${extra ?? ''}\n人工意见：${progress.humanFeedback ?? ''}`
+      const prompt = `按第 ${round.round} 轮意见修改产物，每个问题恰好一条 responses：reviewer 填评审人，issueId 填该问题的 id 字段（不是 key），round 填 ${round.round}。\n${JSON.stringify(round.records)}\n${extra ?? ''}\n人工意见：${progress.humanFeedback ?? ''}`
       const point = await scheduleCheckpoint(host, node.id, 'author', `author:${node.author.role}`, ['按评审意见逐条回应并修改产物'], round.revision, round.round)
       let result: Awaited<ReturnType<typeof invoke>>
       try {
         result = await invoke(host, node, ctx, node.author.role, node.author.harness, prompt, RESPONSES_SCHEMA, undefined, { role: 'author', checkpointId: point.id })
-        const value = result.data as { responses: ReviewResponse[] }
-        assertResponses(round.records, value.responses, round.round)
-        round.responses = value.responses
+        const responses = normalizeResponses(round.records, (result.data as { responses: ReviewResponse[] }).responses, round.round)
+        assertResponses(round.records, responses, round.round)
+        round.responses = responses
         await recordResponses(host, node.id, progress.issues ??= [], round.records, round.responses, round.revision ?? 1, point.id)
         const targets = [...new Map(round.records.flatMap((record) => record.artifacts).map((ref) => [ref.path, ref])).values()]
         const records = await host.deps.stores.workspaces.listArtifacts(ctx.requirementId)

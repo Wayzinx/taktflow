@@ -27,6 +27,22 @@ export function reviewPassed(records: ReviewRecord[], pass: ReviewNodeDef['pass'
   return pass === 'majority' ? approvals > records.length / 2 : approvals === records.length
 }
 
+/**
+ * 作者常照着全局编号（issue.key，如 ISS-36）回应，或照抄上一轮的轮次：按本轮问题把 issueId 归一到评审人给的 id，
+ * reviewer 写错时用全局编号找回，轮次统一成本轮。找不到的原样留给 assertResponses 报错。
+ */
+export function normalizeResponses(records: ReviewRecord[], responses: ReviewResponse[], round: number): ReviewResponse[] {
+  return responses.map((response) => {
+    const own = records.find((record) => record.reviewer === response.reviewer)
+    if (own?.issues.some((issue) => issue.id === response.issueId)) return { ...response, round }
+    for (const record of own ? [own, ...records.filter((r) => r !== own)] : records) {
+      const issue = record.issues.find((issue) => issue.key !== undefined && issue.key === response.issueId)
+      if (issue) return { ...response, round, reviewer: record.reviewer, issueId: issue.id }
+    }
+    return { ...response, round }
+  })
+}
+
 export function assertResponses(records: ReviewRecord[], responses: ReviewResponse[], round: number): void {
   const expected = new Set(records.flatMap((record) => record.issues.map((issue) => JSON.stringify([record.reviewer, issue.id]))))
   const seen = new Set<string>()
