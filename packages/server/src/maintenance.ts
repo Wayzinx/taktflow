@@ -4,7 +4,9 @@ import { expireTaskReceipts, recoverTaskReceipts, syncQuality, tickAttention, ty
 export function startMaintenance(spaces: () => ProjectStores[], onAnswer?: (stores: ProjectStores, item: AttentionItem) => Promise<void> | void,
   onError: (error: unknown) => void = error => { process.stderr.write(`质量、待办与回执维护失败：${String(error)}；请检查空间文件与写入权限后重试\n`) }) {
   const queues = new Map<string, Promise<void>>(), tickQueues = new Map<string, Promise<void>>(), receiptQueues = new Map<string, Promise<void>>()
-  const subscriptions = new Map<string, { dir: string; stop: () => void }>()
+  const subscriptions = new Map<string, { dir: string; stop: () => void; seq: number; finished: boolean }>()
+  const completed = new Map<string, string>()
+  const ended = (status: string) => status === 'succeeded' || status === 'failed' || status === 'cancelled'
   const syncing = new Set<string>()
   const recovered = new Map<string, Promise<void>>()
   let closed = false, discovering: Promise<void> | undefined
@@ -21,7 +23,21 @@ export function startMaintenance(spaces: () => ProjectStores[], onAnswer?: (stor
     void enqueue(stores, async () => {
       // 在执行前解除合并标记，执行期间的新事件可排下一次同步，避免丢尾部。
       syncing.delete(key)
+      // 引擎先保存终态再写结束事件；已订阅运行必须等结束事件落盘后才取消。
+      const state = await stores.runs.get(runId)
+      const sub = subscriptions.get(key)
+      if (state && ended(state.status) && sub && !sub.finished) {
+        const events = await stores.events.read(runId, { afterSeq: sub.seq })
+        sub.finished ||= events.some(event => event.type === 'run.finished' && ended((event.data as { status: string }).status))
+        sub.seq = events.reduce((seq, event) => Math.max(seq, event.seq), sub.seq)
+      }
+      const finalSync = state && ended(state.status) && (!sub || sub.finished)
       await syncQuality(stores, runId)
+      if (finalSync) {
+        completed.set(key, stores.projectDir)
+        subscriptions.get(key)?.stop()
+        subscriptions.delete(key)
+      }
     })
   }
   const recover = (stores: ProjectStores) => {
@@ -35,13 +51,25 @@ export function startMaintenance(spaces: () => ProjectStores[], onAnswer?: (stor
   const discover = async () => {
     const current = spaces(), dirs = new Set(current.map(s => s.projectDir))
     for (const [key, sub] of subscriptions) if (!dirs.has(sub.dir)) { sub.stop(); subscriptions.delete(key) }
+    for (const [key, dir] of completed) if (!dirs.has(dir)) completed.delete(key)
     for (const stores of current) {
       await recover(stores)
       for (const state of await stores.runs.list()) {
         if (closed) return
         const key = `${stores.projectDir}:${state.runId}`
+        if (ended(state.status)) {
+          if (!completed.has(key)) sync(stores, state.runId)
+          continue
+        }
+        completed.delete(key)
         if (subscriptions.has(key)) continue
-        subscriptions.set(key, { dir: stores.projectDir, stop: stores.events.subscribe(state.runId, () => sync(stores, state.runId)) })
+        const sub = { dir: stores.projectDir, stop: () => {}, seq: 0, finished: false }
+        sub.stop = stores.events.subscribe(state.runId, event => {
+          sub.seq = Math.max(sub.seq, event.seq)
+          if (event.type === 'run.finished' && ended((event.data as { status: string }).status)) sub.finished = true
+          sync(stores, state.runId)
+        })
+        subscriptions.set(key, sub)
         sync(stores, state.runId)
       }
     }

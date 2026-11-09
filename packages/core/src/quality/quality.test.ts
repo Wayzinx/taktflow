@@ -12,6 +12,7 @@ import { QualityConflictError } from './index.js'
 import { buildViews } from './models.js'
 import { chainHash } from './chain.js'
 import type { QualityInput } from './migration.js'
+import * as fsUtils from '../store/fs-utils.js'
 
 const human = { type: 'human', id: 'tester' } as const
 const system = { type: 'system', id: 'quality-test' } as const
@@ -81,6 +82,46 @@ it('追加完成但游标尚未推进时崩溃，重开后重放不重复、不�
   expect(await reopened.sync()).toEqual({ observations: 1, runs: 1 })
   expect((await reopened.observations()).map((o) => o.subject)).toEqual(['one', 'two'])
   expect((await reopened.status()).cursors[run.runId]).toBe(2)
+})
+
+it('一批 1000 条无观察事件只写一次游标，不调用观察追加，空批不再写入', async () => {
+  const { stores, quality, run, dir } = await setup()
+  await quality.sync(run.runId)
+  for (let i = 0; i < 1000; i++) await stores.events.append(run.runId, {
+    type: 'harness.message', actor: agent, data: { role: 'assistant', text: `消息 ${i}` },
+  })
+  const write = vi.spyOn(fsUtils, 'writeFileAtomic')
+  const read = vi.spyOn(fsUtils, 'readJsonFile')
+  const append = vi.spyOn(quality, 'append')
+  expect(await quality.sync(run.runId)).toEqual({ observations: 0, runs: 1 })
+  expect(append).not.toHaveBeenCalled()
+  expect(write.mock.calls.filter(([file]) => file === join(dir, 'cursors.json'))).toHaveLength(1)
+  expect(read.mock.calls.filter(([file]) => file === join(dir, 'cursors.json')).length).toBeLessThanOrEqual(3)
+  expect(JSON.parse(await readFile(join(dir, 'cursors.json'), 'utf8')).cursors[run.runId]).toBe(1000)
+  write.mockClear()
+  await quality.sync(run.runId)
+  expect(write.mock.calls.filter(([file]) => file === join(dir, 'cursors.json'))).toHaveLength(0)
+})
+
+it('整批观察提交后游标写入失败，重开重放全部去重', async () => {
+  const { stores, quality, run, dir, root } = await setup()
+  await quality.sync(run.runId)
+  for (let i = 0; i < 3; i++) await stores.events.append(run.runId, {
+    type: 'gate.result', actor: system, data: { pass: false, checks: [{ id: `gate-${i}`, pass: false }] },
+  })
+  await stores.events.append(run.runId, { type: 'log', actor: system, data: { level: 'info', message: '无观察尾部' } })
+  const original = fsUtils.writeFileAtomic
+  const write = vi.spyOn(fsUtils, 'writeFileAtomic').mockImplementation(async (file, data) => {
+    if (file === join(dir, 'cursors.json')) throw new Error('模拟游标写入失败')
+    return original(file, data)
+  })
+  await expect(quality.sync(run.runId)).rejects.toThrow('模拟游标写入失败')
+  write.mockRestore()
+  expect((await quality.status()).cursors).toEqual({})
+  const reopened = (await openProject(root)).quality!
+  expect(await reopened.sync(run.runId)).toEqual({ observations: 0, runs: 1 })
+  expect((await reopened.observations()).map(o => o.subject)).toEqual(['gate-0', 'gate-1', 'gate-2'])
+  expect((await reopened.status()).cursors[run.runId]).toBe(4)
 })
 
 it('子进程追加后直接退出，重启无需清理同步锁即可从旧游标重放', async () => {

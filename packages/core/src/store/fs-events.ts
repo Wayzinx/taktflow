@@ -1,11 +1,11 @@
 import { type Stats } from 'node:fs'
 import path from 'node:path'
-import { open, stat } from 'node:fs/promises'
+import { open, stat, type FileHandle } from 'node:fs/promises'
 import { subscribeJsonLines } from './jsonl-tail.js'
 import type { EventStore } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
-import { chainHash, verifyChain, ZERO_HASH } from '../quality/chain.js'
-import { appendLine, isEnoent, readFileIfExists } from './fs-utils.js'
+import { chainHash, ZERO_HASH } from '../quality/chain.js'
+import { appendLine, isEnoent } from './fs-utils.js'
 import { withFileLock } from './file-lock.js'
 import { eventsFile } from './paths.js'
 
@@ -56,22 +56,98 @@ function hashPayload(envelope: EventEnvelope): Record<string, unknown> {
   }
 }
 
-function verifyContent(buf: Buffer, runId: string): { ok: boolean; brokenAt?: number } {
-  // 旧事件日志允许空行、无末尾换行和额外信封字段，保持既有 verify 语义。
-  const { brokenAt } = verifyChain(buf.toString('utf8'), (value): value is EventEnvelope => isEnvelope(value, runId), {
-    payload: hashPayload, ignoreBlankLines: true, requireFinalNewline: false,
-  })
-  return brokenAt === undefined ? { ok: true } : { ok: false, brokenAt }
-}
-
-interface AppendTail { size: number; ino: number; mtimeMs: number; ctimeMs: number; seq: number; hash: string; start: number }
-interface ReadTail { size: number; ino: number; mtimeMs: number; ctimeMs: number; offset: number; seq: number; lines: number }
-// 追加只校验尾部，读取必须校验所有完整信封；共用文件缓存，但不能用追加游标跳过尚未读过的行。
-const fileTails = new Map<string, { append?: AppendTail; read?: ReadTail }>()
+interface FileStamp { size: number; ino: number; mtimeMs: number; ctimeMs: number }
+interface AppendTail extends FileStamp { seq: number; hash: string; start: number }
+interface Checkpoint { offset: number; seq: number; lines: number }
+interface ReadTail extends FileStamp, Checkpoint { checkpoints: Checkpoint[] }
+interface VerifyTail extends FileStamp { offset: number; seq: number; hash: string }
+// 三种状态独立取文件签名：append 只在签名完全相同时复用；read（含检查点）和 verify
+// 仅在同 inode 变长或签名未变时复用。任何一方都不能把另一方尚未处理的前缀标为已处理。
+const fileTails = new Map<string, { append?: AppendTail; read?: ReadTail; verify?: VerifyTail }>()
 function tails(file: string) {
   let value = fileTails.get(file)
   if (!value) { value = {}; fileTails.set(file, value) }
   return value
+}
+
+function fileStamp(info: Stats): FileStamp {
+  return { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs }
+}
+
+function reusable(cached: FileStamp, info: Stats): boolean {
+  return cached.ino === info.ino && (info.size > cached.size || info.size === cached.size
+    && info.mtimeMs === cached.mtimeMs && info.ctimeMs === cached.ctimeMs)
+}
+
+function currentTails(file: string, info: Stats) {
+  const state = tails(file)
+  // 任一路径发现替换、截断或等长改写都广播失效；否则 append 后的增长会掩盖刚发生的改写。
+  if (Object.values(state).some(cached => !reusable(cached, info))) {
+    fileTails.delete(file)
+    return tails(file)
+  }
+  return state
+}
+
+// 按字节保留半行，UTF-8 只有到行边界才解码；返回 false 可在首个坏行立即停止。
+async function scanLines(handle: FileHandle, size: number, offset: number, runId: string,
+  visit: (line: string, end: number, complete: boolean) => boolean): Promise<void> {
+  let position = offset, partial = Buffer.alloc(0)
+  const chunk = Buffer.alloc(64 * 1024)
+  while (position < size) {
+    const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, size - position), position)
+    if (!bytesRead) throw new Error(`读取事件日志时文件被截断：${runId}`)
+    position += bytesRead
+    const bytes = partial.length ? Buffer.concat([partial, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead)
+    let start = 0
+    for (let end = bytes.indexOf(10); end !== -1; end = bytes.indexOf(10, start)) {
+      offset += end - start + 1
+      if (!visit(bytes.subarray(start, end).toString('utf8'), offset, true)) return
+      start = end + 1
+    }
+    partial = Buffer.from(bytes.subarray(start))
+  }
+  if (partial.length) visit(partial.toString('utf8'), size, false)
+}
+
+async function verifyFile(file: string, runId: string): Promise<{ ok: boolean; brokenAt?: number }> {
+  let handle
+  try { handle = await open(file, 'r') } catch (error) {
+    if (!isEnoent(error)) throw error
+    fileTails.delete(file)
+    return { ok: true }
+  }
+  try {
+    const info = await handle.stat(), state = currentTails(file, info)
+    const prefix: VerifyTail = { ...fileStamp(info), offset: state.verify?.offset ?? 0,
+      seq: state.verify?.seq ?? 0, hash: state.verify?.hash ?? ZERO_HASH }
+    let brokenAt: number | undefined
+    await scanLines(handle, info.size, prefix.offset, runId, (line, end, complete) => {
+      if (line.trim()) {
+        let value: unknown
+        try { value = JSON.parse(line) } catch { brokenAt = prefix.seq + 1; return false }
+        // 与 verifyChain 的旧事件选项等价：空行不计 seq，额外字段不参与哈希，半行也校验。
+        if (!isEnvelope(value, runId) || value.seq !== prefix.seq + 1 || value.prevHash !== prefix.hash
+          || value.hash !== chainHash(value, hashPayload(value))) { brokenAt = prefix.seq + 1; return false }
+        if (complete) { prefix.seq = value.seq; prefix.hash = value.hash }
+      }
+      // 无末尾换行的有效信封也不能进入缓存，下次必须从这里重新校验。
+      if (complete) prefix.offset = end
+      return true
+    })
+    state.verify = prefix
+    return brokenAt === undefined ? { ok: true } : { ok: false, brokenAt }
+  } finally { await handle.close() }
+}
+
+function checkpointBefore(checkpoints: Checkpoint[], seq: number): Checkpoint | undefined {
+  let low = 0, high = checkpoints.length
+  while (low < high) {
+    const mid = (low + high) >>> 1
+    if (checkpoints[mid]!.seq <= seq) low = mid + 1
+    else high = mid
+  }
+  return checkpoints[low - 1]
 }
 
 function checkedLine(line: string, runId: string): EventEnvelope {
@@ -89,7 +165,7 @@ async function appendTail(file: string, runId: string): Promise<AppendTail> {
     fileTails.delete(file)
     return { size: 0, ino: 0, mtimeMs: 0, ctimeMs: 0, seq: 0, hash: ZERO_HASH, start: 0 }
   }
-  const cached = tails(file).append
+  const cached = currentTails(file, info).append
   if (cached && cached.ino === info.ino && cached.size === info.size && cached.mtimeMs === info.mtimeMs && cached.ctimeMs === info.ctimeMs) return cached
   const base = { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs }
   if (info.size === 0) return { ...base, seq: 0, hash: ZERO_HASH, start: 0 }
@@ -126,8 +202,8 @@ async function appendTail(file: string, runId: string): Promise<AppendTail> {
         if (index === 0 && continuing && (next.seq !== cached.seq || next.hash !== cached.hash)) throw new Error('缓存边界已改变')
       } catch (error) {
         if (index !== 0 || !continuing) throw error
-        const full = await readFileIfExists(file)
-        if (!full || !verifyContent(full, runId).ok) throw new Error(`事件日志替换后断链：${runId}`, { cause: error })
+        delete tails(file).verify
+        if (!(await verifyFile(file, runId)).ok) throw new Error(`事件日志替换后断链：${runId}`, { cause: error })
         fileTails.delete(file)
         return appendTail(file, runId)
       }
@@ -192,9 +268,7 @@ export class FsEventStore implements EventStore {
 
   /** 校验哈希链；返回第一处断链的 seq（损坏行按它应有的 seq 报）。 */
   async verify(runId: string): Promise<{ ok: boolean; brokenAt?: number }> {
-    const buf = await readFileIfExists(eventsFile(this.taktDir, runId))
-    if (buf === undefined) return { ok: true }
-    return verifyContent(buf, runId)
+    return verifyFile(path.resolve(eventsFile(this.taktDir, runId)), runId)
   }
 
   private async readEvents(runId: string, afterSeq?: number): Promise<EventEnvelope[]> {
@@ -207,45 +281,32 @@ export class FsEventStore implements EventStore {
     }
     try {
       const info = await handle.stat()
-      let cached = tails(file).read
-      if (cached && (cached.ino !== info.ino || info.size < cached.size ||
-        info.size === cached.size && (info.mtimeMs !== cached.mtimeMs || info.ctimeMs !== cached.ctimeMs))) {
-        fileTails.delete(file)
-        cached = undefined
-      }
-      const incremental = cached && afterSeq !== undefined && afterSeq >= cached.seq
-      let offset = incremental ? cached!.offset : 0
-      let lines = incremental ? cached!.lines : 0
-      let seq = incremental ? cached!.seq : 0
-      let position = offset
-      let partial = Buffer.alloc(0)
-      const chunk = Buffer.alloc(64 * 1024)
+      const state = currentTails(file, info)
+      const cached = state.read
+      const from = afterSeq === undefined || !cached ? undefined : afterSeq >= cached.seq
+        ? cached : checkpointBefore(cached.checkpoints, afterSeq)
+      let offset = from?.offset ?? 0, lines = from?.lines ?? 0, seq = from?.seq ?? 0
+      const checkpoints = [...(cached?.checkpoints ?? [])]
       const events: EventEnvelope[] = []
-      while (position < info.size) {
-        const { bytesRead } = await handle.read(chunk, 0, Math.min(chunk.length, info.size - position), position)
-        if (!bytesRead) throw new Error(`读取事件日志时文件被截断：${runId}`)
-        position += bytesRead
-        const bytes = partial.length ? Buffer.concat([partial, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead)
-        let start = 0
-        for (let end = bytes.indexOf(10); end !== -1; end = bytes.indexOf(10, start)) {
-          const line = bytes.subarray(start, end).toString('utf8')
-          offset += end - start + 1
-          start = end + 1
-          lines++
-          if (line.trim() === '') continue
+      await scanLines(handle, info.size, offset, runId, (line, end, complete) => {
+        if (!complete) return true
+        offset = end
+        lines++
+        if (line.trim()) {
           try {
             const envelope: unknown = JSON.parse(line)
             if (!isEnvelope(envelope, runId)) throw new Error('事件信封结构或 runId 不合法')
+            // read 允许非连续 seq；检查点记录前缀最大值，才能安全跳过整个前缀。
             seq = Math.max(seq, envelope.seq)
             if (afterSeq === undefined || envelope.seq > afterSeq) events.push(envelope)
           } catch (err) {
             throw new Error(`事件日志第 ${lines} 行不是合法事件：${eventsFile(this.taktDir, runId)}`, { cause: err })
           }
         }
-        // 保留字节而非字符串，避免 UTF-8 多字节字符被块边界截断。
-        partial = Buffer.from(bytes.subarray(start))
-      }
-      tails(file).read = { size: info.size, ino: info.ino, mtimeMs: info.mtimeMs, ctimeMs: info.ctimeMs, offset, lines, seq }
+        if (lines % 1000 === 0 && offset > (checkpoints.at(-1)?.offset ?? 0)) checkpoints.push({ offset, lines, seq })
+        return true
+      })
+      state.read = { ...fileStamp(info), offset, lines, seq, checkpoints }
       return events
     } finally { await handle.close() }
   }

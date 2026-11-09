@@ -165,18 +165,18 @@ export class FsQualityStore implements QualityStore {
       if (!verification.ok) throw new Error(`运行 ${run.runId} 的事件链损坏；请人工恢复后再同步`)
       const cursor = await this.cursorState()
       const events = await this.stores.events.read(run.runId, { afterSeq: cursor.cursors[run.runId] ?? 0 })
-      for (const event of events) {
-        const input = eventObservations(event, run.requirementId).map((observation): QualityInput => ({ kind: 'observation.recorded',
-          key: observation.id, requirementId: run.requirementId, data: observation, actor: observation.by }))
-        observations += (await this.append(input)).appended.length
-        // 不持有覆盖整个 sync 的锁：追加完成后崩溃不会留下同步锁。并发重放靠 key 去重，游标在提交锁内单调推进。
-        await this.locked(async () => {
-          const latest = await this.cursorState()
-          latest.cursors[run.runId] = Math.max(latest.cursors[run.runId] ?? 0, event.seq)
-          latest.lastSyncAt = new Date().toISOString()
-          await writeFileAtomic(await this.file('cursors.json'), toJsonText(latest))
-        })
-      }
+      if (!events.length) continue
+      const input = events.flatMap(event => eventObservations(event, run.requirementId).map((observation): QualityInput => ({ kind: 'observation.recorded',
+        key: observation.id, requirementId: run.requirementId, data: observation, actor: observation.by })))
+      if (input.length) observations += (await this.append(input)).appended.length
+      // 先提交整批观察再推游标；中途崩溃可按 key 重放。无观察的事件也只在批末写一次游标。
+      const through = events.reduce((seq, event) => Math.max(seq, event.seq), cursor.cursors[run.runId] ?? 0)
+      await this.locked(async () => {
+        const latest = await this.cursorState()
+        latest.cursors[run.runId] = Math.max(latest.cursors[run.runId] ?? 0, through)
+        latest.lastSyncAt = new Date().toISOString()
+        await writeFileAtomic(await this.file('cursors.json'), toJsonText(latest))
+      })
     }
     return { observations, runs: runs.length }
   }
