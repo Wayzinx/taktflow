@@ -1,7 +1,8 @@
 import type { JudgeVerdict } from '../../types.js'
+import { SCORE } from './review-schema.js'
 
 const objectSchema = (properties: Record<string, unknown>, required = Object.keys(properties)) => ({ type: 'object', properties, required })
-export const RUBRIC_SCHEMA = objectSchema({ score: { type: 'number' }, pass: { type: 'boolean' }, message: { type: 'string' } })
+export const RUBRIC_SCHEMA = objectSchema({ score: SCORE, pass: { type: 'boolean' }, message: { type: 'string' } })
 export const PLANNER_SCHEMA = objectSchema({ items: { type: 'array', items: objectSchema({
             key: { type: 'string' }, title: { type: 'string' }, role: { type: 'string' },
             dependsOn: { type: 'array', items: { type: 'string' } }, params: { type: 'object' },

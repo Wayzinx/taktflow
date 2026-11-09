@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { extractStructured, schemaErrors, validateSchema } from './schema.js'
+import { REVIEW_SCHEMA } from './nodes/review-schema.js'
 
 describe('完整 JSON Schema 与中文错误', () => {
   it.each([
@@ -31,6 +32,11 @@ describe('完整 JSON Schema 与中文错误', () => {
     expect(schemaErrors({ issues: [{ description: 'ok' }] }, schema)).toEqual([])
     expect(schemaErrors({ id: null }, { properties: { id: { type: ['string', 'null'] } } })).toEqual([])
   })
+})
+
+it('评审分数按百分制约束：超出 0–100 判为格式错误', () => {
+  expect(schemaErrors({ verdict: 'approve', summary: '好', issues: [], score: 150 }, REVIEW_SCHEMA)).toEqual(['$.score：须小于或等于 100'])
+  expect(schemaErrors({ verdict: 'approve', summary: '好', issues: [], score: 89 }, REVIEW_SCHEMA)).toEqual([])
 })
 
 describe('结构化提取', () => {

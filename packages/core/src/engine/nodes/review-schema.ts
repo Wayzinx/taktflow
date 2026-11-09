@@ -1,8 +1,11 @@
 import type { ReviewNodeDef, ReviewRecord, ReviewResponse } from '../../types.js'
 
+/** 评审与评分卡的分数都是百分制（pass.minScore、rubric threshold 都按 0–100 写），写进 schema，模型才不会各用各的刻度。 */
+export const SCORE = { type: 'number', minimum: 0, maximum: 100, description: '0–100 分，100 表示完全满足' } as const
+
 export const REVIEW_SCHEMA = {
   type: 'object', required: ['verdict', 'summary', 'issues'], properties: {
-    verdict: { type: 'string', enum: ['approve', 'request_changes', 'reject'] }, score: { type: 'number' }, summary: { type: 'string' },
+    verdict: { type: 'string', enum: ['approve', 'request_changes', 'reject'] }, score: SCORE, summary: { type: 'string' },
     checklist: { type: 'array', items: { type: 'object', required: ['item', 'status'], properties: { item: { type: 'string' }, status: { type: 'string', enum: ['ok', 'issue', 'na'] }, issues: { type: 'array', items: { type: 'string' } }, note: { type: 'string' } } } },
     previous: { type: 'array', items: { type: 'object', required: ['key', 'status'], properties: { key: { type: 'string' }, status: { type: 'string', enum: ['resolved', 'still_open', 'not_checked'] }, note: { type: 'string' } } } },
     issues: { type: 'array', items: { type: 'object', required: ['id', 'severity', 'description'], properties: {
