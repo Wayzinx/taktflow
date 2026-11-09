@@ -37,7 +37,7 @@ describe('Claude stream parser', () => {
     recordedFixture.split('\n').forEach(parser.onLine)
     expect(parser.result()).toMatchObject({ ok: false, finalText: '[recorded text omitted]', sessionId: 'recorded-id',
       usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, costUsd: 0 } })
-    expect(parser.result().error).toContain('"is_error":true')
+    expect(parser.result().error).toBe('Claude Code：[recorded text omitted]')
     mockOutput(recordedFixture, { ok: false, exitCode: 1, error: '[recorded text omitted]', stderr: '[recorded text omitted]' })
     expect(await createClaudeCodeHarness().run(req, () => {})).toMatchObject({ ok: false, exitCode: 1 })
   })
@@ -82,6 +82,15 @@ describe('Claude stream parser', () => {
     expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'Bash', input: '{"command":"false"}', output: 'exit 1', ok: false })
     expect(events).toContainEqual({ type: 'tool_call', phase: 'end', callId: expect.any(String), durationMs: expect.any(Number), tool: 'Read', input: '{"file_path":"a.ts"}', output: '[{"type":"text","text":"file body"}]', ok: true })
     expect(events).toContainEqual({ type: 'usage', usage: parser.result().usage })
+  })
+
+  it('result.is_error 只留人能读的原因，不把整段 JSON 塞进错误', () => {
+    const parser = createClaudeCodeParser()
+    parser.onLine(JSON.stringify({ type: 'result', subtype: 'success', is_error: true, terminal_reason: 'api_error', api_error_status: null,
+      result: "Your account is on hold and can't use Claude Code.", usage: { input_tokens: 0, output_tokens: 0 }, permission_denials: [] }))
+    expect(parser.result().error).toBe("Claude Code：Your account is on hold and can't use Claude Code.")
+    parser.onLine('{"type":"result","is_error":true}')
+    expect(parser.result().error).toContain('"is_error":true')
   })
 
   it('result.is_error 保留嵌套错误，后续成功 result 不洗白', () => {

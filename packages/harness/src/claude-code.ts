@@ -1,10 +1,20 @@
 import type { HarnessCapabilities } from '@taktflow/core'
 import type { HarnessAdapter } from '@taktflow/core'
 import { ParseState, object, string, number, readUsage, readProviderApiKey } from './parse.js'
-import type { EventSink, StreamParser } from './parse.js'
+import type { EventSink, JsonObject, StreamParser } from './parse.js'
 import { finalizeResult, runProcess } from './process.js'
 
 export interface ClaudeCodeOptions { bin?: string; env?: Record<string, string> }
+
+/** is_error 的 result 只留人能读的部分（HTTP 状态、result 文本、errors）；一样都取不到才整段保留。 */
+function resultError(data: JsonObject): unknown {
+  const errors = Array.isArray(data.errors)
+    ? data.errors.map(entry => typeof entry === 'string' ? entry : [object(entry).code, string(object(entry).message)].filter(x => x !== undefined).join(' ')).filter(Boolean)
+    : []
+  const status = number(data.api_error_status)
+  const parts = [status === undefined ? undefined : `HTTP ${status}`, string(data.result)?.trim(), ...errors].filter(Boolean)
+  return parts.length ? `Claude Code：${parts.join('；')}` : data
+}
 
 export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamParser {
   const state = new ParseState(onEvent)
@@ -38,7 +48,7 @@ export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamPar
         state.value.usage = { ...usage, ...(costUsd === undefined ? {} : { costUsd }) }
         onEvent({ type: 'usage', usage: state.value.usage })
       }
-      if (data.is_error === true) state.fail(data)
+      if (data.is_error === true) state.fail(resultError(data))
     } else if (data.type === 'error') state.fail(data)
     else state.message(data)
   }, () => !completed && state.value.ok
