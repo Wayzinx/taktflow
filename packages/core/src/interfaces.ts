@@ -5,6 +5,7 @@
  * git 友好，可以随项目一起审阅。布局见 docs/design/06-追溯与审计.md。
  */
 import type {
+  ProviderBridge,
   EvalCase,
   EvalRun,
   Actor,
@@ -293,6 +294,8 @@ export interface EngineDeps {
   skillsDir?: string
   /** 经验召回挂点；不传时不召回。 */
   lessons?: LessonRecall
+  /** 协议桥（docs/design/31 §3）；不传时协议对不上的 harness × provider 组合照旧报错。 */
+  bridge?: ProviderBridge
 }
 
 export interface StartRunInput {

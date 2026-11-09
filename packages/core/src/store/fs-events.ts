@@ -19,7 +19,7 @@ const EVENT_TYPE_TABLE: Record<EventType, true> = {
   'guard.violation': true, log: true, 'review.round': true, 'review.response': true, 'review.exhausted': true,
   'review.arbitrated': true, 'review.disposition': true, 'rework.started': true, 'worktree.created': true, 'worktree.bootstrapped': true,
   'task.dispatched': true, 'node.checks': true, 'retry.suppressed': true, 'budget.warning': true, 'budget.exhausted': true,
-  'route.decided': true, 'node.recipe': true, 'lesson.recalled': true, 'lesson.learned': true, 'lesson.updated': true, 'knowledge.used': true,
+  'route.decided': true, 'node.recipe': true, 'lesson.recalled': true, 'lesson.learned': true, 'lesson.updated': true, 'output.invalid': true, 'output.repaired': true, 'knowledge.used': true,
   'human.reminded': true, 'human.handed_back': true, 'checkpoint.scheduled': true, 'checkpoint.finished': true, 'snapshot.created': true,
   'invocation.started': true, 'invocation.finished': true, 'review.result': true, 'review.issue': true, 'node.rewound': true,
 }

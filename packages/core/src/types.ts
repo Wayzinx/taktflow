@@ -869,6 +869,10 @@ export interface EventPayloads {
   'lesson.recalled': { ids: string[]; holdout: boolean; tokens: number }
   'lesson.learned': { id: string; title: string; source: Lesson['source'] }
   'lesson.updated': { id: string; status: Lesson['status']; reason: string; stats: Lesson['stats'] }
+  /** 结构化输出没通过校验（docs/design/31 §5）：attempt 从 1 起；errors 为「路径：原因」；excerpt 为输出摘录。 */
+  'output.invalid': { attempt: number; errors: string[]; excerpt?: string }
+  /** 追问修正后通过校验：attempts 为追问次数。 */
+  'output.repaired': { attempts: number }
   log: { level: 'info' | 'warn' | 'error'; message: string }
 }
 
@@ -1135,6 +1139,38 @@ export interface ChatResponse {
   message: ChatMessage
   stopReason: 'end' | 'tool_calls' | 'length' | 'error'
   usage?: Usage
+}
+
+/** harness 与 LLM API 怎么接上（docs/design/31 §2）：builtin 用 harness 自带的登录与模型；direct 协议对上直连；bridge 经进程内协议桥转换。 */
+export type PairingMode = 'builtin' | 'direct' | 'bridge'
+
+export interface Pairing {
+  mode: PairingMode
+  /** harness 那一侧说的协议（direct / bridge）。 */
+  protocol?: ProviderProtocol
+  /** bridge 时 provider 那一侧的协议。 */
+  upstream?: ProviderProtocol
+}
+
+/**
+ * 进程内协议桥（docs/design/31 §3）：harness 说的协议与 provider 提供的对不上时，在 127.0.0.1 上开一条只认一次性令牌的路由，
+ * 上下行流式双向转换。上游密钥由桥按 provider 的 apiKeyEnv 自己读，不进 harness 进程。
+ */
+export interface ProviderBridge {
+  /** 能否把 harness 说的 accept 协议转成 provider 提供的 upstream 协议。 */
+  supports(accept: ProviderProtocol, upstream: ProviderProtocol): boolean
+  /** 为一次调用开路由。target 是 provider 提供 upstream 协议的那个入口（protocol / baseURL 已按入口选好）。 */
+  open(target: { id: string } & ProviderConfig, accept: ProviderProtocol, opts?: { model?: string; signal?: AbortSignal }): Promise<BridgeRoute>
+  /** 关掉所有路由与监听（进程退出、测试收尾）。 */
+  close(): Promise<void>
+}
+
+export interface BridgeRoute {
+  /** 交给 harness 的连接：protocol = accept，baseURL 指向本机桥，apiKeyEnv 指向 env 里的一次性令牌。 */
+  provider: { id: string } & ProviderConfig
+  /** 合并进 HarnessRequest.env。 */
+  env: Record<string, string>
+  close(): Promise<void>
 }
 
 /** 一种 LLM API 协议的客户端。native harness 用它跑 agent loop。 */
@@ -1516,6 +1552,8 @@ export interface TaktConfig {
   budget?: RunBudget
   /** 同一失败指纹在输入不变时允许出现的次数（默认 2，达到即停止重试）。 */
   retry?: { maxSameFailure?: number }
+  /** 结构化输出（docs/design/31 §5）：校验不过时追问修正的次数，缺省 2，0 为不追问。 */
+  output?: { repairs?: number }
   /** 经验库。 */
   lessons?: { enabled?: boolean; holdoutPercent?: number; maxRecall?: number; maxTokens?: number; learner?: HarnessSelector; dailyCalls?: number }
   /** 角色 → 默认 harness（AgentProfile 可覆盖）。 */
@@ -1853,6 +1891,10 @@ export interface InvocationStart {
   /** declared：角色声明；providedHash：实际同步进 harness 技能目录的内容哈希；confirmed：harness 事件能证明加载。 */
   skills: Array<{ name: string; providedHash?: string; confirmed: 'yes' | 'no' | 'unknown' }>
   readOnly?: boolean
+  /** 接的 provider（config.providers 的键）；没有时是 harness 自带。 */
+  provider?: string
+  /** harness 与 LLM API 怎么接上的（docs/design/31 §2）。 */
+  pairing?: Pairing
   at: Timestamp
 }
 

@@ -23,6 +23,7 @@
  * | POST | /api/attention/:requestId                      | 请求体 { decision?, answer? } → AttentionItem |
  * | GET  | /api/harnesses                                 | HarnessInfo[]（设置页：可用性与能力矩阵） |
  * | GET  | /api/models                                    | ModelInfo[] |
+ * | GET  | /api/pairings                                  | PairingInfo[]（每个 harness × [自带, 各 provider]，docs/design/31） |
  * | --- 模型与 Harness 配置（docs/design/27 §4） | | |
  * | GET  | /api/space/runtime                             | RuntimeConfig |
  * | PATCH| /api/space/runtime                             | 请求体 RuntimeConfigPatch → RuntimeConfig（owner；baseRevision 不一致 409；校验失败 400 并指出字段；不重启 serve 即生效） |
@@ -951,6 +952,20 @@ export interface HarnessInfo {
   custom?: boolean
 }
 
+/** 搭配矩阵的一格（docs/design/31 §2、§6）：GET /api/pairings。 */
+export interface PairingInfo {
+  harness: string
+  /** null：harness 自带的登录与模型。 */
+  provider: string | null
+  status: 'builtin' | 'direct' | 'bridge' | 'unavailable'
+  /** harness 那一侧说的协议。 */
+  protocol?: ProviderProtocol
+  /** bridge 时 provider 那一侧的协议。 */
+  upstream?: ProviderProtocol
+  /** unavailable 的原因；bridge 时的限制说明（如托管工具不可用）。 */
+  reason?: string
+}
+
 export interface ModelInfo {
   alias: string
   provider: string
@@ -1001,8 +1016,13 @@ export interface RuntimeConfigPatch {
 }
 
 export interface RuntimeTestRequest {
+  /**
+   * pairing：用这个 harness 真跑一次最小任务（docs/design/31 §6）。model 为模型别名，或配合 provider 填厂商模型 ID；
+   * 两者都不给时测 harness 自带模型。会计费，必须 allowBilled。
+   */
   target: { kind: 'provider'; id: string } | { kind: 'model'; alias: string } | { kind: 'harness'; id: string }
-  /** model 测试要真的发一次最小请求（会计费），必须显式同意。 */
+    | { kind: 'pairing'; harness: string; model?: string; provider?: string }
+  /** model / pairing 测试要真的发请求（会计费），必须显式同意。 */
   allowBilled?: boolean
 }
 

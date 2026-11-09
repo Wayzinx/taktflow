@@ -323,6 +323,10 @@ export function createMockRuntime(seeded: boolean): MockRuntime {
         if (p?.apiKeyEnv && sourceOf(p.apiKeyEnv) === 'missing') return delay<RuntimeTestResult>({ ok: false, message: `缺少密钥 ${p.apiKeyEnv}，没有发出请求`, billed: false }, t0)
         return delay<RuntimeTestResult>({ ok: true, message: `${m.id} 回复正常`, latencyMs: 610, detail: '输入 9 token · 输出 1 token', billed: true }, 760)
       }
+      if (target.kind === 'pairing') {
+        if (!allowBilled) return fail('搭配测试会真跑一次最小任务（计费）：勾选「允许一次最小计费请求」后再试')
+        return delay<RuntimeTestResult>({ ok: true, message: `${target.harness} 回复正常`, latencyMs: 4200, detail: '输入 1.2k token · 输出 3 token', billed: true }, 900)
+      }
       const p = probe(target.id)
       return delay<RuntimeTestResult>(p.ok ? { ok: true, message: '可用', latencyMs: 380, detail: p.detail, billed: false } : { ok: false, message: p.reason ?? '不可用', billed: false }, 640)
     },

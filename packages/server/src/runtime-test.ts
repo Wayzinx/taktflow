@@ -6,6 +6,7 @@ export async function testRuntime(config: TaktConfig, request: RuntimeTestReques
   harnesses: () => Promise<Record<string, HarnessAdapter>>): Promise<RuntimeTestResult> {
   if (!request.target || !['provider', 'model', 'harness'].includes(request.target.kind)) throw new HttpError(400, 'target.kind 必须是 provider、model 或 harness')
   const target = request.target
+  if (target.kind === 'pairing') throw new HttpError(400, '搭配测试尚未实现')
   const id = target.kind === 'model' ? target.alias : target.id
   if (typeof id !== 'string' || !id.trim()) throw new HttpError(400, '请填写 target 的 id 或 alias')
   if (target.kind === 'model' && request.allowBilled !== true) throw new HttpError(400, '模型测试会发起一次最小计费请求；请显式设置 allowBilled: true')
