@@ -252,7 +252,10 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
   let maxX = 1
   for (const p of abs.values()) maxX = Math.max(maxX, p.x)
   const delayOf = (x: number) => Math.round((Math.max(0, x) / maxX) * 1100)
-  drawn.forEach((e, i) => {
+  // 边 id 只由端点、类型和标签决定：用下标的话，运行中途展开出新边会让后面所有边换 id、整批重新挂载，
+  // 入场描线和光点就会在每次刷新时重播（看着一直在闪）
+  const seen = new Map<string, number>()
+  drawn.forEach((e) => {
     if (e.kind === 'dep' && routePairs.has(`${e.from}→${e.to}`)) return
     const s = abs.get(e.from)
     const t = abs.get(e.to)
@@ -294,7 +297,7 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
     // 数据正在流过（上游已产出、下游在跑）：换成带节拍光点的 flow 边；planner 展开线不算数据流
     const flowing = live && e.kind !== 'expand'
     const common = {
-      id: `e${i}-${e.from}-${e.to}`,
+      id: edgeId(seen, `e-${e.kind}-${e.from}-${e.to}${e.label ? `-${e.label}` : ''}`),
       source: e.from,
       target: e.to,
       sourceHandle,
@@ -318,4 +321,10 @@ export function layoutRun(graph: { nodes: GraphNode[]; edges: GraphEdge[] }, sta
 
   flow.push(...lanes, ...groups, ...leaves)
   return { nodes: flow, edges, stageNodes }
+}
+
+function edgeId(seen: Map<string, number>, base: string): string {
+  const n = seen.get(base) ?? 0
+  seen.set(base, n + 1)
+  return n ? `${base}~${n}` : base
 }

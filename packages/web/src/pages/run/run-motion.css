@@ -1,6 +1,6 @@
 /*
  * 运行页动效：全部围绕一拍（--takt）。
- * - 运行中的节点：每拍从卡片边缘放出一圈光环，左侧状态条同拍提亮；
+ * - 运行中的节点：每两拍从卡片边缘放出一圈淡光环（一拍一圈太密，和蜂、动作行叠在一起像在闪）；
  * - 数据流过的边：光点两拍走完一条边（一拍出发、一拍到站），见 dag-edges.tsx；
  * - 阶段条：运行中阶段的进度轨像传送带，每拍向前步进一格；
  * - 抽屉：弹簧进场、快速收起。
@@ -20,21 +20,21 @@
   box-shadow: 0 0 0 1.5px var(--st-running);
   pointer-events: none;
   opacity: 0;
-  animation: node-beat var(--takt) var(--ease) infinite;
+  animation: node-beat calc(var(--takt) * 2) var(--ease) infinite;
 }
 @keyframes node-beat {
   0% {
-    opacity: 0.7;
+    opacity: 0.45;
     transform: scale(1);
   }
-  75%,
+  50%,
   100% {
     opacity: 0;
-    transform: scale(1.035, 1.12);
+    transform: scale(1.02, 1.08);
   }
 }
 .dag-node.st-running .dag-status {
-  animation: icon-beat var(--takt) var(--ease) infinite;
+  animation: icon-beat calc(var(--takt) * 2) var(--ease) infinite;
 }
 @keyframes icon-beat {
   0% {
@@ -106,16 +106,6 @@
   }
 }
 
-/* ---------- 运行中节点的标题：节拍橙扫光（与 styles/motion.css 的 .shimmer-text 同一道光） ---------- */
-.dag-node.st-running .dag-title {
-  --shimmer-base: var(--text);
-  --shimmer-mask: linear-gradient(100deg, rgb(0 0 0 / 0.5) 40%, #000 50%, rgb(0 0 0 / 0.5) 60%) 0 0 / 300% 100%;
-  color: var(--shimmer-base);
-  -webkit-mask: var(--shimmer-mask);
-  mask: var(--shimmer-mask);
-  animation: shimmer-text calc(var(--takt) * 2) linear infinite;
-}
-
 /* ---------- 减少动效 ---------- */
 @media (prefers-reduced-motion: reduce) {
   .flow-dot {
@@ -132,12 +122,6 @@
   .dag-node.st-running .dag-status,
   .dag-group.st-running .dag-group-status svg {
     animation: none !important;
-  }
-  .dag-node.st-running .dag-title {
-    animation: none !important;
-    -webkit-mask: none;
-    mask: none;
-    color: var(--shimmer-base);
   }
   /* 位置不动，只保留淡入淡出，开关抽屉仍有可感知的反馈 */
   .drawer {

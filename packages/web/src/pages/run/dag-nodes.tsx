@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Network } from 'lucide-react'
-import { ActivityLine } from '../../components/activity-line'
+import { ActivityLine, useSteadyActivity } from '../../components/activity-line'
 import { AgentMark, actOf, harnessHue, LONG_STEP_MS, markOf } from '../../components/agent-mark'
 import { KindIcon } from '../../components/ui'
 import { fmtTokens, totalTokens } from '../../lib/format'
@@ -29,7 +29,7 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
   const role = n.role ? `${n.role}${n.harness ? ` · ${n.harness}` : ''}` : NODE_KIND[n.kind].label
   const sub = data.label.sub ? `${data.label.sub}${n.role ? ` · ${role}` : ''}` : role
   const showIteration = n.iteration !== undefined && !data.hideIteration
-  const activity = n.status === 'running' ? n.activity : undefined
+  const activity = useSteadyActivity(n.status === 'running' ? n.activity : undefined)
   const mark = markOf(n.status)
   // 长步骤在头顶加"…"：按 since 算，节点每次重渲染（SSE 节流刷新）时更新
   const long = activity && Date.now() - Date.parse(activity.since) >= LONG_STEP_MS

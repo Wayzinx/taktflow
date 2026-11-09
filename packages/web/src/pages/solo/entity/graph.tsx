@@ -4,7 +4,7 @@ import '@xyflow/react/dist/style.css'
 import { ScrollText, SquareArrowOutUpRight } from 'lucide-react'
 import type { RunDetail, StewardEntitySnapshot } from '@taktflow/core'
 import { useAsync } from '../../../api'
-import { ActivityLine } from '../../../components/activity-line'
+import { ActivityLine, useSteadyActivity } from '../../../components/activity-line'
 import { AttentionCard } from '../../../components/attention-card'
 import { describe } from '../../../components/event-timeline'
 import { useEntityFocus, type FocusTarget } from '../../../components/steward/focus'
@@ -141,6 +141,7 @@ export function NodeView({ runId, nodeId, target, run, inPanel }: { runId: strin
   const d = run ?? own.d
   const g = d?.graph.nodes.find((n) => n.id === nodeId)
   const tickKey = g ? `${g.status}:${g.attempts}:${g.activity?.since ?? ''}` : ''
+  const activity = useSteadyActivity(g?.status === 'running' ? g.activity : undefined)
   const q = useAsync((ds) => ds.node(runId, nodeId), [runId, nodeId, tickKey])
   const n = useKept(q.data)
   const att = useAsync((ds) => (g?.status === 'waiting_human' ? ds.attention(true) : Promise.resolve([])), [runId, nodeId, g?.status])
@@ -187,11 +188,11 @@ export function NodeView({ runId, nodeId, target, run, inPanel }: { runId: strin
             </dd>
           </>
         )}
-        {g?.activity && status === 'running' && (
+        {activity && status === 'running' && (
           <>
             <dt>正在做</dt>
             <dd>
-              <ActivityLine activity={g.activity} />
+              <ActivityLine activity={activity} />
             </dd>
           </>
         )}

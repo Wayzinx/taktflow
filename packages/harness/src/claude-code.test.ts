@@ -64,6 +64,15 @@ describe('Claude stream parser', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'message', role: 'system', text: expect.stringContaining('permission denied') }))
   })
 
+  it('thinking_tokens 这类进度计数行不记成消息', () => {
+    const events: HarnessEvent[] = []
+    const parser = createClaudeCodeParser(event => events.push(event))
+    for (let i = 1; i <= 50; i++) parser.onLine(JSON.stringify({ type: 'system', subtype: 'thinking_tokens', estimated_tokens: i, estimated_tokens_delta: 1, session_id: 's' }))
+    parser.onLine(JSON.stringify({ type: 'system', subtype: 'api_retry', attempt: 1 }))
+    expect(events.filter(e => e.type === 'message')).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: 'message', role: 'system', text: expect.stringContaining('api_retry') })
+  })
+
   it('读取未完成快照不会导致后续正常 result 永久失败', () => {
     const parser = createClaudeCodeParser()
     expect(parser.result().ok).toBe(false)

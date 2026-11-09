@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { NodeActivity } from '@taktflow/core'
 import { toolAction } from '../lib/actions'
 import { LONG_STEP_MS } from './agent-mark'
@@ -13,6 +13,35 @@ export function useSecondTick(active = true): number {
     return () => clearInterval(t)
   }, [active])
   return now
+}
+
+const sameAction = (a?: NodeActivity, b?: NodeActivity) => a?.state === b?.state && a?.tool === b?.tool && a?.input === b?.input
+
+/**
+ * 显示用的动作：每个动作至少停留 holdMs 才换下一个。agent 每秒能发几十个事件（思考片段、短工具调用），
+ * 直接跟着换会让节点的动作行和蜂一直闪；停留期间来的新动作只记最新的一个，到点再换。
+ */
+export function useSteadyActivity(activity: NodeActivity | undefined, holdMs = 900): NodeActivity | undefined {
+  const [shown, setShown] = useState(activity)
+  const shownAt = useRef(Date.now())
+  const latest = useRef(activity)
+  latest.current = activity
+  useEffect(() => {
+    if (sameAction(activity, shown)) {
+      if (activity?.since !== shown?.since) setShown(activity)
+      return
+    }
+    const wait = holdMs - (Date.now() - shownAt.current)
+    const swap = () => {
+      shownAt.current = Date.now()
+      setShown(latest.current)
+    }
+    // 结束（没有动作了）立刻换；否则等当前动作停够
+    if (!activity || !shown || wait <= 0) return swap()
+    const t = setTimeout(swap, wait)
+    return () => clearTimeout(t)
+  }, [activity, shown, holdMs])
+  return shown
 }
 
 export function activityText(a: NodeActivity): { verb: string; target?: string; full?: string } {

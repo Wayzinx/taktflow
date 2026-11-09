@@ -1,6 +1,6 @@
 import type { AttentionItem, RequirementDetail, RunDetail, StewardEntitySnapshot } from '@taktflow/core'
 import { useAsync } from '../../../api'
-import { ActivityLine } from '../../../components/activity-line'
+import { ActivityLine, useSteadyActivity } from '../../../components/activity-line'
 import { actOf, AgentMark, harnessHue, markOf } from '../../../components/agent-mark'
 import { AttentionCard, attentionMeta } from '../../../components/attention-card'
 import { StageRail } from '../../../components/stage-rail'
@@ -30,19 +30,20 @@ export function useRequirementLive(id: string) {
 
 function NowRow({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
   const cur = r.current
+  const g = cur ? run?.graph.nodes.find((n) => n.id === cur.nodeId) : undefined
+  const activity = useSteadyActivity(cur?.status === 'running' ? g?.activity : undefined)
   if (!cur) return <p className="ent-note">{requirementLook(r).status}</p>
-  const g = run?.graph.nodes.find((n) => n.id === cur.nodeId)
   const mark = markOf(cur.status)
   return (
     <div className="ent-now">
-      <AgentMark state={mark.state} sign={mark.sign} act={actOf(g?.activity)} hue={harnessHue(g?.harness)} size={30} />
+      <AgentMark state={mark.state} sign={mark.sign} act={actOf(activity)} hue={harnessHue(g?.harness)} size={30} />
       <div className="ent-now-main">
         <span className="ent-now-head">
           <b>{cur.title}</b>
           {g?.harness && <span className="mono faint">{g.harness}</span>}
           <span className="faint">{NODE_STATUS[cur.status].label}</span>
         </span>
-        {g?.activity && cur.status === 'running' && <ActivityLine activity={g.activity} />}
+        {activity && <ActivityLine activity={activity} />}
       </div>
     </div>
   )

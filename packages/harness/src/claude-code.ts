@@ -20,12 +20,20 @@ function resultError(data: JsonObject): unknown {
   return parts.length ? `Claude Code：${parts.join('；')}` : data
 }
 
+/**
+ * 只是进度计数的 system 行：新版 Claude Code 每多想一个 token 就发一条 thinking_tokens，
+ * 一个评审节点能刷出几十万条，原样记成消息会把事件日志撑到上百 MB、运行页每次刷新都重绘。
+ */
+const NOISE_SYSTEM = new Set(['thinking_tokens'])
+
 export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamParser {
   const state = new ParseState(onEvent)
   let completed = false
   return state.parser(data => {
     if (data.type === 'system' && data.subtype === 'init') {
       state.started(data.session_id, data.model, data.effort, data.skills)
+    } else if (data.type === 'system' && NOISE_SYSTEM.has(string(data.subtype) ?? '')) {
+      return
     } else if (data.type === 'assistant' || data.type === 'user') {
       const message = object(data.message)
       const blocks = Array.isArray(message.content) ? message.content : []

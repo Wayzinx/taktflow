@@ -16,7 +16,9 @@ export function nodeActivity(events: EventEnvelope[], now = Date.now()): NodeAct
         if (data.callId) tools.delete(data.callId)
         activity = { state: 'thinking', ...(data.phase === undefined ? { tool: data.tool, input: data.input } : {}), since: event.ts }
       }
-    } else if (event.type === 'harness.started' || event.type === 'harness.message') activity = { state: 'thinking', since: event.ts }
+    } else if (event.type === 'harness.started') activity = { state: 'thinking', since: event.ts }
+    // 连续的思考片段是同一段思考：不重置开始时间，否则节点一直显示"思考中 0s"、长步骤也永远判不出来
+    else if (event.type === 'harness.message') { if (activity.state !== 'thinking' || activity.tool) activity = { state: 'thinking', since: event.ts } }
     else if (event.type === 'context.compacted') activity = { state: 'compacting', since: event.ts }
     else if (event.type === 'invocation.finished') { tools.clear(); activity = { state: 'thinking', since: event.ts } }
   }

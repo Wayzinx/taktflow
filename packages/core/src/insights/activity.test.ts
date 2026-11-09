@@ -26,3 +26,13 @@ it('最近尝试中推导思考、并行工具、压缩、等工具，终态不�
   expect(nodeActivity(events)).toEqual({ state: 'thinking', since: at(9) })
   expect(nodeActivity([])).toBeUndefined()
 })
+
+it('连续的思考片段不重置开始时间；工具结束后的思考从结束时算', () => {
+  const events = [event('node.started', { attempt: 1 }, 0), event('harness.started', { harness: 'h' } as EventPayloads['harness.started'], 1)]
+  for (let i = 2; i < 6; i++) events.push(event('harness.message', { role: 'assistant', text: `片段 ${i}` }, i))
+  expect(nodeActivity(events, 6_000)).toEqual({ state: 'thinking', since: at(1) })
+  events.push(event('harness.tool_call', { tool: 'read', input: 'a', callId: 'a', phase: 'start' }, 6))
+  events.push(event('harness.tool_call', { tool: 'read', input: 'a', callId: 'a', phase: 'end' }, 7))
+  events.push(event('harness.message', { role: 'assistant', text: '继续' }, 8))
+  expect(nodeActivity(events, 9_000)).toEqual({ state: 'thinking', since: at(7) })
+})

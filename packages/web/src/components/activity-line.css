@@ -1,4 +1,4 @@
-/* 动作行（docs/design/26 §1）：运行中节点的副标题；换动作时整行从下方滑入。 */
+/* 动作行（docs/design/26 §1）：运行中节点的副标题；换动作时整行淡入（不位移，动作切得快时位移看着像抖）。 */
 .act-line {
   display: inline-flex;
   align-items: baseline;
@@ -51,7 +51,7 @@
 
 @media (prefers-reduced-motion: no-preference) {
   .act-line {
-    animation: actline-in 260ms var(--ease-out-soft) both;
+    animation: actline-in 200ms var(--ease-out-soft) both;
   }
   .act-dots i {
     animation: act-dot calc(var(--takt) * 1.5) var(--ease-in-out) infinite;
@@ -68,8 +68,7 @@
 }
 @keyframes actline-in {
   from {
-    opacity: 0;
-    transform: translateY(5px);
+    opacity: 0.2;
   }
 }
 @keyframes act-dot {
