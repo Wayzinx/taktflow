@@ -16,9 +16,10 @@ export const actionSchemas: Record<LeadAction['type'], Record<string, unknown>> 
   update_notes: { required: ['content'], properties: { content: text } },
   command: { required: ['id'], properties: { id: text, input: { type: 'object' } } },
 }
+// 动作参数由白名单逐条校验；这里保留开放字段，避免原生严格模式删掉动作参数。
 export const LEAD_TURN_SCHEMA: Record<string, unknown> = {
   title: 'LeadTurn', type: 'object', required: ['reply', 'actions'],
-  properties: { reply: text, actions: { type: 'array', items: { type: 'object', required: ['type'], properties: { type: text } } } },
+  properties: { reply: text, actions: { type: 'array', items: { type: 'object', required: ['type'], properties: { type: text }, additionalProperties: true } } },
 }
 
 export function validateAction(value: unknown): asserts value is LeadAction {

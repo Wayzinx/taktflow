@@ -77,8 +77,20 @@ it('流程优先级：模型、显式档位、配置、标准、首个兼容流�
 })
 it('非法模型结果、缺失需求、空流程、全部不支持都不生成虚假路由', async () => {
   const input = await setup()
-  await expect(routeRequirement({ ...input, model: async () => ({ tier: 'T9', surfaces: [], reason: 'bad' }) })).rejects.toThrow('enum')
+  await expect(routeRequirement({ ...input, model: async () => ({ tier: 'T9', surfaces: [], reason: 'bad' }) })).rejects.toThrow('取值须为')
   await expect(routeRequirement({ ...input, workflows: [] })).rejects.toThrow('没有可用')
   await expect(routeRequirement({ ...input, requirementId: 'REQ-999' })).rejects.toThrow('需求不存在')
   await expect(routeRequirement({ ...input, workflows: [workflow('wrong', ['T3'])] })).rejects.toThrow('没有支持')
+})
+
+it('路由模型错误结构走统一修正，原始 JSON 也能通过', async () => {
+  const input = await setup()
+  const prompts: string[] = []
+  const result = await routeRequirement({ ...input, model: async prompt => {
+    prompts.push(prompt)
+    return prompts.length === 1 ? { tier: 'BAD', reason: '错误', surfaces: [] } : JSON.stringify({ tier: 'T1', reason: '小改', surfaces: [] })
+  } })
+  expect(result.tier).toBe('T1')
+  expect(prompts).toHaveLength(2)
+  expect(prompts[1]).toContain('$.tier：取值须为 T0 / T1 / T2 / T3 之一')
 })

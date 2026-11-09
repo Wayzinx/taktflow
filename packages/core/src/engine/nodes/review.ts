@@ -8,7 +8,7 @@ import { collectOutputs, resolveInputs } from '../artifacts.js'
 import { addUsage } from '../../insights/usage.js'
 import { sha256 } from '../../util/hash.js'
 import { system } from '../actor.js'
-import { assertResponses, normalizeResponses, REVIEW_SCHEMA, RESPONSES_SCHEMA, reviewPassed } from './review-schema.js'
+import { assertResponses, responseErrors, normalizeResponses, REVIEW_SCHEMA, RESPONSES_SCHEMA, reviewPassed } from './review-schema.js'
 import { reviewTargets, targetFingerprint } from './review-target.js'
 import { noReviewProgress, reviewContinuity } from './review-continuity.js'
 import { normalizeRounds } from '../../review/records.js'
@@ -62,7 +62,7 @@ async function persist(host: Runtime, node: ReviewNodeDef, progress: ReviewProgr
   await host.persistGraph()
 }
 
-async function invoke(host: Runtime, node: ReviewNodeDef, ctx: NodeContext, role: string, harness: AgentNodeDef['harness'], prompt: string, schema: Record<string, unknown>, writeScope?: string[], capture?: CaptureContext): ReturnType<typeof callHarness> {
+async function invoke(host: Runtime, node: ReviewNodeDef, ctx: NodeContext, role: string, harness: AgentNodeDef['harness'], prompt: string, schema: Record<string, unknown>, writeScope?: string[], capture?: CaptureContext, validateOutput?: (data: unknown) => string[]): ReturnType<typeof callHarness> {
   const ns = host.state.nodes[node.id]!
   // 每个角色使用独立临时状态，绝不把上一位评审者的 sessionRef 传给下一位。
   const sources = !Array.isArray(node.target) ? Object.values(host.state.nodes).filter((state) => state.worktree?.repo === (node.target as { code: { repo: string } }).code.repo
@@ -70,10 +70,13 @@ async function invoke(host: Runtime, node: ReviewNodeDef, ctx: NodeContext, role
   const session = { ...ns, worktree: undefined, sessionRef: undefined, usage: undefined }
   if (sources[0]?.worktree) ctx = { ...ctx, projectDir: sources[0].worktree.path }
   if (sources.length > 1) prompt += `\n工作树：${JSON.stringify(sources.map((state) => ({ nodeId: state.id, ...state.worktree })))}`
-  const result = await callHarness(host, { ...node, kind: 'agent', role, harness, prompt, resultSchema: schema, session: 'fresh', writeScope }, ctx, session, true, sources.map((state) => state.worktree!.path), capture)
-  if (writeScope === undefined) for (const source of sources) await saveWorktreeDiff(host, source.id, source, undefined, result.actor)
-  if (session.usage) ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, session.usage)
-  return result
+  try {
+    const result = await callHarness(host, { ...node, kind: 'agent', role, harness, prompt, resultSchema: schema, session: 'fresh', writeScope }, ctx, session, true, sources.map((state) => state.worktree!.path), capture, validateOutput)
+    if (writeScope === undefined) for (const source of sources) await saveWorktreeDiff(host, source.id, source, undefined, result.actor)
+    return result
+  } finally {
+    if (session.usage) ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, session.usage)
+  }
 }
 
 export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promise<void> {
@@ -204,7 +207,11 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
       const point = await scheduleCheckpoint(host, node.id, 'author', `author:${node.author.role}`, ['按评审意见逐条回应并修改产物'], round.revision, round.round)
       let result: Awaited<ReturnType<typeof invoke>>
       try {
-        result = await invoke(host, node, ctx, node.author.role, node.author.harness, prompt, RESPONSES_SCHEMA, undefined, { role: 'author', checkpointId: point.id })
+        result = await invoke(host, node, ctx, node.author.role, node.author.harness, prompt, RESPONSES_SCHEMA, undefined, { role: 'author', checkpointId: point.id }, data => {
+          const value = data as { responses: ReviewResponse[] }
+          value.responses = normalizeResponses(round.records, value.responses, round.round)
+          return responseErrors(round.records, value.responses, round.round)
+        })
         const responses = normalizeResponses(round.records, (result.data as { responses: ReviewResponse[] }).responses, round.round)
         assertResponses(round.records, responses, round.round)
         round.responses = responses

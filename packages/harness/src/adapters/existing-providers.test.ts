@@ -163,8 +163,8 @@ describe('existing adapter provider configuration', () => {
 
 describe('existing adapter capabilities', () => {
   it.each([
-    [createClaudeCodeHarness(), { providerProtocols: ['anthropic-messages'], resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
-    [createCodexHarness(), { providerProtocols: ['openai-responses'], resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
+    [createClaudeCodeHarness(), { providerProtocols: ['anthropic-messages'], resume: true, structuredOutput: true, toolEvents: true, usage: true, cost: true, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
+    [createCodexHarness(), { providerProtocols: ['openai-responses'], resume: true, structuredOutput: true, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
     [createDshHarness(), { resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false }],
     [createMockHarness({ steps: [] }), { resume: false, structuredOutput: false, toolEvents: true, usage: true, cost: true, compactionEvents: true, customProvider: false, sandbox: false, mcp: false }],
   ])('$id 只声明当前实现支持的能力', (harness, capabilities) => {

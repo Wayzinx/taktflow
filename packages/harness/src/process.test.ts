@@ -278,11 +278,11 @@ describe('JSON 结果合并', () => {
     expect(extractJsonBlock(`${block('{}')}\n\`\`\`json\n{}`)).toBeUndefined()
     expect(extractJsonBlock('plain text')).toBeUndefined()
   })
-  it('只有请求有 schema 才从 finalText 提取，不使用解析器预填值', () => {
+  it('只有请求有 schema 才填结构化值，原生解析结果优先于文本', () => {
     const parsed = { ok: true, finalText: block('{"value":1}'), structured: { stale: true } }
     const proc = { ok: true, stdout: block('{"wrong":true}'), stderr: '', exitCode: 0, transcriptPath: '/tmp/log' }
     expect(finalizeResult(request(), parsed, proc)).not.toHaveProperty('structured')
-    expect(finalizeResult(request({ resultSchema: {} }), parsed, proc)).toMatchObject({ ok: true, structured: { value: 1 }, exitCode: 0, transcriptPath: '/tmp/log' })
+    expect(finalizeResult(request({ resultSchema: {} }), parsed, proc)).toMatchObject({ ok: true, structured: { stale: true }, exitCode: 0, transcriptPath: '/tmp/log' })
   })
   it('合并两层失败原因并保留进程元数据', () => {
     expect(finalizeResult(request(), { ok: false, finalText: 'partial', error: 'parse failed' }, { ok: false, stdout: '', stderr: '', error: 'HTTP 429', exitCode: 2, transcriptPath: '/tmp/log' }))

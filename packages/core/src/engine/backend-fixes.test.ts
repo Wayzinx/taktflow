@@ -57,7 +57,7 @@ it.each([null, { ok: 'wrong' }])('原生 structured 仍需校验 schema：%s', a
 })
 
 it.each(['```json\n{"ok":false}', '```json\ninvalid\n```'])('拒绝无效的最后 fence，不回退较早有效块', (last) => {
-  expect(() => parseResult('```json\n{"ok":true}\n```\n' + last, { type: 'object' })).toThrow('最后 json')
+  expect(() => parseResult('```json\n{"ok":true}\n```\n' + last, { type: 'object' })).toThrow('json 代码块')
 })
 
 it('知识使用共享路由推断 intent、去重限额并记录真实来源', async () => {

@@ -24,7 +24,7 @@ export function configuredChat(stores: ProjectStores, alias?: string): { info: S
 export function configuredRouteModel(stores: ProjectStores): import('@taktflow/core').RouteInput['model'] | undefined {
   const chat = configuredChat(stores, stores.config.route?.harness?.model).chat
   return chat
-    ? async (prompt, responseSchema) => JSON.parse((await chat({ model: '', messages: [{ role: 'user', content: prompt }], responseSchema: responseSchema as Record<string, unknown> })).message.content)
+    ? async (prompt, responseSchema) => (await chat({ model: '', messages: [{ role: 'user', content: prompt }], responseSchema: responseSchema as Record<string, unknown> })).message.content
     : undefined
 }
 

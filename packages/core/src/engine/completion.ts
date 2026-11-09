@@ -32,3 +32,15 @@ export function resultSummary(data: unknown, finalText: string): string {
   const summary = data && typeof data === 'object' && 'summary' in data && typeof data.summary === 'string' ? data.summary : finalText.split(/\r?\n/)[0] ?? ''
   return [...summary].slice(0, 80).join('')
 }
+
+export function completionErrors(criteria: string[], data: unknown): string[] {
+  if (!criteria.length) return []
+  const checks = (data as { checks: Array<{ id: string; pass: boolean; evidence?: string }> }).checks
+  const errors: string[] = []
+  for (const [index] of criteria.entries()) {
+    const id = `c${index + 1}`
+    const matches = checks.filter(check => check.id === id)
+    if (matches.length !== 1) errors.push(`$.checks：检查项 ${id} 必须恰好出现一次（实际 ${matches.length} 次）`)
+  }
+  return errors
+}

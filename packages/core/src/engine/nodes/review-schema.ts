@@ -43,13 +43,20 @@ export function normalizeResponses(records: ReviewRecord[], responses: ReviewRes
   })
 }
 
-export function assertResponses(records: ReviewRecord[], responses: ReviewResponse[], round: number): void {
+export function responseErrors(records: ReviewRecord[], responses: ReviewResponse[], round: number): string[] {
+  const errors: string[] = []
   const expected = new Set(records.flatMap((record) => record.issues.map((issue) => JSON.stringify([record.reviewer, issue.id]))))
   const seen = new Set<string>()
   for (const response of responses) {
     const key = JSON.stringify([response.reviewer, response.issueId])
-    if (response.round !== round || !expected.has(key) || seen.has(key)) throw new Error(`作者回应必须与本轮问题逐条对应：${key}`)
+    if (response.round !== round || !expected.has(key) || seen.has(key)) errors.push(`作者回应必须与本轮问题逐条对应：${key}`)
     seen.add(key)
   }
-  if (seen.size !== expected.size) throw new Error('作者回应缺少问题')
+  for (const key of expected) if (!seen.has(key)) errors.push(`作者回应缺少问题：${key}`)
+  return errors
+}
+
+export function assertResponses(records: ReviewRecord[], responses: ReviewResponse[], round: number): void {
+  const errors = responseErrors(records, responses, round)
+  if (errors.length) throw new Error(errors.join('；'))
 }

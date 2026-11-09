@@ -54,6 +54,7 @@ export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamPar
       completed = true
       state.value.sessionId = string(data.session_id) ?? state.value.sessionId
       state.value.finalText = string(data.result) ?? state.value.finalText
+      if (data.structured_output !== undefined && data.structured_output !== null) state.value.structured = data.structured_output
       const usage = readUsage(data.usage)
       if (usage) {
         const costUsd = number(data.total_cost_usd)
@@ -80,7 +81,7 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
   const bin = options.bin ?? 'claude'
   const capabilities: HarnessCapabilities = {
     toolPhases: true, readOnly: false, modelOverride: true, effortOverride: false,
-    resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true,
+    resume: true, structuredOutput: true, toolEvents: true, usage: true, cost: true,
     compactionEvents: false, customProvider: true, sandbox: false, mcp: true,
     providerProtocols: ['anthropic-messages'],
   }
@@ -106,6 +107,9 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
         processReq = { ...req, env: { ...req.env, ...claudeProviderEnv(req, key.value) } }
       }
       const args = ['-p', '--output-format', 'stream-json', '--verbose']
+      if (req.resultSchema) args.push('--json-schema', JSON.stringify(req.resultSchema))
+      // 只读调用（快照评审、修正追问）仍要能读冻结材料：只留读类工具；接 MCP 时下面整体换成 MCP 工具
+      if (req.readOnly && !req.mcpServers?.length) args.push('--tools', 'Read,Grep,Glob')
       if (req.model) args.push('--model', req.model)
       if (req.sessionId) args.push('--resume', req.sessionId)
       if (req.systemAppend) args.push('--append-system-prompt', req.systemAppend)

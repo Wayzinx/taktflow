@@ -48,7 +48,8 @@ it.each([false, true])('多条 usage 事件按本次调用累计，result.usage 
   expect(finished).toHaveLength(2)
   for (const event of finished) expect(event.data).toMatchObject({ status: 'succeeded', usage: expected })
   const streamed = await stores.events.read(state.runId, { nodeId: 'cycle/a', types: ['harness.usage'] })
-  expect(streamed.map((event) => event.data)).toEqual([...chunks, ...chunks])
+  const recorded = authoritative ? [...chunks, { inputTokens: 10, outputTokens: 6, cachedTokens: 4, costUsd: 0.25 }] : chunks
+  expect(streamed.map((event) => event.data)).toEqual([...recorded, ...recorded])
   expect(await stores.events.verify(state.runId)).toEqual({ ok: true })
 })
 

@@ -714,7 +714,7 @@ describe('问答与工具', () => {
     expect(result.status).toBe('done')
     expect(result.text).toBe('已生成提案。')
     expect(result.tools?.map((tool) => tool.ok)).toEqual([false, true])
-    expect(result.tools?.[0]?.summary).toContain('字段名必须是 kind')
+    expect(result.tools?.[0]?.summary).toContain('缺少必填字段 kind')
     expect(result.proposalIds).toHaveLength(1)
   })
   it('离线进度、风险、待办、新建需求/空间和设置入口', async () => {

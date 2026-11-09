@@ -92,3 +92,8 @@ export * from './store/role-sources.js'
 export * from './automations/cron.js'
 export * from './automations/records.js'
 export { timeboxMs } from './attention/timebox.js'
+
+export { schemaErrors, validateSchema, extractStructured, parseResult } from './engine/schema.js'
+export { toStrictSchema, dropNullOptionals } from './util/strict-schema.js'
+export { collectSecrets, createRedactor, redactValue } from './util/redact.js'
+export { runStructured } from './engine/structured.js'

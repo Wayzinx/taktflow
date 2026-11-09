@@ -2,6 +2,8 @@ import { globsOverlap } from '../util/glob.js'
 import type { ProjectStores } from '../interfaces.js'
 import type { Actor, RouteDecision, SnapshotNode, Tier, WorkflowSnapshot } from '../types.js'
 import { validateSchema } from '../engine/schema.js'
+import { runStructured } from '../engine/structured.js'
+import type { HarnessAdapter } from '../types.js'
 
 export interface RouteInput {
   stores: ProjectStores
@@ -72,10 +74,17 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
   const requirement = input.draft ?? (input.requirementId ? await stores.workspaces.getRequirement(input.requirementId) : undefined)
   if (!requirement) throw new Error(`需求不存在：${input.requirementId ?? ''}`)
   if (!workflows.length) throw new Error('没有可用 workflow')
-  const proposed = input.model ? await input.model([
+  const prompt = [
     '按改动形状路由：T0 已写死；T1 单面；T2 多面串行；T3 多面且路径不相交。只输出指定 JSON。',
     JSON.stringify({ requirement, hint: input.hint, workflows: workflows.map(({ id, snapshot }) => ({ id, useWhen: snapshot.useWhen, tiers: snapshot.tiers })) }),
-  ].join('\n'), schema) : heuristic(`${requirement.title}\n${'description' in requirement ? requirement.description ?? '' : ''}\n${input.hint ?? ''}`, input.repos ?? stores.config.repos?.map((repo) => repo.id) ?? [])
+  ].join('\n')
+  const model = input.model
+  const adapter: HarnessAdapter = { id: 'route', displayName: '路由模型', available: async () => ({ ok: true }), run: async request => {
+    const value = await model!(request.prompt, schema)
+    return typeof value === 'string' ? { ok: true, finalText: value } : { ok: true, finalText: JSON.stringify(value) ?? '', structured: value }
+  } }
+  const proposed = model ? (await runStructured(adapter, { prompt, cwd: stores.projectDir, readOnly: true }, schema, { repairs: stores.config.output?.repairs })).data
+    : heuristic(`${requirement.title}\n${'description' in requirement ? requirement.description ?? '' : ''}\n${input.hint ?? ''}`, input.repos ?? stores.config.repos?.map((repo) => repo.id) ?? [])
   validateSchema(proposed, schema)
   const proposal = proposed as Pick<RouteDecision, 'tier' | 'surfaces' | 'reason'> & { workflowId?: string }
   let tier = proposal.tier

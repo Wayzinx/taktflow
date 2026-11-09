@@ -418,3 +418,28 @@ it('revise 失败后 retry 保留评审阶段与问题，从作者回应接着�
   expect((await reviewDetail(f.stores, state.runId, 'review'))?.rounds).toHaveLength(2)
   expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
 })
+
+it('作者遗漏一条回应后只读修正补齐，归一全局编号，再继续复审', async () => {
+  let reviews = 0, authors = 0
+  const f = await fixture(async req => {
+    if (req.env!.TAKT_ROLE !== 'author') return ++reviews === 1 ? { ...changes, issues: [...changes.issues, { id: 'I2', severity: 'major', description: '补充证据' }] } : approve
+    authors++
+    const first = { round: 99, reviewer: 'r1', issueId: 'I1', action: 'fixed', note: '已修' }
+    if (authors === 1) {
+      await writeFile(join(req.env!.TAKT_WORKSPACE!, 'spec.md'), '完整修订')
+      return { responses: [first] }
+    }
+    expect(req.readOnly).toBe(true)
+    expect(req.prompt).toContain('作者回应缺少问题：["r1","I2"]')
+    return { responses: [first, { ...first, issueId: 'I2' }] }
+  })
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode()]) })
+  expect(state.status).toBe('succeeded')
+  expect(authors).toBe(2)
+  expect(reviews).toBe(2)
+  const events = await f.stores.events.read(state.runId)
+  expect(events.filter(event => event.type === 'output.invalid')).toHaveLength(1)
+  expect(events.filter(event => event.type === 'output.repaired')).toHaveLength(1)
+  const detail = await reviewDetail(f.stores, state.runId, 'review')
+  expect(detail!.rounds[0]!.responses.map(response => response.round)).toEqual([1, 1])
+})

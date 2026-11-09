@@ -1,10 +1,10 @@
-import { collectSecrets, createRedactor } from './redact.js'
+import { collectSecrets, createRedactor, redactValue } from './redact.js'
 export { collectSecrets, createRedactor } from './redact.js'
 import { spawn } from 'node:child_process'
 import { mkdir, open } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { createInterface } from 'node:readline'
-import { childEnv, extractJsonBlock } from '@taktflow/core'
+import { childEnv, extractStructured } from '@taktflow/core'
 import type { HarnessRequest, HarnessResult } from '@taktflow/core'
 
 export { extractJsonBlock } from '@taktflow/core'
@@ -212,7 +212,8 @@ export function finalizeResult(req: HarnessRequest, parsed: HarnessResult, proc:
     exitCode: proc.exitCode ?? parsed.exitCode,
   }
   if (req.resultSchema !== undefined) {
-    result.structured = extractJsonBlock(result.finalText)
+    const value = parsed.structured !== undefined ? redactValue(parsed.structured, redact) : extractStructured(result.finalText, req.resultSchema).value
+    result.structured = value
   }
   return result
 }

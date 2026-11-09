@@ -112,7 +112,7 @@ describe('完成标准与输出契约', () => {
       agent({ id: 'strict', title: '', role: 'dev', prompt: '', completion: [checks[0]!.criterion] }),
     ]) })
     expect(state.nodes.free).toMatchObject({ status: 'succeeded', summary: '完成', result: '完成' })
-    expect(state.nodes.strict?.error).toBe('完成标准未满足：c1')
+    expect(state.nodes.strict?.error).toBe('结构化结果不符合要求：没有 json 代码块')
   })
   it.each([true, false])('未声明的新文件与修改文件：strict=%s', async (strictOutputs) => {
     const f = await fixture(async (req) => {
@@ -162,7 +162,7 @@ describe('失败指纹与恢复', () => {
     expect(resumed.nodes.a?.status).toBe(answer === '终止运行' ? 'cancelled' : 'blocked')
   })
   it('失败门禁按检查 id 计数并抑制；自检使用 completion.unmet', async () => {
-    const f = await fixture(async () => ({ ok: true, finalText: '', structured: {} }))
+    const f = await fixture(async () => ({ ok: true, finalText: '', structured: { checks: [{ ...checks[0], pass: false }] } }))
     const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: workflow([
       gate({ id: 'g', title: '', retry: { max: 5 }, checks: [{ id: 'tests', kind: 'function', fn: async () => ({ id: 'tests', pass: false }) }] }),
       agent({ id: 'a', title: '', role: 'dev', prompt: '', completion: [checks[0]!.criterion], retry: { max: 5 } }),

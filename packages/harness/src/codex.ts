@@ -1,3 +1,7 @@
+import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { toStrictSchema, dropNullOptionals } from '@taktflow/core'
 import type { HarnessCapabilities } from '@taktflow/core'
 import type { HarnessAdapter } from '@taktflow/core'
 import { ParseState, object, string, text, readUsage, promptWithInstructions, readProviderApiKey } from './parse.js'
@@ -63,7 +67,7 @@ function createCodexFamilyHarness(id: string, displayName: string, command: stri
   const bin = options.bin ?? command
   const capabilities: HarnessCapabilities = {
     toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
-    resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false,
+    resume: true, structuredOutput: true, toolEvents: true, usage: true, cost: false,
     compactionEvents: false, customProvider: true, sandbox: false, mcp: true,
     providerProtocols: ['openai-responses'],
   }
@@ -111,12 +115,37 @@ function createCodexFamilyHarness(id: string, displayName: string, command: stri
       if (req.modelConfig?.contextWindow !== undefined) args.push('-c', `model_context_window=${req.modelConfig.contextWindow}`)
       if (req.model) args.push('-m', req.model)
       if (req.effort) args.push('-c', `model_reasoning_effort="${req.effort}"`)
-      // 0.159.2 的 resume 子命令不接收 -C/--sandbox，公共选项必须放在它之前。
-      if (req.sessionId) args.push('resume', req.sessionId)
-      args.push('-')
-      const parser = createCodexParser(onEvent)
-      const proc = await runProcess(bin, args, req, { stdin: promptWithInstructions(req), onLine: parser.onLine })
-      return finalizeResult(req, parser.result(), proc)
+      let strictSchema: Record<string, unknown> | undefined
+      if (req.resultSchema) {
+        try { strictSchema = toStrictSchema(req.resultSchema) }
+        catch (error) {
+          const reason = error instanceof Error ? error.message : String(error)
+          onEvent({ type: 'message', role: 'system', text: `原生结构约束已降级为提示词与校验：${reason}` })
+          req = { ...req, prompt: `${req.prompt}\n最后输出一个闭合的 json 代码块，满足：${JSON.stringify(req.resultSchema)}` }
+        }
+      }
+      let schemaDir: string | undefined
+      try {
+        if (strictSchema) {
+          schemaDir = await mkdtemp(join(tmpdir(), 'takt-output-schema-'))
+          const file = join(schemaDir, 'schema.json')
+          await writeFile(file, JSON.stringify(strictSchema), { mode: 0o600 })
+          args.push('--output-schema', file)
+        }
+        // resume 子命令不接收 -C/--sandbox，公共选项必须放在它之前。
+        if (req.sessionId) args.push('resume', req.sessionId)
+        args.push('-')
+        const parser = createCodexParser(onEvent)
+        const proc = await runProcess(bin, args, req, { stdin: promptWithInstructions(req), onLine: parser.onLine })
+        const parsed = parser.result()
+        if (strictSchema && req.resultSchema) {
+          try { parsed.structured = dropNullOptionals(JSON.parse(parsed.finalText), req.resultSchema) }
+          catch { /* 格式错误留给统一校验与修正追问。 */ }
+        }
+        return finalizeResult(req, parsed, proc)
+      } finally {
+        if (schemaDir) await rm(schemaDir, { recursive: true, force: true })
+      }
     },
   }
 }
