@@ -58,6 +58,8 @@ function metadata(file: string, requirements: string): boolean {
     /^\.takt\/(runs|objects|chat)\//.test(file) ||
     /^\.takt\/(?:agent-edit|automations\/start)\.lock$/.test(file) ||
     /^\.takt\/attention\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
+    // 空间审计日志：serve 里配置、经验、知识库、命令等几十处都会追加，带哈希链，篡改由 verify 发现
+    /^\.takt\/space-events\.jsonl(?:\.[\da-f]+\.tmp|\.lock)?$/.test(file) ||
     /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
 }
 
@@ -153,6 +155,8 @@ export class WriteGuard {
         const controlled = peers.filter(peer => peer.change?.before && peer.change.after)
         const candidates = new Set([...before.keys(), ...after.keys(), ...controlled.flatMap(peer => [...peer.change!.before!.keys(), ...peer.change!.after!.keys()])])
         const paths = [...candidates].filter(file => {
+          // 受控窗口也会记下元数据文件的前后哈希；快照不含它们，不能拿来比
+          if (metadata(file, this.requirements)) return false
           if (peers.some(peer => !peer.change && allowed(peer.scope, file))) return false
           let expected = before.get(file)
           for (const peer of controlled) {

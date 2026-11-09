@@ -43,21 +43,24 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
     list: () => specs.map(({ handler: _handler, ...info }) => structuredClone(info)),
     async run(id, input, context) {
       let response: CommandRunResponse
+      // 只读命令不进空间审计：设置页、列表一打开就会调，只会刷屏并反复改写审计日志
+      let read = false
       try {
         const spec = commands.get(id)
         if (!spec) throw new Error(`命令不存在：${id}`)
+        read = spec.risk === 'read'
         validateSchema(input, spec.input)
         requireRole(stores, context.actor, spec.minRole ?? 'member', id)
         if (id === 'requirement.create') context = { ...context, reason: requirementCreateReason(input as unknown as import('../api.js').RequirementCreateRequest, context.reason) }
         if (spec.risk !== 'read' && !context.reason?.trim()) throw new Error('写操作必须说明原因')
         if (['attention.answer', 'review.dispose'].includes(id) && context.actor.type !== 'human') throw new Error('必须由人显式处理')
-        await deps.audit({ id, input, ...context, phase: 'requested' })
+        if (!read) await deps.audit({ id, input, ...context, phase: 'requested' })
         const result = await spec.handler(input, context)
         response = { ok: true, message: `${spec.title}已执行`, result }
       } catch (error) {
         response = { ok: false, message: error instanceof Error ? error.message : String(error) }
       }
-      await deps.audit({ id, input, ...context, phase: 'finished', response })
+      if (!read) await deps.audit({ id, input, ...context, phase: 'finished', response })
       return response
     },
   }

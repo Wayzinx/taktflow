@@ -7,6 +7,8 @@ export const HIDDEN_GRACE_MS = 10_000
 
 /** 页面可见时保持 open() 打开的连接，隐藏够久就关掉，可见时再开。返回值彻底关闭。 */
 export function whileVisible(open: () => () => void): () => void {
+  // 非浏览器环境（node 里跑的接口契约测试）没有可见性，直接连
+  if (typeof document === 'undefined') return open()
   let close: (() => void) | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   const onChange = () => {
@@ -35,6 +37,7 @@ export function whileVisible(open: () => () => void): () => void {
 
 /** 标签页隐藏够久（长连接已断）后回到前台时调用 cb：没有游标可补的流靠它重新拉一次。 */
 export function onTabReturn(cb: () => void): () => void {
+  if (typeof document === 'undefined') return () => {}
   let hiddenAt = document.hidden ? Date.now() : undefined
   const onChange = () => {
     if (document.hidden) {

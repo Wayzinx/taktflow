@@ -194,6 +194,9 @@ it('有范围的系统窗口只豁免其写路径；并发未声明写保留并�
     await writeFile(join(root, 'unknown.txt'), '未声明脚本输出')
   }, true)
   await writeFile(join(root, '.takt/attention.jsonl.lock'), '锁')
+  // 节点运行时 serve 追加空间审计（打开设置页、改配置等）不归因给模型
+  await writeFile(join(root, '.takt/space-events.jsonl'), '{"seq":1}\n')
+  await writeFile(join(root, '.takt/space-events.jsonl.0a1b.tmp'), '临时')
   const result = await finish()
   expect(result).toEqual({ paths: ['unknown.txt'], action: 'flagged', ambiguous: true })
   expect(await readFile(join(root, 'unknown.txt'), 'utf8')).toBe('未声明脚本输出')

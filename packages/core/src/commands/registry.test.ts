@@ -30,7 +30,6 @@ it.each([
   ['run.retry', { runId: 'run-1', nodeIds: ['work'] }],
   ['run.resume', { runId: 'run-1' }], ['run.cancel', { runId: 'run-1' }],
   ['attention.answer', { requestId: 'request-1', decision: 'approve' }],
-  ['route.preview', { requirementId: 'REQ-001', override: { tier: 'T1', reason: '单面' } }],
   ['task.dispatch', { requirementId: 'REQ-001', task: { role: 'dev', title: '修复', instructions: '实现', completion: ['命令执行后返回成功'], impact: 'cosmetic' } }],
   ['review.dispose', { runId: 'run-1', nodeId: 'review', groupKey: 'key', state: 'resolved' }],
   ['lesson.status', { id: 'lesson-1', status: 'active' }],
@@ -77,14 +76,15 @@ it('handler 缺失或异常返回失败；请求审计失败时不执行写入',
   expect(handler).not.toHaveBeenCalled()
 })
 
-it('路由预览是只读查询，viewer 无需 reason；未登记用户仍不能访问有成员的空间', async () => {
-  const { registry, handler } = await setup()
+it('路由预览是只读查询，viewer 无需 reason，不进空间审计；未登记用户仍不能访问有成员的空间', async () => {
+  const { registry, handler, audit } = await setup()
   expect(registry.list().find((command) => command.id === 'route.preview')).toMatchObject({ kind: 'query', risk: 'read', minRole: 'viewer' })
   const input = { requirementId: 'REQ-001', hint: '小修复' }
   const context = { actor: { type: 'human', id: 'bob' } as const }
   expect(await registry.run('route.preview', input, context)).toMatchObject({ ok: true })
   expect(handler).toHaveBeenCalledWith(input, context)
   expect(await registry.run('route.preview', input, { actor: { type: 'human', id: 'unknown' } })).toMatchObject({ ok: false, message: expect.stringContaining('权限不足') })
+  expect(audit).not.toHaveBeenCalled()
 })
 
 it.each(['缺省', '空数组'])('成员%s时人类身份按 owner 校验，写原因和 agent 权限仍受约束', async (mode) => {
