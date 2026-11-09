@@ -90,8 +90,10 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
         const files = await AcpFiles.create(operationRequest)
         client = new AcpClient(command, req, redact, (method, params) => {
           if (method !== 'session/update') return
-          if (params.sessionId !== sessionId) throw new Error('ACP 会话更新不匹配')
           const update = object(params.update)
+          if (params.sessionId !== sessionId) {
+            throw new Error(`ACP 会话更新不匹配：收到会话 ${String(params.sessionId)} 的 ${String(update.sessionUpdate)}，当前会话 ${sessionId ?? '尚未建立'}`)
+          }
           if (replaying) {
             if (update.sessionUpdate === 'config_option_update') events.configure(update.configOptions)
             events.audit('replay', update)
