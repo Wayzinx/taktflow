@@ -1,6 +1,7 @@
 import type { WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from '@taktflow/core'
 import { convertWorkflowSource, sourceDiff } from '@taktflow/workflow-source'
-import { requireRole, type Actor, type ProjectStores, type WorkflowConvertResult } from '@taktflow/core'
+import { relative } from 'node:path'
+import { requireRole, systemWrite, type Actor, type ProjectStores, type WorkflowConvertResult } from '@taktflow/core'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 import { actor, body, HttpError, json, safeId, text } from './http.js'
 import { auditSpace, workflowStore } from './space.js'
@@ -17,32 +18,35 @@ export function workflowRoutes(register: (method: string, path: string, handler:
       throw error
     }
   })
+  // 编辑器写源码、修订记录和布局（读取也会补记初始修订）都是 serve 自己的写入：运行中节点的写权限守卫不能把它们算到 Agent 头上。
+  const guarded = <T>(stores: ProjectStores, fn: () => Promise<T>) =>
+    systemWrite(stores.projectDir, [`${relative(stores.projectDir, stores.paths.workflows)}/**`, '.takt/workflow-revisions/**', '.takt/space-events.jsonl*'], fn)
   add('POST', '/api/workflows/:id/convert', async ({ stores, params, request }) => {
     const input = await body(request)
     if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') throw new HttpError(400, 'dryRun 必须是布尔值')
-    return convertWorkflow(stores, safeId(params.id!), { dryRun: input.dryRun as boolean | undefined, baseRev: input.baseRev as string | undefined, reason: input.reason as string | undefined }, actor(request, stores), getStore(stores))
+    return guarded(stores, () => convertWorkflow(stores, safeId(params.id!), { dryRun: input.dryRun as boolean | undefined, baseRev: input.baseRev as string | undefined, reason: input.reason as string | undefined }, actor(request, stores), getStore(stores)))
   })
   add('GET', '/api/workflows', async ({ stores }) => {
     const runs = await stores.runs.list()
-    return (await getStore(stores).list()).map((item) => ({ ...item, runs: runs.filter((run) => run.workflowId === item.id).length }))
+    return (await guarded(stores, () => getStore(stores).list())).map((item) => ({ ...item, runs: runs.filter((run) => run.workflowId === item.id).length }))
   })
   const result = (value: Awaited<ReturnType<WorkflowStore['edit']>>, response: Parameters<typeof json>[0]) => {
     if ('error' in value) { json(response, value, value.error === 'conflict' ? 409 : 400); return STREAMING }
     return value
   }
-  add('GET', '/api/workflows/:id', ({ stores, params }) => getStore(stores).get(safeId(params.id!)))
+  add('GET', '/api/workflows/:id', ({ stores, params }) => guarded(stores, () => getStore(stores).get(safeId(params.id!))))
   add('PATCH', '/api/workflows/:id', async ({ stores, params, request, response }) => {
     const input = await body(request)
     text(input.baseRev, 'baseRev')
     if (input.reason !== undefined) text(input.reason, 'reason')
     if (!Array.isArray(input.edits)) throw new HttpError(400, 'edits 必须是数组')
-    return result(await getStore(stores).edit(safeId(params.id!), { ...input as unknown as WorkflowEditRequest, author: actor(request, stores) }), response)
+    return result(await guarded(stores, () => getStore(stores).edit(safeId(params.id!), { ...input as unknown as WorkflowEditRequest, author: actor(request, stores) })), response)
   })
   add('PUT', '/api/workflows/:id/source', async ({ stores, params, request, response }) => {
     const input = await body(request)
     text(input.baseRev, 'baseRev'); text(input.source, 'source')
     if (input.reason !== undefined) text(input.reason, 'reason')
-    return result(await getStore(stores).replaceSource(safeId(params.id!), { ...input as unknown as WorkflowSourceRequest, author: actor(request, stores) }), response)
+    return result(await guarded(stores, () => getStore(stores).replaceSource(safeId(params.id!), { ...input as unknown as WorkflowSourceRequest, author: actor(request, stores) })), response)
   })
   add('PUT', '/api/workflows/:id/layout', async ({ stores, params, request }) => {
     const input = await body(request)
@@ -54,7 +58,7 @@ export function workflowRoutes(register: (method: string, path: string, handler:
       const v = input.viewport as Record<string, unknown>
       if (!v || ![v.x, v.y, v.zoom].every((n) => typeof n === 'number' && Number.isFinite(n))) throw new HttpError(400, 'viewport 不合法')
     }
-    return getStore(stores).setLayout(safeId(params.id!), input as unknown as WorkflowLayout)
+    return guarded(stores, () => getStore(stores).setLayout(safeId(params.id!), input as unknown as WorkflowLayout))
   })
   add('GET', '/api/workflows/:id/revisions', async ({ stores, params }) => {
     const store = getStore(stores)
@@ -67,7 +71,7 @@ export function workflowRoutes(register: (method: string, path: string, handler:
   add('GET', '/api/workflows/:id/revisions/:rev', ({ stores, params }) => getStore(stores).revision(safeId(params.id!), params.rev!))
   add('POST', '/api/workflows/:id/rollback', async ({ stores, params, request, response }) => {
     const input = await body(request)
-    return result(await getStore(stores).rollback(safeId(params.id!), text(input.rev, 'rev'), actor(request, stores), text(input.reason, 'reason')), response)
+    return result(await guarded(stores, () => getStore(stores).rollback(safeId(params.id!), text(input.rev, 'rev'), actor(request, stores), text(input.reason, 'reason'))), response)
   })
   add('GET', '/api/workflows/:id/stream', async ({ stores, params, response }) => {
     const store = getStore(stores)

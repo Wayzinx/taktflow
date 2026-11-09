@@ -85,7 +85,7 @@ export { snapshotMaterials } from './engine/snapshots.js'
 
 export * from './secrets/index.js'
 export * from './runtime-config/index.js'
-export { systemWrite } from './engine/guard.js'
+export { systemWrite, WriteGuard } from './engine/guard.js'
 
 export * from './store/role-profile.js'
 export * from './store/role-sources.js'

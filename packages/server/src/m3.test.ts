@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:f
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { createEngine, initProject, openProject, type LeadPresence, type Lesson, type AgentProfile } from '@taktflow/core'
+import { createEngine, initProject, openProject, WriteGuard, type LeadPresence, type Lesson, type AgentProfile } from '@taktflow/core'
 import { attachLessons, createServer, type RunningServer } from './index.js'
 
 const roots: string[] = []; const servers: RunningServer[] = []
@@ -256,4 +256,21 @@ it('评测命令收敛后，录入缺陷和收集用例仍不依赖模型运行�
   const server = await start({ projectDir: root })
   expect((await request(server, `/api/requirements/${req.id}/defects`, 'POST', { title: '缺陷', description: '缺少边界', severity: 'minor', reason: '人工录入' })).data.id).toBe('D-1')
   expect((await request(server, '/api/eval/cases/collect', 'POST', { reason: '收集历史' })).status).toBe(200)
+})
+
+it('运行中的节点期间在编辑器里读取和保存 workflow，不算 Agent 写权限越界；直接改源码文件仍会被拦下', async () => {
+  const { root, file } = await setup()
+  const server = await start({ projectDir: root })
+  const guard = new WriteGuard(root)
+  const finish = await guard.begin({ profile: [] })
+  const doc = (await request(server, '/api/workflows/quick')).data
+  const source = (await readFile(file, 'utf8')).replace("title: '确认'", "title: '确认继续'")
+  const saved = await request(server, '/api/workflows/quick/source', 'PUT', { baseRev: doc.rev, source, reason: '改标题' })
+  expect(saved.status, JSON.stringify(saved.data)).toBe(200)
+  expect(await request(server, '/api/workflows/quick/layout', 'PUT', { nodes: { confirm: { x: 1, y: 2 } } })).toMatchObject({ status: 200 })
+  expect((await finish()).paths).toEqual([])
+
+  const agent = await guard.begin({ profile: [] })
+  await writeFile(file, source.replace('确认继续', 'Agent 改的'))
+  expect((await agent()).paths).toEqual(['workflows/quick.workflow.ts'])
 })
