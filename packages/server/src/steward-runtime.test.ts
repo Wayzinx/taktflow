@@ -67,6 +67,15 @@ it('运行组合展示可用、缺密钥、协议不匹配和未安装原因，�
   const selected = await f.runtime.runtimeChoices!({ ...prefs, defaultSpace: 'preferred' })
   expect(selected.filter(c => c.harness === 'native')).toMatchObject([{ model: 'good', modelLabel: 'preferred-model', spaceId: 'preferred' }])
 })
+it('没设默认空间时取第一个配了模型的空间；设了就只认它', async () => {
+  const f = await fixture()
+  const visible = await f.deps.spaces(), open = f.deps.open
+  const empty = { ...f.stores, projectDir: join(f.root, 'empty'), config: { ...f.stores.config, models: {}, providers: {} } }
+  f.deps.spaces = async () => [{ ...visible[0]!, id: 'empty' }, ...visible]
+  f.deps.open = async id => id === 'empty' ? { ...await open(visible[0]!.id), stores: empty } : open(id)
+  expect((await f.runtime.runtimeChoices!(prefs)).find(c => c.harness === 'native' && c.model === 'good')).toMatchObject({ available: true, spaceId: visible[0]!.id })
+  expect((await f.runtime.runtimeChoices!({ ...prefs, defaultSpace: 'empty' })).some(c => c.harness === 'native')).toBe(false)
+})
 it('匹配备用 provider 协议，runtime 校验与 native 会话选择优先于偏好', async () => {
   const f = await fixture()
   f.stores.config.providers!.chat!.endpoints = { 'anthropic-messages': 'http://example.invalid/anthropic' }

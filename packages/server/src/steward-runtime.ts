@@ -7,8 +7,14 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
   harnesses = createHarnesses, bridge?: ProviderBridge): Pick<StewardDeps, 'runtimeChoices' | 'resolveRuntime'> {
   const catalog = async (prefs: StewardPrefs) => {
     const spaces = (await deps.spaces()).filter(space => !space.archived)
-    const preferred = spaces.find(space => space.id === prefs.defaultSpace) ?? spaces[0]
-    const stores = preferred ? (await deps.open(preferred.id)).stores : undefined
+    let preferred = spaces.find(space => space.id === prefs.defaultSpace)
+    let stores = preferred ? (await deps.open(preferred.id)).stores : undefined
+    // 没设默认空间：取第一个配了模型的空间，别让排在最前的空空间把模型都藏掉
+    if (!preferred) for (const space of spaces) {
+      const opened = (await deps.open(space.id)).stores
+      if (!stores) { preferred = space; stores = opened }
+      if (Object.keys(opened.config.models ?? {}).length) { preferred = space; stores = opened; break }
+    }
     const config = stores?.config
     const adapters = harnesses({ config, projectDir: stores?.projectDir })
     const selection = prefs.harness ?? config?.steward?.harness ?? { harness: 'native' }
