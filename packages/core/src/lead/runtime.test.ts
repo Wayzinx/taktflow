@@ -1,3 +1,6 @@
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { hostname } from 'node:os'
 import type { EventStore } from '../interfaces.js'
 import type { EventEnvelope, EventType } from '../types.js'
 import { leadContext } from './context.js'
@@ -581,4 +584,52 @@ it('M5：上游 agent 派活增加跳数，超限拒绝且留下链路回执', a
   await lead.drain()
   expect(allowed.ok).toBe(true)
   expect((await stores.runs.get(allowed.refs!.taskRunId!))!.origin).toMatchObject({ hops: 1, chain: [parentId] })
+})
+
+
+it.each(['dead', 'missing', 'live'] as const)('run.resume 命令区分中断与活租约（%s）', async owner => {
+  const next = vi.fn(async () => {})
+  const workflow: WorkflowDefinition = { id: 'resume-crash', title: '恢复', version: '1', stages: [], nodes: [
+    { id: 'first', title: '已完成', kind: 'script', run: async () => { throw new Error('不应重跑') } },
+    { id: 'next', title: '下一步', kind: 'script', needs: ['first'], run: next },
+  ] }
+  const runId = 'crashed'
+  const { stores, requirement, send } = await setup([{ reply: '恢复运行', actions: [{ type: 'resume_run', runId }] }], {
+    workflows: { load: async () => workflow, get: async () => ({ rev: '1', source: '' }), replaceSource: async () => {} },
+  })
+  await stores.runs.create({ runId, workflowId: workflow.id, workflowVersion: workflow.version, requirementId: requirement.id,
+    status: 'running', startedAt: new Date().toISOString(), args: {}, expansions: [], nodes: {
+      first: { id: 'first', status: 'succeeded', attempts: 1, outputs: [] }, next: { id: 'next', status: 'running', attempts: 1, outputs: [] },
+    } }, snapshotWorkflow(workflow))
+  if (owner !== 'missing') {
+    const { stdout } = await promisify(execFile)(process.execPath, ['-e', 'console.log(process.pid)'])
+    await writeFile(join(stores.taktDir, 'runs', runId, 'lease.json'), JSON.stringify({ pid: owner === 'live' ? process.pid : Number(stdout.trim()), host: hostname(), startedAt: new Date().toISOString() }))
+  }
+  const turn = (await send())!
+  expect(turn.results[0]).toMatchObject({ ok: owner !== 'live', ...(owner === 'live' ? { message: '运行仍在执行' } : {}) })
+  expect(next).toHaveBeenCalledTimes(owner === 'live' ? 0 : 1)
+  expect((await stores.runs.get(runId))!.status).toBe(owner === 'live' ? 'running' : 'succeeded')
+  const commands = (await stores.events.read(turn.run.runId)).filter(event => event.type === 'log').map(event => JSON.stringify(event.data))
+  expect(commands.some(text => text.includes('run.resume'))).toBe(true)
+})
+
+it('启动异常后移除本进程引擎记录，中断运行仍能继续', async () => {
+  const next = vi.fn(async () => {})
+  const workflow: WorkflowDefinition = { id: 'resume-error', title: '恢复', version: '1', stages: [], nodes: [{ id: 'next', title: '下一步', kind: 'script', run: next }] }
+  const { stores, requirement, lead, message } = await setup([], { workflows: {
+    load: async () => workflow, get: async () => ({ rev: '1', source: '' }), replaceSource: async () => {},
+  } })
+  const append = stores.events.append.bind(stores.events)
+  const injected = vi.spyOn(stores.events, 'append').mockImplementation(async (runId, input) => {
+    if (input.type === 'run.started') throw new Error('模拟初始化异常')
+    return append(runId, input)
+  })
+  const trigger = await message()
+  const started = await lead.executeAction({ type: 'start_run', workflowId: workflow.id }, requirement.id, trigger, undefined, 0)
+  await lead.drain()
+  injected.mockRestore()
+  const runId = started.refs!.runId!
+  expect((await stores.runs.get(runId))!.status).toBe('running')
+  expect(await lead.executeAction({ type: 'resume_run', runId }, requirement.id, trigger, undefined, 0)).toMatchObject({ ok: true })
+  expect(next).toHaveBeenCalledTimes(1)
 })

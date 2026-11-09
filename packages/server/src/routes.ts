@@ -5,7 +5,7 @@ import { qualityRoutes } from './quality-routes.js'
 import { runInsightRoutes } from './run-insight-routes.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isUtf8 } from 'node:buffer'
-import { nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
+import { runLiveness, nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type ProjectStores } from '@taktflow/core'
 import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
 import { registerEvalRoutes } from './eval-routes.js'
 import { commandExecutor, m3Routes, type M3Callbacks } from './m3-routes.js'
@@ -125,7 +125,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     const [records, events] = await Promise.all([loadRunGraph(stores, state.runId), stores.events.read(state.runId)])
     const graph = buildRunGraph(snapshot, state, records, events)
     for (const node of graph.nodes) if (state.nodes[node.id]?.status === 'running' && ['agent', 'judge'].includes(node.kind)) node.activity = nodeActivity(events.filter(e => e.nodeId === node.id))
-    return { run: state, budget: budgetStatus(state, events), quality: await qualityMetrics(events, { store: stores.workspaces, requirementId: state.requirementId }), usage: summarizeUsage(events), stages: stageProgress(snapshot, state, records), workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph }
+    return { run: state, ...(await runLiveness(stores, state.runId, state) === 'interrupted' ? { interrupted: true } : {}), budget: budgetStatus(state, events), quality: await qualityMetrics(events, { store: stores.workspaces, requirementId: state.requirementId }), usage: summarizeUsage(events), stages: stageProgress(snapshot, state, records), workflow: { id: snapshot.id, title: snapshot.title, version: snapshot.version, stages: snapshot.stages }, graph }
   })
   add('GET', '/api/runs/:runId/events', async ({ stores, params, url }) => {
     await run(stores, params.runId!)

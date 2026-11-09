@@ -1,3 +1,4 @@
+import { withRunLease } from './lease.js'
 import { roleSources } from '../store/role-sources.js'
 import { parseRoleProfile } from '../store/role-profile.js'
 import { mergeBudget } from '../util/budget.js'
@@ -62,28 +63,32 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         route: input.route, kind: input.kind, origin: input.origin,
       }
       for (const node of input.workflow.nodes) state.nodes[node.id] = { id: node.id, status: 'pending', attempts: 0, outputs: [] }
-      await withFileLock(requirementLock(deps.stores, state.requirementId), () => deps.stores.runs.create(state, snapshotWorkflow(input.workflow)))
-      await updateRequirement(deps.stores, state, snapshotWorkflow(input.workflow))
-      const started = await deps.stores.events.append(state.runId, { type: 'run.started', actor: system, data: {
-        workflowId: state.workflowId, workflowVersion: state.workflowVersion, args: state.args,
-      } })
-      await postEventMessage(deps.stores, state, started)
-      if (state.route) {
-        const routed = await deps.stores.events.append(state.runId, { type: 'route.decided', actor: system, data: state.route })
-        await postEventMessage(deps.stores, state, routed)
-      }
-      return execute(new Runtime(runtimeDeps, state, input.workflow, opts, guard))
+      return withRunLease(deps.stores, state.runId, async () => {
+        await withFileLock(requirementLock(deps.stores, state.requirementId), () => deps.stores.runs.create(state, snapshotWorkflow(input.workflow)))
+        await updateRequirement(deps.stores, state, snapshotWorkflow(input.workflow))
+        const started = await deps.stores.events.append(state.runId, { type: 'run.started', actor: system, data: {
+          workflowId: state.workflowId, workflowVersion: state.workflowVersion, args: state.args,
+        } })
+        await postEventMessage(deps.stores, state, started)
+        if (state.route) {
+          const routed = await deps.stores.events.append(state.runId, { type: 'route.decided', actor: system, data: state.route })
+          await postEventMessage(deps.stores, state, routed)
+        }
+        return execute(new Runtime(runtimeDeps, state, input.workflow, opts, guard))
+      })
     },
     async resume(runId, workflow) {
-      const runtimeDeps = await currentProfiles()
-      if (active.has(runId)) throw new Error(`运行正在执行：${runId}`)
-      const state = await deps.stores.runs.get(runId)
-      if (!state) throw new Error(`运行不存在：${runId}`)
-      if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
-      if (state.status === 'cancelled') return state
-      workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
-      validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
-      return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true)
+      return withRunLease(deps.stores, runId, async () => {
+        const runtimeDeps = await currentProfiles()
+        if (active.has(runId)) throw new Error(`运行正在执行：${runId}`)
+        const state = await deps.stores.runs.get(runId)
+        if (!state) throw new Error(`运行不存在：${runId}`)
+        if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
+        if (state.status === 'cancelled') return state
+        workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
+        validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
+        return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true)
+      })
     },
     async cancel(runId) {
       const runtime = active.get(runId)

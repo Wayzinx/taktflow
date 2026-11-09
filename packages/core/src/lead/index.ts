@@ -1,3 +1,4 @@
+import { runLiveness } from '../engine/lease.js'
 import { reconcileAssumptions } from '../attention/timebox.js'
 import { withTaskReceiptLock } from './receipts.js'
 import { assertTaskResendable, checkDelegationHops, TaskResendConflictError } from './delegation.js'
@@ -127,8 +128,10 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   async function launch(workflow: WorkflowDefinition, requirementId: string, message: RoomMessage, scopedProfiles = profiles, args: Record<string, unknown> = {}, parentRunId?: string, start: Pick<StartRunInput, 'budget' | 'route'> = {}, resend?: { origin: NonNullable<TaskRunState['origin']>; reason: string; resendOf: string }): Promise<{ runId: string; taskMessage?: RoomMessage }> {
     let resolveCreated!: (created: { runId: string; taskMessage?: RoomMessage }) => void
     let rejectCreated!: (error: unknown) => void
+    let launchedRunId: string | undefined
     const ready = new Promise<{ runId: string; taskMessage?: RoomMessage }>((resolve, reject) => { resolveCreated = resolve; rejectCreated = reject })
     const engine = instrument(message, workflow.title, scopedProfiles, async (state) => {
+      launchedRunId = state.runId
       engines.set(state.runId, engine)
       const taskMessage = workflow.id.startsWith('task:') ? await post(requirementId, { author, kind: 'task', text: `${workflow.title}：已派发`, mentions: resend ? message.mentions : undefined,
         receipt: { status: 'sent', hops: state.origin?.hops, chain: state.origin?.chain, ...(resend ? { note: resend.reason } : {}) }, replyTo: message.id, refs: { taskRunId: state.runId, runId: state.runId } }) : undefined
@@ -143,7 +146,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     }).catch(async (error: unknown) => {
       rejectCreated(error)
       await post(requirementId, { author: system, kind: 'system', text: `运行失败：${errorText(error)}`, replyTo: message.id })
-    }).finally(() => { jobs.delete(job) })
+    }).finally(() => { jobs.delete(job); if (launchedRunId) engines.delete(launchedRunId) })
     jobs.add(job)
     void job.catch(() => undefined)
     return ready
@@ -177,7 +180,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         case 'resume_run': {
           const state = await requireRun(value.runId, requirementId)
           if (finished(state)) throw new Error('已终结运行不能继续')
-          if (state.status === 'running') throw new Error('运行仍在执行')
+          if ((state.status === 'running' && engines.has(state.runId)) || await runLiveness(stores, state.runId, state) === 'active') throw new Error('运行仍在执行')
           if (state.workflowId.startsWith('task:')) { await resumeTask(state.runId); break }
           const engine = engines.get(value.runId)
           if (!options.workflows) throw new Error('未接入 workflow 加载器')

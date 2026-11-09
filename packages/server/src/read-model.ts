@@ -1,4 +1,4 @@
-import { nodeQuality, nodeChanges, recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type DailyActivity, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunSpark, type RunState, type SnapshotNode, type Usage, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
+import { runLiveness, nodeQuality, nodeChanges, recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type DailyActivity, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunSpark, type RunState, type SnapshotNode, type Usage, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
 import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
@@ -150,6 +150,6 @@ export async function runSummaries(stores: ProjectStores, states: RunState[]) {
     const trigger = messages.find((message) => message.id === taskMessage?.replyTo)
     const dispatch = events.find((event) => event.type === 'task.dispatched' && (event.data as EventPayloads['task.dispatched']).taskRunId === state.runId)?.data as EventPayloads['task.dispatched'] | undefined
     const origin = explicit.origin ?? (trigger ? { kind: 'chat' as const, messageId: trigger.id, by: trigger.author, title: dispatch?.title ?? taskMessage!.text } : undefined)
-    return { ...summarizeRun(state, events), tier: state.route?.tier, kind: explicit.kind ?? (state.workflowId.startsWith('task:') || taskMessage || dispatch ? 'task' as const : 'workflow' as const), ...(origin ? { origin } : {}) }
+    return { ...summarizeRun(state, events), ...(await runLiveness(stores, state.runId, state) === 'interrupted' ? { interrupted: true as const } : {}), tier: state.route?.tier, kind: explicit.kind ?? (state.workflowId.startsWith('task:') || taskMessage || dispatch ? 'task' as const : 'workflow' as const), ...(origin ? { origin } : {}) }
   }))
 }

@@ -1,10 +1,11 @@
-import { mkdir, open, realpath, rm } from 'node:fs/promises'
+import { mkdir, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import { setTimeout } from 'node:timers/promises'
 import { withLock } from './locks.js'
 import { sha256 } from '../util/hash.js'
+import { acquireProcessFile } from './process-file.js'
 
-// 单独使用文件锁，不改变 withLock 的重入关系。崩溃遗留锁超时报错，绝不按时间抢活锁。
+// 单独使用文件锁，不改变 withLock 的重入关系；绝不按时间抢活锁。
 async function canonicalPath(key: string): Promise<string> {
   let parent = path.resolve(key)
   const suffix: string[] = []
@@ -28,23 +29,18 @@ export async function withFileLock<T>(key: string, fn: () => Promise<T>): Promis
   return withLock(lock, async () => {
     await mkdir(path.dirname(lock), { recursive: true })
     const deadline = Date.now() + 10_000
-    let handle
+    let release: () => Promise<void>
     for (;;) {
-      try {
-        handle = await open(lock, 'wx')
+      const acquired = await acquireProcessFile(lock)
+      if ('release' in acquired) {
+        release = acquired.release
         break
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-        if (Date.now() >= deadline) throw new Error(`等待文件锁超时（请确认持有进程已退出后清理）：${lock}`)
-        await setTimeout(10)
       }
+      if (Date.now() >= deadline) throw new Error(`等待文件锁超时（请确认持有进程已退出后清理）：${lock}`)
+      await setTimeout(10)
     }
     try {
-      await handle.writeFile(JSON.stringify({ pid: process.pid }))
       return await fn()
-    } finally {
-      await handle.close()
-      await rm(lock, { force: true })
-    }
+    } finally { await release() }
   })
 }
