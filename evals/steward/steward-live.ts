@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { evalSoloOffline } from './solo-offline.js'
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -125,6 +126,7 @@ async function runScenario(name: string, fn: () => Promise<{ message?: StewardMe
   }
 }
 async function main(): Promise<void> {
+  await evalSoloOffline()
   if (!(await modelAvailable())) {
     console.log(baseURL && model ? `SKIP eval:steward：连不上 ${baseURL} / ${model}` : 'SKIP eval:steward：未配置 TAKT_STEWARD_EVAL_BASE_URL / TAKT_STEWARD_EVAL_MODEL')
     return
@@ -149,6 +151,14 @@ async function main(): Promise<void> {
       const lanes = message.blocks?.find((block) => block.type === 'lanes')
       assert(lanes && lanes.type === 'lanes', `回复缺少 lanes 块：${JSON.stringify(message.blocks)}`)
       assert(lanes.rows.some((row) => row.ref?.type === 'requirement' && row.ref.spaceId === 'standard-delivery'), 'lanes 至少一行需要指向 standard-delivery 的需求')
+      return { message }
+    }))
+    results.push(await runScenario('需求进度使用实体视图', async () => {
+      const { message } = await ask(base, '作者版标准交付示例里，问候语支持空名字那个需求到哪了？')
+      assert.equal(message.status, 'done', message.error)
+      assert((message.text ?? '').length <= 200, `正文超过 200 字：${message.text}`)
+      assert(message.blocks?.some(block => block.type === 'entity' && block.view === 'card' && block.ref.type === 'requirement' && block.ref.spaceId === 'standard-delivery'), '缺少真实需求 entity card')
+      assert(!message.blocks?.some(block => block.type === 'table' || block.type === 'lanes'), '不应以 table 或 lanes 复述同一需求')
       return { message }
     }))
     let workflowProposal: Proposal | undefined

@@ -1,4 +1,4 @@
-import type { StewardAction, StewardBlock, StewardContextRef, StewardStageStatus, StewardTone } from '../api.js'
+import type { StewardAction, StewardBlock, StewardContextRef, StewardEntitySnapshot, StewardEntityCandidate, StewardEntityView, StewardStageStatus, StewardTone } from '../api.js'
 
 const tones = new Set<StewardTone>(['neutral', 'success', 'running', 'waiting', 'failed', 'stale'])
 const statuses = new Set<StewardStageStatus>(['done', 'running', 'waiting', 'failed', 'todo', 'skipped'])
@@ -7,6 +7,9 @@ const refTypes = new Set<StewardContextRef['type']>(['space', 'requirement', 'ru
 type MaybePromise<T> = T | Promise<T>
 
 export interface NormalizeBlocksContext {
+  resolveRef?(ref: StewardContextRef): MaybePromise<StewardContextRef | undefined>
+  snapshot?(ref: StewardContextRef): MaybePromise<StewardEntitySnapshot>
+  focusVisible?(ref: StewardContextRef, focus: string): MaybePromise<boolean>
   refVisible?(ref: StewardContextRef): MaybePromise<boolean>
   commandExists?(commandId: string): MaybePromise<boolean>
 }
@@ -25,7 +28,13 @@ export async function normalizeBlocks(
   if (input.length > 6) issues.push(`blocks：最多 6 块，收到 ${input.length} 块，已截断`)
   for (const [index, item] of input.slice(0, 6).entries()) {
     const block = await normalizeBlock(item, `blocks[${index}]`, ctx, issues)
-    if (block) blocks.push(block)
+    if (!block) continue
+    if ((block.type === 'entity' && blocks.filter(item => item.type === 'entity').length >= 3)
+      || (block.type === 'pick' && blocks.some(item => item.type === 'pick'))) {
+      issues.push(`blocks[${index}]：每条消息最多 3 个 entity、1 个 pick，已丢弃超量块，请合并展示`)
+      continue
+    }
+    blocks.push(block)
   }
   return { blocks, issues }
 }
@@ -41,6 +50,11 @@ export function describeBlocks(blocks: StewardBlock[], max = 240): string[] {
   return blocks.map((block) => {
     const head = 'title' in block && block.title ? `${block.title}：` : ''
     switch (block.type) {
+      case 'entity':
+        // 离线回复直接拿它当正文，所以写成一句人话：对象「标题」：状态（空间 · 视图）
+        return cut(`${block.ref.id}「${block.snapshot.title}」：${block.snapshot.status}${block.snapshot.summary ? `；${block.snapshot.summary}` : ''}（${block.ref.spaceId} · ${{ card: '需求卡', stages: '需求阶段', dag: '运行图', node: '节点', attention: '待办' }[block.view]}）`)
+      case 'pick':
+        return cut(`${block.title ?? '你说的是哪一个'}：${block.items.map(item => `${item.ref.spaceId}/${item.ref.id} ${item.snapshot.title}：${item.snapshot.status}`).join('；')}`)
       case 'stats':
         return cut(`${head}${block.items.map((i) => `${i.label} ${i.value}${i.unit ?? ''}`).join('，')}`)
       case 'lanes':
@@ -79,6 +93,37 @@ async function normalizeBlock(
       return undefined
     }
     switch (raw.type) {
+      case 'entity': {
+        const resolved = await entityRef(raw.ref, `${path}.ref`, ctx, issues)
+        if (!resolved) return undefined
+        const allowed: Record<StewardEntityView, StewardContextRef['type'][]> = { card: ['requirement'], stages: ['requirement'], attention: ['requirement', 'space'], dag: ['run'], node: ['node'] }
+        const view = raw.view as StewardEntityView
+        if (!Object.hasOwn(allowed, view) || !allowed[view].includes(resolved.type) || view === 'node' && !resolved.parent) {
+          issues.push(`${path}：view 与 ref 类型不匹配，node 必须带 parent 运行编号，请修正后重试`)
+          return undefined
+        }
+        const snapshot = await ctx.snapshot!(resolved)
+        let focus = typeof raw.focus === 'string' && view === 'dag' ? raw.focus : undefined
+        if (focus && !(await safe(ctx.focusVisible?.(resolved, focus)))) {
+          issues.push(`${path}.focus：节点不在该运行图中，已去掉 focus，请选择图中的节点`)
+          focus = undefined
+        }
+        return clean({ type: 'entity' as const, view, ref: resolved, snapshot, focus })
+      }
+      case 'pick': {
+        const items = await list<StewardEntityCandidate>(raw.items, `${path}.items`, 5, issues, async (item, itemPath) => {
+          if (!isRecord(item)) return drop(itemPath, item, issues)
+          const resolved = await entityRef(item.ref, `${itemPath}.ref`, ctx, issues)
+          if (!resolved) return undefined
+          return clean({ ref: resolved, snapshot: await ctx.snapshot!(resolved), why: text(item.why, `${itemPath}.why`, 80, issues, true) })
+        })
+        const unique = items.filter((item, index) => items.findIndex(other => other.ref.type === item.ref.type && other.ref.spaceId === item.ref.spaceId && other.ref.id === item.ref.id && other.ref.parent === item.ref.parent) === index)
+        if (unique.length < 2) {
+          issues.push(`${path}：pick 需要 2–5 个不同的可见候选，请补齐候选后重试`)
+          return undefined
+        }
+        return { type: 'pick', ...title(raw, path, issues), items: unique }
+      }
       case 'stats':
         return { type: 'stats', ...title(raw, path, issues), items: await list(raw.items, `${path}.items`, 6, issues, async (item, itemPath) => {
           if (!isRecord(item)) return drop(itemPath, item, issues)
@@ -165,6 +210,20 @@ async function normalizeBlock(
     issues.push(`${path}：规范化失败 ${String(error)}，已丢弃`)
     return undefined
   }
+}
+
+async function entityRef(raw: unknown, path: string, ctx: NormalizeBlocksContext, issues: string[]): Promise<StewardContextRef | undefined> {
+  if (!ctx.resolveRef || !ctx.snapshot) {
+    issues.push(`${path}：缺少服务端引用校验与快照读取器，已丢弃，请接入后重试`)
+    return undefined
+  }
+  const parsed = await ref(raw, path, { refVisible: () => true }, issues)
+  const resolved = parsed ? await ctx.resolveRef(parsed) : undefined
+  if (!resolved?.spaceId) {
+    issues.push(`${path}：对象不可见、不存在或空间不唯一，请补齐 spaceId 和节点 parent 后重试`)
+    return undefined
+  }
+  return resolved
 }
 
 async function action(raw: unknown, path: string, ctx: NormalizeBlocksContext, issues: string[]): Promise<StewardAction | undefined> {

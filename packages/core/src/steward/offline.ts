@@ -1,5 +1,6 @@
 import { sha256 } from '../util/hash.js'
-import type { StewardContextRef, StewardPrefs } from '../api.js'
+import type { StewardContextRef, StewardPrefs, StewardFindResult, StewardEntityView } from '../api.js'
+import { entityQuery } from './find.js'
 import type { StewardToolResult } from './tools.js'
 export type OfflineCall = (
   name: string,
@@ -69,6 +70,8 @@ export async function offlineAnswer(
     })
     return `已生成新建空间提案，请预览后批准${suffix(result)}。`
   }
+  const entityAnswer = await offlineEntity(text, context, named, current, call, suffix)
+  if (entityAnswer !== undefined) return entityAnswer
   if (/(风险|risk|待办|todo|attention|进度|进展|progress|status|状态|卡在哪|处理什么|我要处理|验收还差)/i.test(text)) {
     const listed =
       !current && !prefs.watchedSpaces?.length ? await call('list_spaces', {}) : undefined
@@ -99,5 +102,62 @@ export async function offlineAnswer(
     }
     return answers.join('\n')
   }
-  return `需要先配置管家模型。请打开[管家设置](${current ? `/s/${encodeURIComponent(current)}/settings?tab=steward` : '/steward?settings=1'})。`
+  return `需要先配置管家模型。请打开[管家设置](${current ? `/s/${encodeURIComponent(current)}/settings?tab=steward` : '/solo?drawer=settings'})。`
+}
+
+async function offlineEntity(
+  text: string,
+  context: StewardContextRef[],
+  named: Array<{ id: string; name: string }>,
+  current: string | undefined,
+  call: OfflineCall,
+  suffix: (result: Awaited<ReturnType<OfflineCall>>) => string,
+): Promise<string | undefined> {
+  const attention = /等我|待办|审批|要我决定|todo|attention/i.test(text)
+  const dag = /运行|流程图|画布|dag|节点图|run-/i.test(text)
+  const stages = /阶段/.test(text)
+  const node = /节点/.test(text) && !/节点图/.test(text)
+  let queryText = text
+  for (const space of named) for (const value of [space.id, space.name]) queryText = queryText.replaceAll(value, '')
+  const query = entityQuery(queryText)
+  const scope = named.length === 1 ? named[0]!.id : context.find(ref => ref.type === 'space')?.id
+  let ref = context.find(item => item.type === 'node') ?? context.find(item => item.type === 'run') ?? context.find(item => item.type === 'requirement')
+  const requirement = ref?.type === 'requirement' && node ? ref : undefined
+  if (requirement) ref = undefined
+  if (!ref && attention && !query && current) ref = { type: 'space', id: current, spaceId: current }
+  if (!ref && query) {
+    const types = node ? ['node'] : /run-[\w.-]+/i.test(text) ? ['run'] : ['requirement', 'run', 'node']
+    const findSpace = requirement?.spaceId ?? scope
+    const found = await call('find', { q: requirement ? `${requirement.id} ${queryText}` : queryText, types, ...(findSpace ? { spaceId: findSpace } : {}) })
+    const result = found.data as StewardFindResult
+    if (result.items?.length) {
+      if (result.ambiguous) {
+        await call('show', { blocks: [{ type: 'pick', items: result.items.slice(0, 5).map(item => ({ ref: item.ref, why: item.why })) }] })
+        return '找到几个，你说的是哪一个？'
+      }
+      ref = result.items[0]!.ref
+    }
+  }
+  if (!ref) return undefined
+  let view: StewardEntityView = ref.type === 'node' ? 'node' : ref.type === 'run' ? 'dag' : attention ? 'attention' : stages ? 'stages' : 'card'
+  if (ref.type === 'requirement' && dag && !attention && !stages) {
+    // 查询最近运行前必须唯一确定空间，不能擅自套用默认空间。
+    let spaceId = ref.spaceId
+    if (!spaceId) {
+      const found = (await call('find', { q: ref.id, types: ['requirement'] })).data as StewardFindResult
+      if (found.ambiguous) {
+        await call('show', { blocks: [{ type: 'pick', items: found.items.slice(0, 5) }] })
+        return '找到几个，你说的是哪一个？'
+      }
+      spaceId = found.items[0]?.ref.spaceId
+      if (!spaceId) return '没有找到可查看的需求，请重新选择需求。'
+    }
+    const status = await call('requirement_status', { spaceId, requirementId: ref.id })
+    const run = (status.data as { latestRun?: { runId: string } }).latestRun
+    if (!run) return `${ref.id} 还没开始运行${suffix(status)}。`
+    ref = { type: 'run', spaceId, id: run.runId }; view = 'dag'
+  }
+  const result = await call('show', { blocks: [{ type: 'entity', view, ref }] })
+  const content = (result.data as { content?: string[] }).content?.[0]
+  return content ? `${content}${suffix(result)}。` : '没有找到可查看的对象，请重新选择引用。'
 }

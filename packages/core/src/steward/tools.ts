@@ -2,9 +2,8 @@ import { randomUUID } from 'node:crypto'
 import { DEFAULT_RECEIPT_TIMEOUT_MINUTES } from '../lead/receipts.js'
 import type { StewardBlock, StewardCitation, StewardContextRef, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
 import type { ToolSpec, RoomMessage, NodeKind, SnapshotNode, RunState, Usage, EventEnvelope } from '../types.js'
-import { createInsights } from '../insights/fs-insights.js'
 import { stageProgress } from '../insights/graph.js'
-import { deriveRequirementState } from '../insights/requirement.js'
+import { createInsights } from '../insights/fs-insights.js'
 import { budgetStatus } from '../insights/budget.js'
 import { addUsage, summarizeUsage } from '../insights/usage.js'
 import { scorecards } from '../eval/scorecards.js'
@@ -24,10 +23,13 @@ import { StewardProposals } from './proposals.js'
 import { refreshRisks } from './risks.js'
 import { productMetrics } from './metrics.js'
 import { describeBlocks, normalizeBlocks } from './blocks.js'
+import { entityRun, entitySnapshot, requirementState, resolveEntityRef, stageStatus, stateTone } from './entity.js'
+import { FIND_TYPES, findEntities, findInput } from './find.js'
 
 
 /** 界面上的工具名：description 是写给模型的长约束，不适合直接展示在工具卡片里。 */
 const TOOL_LABELS: Record<string, string> = {
+  find: '查找实体',
   list_spaces: '列出空间',
   resolve_space: '核对空间',
   space_overview: '空间总览',
@@ -91,6 +93,7 @@ export interface StewardToolResult {
   summary: string
 }
 export interface ToolContext {
+  refs?: StewardContextRef[]
   threadId: string
   messageId: string
   proposals: string[]
@@ -247,6 +250,8 @@ export class StewardTools {
     }
     const block = {
       anyOf: [
+        { type: 'object', required: ['type', 'view', 'ref'], properties: { type: { type: 'string', enum: ['entity'] }, view: { type: 'string', enum: ['card', 'stages', 'dag', 'node', 'attention'] }, ref: contextRef, focus: str } },
+        { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['pick'] }, title: str, items: { type: 'array', items: { type: 'object', required: ['ref'], properties: { ref: contextRef, why: str } } } } },
         { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['stats'] }, title: str, items: { type: 'array', items: { type: 'object', required: ['label', 'value'], properties: { label: str, value: { anyOf: [str, { type: 'number' }] }, unit: str, tone, hint: str, ref: contextRef } } } } },
         { type: 'object', required: ['type', 'rows'], properties: { type: { type: 'string', enum: ['lanes'] }, title: str, rows: { type: 'array', items: { type: 'object', required: ['title', 'stages'], properties: { title: str, ref: contextRef, stages: { type: 'array', items: { type: 'object', required: ['label', 'status'], properties: { label: str, status: stageStatus } } }, note: str, tone } } } } },
         { type: 'object', required: ['type', 'items'], properties: { type: { type: 'string', enum: ['bars'] }, title: str, unit: str, items: { type: 'array', items: { type: 'object', required: ['label', 'value'], properties: { label: str, value: { type: 'number' }, max: { type: 'number' }, tone, hint: str, ref: contextRef } } } } },
@@ -266,6 +271,7 @@ export class StewardTools {
       ],
     }
     const definitions: Array<[string, string, Record<string, unknown>, string[]]> = [
+      ['find', '跨可见且未静音的空间查找对象，编号精确优先；ambiguous=true 时必须 show pick 问你说的是哪一个，不要猜。已有 context 需求时直接使用，无需再 find。', { q: str, types: { type: 'array', items: { type: 'string', enum: FIND_TYPES } }, spaceId: str, limit: { type: 'integer', minimum: 1 } }, ['q']],
       ['list_spaces', '列出可见空间；给 query 时返回匹配质量，不能把低质量候选当成用户点名空间', { query: str }, []],
       ['resolve_space', '解析用户点名的空间。exact=false 时必须告诉用户没找到/可能无权限，并列出 candidates，不得代入其他空间回答', { name: str }, ['name']],
       ['space_overview', '空间需求、运行与待办总览', { spaceId: str }, ['spaceId']],
@@ -315,7 +321,7 @@ export class StewardTools {
       ],
       [
         'show',
-        '把结论改成 1-3 个可视化块。进度/状态优先用 preset，只有对比/用量等 preset 覆盖不了时才传 blocks；正文不要复述块里的数字。',
+        '问需求/运行/节点到哪了、卡在哪、在跑什么，空间不确定先 find，再 show entity（card/stages 配需求、dag 配运行、node 配节点且 parent 为运行编号、attention 配需求或空间）。context 已有需求直接使用。find ambiguous 时 show pick 问你说的是哪一个，不猜。snapshot 由服务端生成，不要提供。最多 3 个 entity、1 个 pick，pick 2–5 个候选。正文不超过 3 句，不用 table 或 lanes 复述同一对象；跨对象汇总仍可用 preset。',
         { blocks: { type: 'array', items: block }, preset: { type: 'array', items: preset, minItems: 1, maxItems: 3 } },
         [],
       ],
@@ -365,6 +371,16 @@ export class StewardTools {
     const reqId =
       typeof input.requirementId === 'string' ? stewardId(input.requirementId) : undefined
     switch (name) {
+      case 'find': {
+        const history = await this.store.messages(context.threadId)
+        const refs = [
+          ...((await this.store.thread(context.threadId)).context ?? []),
+          ...(context.refs ?? []),
+          ...history.flatMap(message => [...message.context ?? [], ...(message.blocks ?? []).flatMap(block => block.type === 'entity' ? [block.ref] : [])]),
+        ]
+        data = await findEntities(this.deps, findInput(input), await this.store.prefs(), refs)
+        break
+      }
       case 'list_spaces': {
         const spaces = await this.deps.spaces()
         data = typeof input.query === 'string' && input.query.trim()
@@ -405,9 +421,7 @@ export class StewardTools {
       case 'requirement_status': {
         const req = await space!.stores.workspaces.getRequirement(reqId!)
         if (!req) throw new StewardError(404, '需求不存在，请检查引用')
-        const run = (await space!.stores.runs.list({ requirementId: reqId })).sort((a, b) =>
-          b.startedAt.localeCompare(a.startedAt),
-        )[0]
+        const run = (await requirementState(space!, reqId!)).runs[0]
         const snapshot = run ? await space!.stores.runs.getWorkflow(run.runId) : undefined
         data = {
           requirement: req,
@@ -545,8 +559,18 @@ export class StewardTools {
           )?.blocks ?? []
         const normalized = await normalizeBlocks([...current, ...generated], {
           refVisible: (ref) => this.refVisible(ref),
+          resolveRef: (ref) => resolveEntityRef(this.deps, ref),
+          snapshot: async (ref) => entitySnapshot(await this.deps.open(ref.spaceId!), ref, timestamp(this.deps)),
+          focusVisible: async (ref, focus) => (await entityRun(await this.deps.open(ref.spaceId!), ref.id)).graph.nodes.some(node => node.id === focus),
           commandExists: (commandId) => this.commandExists(commandId),
         })
+        for (const block of normalized.blocks) {
+          const refs = block.type === 'entity' ? [{ ref: block.ref, snapshot: block.snapshot }] : block.type === 'pick' ? block.items : []
+          for (const { ref, snapshot } of refs) {
+            const href = ref.type === 'requirement' ? links.requirement(ref.spaceId!, ref.id) : ref.type === 'run' ? links.run(ref.spaceId!, ref.id) : ref.type === 'node' ? links.run(ref.spaceId!, ref.parent!, ref.id) : ref.type === 'workflow' ? links.workflow(ref.spaceId!, ref.id) : ref.type === 'knowledge' ? links.knowledge(ref.spaceId!, ref.id) : links.overview(ref.spaceId!)
+            cite(snapshot.title, href, ref.type)
+          }
+        }
         await context.onBlocks?.(normalized.blocks)
         // 只回本次新增块的摘要（之前的块模型已经见过）
         data = { shown: normalized.blocks.length, issues: normalized.issues, content: describeBlocks(normalized.blocks.slice(current.length)) }
@@ -701,40 +725,20 @@ export class StewardTools {
   }
   /** 与总览同一套推导：只看流水线运行（排除 Lead 任务），需求状态用 deriveRequirementState。 */
   private async requirementLane(space: StewardSpace, requirementId: string, title: string, stored: string): Promise<{ row: Extract<StewardBlock, { type: 'lanes' }>['rows'][number]; status: string; waiting: number; usage: Usage }> {
-    const runs = (await space.stores.runs.list({ requirementId }))
-        .filter((run) => (run as RunState & { kind?: string }).kind !== 'task' && run.workflowId !== 'lead' && !run.workflowId.startsWith('task:'))
-        .sort((a, b) => b.startedAt.localeCompare(a.startedAt)),
-      run = runs[0],
-      attention = await space.stores.attention.list({ requirementId, pending: true }),
-      ref = { type: 'requirement' as const, spaceId: space.id, id: requirementId, label: title },
-      note = attention[0] ? `等你：${attention[0].ask}` : undefined
+    const { runs, attention, detail, status } = await requirementState(space, requirementId)
+    const ref = { type: 'requirement' as const, spaceId: space.id, id: requirementId, label: title }
     let usage: Usage = { inputTokens: 0, outputTokens: 0 }
-    for (const item of runs) usage = addUsage(usage, await this.runUsage(space, item))
-    if (!run) return { row: { title, ref, stages: [], note: note ?? '尚未运行' }, status: stored, waiting: attention.length, usage }
-    const snapshot = await space.stores.runs.getWorkflow(run.runId),
-      derived = snapshot && stored !== 'archived' ? deriveRequirementState(snapshot, run) : undefined,
-      stages = snapshot ? stageProgress(snapshot, run).map((stage) => ({ label: stage.title, status: this.stageStatus(stage.status) })) : []
-    return { row: { title, ref, stages, note, tone: attention.length ? 'waiting' : this.runTone(run.status) }, status: derived?.status ?? stored, waiting: attention.length, usage }
-  }
-  private stageStatus(status: string): Extract<StewardBlock, { type: 'lanes' }>['rows'][number]['stages'][number]['status'] {
-    return status === 'done' ? 'done' : status === 'waiting_human' ? 'waiting' : status === 'failed' ? 'failed' : status === 'running' ? 'running' : 'todo'
-  }
-  private runTone(status: RunState['status']): Extract<StewardBlock, { type: 'lanes' }>['rows'][number]['tone'] {
-    return status === 'succeeded' ? 'success' : status === 'failed' || status === 'cancelled' ? 'failed' : status === 'waiting_human' ? 'waiting' : status === 'running' ? 'running' : 'neutral'
+    for (const run of runs) usage = addUsage(usage, await this.runUsage(space, run))
+    return { row: { title, ref, stages: detail?.stages.map(stage => ({ label: stage.title, status: stageStatus(stage.status) })) ?? [], note: attention[0] ? `等你：${attention[0].ask}` : detail ? undefined : '尚未运行', tone: attention.length ? 'waiting' : detail ? stateTone(detail.run.status) : stateTone(stored) }, status, waiting: attention.length, usage }
   }
   private async runUsage(space: StewardSpace, run: RunState): Promise<Usage> {
     const events = await space.stores.events.read(run.runId).catch(() => [])
     return events.length ? summarizeUsage(events) : Object.values(run.nodes).reduce((total, node) => node.usage ? addUsage(total, node.usage) : total, { inputTokens: 0, outputTokens: 0 })
   }
   private async refVisible(ref: StewardContextRef): Promise<boolean> {
-    if (ref.type === 'space') return (await this.deps.spaces()).some((space) => space.id === ref.id)
-    const spaceId = ref.spaceId
-    if (!spaceId) return false
-    const space = await this.deps.open(spaceId)
-    if (ref.type === 'requirement') return Boolean(await space.stores.workspaces.getRequirement(ref.id))
-    if (ref.type === 'run') return Boolean(await space.stores.runs.get(ref.id))
-    if (ref.type === 'workflow') return Boolean(await space.workflows.get(ref.id).then(() => true, () => false))
-    return true
+    if (ref.type !== 'file') return Boolean(await resolveEntityRef(this.deps, ref))
+    if (!ref.spaceId || !(await this.deps.spaces()).some(space => space.id === ref.spaceId)) return false
+    return (await readStewardFile((await this.deps.open(ref.spaceId)).dir, ref.id)) !== undefined
   }
   private async commandExists(commandId: string): Promise<boolean> {
     if ((this.deps.serverCommands?.list() ?? []).some((command) => command.id === commandId)) return true
@@ -932,7 +936,7 @@ export class StewardTools {
     const cleanup = () => { unsubscribe(); clearTimeout(waitTimer); clearTimeout(expiryTimer); this.cleanups.delete(cleanup) }
     this.cleanups.add(cleanup)
     try {
-      delegation.messageId = await space.postToLead(requirementId, `${text}\n\n来源：/steward?thread=${context.threadId}`)
+      delegation.messageId = await space.postToLead(requirementId, `${text}\n\n来源：/solo?thread=${context.threadId}`)
       sent = true
     } catch (error) {
       delegation.status = 'uncertain'; delegation.reply = `发送结果不确定：${String(error)}；请检查群聊后决定是否重发`

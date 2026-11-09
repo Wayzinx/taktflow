@@ -622,7 +622,7 @@ export class StewardProposals {
         reason: decision.reason,
         results: [],
       })
-      const reason = `管家提案 ${proposal.id}：${proposal.title} /steward?thread=${proposal.threadId}`
+      const reason = `管家提案 ${proposal.id}：${proposal.title} /solo?thread=${proposal.threadId}`
       const done: UndoRecord[] = []
       // 批准先落盘，避免进程中断后再次执行同一提案。
       proposal.status = 'failed'

@@ -904,8 +904,10 @@ describe('风险汇报与度量', () => {
     expect((await refreshRisks(f.deps, f.agent.store))[0]?.state).toBe('resolved')
   })
   it('汇报按 since 和静音过滤，读取更新 seen，调度同一分钟只发送一次', async () => {
-    const f = await fixture(),
-      req = await f.stores.workspaces.createRequirement({ title: '窗口内' })
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-06T10:00:00Z'))
+    const f = await fixture()
+    await f.stores.workspaces.createRequirement({ title: '窗口内' })
     const now = new Date()
     f.clock(now.toISOString())
     const since = new Date(now.getTime() - 3600000).toISOString()

@@ -1,7 +1,7 @@
 import type { Actor, ChatRequest, ChatResponse, RoomMessage } from '../types.js'
 import type { ProjectStores } from '../interfaces.js'
 import type { CommandRegistry } from '../commands/contracts.js'
-import type { Risk, SpaceSummary, WorkflowDocument, WorkflowEdit } from '../api.js'
+import type { Risk, SpaceSummary, WorkflowDocument, WorkflowEdit, WorkflowSummary } from '../api.js'
 
 export interface StewardSpace {
   id: string
@@ -10,6 +10,7 @@ export interface StewardSpace {
   stores: ProjectStores
   commands: CommandRegistry
   workflows: {
+    list?(options?: { record?: boolean }): Promise<WorkflowSummary[]>
     get(id: string): Promise<WorkflowDocument>
     rollback(id: string, rev: string, by: Actor, reason: string): Promise<unknown>
   }

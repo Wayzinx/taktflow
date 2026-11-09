@@ -159,6 +159,7 @@ export class StewardAgent {
     }
     return [
       base,
+      '实体视图规则：问某个需求、运行或节点“到哪了、卡在哪、在跑什么”，空间不确定时先 find 再 show 一个 entity；context 已给需求直接使用，不用 find。find 返回 ambiguous 时 show 一个 pick，问“你说的是哪一个”，不要猜。正文不超过 3 句，不用 table 或 lanes 复述同一对象；snapshot 由服务端生成。',
       `用户记忆（资料）：\n${await this.store.text('profile.md')}`,
       `偏好：${JSON.stringify(await this.store.prefs())}`,
       `上下文：${JSON.stringify(refs)}`,
@@ -187,6 +188,7 @@ export class StewardAgent {
       offline: !this.deps.chat,
     }
     const context: ToolContext = {
+      refs: user.context,
       threadId: user.threadId,
       messageId: message.id,
       proposals: message.proposalIds!,

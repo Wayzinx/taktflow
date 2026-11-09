@@ -2,6 +2,10 @@ import { dirname, join, resolve } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { applyEdits } from '@taktflow/workflow-source'
 import {
+  findEntities,
+  findInput,
+  findLimit,
+  stewardPicks,
   StewardAgent,
   StewardError,
   stewardId,
@@ -280,6 +284,14 @@ export function registerStewardRoutes(
       }
     })
   route('POST', '/delegations/:messageId/resend', async ({ params, request }, { agent }) => agent.tools.resendDelegation(params.messageId!, text((await body(request)).reason, 'reason')))
+  route('GET', '/find', async ({ url }, { agent, store }) => {
+    const params = url.searchParams
+    const input = findInput({ q: params.get('q'), types: params.has('types') ? params.get('types')!.split(',') : undefined, spaceId: params.get('spaceId') ?? params.get('space') ?? undefined, limit: params.has('limit') ? Number(params.get('limit')) : undefined })
+    return findEntities(agent.deps, input, await store.prefs())
+  })
+  route('GET', '/picks', async ({ url }, { agent, store }) => ({
+    items: await stewardPicks(agent.deps, await store.prefs(), findLimit(url.searchParams.has('limit') ? Number(url.searchParams.get('limit')) : undefined, 6)),
+  }))
   route('GET', '/threads', async ({ url }, { store }) =>
     store.threads(url.searchParams.get('q') ?? url.searchParams.get('search') ?? ''),
   )

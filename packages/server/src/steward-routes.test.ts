@@ -129,3 +129,30 @@ it('M5 重发路由按用户隔离并保留理由，返回正式 replied 回执'
   expect(await agent.store.lines('delegation-audit.jsonl')).toContainEqual(expect.objectContaining({ messageId: id, newMessageId: result.messageId, reason: '人工核对后重发' }))
   expect((await f.request(`/delegations/${result.messageId}/resend`, 'alice', 'POST', { reason: '已回复不得重发' })).status).toBe(409)
 })
+
+it('Solo find/picks 参数校验、真实快照、用户偏好与访问范围隔离', async () => {
+  const f = await fixture()
+  expect(f.registered).toContain('GET /api/steward/find')
+  expect(f.registered).toContain('GET /api/steward/picks')
+  await f.stores.workspaces.createRequirement({ id: 'REQ-002', title: '订单导出报表' })
+  const spaceId = f.root.split('/').at(-1)!
+  for (const path of ['/find', '/find?q=', '/find?q=%20', '/find?q=x&types=file', '/find?q=x&types=', '/find?q=x&limit=0', '/find?q=x&limit=1.5', '/find?q=x&limit=abc', '/find?q=x&space=', '/picks?limit=-1', '/picks?limit=abc', '/picks?limit=1.5']) {
+    const response = await f.request(path)
+    expect(response.status, path).toBe(400)
+    expect(await response.text()).toMatch(/请/)
+  }
+  const found = await (await f.request('/find?q=req-02&types=requirement&limit=100')).json()
+  expect(found).toMatchObject({ ambiguous: false, items: [{ ref: { id: 'REQ-002', spaceId }, snapshot: { title: '订单导出报表', status: '还没开始', tone: 'neutral' }, match: 'id', score: expect.any(Number) }] })
+  expect((await (await f.request(`/find?q=req-02&space=${spaceId}`)).json()).items).toHaveLength(1)
+  expect((await (await f.request(`/find?q=req-02&spaceId=${spaceId}`)).json()).items).toHaveLength(1)
+  expect((await (await f.request('/picks')).json()).items).toMatchObject([{ ref: { id: 'REQ-002', spaceId }, reason: 'changed' }])
+  await f.request('/prefs', 'alice', 'PUT', { trust: 'confirm', digestTimes: [], mutedSpaces: [spaceId] })
+  expect(await (await f.request('/find?q=req-02')).json()).toEqual({ ambiguous: false, items: [] })
+  expect(await (await f.request('/picks')).json()).toEqual({ items: [] })
+  expect((await (await f.request('/find?q=req-02', 'bob')).json()).items).toHaveLength(1)
+  expect((await (await f.request('/picks', 'bob')).json()).items).toHaveLength(1)
+  await writeFile(join(f.root, 'takt.config.json'), JSON.stringify({ ...f.stores.config, members: [{ id: 'alice', name: 'Alice', role: 'owner' }] }))
+  expect(await (await f.request('/find?q=req-02', 'bob')).json()).toEqual({ ambiguous: false, items: [] })
+  expect(await (await f.request(`/find?q=req-02&space=${spaceId}`, 'bob')).json()).toEqual({ ambiguous: false, items: [] })
+  expect(await (await f.request('/picks', 'bob')).json()).toEqual({ items: [] })
+})
