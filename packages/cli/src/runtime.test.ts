@@ -308,3 +308,28 @@ it('requiresProvider 插件可自行消费连接配置，无需 CLI ModelProvide
   expect(state.status, JSON.stringify(state.nodes)).toBe('succeeded')
   expect(state.nodes.work?.result).toBe('consumed provider config')
 })
+
+it('takt retry 支持多个 --node，继承 mock 配置并前台等待到结束', async () => {
+  const dir = await fixture()
+  await writeFile(join(dir, 'retry.workflow.ts'), `export default { id: 'retry', title: '重试', version: '1', stages: [], nodes: [
+    { id: 'a', kind: 'agent', title: '执行 A', role: 'worker', prompt: '执行' },
+    { id: 'b', kind: 'agent', title: '执行 B', role: 'worker', prompt: '执行', needs: ['a'] }
+  ] }`)
+  await writeFile(join(dir, '.takt/agents/worker.md'), '---\nharness: mock\nwriteScope: []\n---\n执行')
+  const mock = join(dir, 'mock.json')
+  await writeFile(mock, JSON.stringify({ steps: [{ match: { nodeId: 'a' }, fail: '初次失败' }, { match: { nodeId: 'b' }, fail: '初次失败' }] }))
+  const context = await loadRuntime(dir)
+  const req = await context.stores.workspaces.createRequirement({ title: 'CLI 重试' })
+  const first = await cli(dir, ['run', './retry.workflow.ts', '--req', req.id, '--harness', 'mock', '--mock', mock])
+  expect(first.code).toBe(1)
+  const failed = (await context.stores.runs.get(first.data.runId))!
+  failed.nodes.b!.status = 'failed'
+  await context.stores.runs.save(failed)
+  await writeFile(mock, JSON.stringify({ steps: [{ finalText: '成功' }] }))
+  const result = await cli(dir, ['retry', failed.runId, '--node', 'a', '--node', 'b', '--reason', '已修复'])
+  expect(result.code, result.stdout).toBe(0)
+  expect(result.data.status).toBe('succeeded')
+  expect(result.data.nodes.a.attempts).toBe(2)
+  expect(result.data.nodes.b.attempts).toBe(1)
+  expect(await context.stores.events.read(failed.runId, { types: ['run.retried'] })).toMatchObject([{ actor: { type: 'human' }, data: { nodeIds: ['a', 'b'], reason: '已修复' } }])
+})

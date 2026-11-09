@@ -27,6 +27,7 @@ export function createCommandRegistry(deps: CommandDeps): CommandRegistry {
     define('route.preview', '路由预览', 'read', invoke('route')),
     define('run.start', '启动运行', 'write', invoke('startRun')),
     define('run.resume', '继续运行', 'write', invoke('resumeRun')),
+    define('run.retry', '重试失败节点', 'write', invoke('retryRun')),
     define('run.cancel', '取消运行', 'dangerous', invoke('cancelRun'), 'maintainer'),
     define('attention.answer', '回答待办', 'write', invoke('answerAttention')),
     define('task.dispatch', '派发任务', 'write', invoke('dispatchTask')),

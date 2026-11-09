@@ -153,12 +153,12 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     return ready
   }
 
-  async function executeAction(value: unknown, requirementId: string, message: RoomMessage, runId: string | undefined, index: number, route?: RouteDecision): Promise<LeadActionResult> {
+  async function executeAction(value: unknown, requirementId: string, message: RoomMessage, runId: string | undefined, index: number, route?: RouteDecision, reason?: string): Promise<LeadActionResult> {
     let actionName = (value && typeof value === 'object' && 'type' in value ? value.type : 'unknown') as LeadActionResult['action']
     try {
       validateAction(value)
       actionName = value.type
-      if (!runId && !['start_run', 'resume_run', 'cancel_run', 'dispatch_task'].includes(value.type)) throw new Error('该动作需要 Lead 回合上下文')
+      if (!runId && !['start_run', 'resume_run', 'retry_run', 'cancel_run', 'dispatch_task'].includes(value.type)) throw new Error('该动作需要 Lead 回合上下文')
       if (runId) await audit(runId, { kind: 'lead.action', action: value, onBehalfOf: message.author })
       switch (value.type) {
         case 'reply':
@@ -187,6 +187,15 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
           if (!options.workflows) throw new Error('未接入 workflow 加载器')
           const workflow = await options.workflows.load(state.workflowId)
           await resume(state, workflow, engine ?? instrument(message, workflow.title, profiles, async () => {}), message)
+          break
+        }
+        case 'retry_run': {
+          const state = await requireRun(value.runId, requirementId)
+          const retry = { nodeIds: value.nodeIds, reason: reason ?? message.text }
+          if (state.workflowId.startsWith('task:')) { await resumeTask(state.runId, { retry, message }); break }
+          if (!options.workflows) throw new Error('未接入 workflow 加载器')
+          const workflow = await options.workflows.load(state.workflowId)
+          await resume(state, workflow, instrument(message, workflow.title, profiles, async () => {}), message, retry)
           break
         }
         case 'cancel_run': {
@@ -224,7 +233,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       let current: LeadAction = value
       let route: RouteDecision | undefined
       const delegate = async (next: LeadAction) => {
-        const result = await executeAction(next, requirementId, message, runId, index, route)
+        const result = await executeAction(next, requirementId, message, runId, index, route, `Lead 响应消息 ${message.id}：${message.text}`)
         if (!result.ok) throw new Error(result.message)
         return result
       }
@@ -232,6 +241,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         startRun: (input) => delegate({ type: 'start_run', workflowId: input.workflowId, ...(input.args ? { args: input.args } : {}), ...(input.budget ? { budget: input.budget } : {}) }),
         dispatchTask: (input) => delegate({ type: 'dispatch_task', task: input.task }),
         resumeRun: (input) => delegate({ type: 'resume_run', runId: input.runId }),
+        retryRun: (input) => delegate({ type: 'retry_run', ...input }),
         cancelRun: (input, context) => delegate({ type: 'cancel_run', runId: input.runId, reason: context.reason! }),
         route: async (input, context) => {
           if (!options.workflows) throw new Error('未接入 workflow 加载器')
@@ -266,9 +276,9 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         route = routed.route
         current = { ...current, workflowId: routed.workflowId, args: routed.args }
       }
-      const mapping: Partial<Record<LeadAction['type'], string>> = { start_run: 'run.start', resume_run: 'run.resume', cancel_run: 'run.cancel', dispatch_task: 'task.dispatch' }
+      const mapping: Partial<Record<LeadAction['type'], string>> = { start_run: 'run.start', resume_run: 'run.resume', retry_run: 'run.retry', cancel_run: 'run.cancel', dispatch_task: 'task.dispatch' }
       const id = mapping[current.type] ?? `lead.${current.type}`
-      if (current.type === 'resume_run' || current.type === 'cancel_run') await requireRun(current.runId, requirementId)
+      if (current.type === 'resume_run' || current.type === 'retry_run' || current.type === 'cancel_run') await requireRun(current.runId, requirementId)
       if (current.type === 'dispatch_task' && options.commands?.list().some(command => command.id === id)) await checkDelegationHops(stores, message)
       const registry: CommandRegistry = commands.list().some((command) => command.id === id) ? commands : local
       const result = await registry.run(id, { ...current, requirementId, ...(route ? { route } : {}) }, context)
@@ -350,16 +360,19 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     })
   }
 
-  async function resume(state: RunState, workflow: WorkflowDefinition, engine: Engine, message: RoomMessage): Promise<void> {
+  async function resume(state: RunState, workflow: WorkflowDefinition, engine: Engine, message: RoomMessage, retry?: { nodeIds?: string[]; reason?: string }): Promise<void> {
     let started = false
     const report = async (error: unknown) => {
       await post(state.requirementId, { author: system, kind: 'system', text: `运行失败：${errorText(error)}`, replyTo: message.id, refs: { runId: state.runId } })
     }
-    await resumeInBackground(onStarted => engine.resume(state.runId, workflow, { onStarted: () => {
-      started = true
-      engines.set(state.runId, engine)
-      onStarted()
-    } }), {
+    await resumeInBackground(onStarted => {
+      const opts = { ...retry, onStarted: () => {
+        started = true
+        engines.set(state.runId, engine)
+        onStarted()
+      } }
+      return retry ? engine.retry(state.runId, workflow, opts) : engine.resume(state.runId, workflow, opts)
+    }, {
       jobs, onError: report,
       onSettled: async result => {
         try {
@@ -374,23 +387,23 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     })
   }
 
-  async function resumeTask(runId: string, options: { foreground?: boolean } = {}): Promise<RunState> {
+  async function resumeTask(runId: string, options: { foreground?: boolean; retry?: { nodeIds?: string[]; reason?: string }; message?: RoomMessage } = {}): Promise<RunState> {
     const state = await stores.runs.get(runId) as TaskRunState | undefined
     if (!state || !state.workflowId.startsWith('task:') || !state.origin || !state.args.__leadTask) throw new Error('缺少临时任务定义或来源')
-    if (finished(state)) return state
-    const trigger = (await stores.chat.list(state.requirementId)).find((message) => message.id === state.origin!.messageId)
+    if (finished(state) && !options.retry) return state
+    const trigger = options.message ?? (await stores.chat.list(state.requirementId)).find((message) => message.id === state.origin!.messageId)
     if (!trigger) throw new Error('任务触发消息不存在')
     const task = taskWorkflow(state.args.__leadTask as import('../types.js').TaskSpec, stores, profiles)
-    const engine = engines.get(runId) ?? instrument(trigger, task.workflow.title, task.profiles, async () => {})
+    const engine = (options.retry ? undefined : engines.get(runId)) ?? instrument(trigger, task.workflow.title, task.profiles, async () => {})
     // CLI 前台调用保留完整结果和异常；网页入口只等待启动回执。
     if (options.foreground) {
       try {
-        const result = await engine.resume(runId, task.workflow)
+        const result = await (options.retry ? engine.retry(runId, task.workflow, options.retry) : engine.resume(runId, task.workflow))
         await recordTaskImpact(stores, result)
         return result
       } finally { await refreshPresence(state.requirementId) }
     }
-    await resume(state, task.workflow, engine, trigger)
+    await resume(state, task.workflow, engine, trigger, options.retry)
     return (await stores.runs.get(runId))!
   }
 

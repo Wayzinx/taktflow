@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { createEngine, createLeadRuntime, initProject, snapshotWorkflow, taskWorkflow, type Engine, type HarnessAdapter, type RunState, type WorkflowDefinition } from '@taktflow/core'
 import { createServer } from '@taktflow/server'
 import { runtimeCommands } from './command-runtime.js'
-import type { ProjectContext } from './project.js'
+import { createRunEngine, type ProjectContext } from './project.js'
 import { resumeAfterAnswer } from './commands/serve.js'
 
 const roots: string[] = []
@@ -31,7 +31,7 @@ async function fixture(fail = false, task = false) {
   const resume = vi.fn<Engine['resume']>()
   const lead = createLeadRuntime({ ...context,
     engineFactory: deps => {
-      const engine = createEngine({ ...deps, knowledge: [] })
+      const engine = createRunEngine({ ...context, ...deps })
       resume.mockImplementation(engine.resume)
       return { ...engine, resume }
     },
@@ -118,5 +118,35 @@ it('活租约在开始前拒绝命令，HTTP 不返回 200', async () => {
     expect(await response.json()).toMatchObject({ error: '运行仍在执行' })
     expect(f.run).not.toHaveBeenCalled()
     expect(f.resume).not.toHaveBeenCalled()
+  } finally { await f.close() }
+})
+
+it.each([false, true])('run.retry HTTP 开始就返回，失败后只重跑选中节点并保留审计；task=%s', async task => {
+  const f = await fixture(false, task)
+  try {
+    f.run.mockRejectedValueOnce(new Error('首次失败'))
+    const runId = await f.seed()
+    expect((await createEngine(f.context).resume(runId, f.workflow)).status).toBe('failed')
+    const failed = (await f.stores.runs.get(runId))!
+    const nodeId = Object.values(failed.nodes).find(node => node.status === 'failed')!.id
+    const response = await f.post('/api/commands/run.retry', { input: { runId, nodeIds: [nodeId] }, reason: '修复后重试' })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ ok: true })
+    await vi.waitFor(() => expect(f.run).toHaveBeenCalledTimes(2))
+    const running = (await f.stores.runs.get(runId))!
+    expect(running.status).toBe('running')
+    expect(running.endedAt).toBeUndefined()
+    expect(running.nodes[nodeId]!.attempts).toBe(failed.nodes[nodeId]!.attempts + 1)
+    const events = await f.stores.events.read(runId, { types: ['run.retried'] })
+    expect(events).toMatchObject([{ actor: { type: 'human' }, data: { nodeIds: [nodeId], reason: '修复后重试' } }])
+    let drained = false
+    const draining = f.lead.drain().then(() => { drained = true })
+    await new Promise(resolve => setImmediate(resolve))
+    expect(drained).toBe(false)
+    f.release(); await draining
+    expect((await f.stores.runs.get(runId))!.status).toBe('succeeded')
+    expect(await f.stores.events.verify(runId)).toEqual({ ok: true })
+    const again = await f.post('/api/commands/run.retry', { input: { runId }, reason: '重复重试' })
+    expect(again.status).toBe(400)
   } finally { await f.close() }
 })

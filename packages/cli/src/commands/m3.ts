@@ -39,7 +39,7 @@ export async function runM3Command(cli: ParsedCli): Promise<number> {
     try { input = JSON.parse(options.input ?? '{}') as Record<string, unknown> } catch { throw new UsageError('--input 必须是 JSON 对象') }
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new UsageError('--input 必须是 JSON 对象')
   }
-  const runtimeNeeded = ['run.start', 'run.resume', 'run.cancel', 'task.dispatch', 'attention.answer', 'route.preview', 'eval.run', 'defect.attribute'].includes(id)
+  const runtimeNeeded = ['run.start', 'run.resume', 'run.retry', 'run.cancel', 'task.dispatch', 'attention.answer', 'route.preview', 'eval.run', 'defect.attribute'].includes(id)
   const lead = runtimeNeeded ? await createProjectLead(await loadRuntime(options.project, { mock: options.mock })) : undefined
   let result = await (lead?.commands ?? projectCommands(stores)).run(id, input, { actor, reason })
   await lead?.drain()

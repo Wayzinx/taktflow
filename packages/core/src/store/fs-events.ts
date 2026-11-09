@@ -11,6 +11,7 @@ import { eventsFile } from './paths.js'
 
 // 用 Record 穷举：协议里新增事件类型而这里漏写时编译报错，不会在回读时才发现
 const EVENT_TYPE_TABLE: Record<EventType, true> = {
+  'run.retried': true,
   'run.started': true, 'run.finished': true, 'node.ready': true, 'node.started': true, 'node.finished': true, 'node.failed': true, 'node.stale': true,
   'artifact.written': true, 'artifact.edited': true, 'artifact.untracked': true, 'gate.result': true, 'judge.verdict': true,
   'human.requested': true, 'human.answered': true, 'harness.started': true, 'harness.message': true, 'harness.tool_call': true,

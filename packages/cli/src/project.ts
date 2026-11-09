@@ -1,3 +1,4 @@
+import { cliActor } from './actor.js'
 import { sha256 } from '@taktflow/core'
 import { access, readFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -189,7 +190,7 @@ export function createRunEngine(
   context: ProjectContext,
   options: { harness?: string; autoApprove?: boolean; now?: () => Date } = {},
 ): Engine {
-  const engineOptions: Parameters<typeof createEngine>[1] = {}
+  const engineOptions: Parameters<typeof createEngine>[1] = { actor: cliActor(context.stores) }
   if (options.harness !== undefined) engineOptions.harnessOverride = options.harness
   if (options.autoApprove !== undefined) engineOptions.autoApprove = options.autoApprove
   if (options.now !== undefined) engineOptions.now = options.now
@@ -198,7 +199,8 @@ export function createRunEngine(
     if (['succeeded', 'failed', 'cancelled'].includes(state.status)) await learnFromRun({ stores: context.stores, runId: state.runId })
     return state
   }
-  return { ...engine, start: async (input) => finished(await engine.start({ ...input, args: { ...input.args, ...(workflowRevisions.has(input.workflow) ? { workflowRev: workflowRevisions.get(input.workflow) } : {}) } })), resume: async (id, workflow) => finished(await engine.resume(id, workflow)),
+  return { ...engine, start: async (input) => finished(await engine.start({ ...input, args: { ...input.args, ...(workflowRevisions.has(input.workflow) ? { workflowRev: workflowRevisions.get(input.workflow) } : {}) } })), resume: async (id, workflow, opts) => finished(await engine.resume(id, workflow, opts)),
+    retry: async (id, workflow, opts) => finished(await engine.retry(id, workflow, opts)),
     cancel: async (id) => { await engine.cancel(id); const state = await context.stores.runs.get(id); if (state) await finished(state) } }
 }
 

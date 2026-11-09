@@ -392,3 +392,29 @@ it('cosmetic 修改只记录，semantic 修改传播 stale；Agent 修改保留�
   expect(await markArtifactEdited(f.stores, ref, actor, '重新判为语义变化')).toContainEqual({ runId: state.runId, nodeId: 'review' })
   expect((await f.stores.runs.get(state.runId))?.nodes.review?.status).toBe('stale')
 })
+
+it('revise 失败后 retry 保留评审阶段与问题，从作者回应接着跑', async () => {
+  const roles: string[] = []
+  let authors = 0, reviews = 0
+  const f = await fixture(async req => {
+    const role = req.env!.TAKT_ROLE!
+    roles.push(role)
+    if (role === 'author') {
+      if (++authors === 1) throw new Error('作者回应失败')
+      await writeFile(join(req.env!.TAKT_WORKSPACE!, 'spec.md'), '修复后的版本')
+      return { responses: [{ round: 1, reviewer: 'r1', issueId: 'I1', action: 'fixed', note: '已补充' }] }
+    }
+    return ++reviews === 1 ? changes : approve
+  })
+  const workflow = def([f.write, reviewNode()])
+  const first = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow })
+  expect(first.status).toBe('failed')
+  expect(roles).toEqual(['r1', 'author'])
+  const state = await createEngine({ ...f.deps, stores: await openProject(f.stores.projectDir) }).retry(first.runId, workflow)
+  expect(state.status).toBe('succeeded')
+  expect(state.nodes.review).toMatchObject({ attempts: 2, result: { passed: true, rounds: 2 } })
+  expect(state.nodes.write).toEqual(first.nodes.write)
+  expect(roles).toEqual(['r1', 'author', 'author', 'r1'])
+  expect((await reviewDetail(f.stores, state.runId, 'review'))?.rounds).toHaveLength(2)
+  expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
+})

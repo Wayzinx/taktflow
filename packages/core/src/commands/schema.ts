@@ -18,6 +18,7 @@ export const commandSchemas = {
   'route.preview': objectSchema({ requirementId: text, draft: objectSchema({ title: text, description: text }, ['title']), hint: text, repos: { type: 'array', items: text }, override: objectSchema({ tier: { type: 'string', enum: ['T0', 'T1', 'T2', 'T3'] }, reason: text }, ['tier', 'reason']) }),
   'run.start': objectSchema({ requirementId: text, workflowId: text, args: { type: 'object' }, budget: budgetSchema, route: { type: 'object' } }, ['requirementId', 'workflowId']),
   'run.resume': objectSchema({ runId: text }, ['runId']),
+  'run.retry': objectSchema({ runId: text, nodeIds: { type: 'array', items: text } }, ['runId']),
   'run.cancel': objectSchema({ runId: text }, ['runId']),
   'attention.answer': objectSchema({ requestId: text, decision: { type: 'string', enum: ['approve', 'reject', 'answer', 'choice'] }, answer: text }, ['requestId']),
   'task.dispatch': objectSchema({ requirementId: text, task: taskSchema }, ['requirementId', 'task']),

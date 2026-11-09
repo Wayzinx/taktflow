@@ -125,6 +125,9 @@ async function dispatch(cli: ParsedCli): Promise<number> {
     case 'run':
       expectPositionals('run', args, 1, 1)
       return runWorkflow(cli)
+    case 'retry':
+      expectPositionals('retry', args, 1, 1)
+      return resumeWorkflow(cli)
     case 'resume':
       expectPositionals('resume', args, 1, 1)
       return resumeWorkflow(cli)

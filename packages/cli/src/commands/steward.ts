@@ -37,6 +37,7 @@ export async function runStewardCommand(cli: StewardCli): Promise<number> {
       return projectCommands(stores, {
         startRun: (input, context) => invoke('run.start', input, context),
         resumeRun: (input, context) => invoke('run.resume', input, context),
+        retryRun: (input, context) => invoke('run.retry', input, context),
         cancelRun: (input, context) => invoke('run.cancel', input, context),
         dispatchTask: (input, context) => invoke('task.dispatch', input, context),
       })

@@ -13,7 +13,7 @@ export function runtimeCommands(context: ProjectContext, lead: () => Pick<Projec
     const trigger = messages.find((message) => by.reason?.startsWith(`Lead 响应消息 ${message.id}：`))
       ?? await stores.chat.post(requirementId, { author: by.actor, kind: 'system', text: by.reason! })
     const parent = (await stores.runs.list({ requirementId })).find((run) => run.workflowId === 'lead' && run.origin?.messageId === trigger.id)
-    const result = await lead().executeAction(action, requirementId, trigger as RoomMessage, parent?.runId, 0, input.route)
+    const result = await lead().executeAction(action, requirementId, trigger as RoomMessage, parent?.runId, 0, input.route, by.reason)
     if (!result.ok) throw new Error(result.message)
     return result
   }
@@ -23,6 +23,7 @@ export function runtimeCommands(context: ProjectContext, lead: () => Pick<Projec
       return execute({ type: 'start_run', workflowId: routed.workflowId, args: routed.args, ...(input.budget ? { budget: input.budget } : {}) }, routed, by)
     },
     resumeRun: (input, by) => execute({ type: 'resume_run', runId: input.runId }, input, by),
+    retryRun: (input, by) => execute({ type: 'retry_run', ...input }, input, by),
     cancelRun: (input, by) => execute({ type: 'cancel_run', runId: input.runId, reason: by.reason! }, input, by),
     dispatchTask: (input, by) => execute({ type: 'dispatch_task', task: input.task }, input, by),
     answerAttention: async (input, by) => {

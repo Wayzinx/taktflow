@@ -77,17 +77,19 @@ export async function resumeWorkflow(cli: ParsedCli): Promise<number> {
   const runId = cli.positionals[0]!
   const context = await loadRuntime(cli.options.project)
   const printer = createPrinter(cli.options.json)
+  const retry = cli.command === 'retry' ? { nodeIds: cli.options.node, reason: cli.options.reason ?? '命令行重试失败节点' } : undefined
   const current = await context.stores.runs.get(runId)
   if (current?.workflowId.startsWith('task:')) {
     const lead = await createProjectLead(await withMock(context, cli.options.mock))
-    const state = await serializeRun(runId, () => lead.resumeTask(runId, { foreground: true }))
+    const message = retry ? await context.stores.chat.post(current.requirementId, { author: cliActor(context.stores), kind: 'system', text: retry.reason }) : undefined
+    const state = await serializeRun(runId, () => lead.resumeTask(runId, { foreground: true, retry, message }))
     return finishOutput(context, printer, state)
   }
-  const state = await serializeRun(runId, () => resumeOnce(context, runId, cli.options, printer))
+  const state = await serializeRun(runId, () => resumeOnce(context, runId, cli.options, printer, undefined, retry))
   return finishOutput(context, printer, state)
 }
 
-export async function resumeOnce(context: ProjectContext, runId: string, options: RunOptions, printer: Printer, onStarted?: () => void): Promise<RunState> {
+export async function resumeOnce(context: ProjectContext, runId: string, options: RunOptions, printer: Printer, onStarted?: () => void, retry?: { nodeIds?: string[]; reason?: string }): Promise<RunState> {
   const current = await context.stores.runs.get(runId)
   if (!current) throw new Error(`运行不存在：${runId}`)
   const saved = await readRunOptions(context.stores.taktDir, runId)
@@ -111,7 +113,7 @@ export async function resumeOnce(context: ProjectContext, runId: string, options
     harness,
     autoApprove: options.autoApprove,
   })
-  const resumed = await engine.resume(runId, workflow, { onStarted })
+  const resumed = await (retry ? engine.retry(runId, workflow, { ...retry, onStarted }) : engine.resume(runId, workflow, { onStarted }))
   await syncQuality(context.stores, runId)
   return resumed
 }

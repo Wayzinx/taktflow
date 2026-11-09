@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AutomationRecords, cronMatches, openProject, systemWrite, timeboxMs,
-  type AutomationConfig, type AutomationRunRecord, type RunStatus, type ProjectStores } from '@taktflow/core'
+  type AutomationConfig, type AutomationRunRecord, type RunState, type ProjectStores } from '@taktflow/core'
 import { collectSecrets, createRedactor } from '@taktflow/harness'
 import { automationAction, type AutomationActionOptions } from './automation-actions.js'
 import { automationProblems } from './automation-config.js'
@@ -15,7 +15,7 @@ export interface AutomationRuntimeOptions extends AutomationActionOptions { fetc
 export class AutomationRuntime {
   private active = new Set<string>()
   private pending = new Set<Promise<unknown>>()
-  private statuses = new Map<string, RunStatus>()
+  private statuses = new Map<string, string>()
   private stores?: Promise<ProjectStores>
   private requirements = new Set<string>()
   private overdue = new Set<string>()
@@ -40,7 +40,7 @@ export class AutomationRuntime {
     this.requirements = new Set((await stores.workspaces.listRequirements()).map(r => r.id))
     try { this.overdue = new Set(JSON.parse(await readFile(join(stores.taktDir, 'automations/overdue.json'), 'utf8')) as string[]) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    for (const run of await stores.runs.list()) this.statuses.set(run.runId, run.status)
+    for (const run of await stores.runs.list()) this.statuses.set(run.runId, this.completionKey(run))
     await this.scan()
     this.scanner = setInterval(() => { if (!this.scanning) this.scanning = this.scan().catch(this.report).finally(() => { this.scanning = undefined }) }, 5000)
     this.scanner.unref()
@@ -79,6 +79,10 @@ export class AutomationRuntime {
       await this.dispatch({ type: 'attention.overdue', runId: item.runId, requirementId: item.requirementId, nodeId: item.nodeId })
     }
   }
+  private completionKey(run: RunState): string {
+    // 快速重试可能在两次扫描之间再次失败，终态相同也要按新尝试派发。
+    return JSON.stringify([run.status, run.endedAt, Object.values(run.nodes).reduce((sum, node) => sum + node.attempts, 0)])
+  }
   async scan(): Promise<void> {
     if (this.closed) return
     const stores = await this.getStores()
@@ -91,8 +95,8 @@ export class AutomationRuntime {
     for (const run of await stores.runs.list()) {
       if (this.closed) return
       const previous = this.statuses.get(run.runId)
-      this.statuses.set(run.runId, run.status)
-      if (previous === run.status || previous && ['succeeded', 'failed', 'cancelled'].includes(previous)) continue
+      this.statuses.set(run.runId, this.completionKey(run))
+      if (previous === this.completionKey(run)) continue
       if (run.status !== 'succeeded' && run.status !== 'failed') continue
       if (previous === undefined && Date.parse(run.startedAt) < this.startedAt) continue
       await this.dispatch({ type: run.status === 'succeeded' ? 'run.finished' : 'run.failed', runId: run.runId, requirementId: run.requirementId })

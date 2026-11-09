@@ -28,6 +28,7 @@ export interface CliOptions {
   target?: string
   defects?: boolean
   variant?: string[]
+  node?: string[]
   repeats?: string
   judge?: string
   title?: string
@@ -96,6 +97,7 @@ export const HELP = `用法：takt <命令> [选项]
   review dispose <run> <node> <groupKey> --state resolved|dismissed|open --reason <text>
   run <workflowId|auto> --req <REQ> [--arg k=v]... [--harness <id>] [--mock <file>] [--auto-approve]
     [--budget-tokens N --budget-minutes N]
+  retry <runId> [--node <id>]... [--reason <text>]
   resume <runId> [--auto-approve] [--harness <id>] [--mock <file>]
   answer <requestId> (--approve | --reject | --answer "<text>" | --choice <c>) [--no-resume]
   status [--req <REQ>]
@@ -175,6 +177,7 @@ const OPTIONS = {
   'dry-run': { type: 'boolean' },
   by: { type: 'string' }, workflow: { type: 'string' }, target: { type: 'string' }, defects: { type: 'boolean' },
   repeats: { type: 'string' },
+  node: { type: 'string', multiple: true },
   variant: { type: 'string', multiple: true }, judge: { type: 'string' },
   title: { type: 'string' }, desc: { type: 'string' }, severity: { type: 'string' }, note: { type: 'string' },
   hint: { type: 'string' }, tier: { type: 'string' }, input: { type: 'string' }, state: { type: 'string' },
@@ -229,6 +232,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     reject: values.reject === true,
     budgetTokens: values['budget-tokens'], budgetMinutes: values['budget-minutes'],
     ...(values.defects === undefined ? {} : { defects: values.defects }),
+    ...(values.node === undefined ? {} : { node: values.node }),
     ...(values.variant === undefined ? {} : { variant: values.variant }),
     noResume: values['no-resume'] === true,
     link: values.link?.[0], links: values.link, ac: values.ac, evidence: values.evidence,

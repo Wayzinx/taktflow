@@ -20,7 +20,7 @@ import { failureCode, FailureError, recordFailure } from './fingerprint.js'
 import { serializePlannerGroups } from './nodes/planner.js'
 import { validateWorkflowHarnesses } from './selection.js'
 
-export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean }
+export interface EngineOptions { concurrency?: number; now?: () => Date; harnessOverride?: string; autoApprove?: boolean; actor?: Actor }
 export type GraphRecord = RunGraphNode
 export interface RuntimeRecord { failureHistory?: Record<string, FailureRecord[]>; retryFingerprints?: Record<string, string>; budgetAnswers?: string[]; reviews?: Record<string, ReviewProgress>; feedback?: Record<string, string>; nodes?: GraphRecord[]; requests: Record<string, string>; attempts?: Record<string, number>; reservedAttempts?: Record<string, number> }
 export { system } from './actor.js'
@@ -269,6 +269,48 @@ export class Runtime implements HarnessHost {
       ns.endedAt = this.timestamp()
       await this.emit('node.failed', { error: ns.error, attempt: ns.attempts }, ns.id, actor)
     } else await this.finish(entry, actor)
+  }
+  async retryNodes(nodeIds: string[], reason?: string): Promise<void> {
+    const affected = new Set(nodeIds)
+    const containers = new Set<string>()
+    for (const id of nodeIds) {
+      let parent = this.graph.get(id)?.parent
+      while (parent) {
+        containers.add(parent)
+        affected.add(parent)
+        parent = this.graph.get(parent)?.parent
+      }
+    }
+    for (let changed = true; changed;) {
+      changed = false
+      for (const entry of this.graph.values()) {
+        if (!affected.has(entry.def.id) && entry.def.needs?.some(id => affected.has(id))) {
+          affected.add(entry.def.id)
+          changed = true
+        }
+      }
+    }
+    const attention = await this.deps.stores.attention.list({ pending: true, requirementId: this.state.requirementId })
+    for (const id of affected) {
+      const ns = this.state.nodes[id]!
+      // 容器只重新进入调度，保留已完成的子节点和展开结果。
+      if (!nodeIds.includes(id) && !containers.has(id) && !['skipped', 'cancelled'].includes(ns.status)) continue
+      const request = attention.find(item => item.runId === this.state.runId && item.requestId === this.requests[id])
+      if (request) {
+        const answered = await answerOrRead(this.deps.stores, request, { decision: 'cancelled', answer: '已发起节点重试', by: this.options.actor ?? system })
+        await this.recordAnswer(answered)
+      }
+      this.restarting.add(id)
+      delete this.reservedAttempts[id]
+      ns.status = 'pending'
+      delete ns.error
+      delete ns.endedAt
+      delete this.requests[id]
+    }
+    this.state.status = 'running'
+    delete this.state.endedAt
+    await this.persistGraph()
+    await this.emit('run.retried', { nodeIds, reason }, undefined, this.options.actor ?? system)
   }
   async restoreAnswers(): Promise<void> {
     await reconcileAssumptions(this.deps.stores)

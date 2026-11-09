@@ -27,7 +27,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   const active = new Map<string, Runtime>()
   const guard = new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements))
   const timestamp = () => (opts.now?.() ?? new Date()).toISOString()
-  async function execute(runtime: Runtime, resume = false, onStarted?: () => void): Promise<RunState> {
+  async function execute(runtime: Runtime, resume = false, onStarted?: () => void, retry?: { nodeIds: string[]; reason?: string }): Promise<RunState> {
     const id = runtime.state.runId
     if (active.has(id)) throw new Error(`运行正在执行：${id}`)
     active.set(id, runtime)
@@ -35,6 +35,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       const persisted = await deps.stores.runs.get(id)
       if (persisted?.status === 'cancelled') return persisted
       await runtime.prepare()
+      if (retry) await runtime.retryNodes(retry.nodeIds, retry.reason)
       if (resume) await runtime.restoreAnswers()
       // 通知只是启动回执，调用方的异常不能打断已经接手的运行。
       try { onStarted?.() } catch {}
@@ -90,6 +91,23 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
         validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
         return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true, resumeOptions?.onStarted)
+      })
+    },
+    async retry(runId, workflow, retryOptions) {
+      return withRunLease(deps.stores, runId, async () => {
+        const state = await deps.stores.runs.get(runId)
+        if (!state) throw new Error(`运行不存在：${runId}`)
+        if (state.status === 'succeeded' || state.status === 'cancelled') throw new Error('已成功或已取消的运行不能重试')
+        const eligible = (id: string) => ['failed', 'blocked'].includes(state.nodes[id]?.status ?? '')
+        const nodeIds = [...new Set(retryOptions?.nodeIds ?? Object.keys(state.nodes).filter(eligible))]
+        const invalid = nodeIds.filter(id => !eligible(id))
+        if (invalid.length) throw new Error(`只能重试失败或阻塞的节点，不合格的节点：${invalid.join('、')}`)
+        if (!nodeIds.length) throw new Error('没有失败或阻塞的节点可以重试')
+        if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
+        const runtimeDeps = await currentProfiles()
+        workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
+        validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
+        return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true, retryOptions?.onStarted, { nodeIds, reason: retryOptions?.reason })
       })
     },
     async cancel(runId) {

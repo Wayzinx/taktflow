@@ -6,6 +6,7 @@ export interface CommandContext { actor: Actor; reason?: string }
 export interface CommandInputs {
   startRun: { requirementId: string; workflowId: string; args?: Record<string, unknown>; budget?: RunBudget; route?: RouteDecision }
   resumeRun: { runId: string }
+  retryRun: { runId: string; nodeIds?: string[] }
   cancelRun: { runId: string }
   answerAttention: { requestId: string; decision?: 'approve' | 'reject' | 'answer' | 'choice'; answer?: string }
   dispatchTask: { requirementId: string; task: TaskSpec }

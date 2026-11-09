@@ -650,3 +650,26 @@ it('启动异常后移除本进程引擎记录，中断运行仍能继续', asyn
   await lead.drain()
   expect(next).toHaveBeenCalledTimes(1)
 })
+
+it('Lead retry_run 通过 write 命令审计后重试失败运行，事件归属发起人', async () => {
+  const workflow: WorkflowDefinition = { id: 'retry', title: '重试', version: '1', stages: [], nodes: [{ id: 'work', kind: 'agent', title: '执行', role: 'pm', prompt: '执行' }] }
+  const turns: LeadTurn[] = [{ reply: '启动', actions: [{ type: 'start_run', workflowId: workflow.id }] }]
+  let calls = 0
+  const { stores, lead, send } = await setup(turns, {
+    task: async () => { if (++calls === 1) throw new Error('首次执行失败') },
+    workflows: { load: async () => workflow, get: async () => ({ source: '', rev: 'base' }), replaceSource: async () => undefined },
+  })
+  const started = (await send())!.results[0]!
+  await lead.drain()
+  const runId = started.refs!.runId!
+  expect((await stores.runs.get(runId))!.status).toBe('failed')
+  turns.push({ reply: '重试失败节点', actions: [{ type: 'retry_run', runId, nodeIds: ['work'] }] })
+  const turn = (await send())!
+  expect(turn.results[0]).toMatchObject({ action: 'retry_run', ok: true })
+  await lead.drain()
+  expect((await stores.runs.get(runId))!.status).toBe('succeeded')
+  expect(calls).toBe(2)
+  expect(await stores.events.read(runId, { types: ['run.retried'] })).toMatchObject([{ actor: { type: 'human', id: 'alice' }, data: { nodeIds: ['work'], reason: expect.stringContaining('Lead 响应消息') } }])
+  const logs = await stores.events.read(turn.run.runId, { types: ['log'] })
+  expect(logs.some(event => JSON.stringify(event.data).includes('run.retry'))).toBe(true)
+})

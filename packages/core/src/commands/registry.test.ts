@@ -14,12 +14,12 @@ async function setup() {
   stores.config.members = [{ id: 'alice', role: 'owner', name: 'Alice' }, { id: 'bob', role: 'viewer', name: 'Bob' }, { id: 'member', role: 'member', name: 'Member' }]
   const handler = vi.fn(async (input: unknown) => input)
   const audit = vi.fn(async () => {})
-  const deps: CommandDeps = { stores, audit, startRun: handler, resumeRun: handler, cancelRun: handler, answerAttention: handler, dispatchTask: handler, disposeReview: handler, setLessonStatus: handler, route: handler }
+  const deps: CommandDeps = { stores, audit, startRun: handler, resumeRun: handler, retryRun: handler, cancelRun: handler, answerAttention: handler, dispatchTask: handler, disposeReview: handler, setLessonStatus: handler, route: handler }
   return { stores, handler, audit, deps, registry: createCommandRegistry(deps) }
 }
 it('提供完整命令目录，返回副本不能篡改权限与 schema', async () => {
   const { registry } = await setup()
-  expect(registry.list()).toHaveLength(28)
+  expect(registry.list()).toHaveLength(29)
   const cancel = registry.list().find((command) => command.id === 'run.cancel')!
   expect(cancel).toMatchObject({ risk: 'dangerous', minRole: 'maintainer' })
   cancel.minRole = 'viewer'; cancel.input.required = []
@@ -27,6 +27,7 @@ it('提供完整命令目录，返回副本不能篡改权限与 schema', async 
 })
 it.each([
   ['run.start', { requirementId: 'REQ-001', workflowId: 'auto', budget: { tokens: 100, concurrency: 2 } }],
+  ['run.retry', { runId: 'run-1', nodeIds: ['work'] }],
   ['run.resume', { runId: 'run-1' }], ['run.cancel', { runId: 'run-1' }],
   ['attention.answer', { requestId: 'request-1', decision: 'approve' }],
   ['route.preview', { requirementId: 'REQ-001', override: { tier: 'T1', reason: '单面' } }],

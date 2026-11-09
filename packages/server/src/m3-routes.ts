@@ -46,7 +46,7 @@ export function m3Routes(add: (method: string, path: string, handler: Handler) =
     if (!input.input || typeof input.input !== 'object' || Array.isArray(input.input)) throw new HttpError(400, 'input 必须是对象')
     const allowEmptyReason = params.id === 'requirement.create'
     const result = await (await commands(stores, params.id)).run(params.id!, input.input as Record<string, unknown>, { actor: actor(request, stores), reason: input.reason === undefined ? undefined : text(input.reason, 'reason', allowEmptyReason) })
-    if (params.id === 'run.resume' && !result.ok) throw new HttpError(400, result.message)
+    if (['run.resume', 'run.retry'].includes(params.id!) && !result.ok) throw new HttpError(400, result.message)
     return result
   })
   add('POST', '/api/requirements/:id/route', async ({ stores, request, params }) => {

@@ -34,7 +34,7 @@ export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<s
     await scope.created(state)
   }
   const events: ProjectStores['events'] = {
-    append: async (runId, input) => { const event = await stores.events.append(runId, input); await onRunEvent(runId, event); return event },
+    append: async (runId, input) => { const event = await stores.events.append(runId, input.type === 'run.retried' ? { ...input, actor: invocation.getStore()?.message.author ?? input.actor } : input); await onRunEvent(runId, event); return event },
     read: stores.events.read.bind(stores.events), subscribe: stores.events.subscribe.bind(stores.events), verify: stores.events.verify.bind(stores.events),
   }
   const engine = options.engineFactory({ stores: { ...stores, runs, events }, profiles: scopedProfiles, harnesses: options.harnesses })
@@ -46,6 +46,7 @@ export function createLeadEngine(options: LeadRuntimeOptions, profiles: Record<s
   return (scope) => ({
     start: (input) => execute(scope, () => engine.start(input)),
     resume: (runId, workflow, opts) => execute(scope, () => engine.resume(runId, workflow, opts), runId),
+    retry: (runId, workflow, opts) => execute(scope, () => engine.retry(runId, workflow, opts), runId),
     cancel: (runId) => invocation.run(scope, () => engine.cancel(runId)),
     markStale: (runId, cause) => invocation.run(scope, () => engine.markStale(runId, cause)),
   })

@@ -121,3 +121,21 @@ it('5 秒扫描一次，通过空间 getter 读取热更新对象', async () => 
   await runtime.close()
   await vi.advanceTimersByTimeAsync(5000); expect(scan).toHaveBeenCalledOnce()
 })
+
+it('失败重试再次结束会重新派发，包括两次扫描间快速失败', async () => {
+  const f = await fixture([])
+  const state: RunState = { runId: 'retry', requirementId: 'REQ-001', workflowId: 'w', workflowVersion: '1', args: {}, expansions: [],
+    status: 'failed', startedAt: new Date().toISOString(), endedAt: new Date().toISOString(), nodes: { a: { id: 'a', status: 'failed', attempts: 1, outputs: [] } } }
+  await f.stores.runs.create(state, { id: 'w', title: 'w', version: '1', stages: [], nodes: [] })
+  await f.runtime.start()
+  const dispatch = vi.spyOn(f.runtime, 'dispatch')
+  state.nodes.a!.attempts++
+  await f.stores.runs.save(state)
+  await f.runtime.scan(); await f.runtime.scan()
+  expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: 'run.failed', runId: state.runId, requirementId: state.requirementId })
+  state.status = 'succeeded'; state.nodes.a!.status = 'succeeded'; state.nodes.a!.attempts++
+  await f.stores.runs.save(state)
+  await f.runtime.scan(); await f.runtime.scan()
+  expect(dispatch).toHaveBeenCalledTimes(2)
+  expect(dispatch).toHaveBeenLastCalledWith({ type: 'run.finished', runId: state.runId, requirementId: state.requirementId })
+})
