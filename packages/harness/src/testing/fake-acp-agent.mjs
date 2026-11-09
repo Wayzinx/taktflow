@@ -57,7 +57,7 @@ createInterface({ input: process.stdin }).on('line', async line => {
     }
     const replies = []
     for (const call of scenario.requests ?? []) replies.push(await request(call.method, call.params))
-    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: scenario.requests ? JSON.stringify(replies) : scenario.text ?? '完成' } })
+    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: scenario.requests ? JSON.stringify(replies) : scenario.echoEnv ? JSON.stringify(Object.fromEntries(scenario.echoEnv.map(name => [name, process.env[name] ?? null]))) : scenario.text ?? '完成' } })
     respond(id, { stopReason: scenario.stopReason ?? 'end_turn' })
   } else if (method === 'session/cancel') {
     if (!scenario.ignoreCancel && promptId !== undefined) respond(promptId, { stopReason: 'cancelled' })

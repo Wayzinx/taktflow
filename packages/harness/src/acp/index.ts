@@ -1,31 +1,34 @@
 import { resolve } from 'node:path'
 import type { AcpHarnessConfig, HarnessAdapter, HarnessCapabilities, HarnessRequest, HarnessResult } from '@taktflow/core'
-import { promptWithInstructions } from '../parse.js'
+import { promptWithInstructions, readProviderApiKey } from '../parse.js'
 import { extractJsonBlock } from '../process.js'
 import { collectSecrets, createRedactor, redactValue } from '../redact.js'
 import { AcpClient } from './client.js'
 import { AcpEvents } from './events.js'
 import { AcpFiles } from './files.js'
-import { acpCommand } from './presets.js'
+import { ACP_PROVIDER_ENV, acpCommand } from './presets.js'
 import { array, object, optionalObject, string, type ObjectValue } from './protocol.js'
 import { clientRequests } from './requests.js'
 
 export interface AcpOptions { projectDir?: string; handshakeTimeoutMs?: number; cancelTimeoutMs?: number; cacheMs?: number }
+// npx 启动的 agent 冷启动要解析依赖，负载高时 10 秒不够
+const HANDSHAKE_MS = 30_000
 const CLIENT = { protocolVersion: 1, clientInfo: { name: 'taktflow', version: '0.0.0' },
   clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false, session: { compaction: {} } } }
 
 export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions = {}): HarnessAdapter {
   const command = acpCommand(config)
   if (options.projectDir && command[0]!.includes('/') && !command[0]!.startsWith('/')) command[0] = resolve(options.projectDir, command[0]!)
+  const providerEnv = config.preset && Object.hasOwn(ACP_PROVIDER_ENV, config.preset) ? ACP_PROVIDER_ENV[config.preset] : undefined
   // 不把 client 侧文件限制当作 agent 自有工具的沙箱保证。
   const capabilities: HarnessCapabilities = { resume: false, structuredOutput: false, toolEvents: false, toolPhases: false,
-    usage: false, cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false,
-    readOnly: false, modelOverride: false, effortOverride: false }
+    usage: false, cost: false, compactionEvents: false, customProvider: Boolean(providerEnv), sandbox: false, mcp: false,
+    readOnly: false, modelOverride: false, effortOverride: false, ...(providerEnv ? { providerProtocols: providerEnv.protocols } : {}) }
   type Availability = Awaited<ReturnType<HarnessAdapter['available']>>
   let cache: { expires: number; value: Promise<Availability> } | undefined
 
   async function initialize(client: AcpClient): Promise<ObjectValue> {
-    const result = await client.request('initialize', CLIENT, options.handshakeTimeoutMs ?? 10_000)
+    const result = await client.request('initialize', CLIENT, options.handshakeTimeoutMs ?? HANDSHAKE_MS)
     if (result.protocolVersion !== 1) throw new Error('ACP 协议版本不兼容，请使用支持 v1 的 agent')
     const agent = optionalObject(result.agentCapabilities)
     capabilities.resume = agent.loadSession === true || optionalObject(agent.sessionCapabilities).resume != null
@@ -53,7 +56,9 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
       return value
     },
     async run(input, onEvent) {
-      const req: HarnessRequest = { ...input, env: { ...config.env, ...input.env } }
+      const base: HarnessRequest = { ...input, env: { ...config.env, ...input.env } }
+      const key = base.provider ? readProviderApiKey(base) : {}
+      const req: HarnessRequest = base.provider && providerEnv ? { ...base, env: { ...base.env, ...providerEnv.env(base, key.value) } } : base
       const redact = createRedactor(collectSecrets(req))
       const events = new AcpEvents(event => onEvent(redactValue(event, redact)), capabilities)
       let sessionId = req.sessionId
@@ -76,7 +81,8 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
       const abort = () => cancel('ACP 运行已取消（cancelled）')
       try {
         if (req.signal?.aborted) throw new Error('ACP 启动前已取消（cancelled）')
-        if (req.provider) throw new Error('ACP 不支持注入自定义 provider，请在 agent 自身配置中设置')
+        if (req.provider && !providerEnv) throw new Error('这个 ACP agent 不支持改接模型 API，请在 agent 自身配置中设置')
+        if (key.name && !key.value) throw new Error(`缺少模型 API 密钥：环境变量 ${key.name} 未设置`)
         if (req.sandbox) throw new Error('ACP 暂不支持沙箱传输，请使用本机运行或其他 harness')
         const operationRequest = { ...req, signal: operations.signal }
         const files = await AcpFiles.create(operationRequest)
@@ -97,11 +103,12 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
         const method = req.sessionId ? optionalObject(agent.sessionCapabilities).resume != null ? 'session/resume' : 'session/load' : 'session/new'
         if (req.sessionId && !capabilities.resume) throw new Error('该 ACP agent 未声明续会话能力，请创建新会话')
         replaying = method === 'session/load'
-        const session = await client.request(method, { cwd: req.cwd, mcpServers: [], ...(req.sessionId ? { sessionId: req.sessionId } : {}) }, options.handshakeTimeoutMs ?? 10_000)
+        const session = await client.request(method, { cwd: req.cwd, mcpServers: [], ...(req.sessionId ? { sessionId: req.sessionId } : {}) }, options.handshakeTimeoutMs ?? HANDSHAKE_MS)
         replaying = false
         if (!req.sessionId) sessionId = string(session.sessionId)
         events.configure(session.configOptions ?? events.configOptions)
-        for (const [category, requested] of [['model', req.model], ['thought_level', req.effort]] as const) {
+        // 改接别家 API 时模型已经由环境变量指定；agent 的模型选项是它自己的别名（opus / sonnet …），不再去设
+        for (const [category, requested] of [['model', req.provider ? undefined : req.model], ['thought_level', req.effort]] as const) {
           if (!requested) continue
           const option = events.configOptions.find(item => item.category === category && item.type === 'select')
           let applied = false
@@ -124,7 +131,7 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
         }
         events.finalText = ''
         prompting = true
-        onEvent(redactValue({ type: 'started', sessionId, model: reported('model'), effort: reported('thought_level') }, redact))
+        onEvent(redactValue({ type: 'started', sessionId, model: req.provider ? req.model : reported('model'), effort: reported('thought_level') }, redact))
         if (interrupted) throw new Error(interrupted)
         const response = await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: promptWithInstructions(req) }] }, 0)
         const reason = string(response.stopReason)

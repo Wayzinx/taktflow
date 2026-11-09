@@ -1,4 +1,4 @@
-import { assertSecretName, patchRuntimeConfig, readRuntimeConfig, RuntimeConfigError, setLocalSecret, systemWrite, validateHarnessSelector,
+import { assertSecretName, patchRuntimeConfig, providerProtocols, readRuntimeConfig, RuntimeConfigError, setLocalSecret, systemWrite, validateHarnessSelector,
   type ProjectStores, type RuntimeConfig, type RuntimeTestRequest, type TaktConfig } from '@taktflow/core'
 import { ACP_PRESETS, PROVIDER_PRESETS, createHarnesses, providerConfig, collectSecrets, createRedactor } from '@taktflow/harness'
 import { actor, authorize, body, HttpError, text } from './http.js'
@@ -12,7 +12,7 @@ export interface RuntimeCallbacks {
 }
 const brands: Record<string, string> = { openai: 'OpenAI', anthropic: 'Anthropic', deepseek: 'DeepSeek', moonshot: 'Moonshot', zhipu: '智谱', dashscope: '阿里百炼', ark: '火山方舟', minimax: 'MiniMax', siliconflow: '硅基流动', openrouter: 'OpenRouter', 'azure-openai': 'Azure OpenAI', ollama: 'Ollama', vllm: 'vLLM', lmstudio: 'LM Studio', litellm: 'LiteLLM' }
 const presets: RuntimeConfig['presets'] = {
-  providers: Object.entries(PROVIDER_PRESETS).map(([id, config]) => ({ id, displayName: brands[id]!, protocol: config.protocol, baseURL: config.baseURL, ...('apiKeyEnv' in config ? { apiKeyEnv: config.apiKeyEnv } : {}) })),
+  providers: Object.entries(PROVIDER_PRESETS).map(([id, config]) => ({ id, displayName: brands[id]!, protocol: config.protocol, baseURL: config.baseURL, ...('apiKeyEnv' in config ? { apiKeyEnv: config.apiKeyEnv } : {}), ...('endpoints' in config ? { endpoints: config.endpoints } : {}) })),
   acp: ACP_PRESETS,
 }
 
@@ -38,7 +38,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
       await patchRuntimeConfig(stores, input, actor(request, stores), {
         builtinHarnesses,
         pluginHarnesses: Object.keys(runtime?.harnesses ?? {}).filter(id => !builtinHarnesses.includes(id) && !stores.config.harnesses?.some(h => h.id === id)),
-        protocols: Object.values(stores.config.providers ?? {}).map(p => p.protocol).filter(protocol => Object.values(runtime?.harnesses ?? {}).some(h => h.capabilities?.providerProtocols?.includes(protocol))),
+        protocols: Object.values(stores.config.providers ?? {}).flatMap(providerProtocols).filter(protocol => Object.values(runtime?.harnesses ?? {}).some(h => h.capabilities?.providerProtocols?.includes(protocol))),
         acpPresets: ACP_PRESETS.map(p => p.id), providerPresets: Object.keys(PROVIDER_PRESETS),
         prepare: async config => {
           if (options.prepareRuntime) return options.prepareRuntime(stores, config)

@@ -4,6 +4,8 @@ export interface ProviderPreset {
   protocol: ProviderConfig['protocol']
   baseURL: string | undefined
   apiKeyEnv?: string
+  /** 同一把密钥能走的其他协议入口（只登记核实过的）。 */
+  endpoints?: ProviderConfig['endpoints']
   models: readonly string[]
 }
 
@@ -13,7 +15,9 @@ export const PROVIDER_PRESETS = {
   // https://docs.anthropic.com/en/api/messages
   anthropic: { protocol: 'anthropic-messages', baseURL: 'https://api.anthropic.com', apiKeyEnv: 'ANTHROPIC_API_KEY', models: ['claude-sonnet-4-5'] },
   // https://api-docs.deepseek.com/
-  deepseek: { protocol: 'openai-chat', baseURL: 'https://api.deepseek.com', apiKeyEnv: 'DEEPSEEK_API_KEY', models: ['deepseek-chat', 'deepseek-reasoner'] },
+  // anthropic 入口：/models 的 api_capabilities.anthropic_messages，2026-11-09 用 Claude Code 实测
+  deepseek: { protocol: 'openai-chat', baseURL: 'https://api.deepseek.com', apiKeyEnv: 'DEEPSEEK_API_KEY',
+    endpoints: { 'anthropic-messages': 'https://api.deepseek.com/anthropic' }, models: ['deepseek-flash', 'deepseek-v4-pro'] },
   // https://platform.moonshot.cn/docs/api/chat
   moonshot: { protocol: 'openai-chat', baseURL: 'https://api.moonshot.cn/v1', apiKeyEnv: 'MOONSHOT_API_KEY', models: ['moonshot-v1-8k'] },
   // https://docs.bigmodel.cn/api-reference/模型-api/对话补全
@@ -53,5 +57,6 @@ export function providerConfig(id: string, config: ProviderConfig): ProviderConf
     apiKeyEnv: config.apiKeyEnv ?? preset?.apiKeyEnv,
     headers: config.headers ? { ...config.headers } : undefined,
     preset: preset ? presetId : undefined,
+    ...(preset?.endpoints || config.endpoints ? { endpoints: { ...preset?.endpoints, ...config.endpoints } } : {}),
   }
 }

@@ -1,4 +1,5 @@
-import type { AcpHarnessConfig, AcpPresetInfo } from '@taktflow/core'
+import type { AcpHarnessConfig, AcpPresetInfo, HarnessRequest, ProviderProtocol } from '@taktflow/core'
+import { claudeProviderEnv } from '../claude-env.js'
 
 // 2026-11-08 核对官方 registry 的 distribution；不在探测时自动下载 agent。
 // https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json
@@ -12,6 +13,11 @@ export const ACP_PRESETS: AcpPresetInfo[] = [
   { id: 'goose', displayName: 'Goose', command: ['goose', 'acp'], install: '从 https://github.com/block/goose/releases 安装适合本机的二进制并加入 PATH（核对版本 1.57.0）' },
   { id: 'copilot', displayName: 'GitHub Copilot', command: ['npx', '--no-install', '@github/copilot@1.0.107', '--acp'], install: 'npm install -g @github/copilot@1.0.107；先完成 GitHub 登录' },
 ]
+
+/** 能改接别家模型 API 的预设：接哪些协议、怎么注入（只登记实测过的）。 */
+export const ACP_PROVIDER_ENV: Record<string, { protocols: ProviderProtocol[]; env: (req: HarnessRequest, token: string | undefined) => Record<string, string> }> = {
+  claude: { protocols: ['anthropic-messages'], env: claudeProviderEnv },
+}
 
 export function acpCommand(config: AcpHarnessConfig): string[] {
   const preset = ACP_PRESETS.find(item => item.id === config.preset)

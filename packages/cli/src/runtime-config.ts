@@ -24,10 +24,12 @@ export function normalizeConfig(config: TaktConfig): TaktConfig {
     const value = providerConfig(id, raw)
     if (!nonempty(value.protocol)) throw new Error(`provider ${id}: 缺少 protocol`)
     if (value.apiKeyEnv && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(value.apiKeyEnv)) throw new Error(`provider ${id}: apiKeyEnv 必须是环境变量名`)
-    if (value.baseURL !== undefined) {
+    if (raw.endpoints !== undefined && (!object(raw.endpoints) || !Object.values(raw.endpoints).every(nonempty))) throw new Error(`provider ${id}: endpoints 必须是 协议 → 地址`)
+    for (const [field, address] of [['baseURL', value.baseURL], ...Object.entries(value.endpoints ?? {}).map(([p, u]) => [`endpoints.${p}`, u])] as Array<[string, string | undefined]>) {
+      if (address === undefined) continue
       let url: URL
-      try { url = new URL(value.baseURL) } catch { throw new Error(`provider ${id}: baseURL 格式错误`) }
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error(`provider ${id}: baseURL 必须是无凭据的 HTTP(S) 地址`)
+      try { url = new URL(address) } catch { throw new Error(`provider ${id}: ${field} 格式错误`) }
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) throw new Error(`provider ${id}: ${field} 必须是无凭据的 HTTP(S) 地址`)
     }
     providers[id] = value
   }

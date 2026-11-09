@@ -478,7 +478,11 @@ describe('configuration and resolution', () => {
   })
 
   it('normalizes preset defaults without resolving model aliases', () => {
-    expect(providerConfig('a', { protocol: 'openai-chat', preset: 'deepseek' })).toMatchObject({ baseURL: 'https://api.deepseek.com' })
+    expect(providerConfig('a', { protocol: 'openai-chat', preset: 'deepseek' })).toMatchObject({ baseURL: 'https://api.deepseek.com',
+      endpoints: { 'anthropic-messages': 'https://api.deepseek.com/anthropic' } })
+    expect(providerConfig('a', { protocol: 'openai-chat', preset: 'deepseek', endpoints: { 'anthropic-messages': 'https://proxy.invalid' } }).endpoints)
+      .toEqual({ 'anthropic-messages': 'https://proxy.invalid' })
+    expect(providerConfig('a', { protocol: 'openai-chat', preset: 'moonshot' })).not.toHaveProperty('endpoints')
     expect(providerConfig('ollama', { protocol: 'openai-chat' })).toMatchObject({ baseURL: 'http://localhost:11434/v1' })
   })
 })

@@ -36,7 +36,7 @@ describe('2026-11-04 历史脱敏实录回放（非本次 CLI 在线执行）', 
     claudeRecording.split('\n').forEach(line => parser.onLine(line))
     expect(parser.result()).toMatchObject({ ok: false, sessionId: 'recorded-id',
       finalText: '[recorded text omitted]', usage: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, costUsd: 0 } })
-    expect(parser.result().error).toContain('"is_error":true')
+    expect(parser.result().error).toMatch(/^Claude Code：/)
     expect(events).toContainEqual({ type: 'started', sessionId: 'recorded-id', model: undefined })
     expect(events).toContainEqual({ type: 'message', role: 'assistant', text: '[recorded text omitted]' })
   })

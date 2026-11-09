@@ -1,4 +1,4 @@
-import { resolveSecret } from '@taktflow/core'
+import { providerProtocols, resolveSecret } from '@taktflow/core'
 import { createHarnesses, harnessCommand, collectSecrets, createRedactor } from '@taktflow/harness'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -58,7 +58,7 @@ export function runtimeModels(context: ProjectContext): ModelInfo[] {
     const provider = config.providers![model.provider]!
     return {
       kind: model.kind ?? 'chat',
-      alias, id: model.id, provider: model.provider, protocol: provider.protocol,
+      alias, id: model.id, provider: model.provider, protocol: provider.protocol, protocols: providerProtocols(provider),
       contextWindow: model.contextWindow,
       price: model.price ? { input: model.price.input, output: model.price.output } : undefined,
       keyPresent: !provider.apiKeyEnv || !!resolveSecret(provider.apiKeyEnv),

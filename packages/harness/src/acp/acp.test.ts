@@ -224,3 +224,27 @@ it('没有 allow_once 时不能误选 allow_always；无路径与错误会话的
   expect(replies[2].error.code).toBe(-32602)
   expect(f.events.filter(event => event.type === 'message' && event.text.startsWith('[ACP permission]'))).toHaveLength(3)
 })
+
+it('claude 预设能改接 anthropic 协议的 API：地址、令牌、模型走环境变量，started 报实际模型；其他预设明确拒绝', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'takt-acp-')); dirs.push(dir)
+  const echoEnv = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_MODEL', 'CLAUDE_CODE_OAUTH_TOKEN']
+  const configOptions = [{ id: 'model', category: 'model', type: 'select', currentValue: 'opus', options: [{ value: 'opus' }] }]
+  const create = (preset: string) => createAcpHarness({ id: preset, kind: 'acp', preset, command: [process.execPath, script],
+    env: { FAKE_ACP_SCENARIO: JSON.stringify({ echoEnv, configOptions }), FAKE_ACP_TRACE: join(dir, `${preset}.jsonl`) } }, { projectDir: dir, handshakeTimeoutMs: 1000 })
+  const provider = { id: 'ds', protocol: 'anthropic-messages', baseURL: 'https://ds.invalid/anthropic', apiKeyEnv: 'TAKT_ACP_DS_KEY' }
+  const claude = create('claude')
+  expect(claude.capabilities).toMatchObject({ customProvider: true, providerProtocols: ['anthropic-messages'] })
+  const events: HarnessEvent[] = []
+  const result = await claude.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, model: 'ds-flash', provider, env: { TAKT_ACP_DS_KEY: 'fake-ds-key-123' } }, e => events.push(e))
+  expect(result.ok).toBe(true)
+  expect(result.finalText).not.toContain('fake-ds-key-123')
+  expect(JSON.parse(result.finalText)).toMatchObject({ ANTHROPIC_BASE_URL: 'https://ds.invalid/anthropic', ANTHROPIC_MODEL: 'ds-flash', CLAUDE_CODE_OAUTH_TOKEN: '' })
+  expect(events).toContainEqual(expect.objectContaining({ type: 'started', model: 'ds-flash' }))
+  const sent = (await readFile(join(dir, 'claude.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  expect(sent.some(m => m.method === 'session/set_config_option')).toBe(false)
+  expect(await claude.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, model: 'ds-flash', provider }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('TAKT_ACP_DS_KEY') })
+
+  const gemini = create('gemini')
+  expect(gemini.capabilities.customProvider).toBe(false)
+  expect(await gemini.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, provider }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('不支持改接模型 API') })
+})

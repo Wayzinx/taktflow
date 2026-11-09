@@ -33,6 +33,8 @@ it('系统角色精确映射，未提交键与同段其他键保留；null 只�
 it.each([
   [{ models: { bad: { provider: 'absent', id: 'x' } } }, 'models.bad.provider'],
   [{ providers: { bad: { protocol: 'typo' } } }, 'providers.bad.protocol'],
+  [{ providers: { bad: { protocol: 'openai-chat', endpoints: { typo: 'https://x.invalid' } } } }, 'providers.bad.endpoints.typo'],
+  [{ providers: { bad: { protocol: 'openai-chat', endpoints: { 'anthropic-messages': 'https://u:p@x.invalid' } } } }, 'providers.bad.endpoints.anthropic-messages'],
   [{ roles: { dev: { harness: 'absent' } } }, 'roles.dev.harness'],
   [{ harnessOverrides: { codex: { disabled: true } }, roles: { dev: { harness: 'codex' } } }, 'roles.dev.harness'],
   [{ roles: { dev: { harness: 'mock', fallback: [{ harness: 'absent' }] } } }, 'roles.dev.fallback.0.harness'],
@@ -47,6 +49,10 @@ it.each([
   const before = structuredClone(config)
   expect(() => applyRuntimePatch(config, patch(input), options)).toThrow(field)
   expect(config).toEqual(before)
+})
+it('provider 可以登记同一把密钥的其他协议入口', () => {
+  const ds = { protocol: 'openai-chat', baseURL: 'https://ds.invalid', endpoints: { 'anthropic-messages': 'https://ds.invalid/anthropic' } }
+  expect(applyRuntimePatch(config, patch({ providers: { ds } }), options).config.providers).toEqual({ ds })
 })
 it('遮盖值回填沿用旧配置且不将明文写入调用者请求', () => {
   const source = { ...config, harnessOverrides: { codex: { env: { NORMAL: 'old-value' } } } }

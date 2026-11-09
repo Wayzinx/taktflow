@@ -1078,6 +1078,8 @@ export interface ProviderConfig {
   headers?: Record<string, string>
   /** 厂商预设名（deepseek / moonshot / zhipu / dashscope / ark / openrouter / ollama …），提供默认 baseURL。 */
   preset?: string
+  /** 同一家 API 的其他协议入口（如 DeepSeek 另有 anthropic-messages 入口）；harness 按自己能接的协议挑，同一把密钥。 */
+  endpoints?: Partial<Record<ProviderProtocol, string>>
 }
 
 export interface ModelConfig {

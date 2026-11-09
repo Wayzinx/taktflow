@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AgentProfile, HarnessAdapter, TaktConfig, WorkflowDefinition } from '../types.js'
-import { forEachRoleSelector, resolveHarnessSelector, validateHarnessSelector, validateWorkflowHarnesses } from './selection.js'
+import { forEachRoleSelector, providerProtocols, resolveHarnessSelector, validateHarnessSelector, validateWorkflowHarnesses } from './selection.js'
 import type { HarnessCapabilities } from '../types.js'
 
 const adapter = (id: string, capabilities: HarnessCapabilities = {}): HarnessAdapter => ({ id, displayName: id, capabilities, available: async () => ({ ok: true }), run: async () => ({ ok: true, finalText: '' }) })
@@ -50,6 +50,16 @@ describe('模型及 provider 早校验', () => {
     expect(() => resolveHarnessSelector({ harness: 'community', model: 'raw' }, config, plugins)).toThrow(/community.*provider/)
     expect(() => resolveHarnessSelector({ harness: 'community', provider: 'other' }, config, plugins)).toThrow(/community.*非空模型/)
     expect(() => resolveHarnessSelector({ harness: 'plain-native' }, config, { 'plain-native': adapter('native') })).not.toThrow()
+  })
+  it('同一家 API 有多个协议入口时，按 harness 能接的协议挑入口，同一把密钥', () => {
+    const ds = { protocol: 'openai-chat', baseURL: 'https://ds.invalid', apiKeyEnv: 'DS_KEY', endpoints: { 'anthropic-messages': 'https://ds.invalid/anthropic' } }
+    const withDs: TaktConfig = { ...config, providers: { ...config.providers, ds }, models: { flash: { provider: 'ds', id: 'ds-flash' } } }
+    expect(resolveHarnessSelector({ harness: 'claude-code', model: 'flash' }, withDs, harnesses)).toMatchObject({
+      model: 'ds-flash', provider: { id: 'ds', protocol: 'anthropic-messages', baseURL: 'https://ds.invalid/anthropic', apiKeyEnv: 'DS_KEY' }, modelConfig: { id: 'ds-flash' },
+    })
+    expect(resolveHarnessSelector({ harness: 'codex', model: 'flash' }, withDs, harnesses).provider).toMatchObject({ protocol: 'openai-chat', baseURL: 'https://ds.invalid' })
+    expect(() => validateHarnessSelector({ harness: 'claude-code', provider: 'local' }, withDs, harnesses)).toThrow('不支持 provider 协议 openai-chat（local）；支持：anthropic-messages')
+    expect(providerProtocols(ds)).toEqual(['openai-chat', 'anthropic-messages'])
   })
   it.each([
     ['claude-code', 'local', false], ['claude-code', 'other', true], ['claude-code', 'responses', false],

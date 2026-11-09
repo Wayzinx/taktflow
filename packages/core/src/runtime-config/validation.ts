@@ -26,20 +26,29 @@ export function fields(value: Record<string, unknown>, allowed: string[], field:
   for (const key of Object.keys(value)) if (!allowed.includes(key)) invalid(`${field}.${key}`, '不支持此字段')
 }
 
+function httpURL(value: unknown, field: string): void {
+  let url: URL
+  try { url = new URL(value as string) } catch { invalid(field, '需要 HTTP(S) 地址') }
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) invalid(field, '地址不能含凭据或 fragment')
+}
+
 export function validateRuntimeConfig(config: TaktConfig, options: RuntimeValidationOptions): void {
   const protocols = new Set(['openai-chat', 'openai-responses', 'anthropic-messages', 'gemini', 'bedrock', 'vertex', ...options.protocols ?? []])
   for (const [id, p] of Object.entries(config.providers ?? {})) {
     const path = `providers.${id}`
     if (!object(p)) invalid(path, '必须是对象')
-    fields(p, ['protocol', 'baseURL', 'apiKeyEnv', 'headers', 'preset'], path)
+    fields(p, ['protocol', 'baseURL', 'apiKeyEnv', 'headers', 'preset', 'endpoints'], path)
     if (!protocols.has(p.protocol)) invalid(`${path}.protocol`, '协议不合法或尚未安装对应插件')
     if (p.apiKeyEnv !== undefined && (typeof p.apiKeyEnv !== 'string' || !SECRET_NAME.test(p.apiKeyEnv))) invalid(`${path}.apiKeyEnv`, '请填写大写环境变量名，密钥请存本机密钥库')
     if (p.preset !== undefined && !options.providerPresets?.includes(p.preset)) invalid(`${path}.preset`, '预设不存在')
     if (p.headers !== undefined) map(p.headers, `${path}.headers`)
-    if (p.baseURL !== undefined) {
-      let url: URL
-      try { url = new URL(p.baseURL) } catch { invalid(`${path}.baseURL`, '需要 HTTP(S) 地址') }
-      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash) invalid(`${path}.baseURL`, '地址不能含凭据或 fragment')
+    if (p.baseURL !== undefined) httpURL(p.baseURL, `${path}.baseURL`)
+    if (p.endpoints !== undefined) {
+      if (!object(p.endpoints)) invalid(`${path}.endpoints`, '必须是 协议 → 地址 的对象')
+      for (const [protocol, url] of Object.entries(p.endpoints)) {
+        if (!protocols.has(protocol)) invalid(`${path}.endpoints.${protocol}`, '协议不合法或尚未安装对应插件')
+        httpURL(url, `${path}.endpoints.${protocol}`)
+      }
     }
   }
   for (const [id, m] of Object.entries(config.models ?? {})) {

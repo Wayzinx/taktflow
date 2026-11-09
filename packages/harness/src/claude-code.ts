@@ -2,6 +2,7 @@ import type { HarnessCapabilities } from '@taktflow/core'
 import type { HarnessAdapter } from '@taktflow/core'
 import { ParseState, object, string, number, readUsage, readProviderApiKey } from './parse.js'
 import type { EventSink, JsonObject, StreamParser } from './parse.js'
+import { claudeProviderEnv } from './claude-env.js'
 import { finalizeResult, runProcess } from './process.js'
 
 export interface ClaudeCodeOptions { bin?: string; env?: Record<string, string> }
@@ -56,6 +57,14 @@ export function createClaudeCodeParser(onEvent: EventSink = () => {}): StreamPar
     : { ...state.value })
 }
 
+function withoutCost(onEvent: EventSink): EventSink {
+  return event => {
+    if (event.type !== 'usage' || event.usage.costUsd === undefined) return onEvent(event)
+    const { costUsd: _cost, ...usage } = event.usage
+    onEvent({ ...event, usage })
+  }
+}
+
 export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): HarnessAdapter {
   const bin = options.bin ?? 'claude'
   const capabilities: HarnessCapabilities = {
@@ -83,21 +92,22 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
         if (key.name && !key.value) {
           return finalizeResult(req, { ok: false, finalText: '', error: `Claude Code provider missing API key environment variable: ${key.name}` }, { ok: true, stdout: '', stderr: '' })
         }
-        processReq = { ...req, env: {
-          ...req.env,
-          ...(req.provider.baseURL === undefined ? {} : { ANTHROPIC_BASE_URL: req.provider.baseURL }),
-          ...(key.value === undefined ? {} : { ANTHROPIC_AUTH_TOKEN: key.value }),
-          ...(req.model === undefined ? {} : { ANTHROPIC_MODEL: req.model }),
-        } }
+        processReq = { ...req, env: { ...req.env, ...claudeProviderEnv(req, key.value) } }
       }
       const args = ['-p', '--output-format', 'stream-json', '--verbose']
       if (req.model) args.push('--model', req.model)
       if (req.sessionId) args.push('--resume', req.sessionId)
       if (req.systemAppend) args.push('--append-system-prompt', req.systemAppend)
       args.push('--permission-mode', 'bypassPermissions')
-      const parser = createClaudeCodeParser(onEvent)
+      // 接别家 API 时 Claude Code 仍按 Anthropic 价目算 total_cost_usd，不能当真；成本由引擎按模型价格算
+      const sink = req.provider ? withoutCost(onEvent) : onEvent
+      const parser = createClaudeCodeParser(sink)
       const proc = await runProcess(bin, args, processReq, { stdin: req.prompt, onLine: parser.onLine })
-      return finalizeResult(req, parser.result(), proc)
+      const result = finalizeResult(req, parser.result(), proc)
+      if (req.provider && result.usage) delete result.usage.costUsd
+      // 别家模型名 Claude Code 不认识，会往 stderr 打一行诊断；不是错误原因
+      if (result.error) result.error = result.error.split('\n').filter(line => !line.startsWith('[claude-code:unrecognized_model]')).join('\n') || undefined
+      return result
     },
   }
 }

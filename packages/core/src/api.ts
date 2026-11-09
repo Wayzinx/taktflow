@@ -829,6 +829,8 @@ export interface ModelInfo {
   alias: string
   provider: string
   protocol: ProviderProtocol
+  /** provider 提供的全部协议（主协议 + endpoints），用来判断哪些 harness 能用这个模型。 */
+  protocols?: ProviderProtocol[]
   id: string
   contextWindow?: number
   price?: { input: number; output: number }
@@ -896,6 +898,8 @@ export interface ProviderPresetInfo {
   baseURL?: string
   /** 建议的环境变量名。 */
   apiKeyEnv?: string
+  /** 同一把密钥能走的其他协议入口。 */
+  endpoints?: Partial<Record<ProviderProtocol, string>>
 }
 
 export interface AcpPresetInfo {

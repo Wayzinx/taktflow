@@ -8,7 +8,7 @@ import { writeFileAtomic } from '../store/fs-utils.js'
 import { mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
-import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeDef, NodeState, RunState, InvocationEnd } from '../types.js'
+import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeDef, NodeState, RunState, InvocationEnd, ModelConfig, Usage } from '../types.js'
 import { estimateTokens } from '../util/tokens.js'
 import { addUsage } from '../insights/usage.js'
 import { assertNoSymlinks } from '../store/fs-utils.js'
@@ -189,8 +189,9 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
             await host.emit('harness.started', { harness: harness.id, model: event.model, sessionId: event.sessionId, contextWindow: modelConfig?.contextWindow, skills: event.skills }, node.id, actor)
           } else if (event.type === 'usage') {
             if (harness.capabilities?.usage) {
-              ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, event.usage)
-              await host.emit('harness.usage', event.usage, node.id, actor)
+              const usage = priced(event.usage, modelConfig?.price)
+              ns.usage = addUsage(ns.usage ?? { inputTokens: 0, outputTokens: 0 }, usage)
+              await host.emit('harness.usage', usage, node.id, actor)
             }
           } else if (event.type === 'compacted') {
             const record = { ...event.record, nodeId: node.id }
@@ -247,8 +248,9 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         }
         if (result.sessionId) ns.sessionRef = { harness: harness.id, sessionId: result.sessionId }
         if (harness.capabilities?.usage && result.usage) {
-          if (!ns.usage) await host.emit('harness.usage', result.usage, node.id, actor)
-          ns.usage = result.usage
+          const usage = priced(result.usage, modelConfig?.price)
+          if (!ns.usage) await host.emit('harness.usage', usage, node.id, actor)
+          ns.usage = usage
         }
         if (!harness.capabilities?.usage || !ns.usage) {
           const inputTokens = estimateTokens(profile.instructions) + estimateTokens(requestPrompt)
@@ -282,4 +284,10 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     throw new Error(previous || '没有可用 harness')
   }
   return acquireSlot ? host.semaphore.use(invoke) : invoke()
+}
+
+/** harness 报了 token 没报成本（或接别家 API 时丢掉了不可信的成本）时，按模型别名登记的价格算。 */
+function priced(usage: Usage, price: ModelConfig['price']): Usage {
+  if (usage.costUsd !== undefined || !price) return usage
+  return { ...usage, costUsd: (usage.inputTokens * price.input + usage.outputTokens * price.output) / 1_000_000 }
 }

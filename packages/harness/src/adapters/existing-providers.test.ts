@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { tmpdir } from 'node:os'
-import type { HarnessRequest } from '@taktflow/core'
+import type { HarnessEvent, HarnessRequest } from '@taktflow/core'
 import { createClaudeCodeHarness } from '../claude-code.js'
 import { createCodexHarness } from '../codex.js'
 import { createDshHarness } from '../dsh.js'
@@ -39,7 +39,7 @@ describe('existing adapter provider configuration', () => {
     const original = structuredClone(request)
     expect((await createClaudeCodeHarness().run(request, ignore)).ok).toBe(true)
     expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual({
-      ...request.env, ANTHROPIC_BASE_URL: 'https://example.invalid/v1', ANTHROPIC_AUTH_TOKEN: 'req-fake-key', ANTHROPIC_MODEL: 'test-model',
+      ...request.env, ANTHROPIC_BASE_URL: 'https://example.invalid/v1', ANTHROPIC_AUTH_TOKEN: 'req-fake-key', ...claudeModelEnv('test-model'),
     })
     expect(vi.mocked(runProcess).mock.calls[0]![1].join(' ')).not.toContain('req-fake-key')
     expect(request).toEqual(original)
@@ -49,11 +49,29 @@ describe('existing adapter provider configuration', () => {
   it('Claude 从 process.env 读取短密钥；省略可选连接字段时保留现有环境', async () => {
     vi.stubEnv(keyName, 'xy')
     await createClaudeCodeHarness().run({ ...req, provider: { id: 'test', protocol: 'anthropic-messages', apiKeyEnv: keyName } }, ignore)
-    expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual({ ANTHROPIC_AUTH_TOKEN: 'xy', ANTHROPIC_MODEL: req.model })
+    expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual({ ANTHROPIC_AUTH_TOKEN: 'xy', ...claudeModelEnv(req.model!) })
     vi.mocked(runProcess).mockClear()
     const env = { ANTHROPIC_BASE_URL: 'https://example.invalid', OTHER: 'kept' }
     await createClaudeCodeHarness().run({ cwd: tmpdir(), prompt: '', env, provider: { id: 'local', protocol: 'anthropic-messages' } }, ignore)
-    expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual(env)
+    expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual({ ...env, ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', API_TIMEOUT_MS: '600000' })
+  })
+
+  it('Claude 接别家 API 时丢掉按 Anthropic 价目算的成本，token 照报', async () => {
+    vi.stubEnv(keyName, 'xy')
+    vi.mocked(runProcess).mockImplementationOnce(async (_bin, _args, _req, options) => {
+      options?.onLine?.('{"type":"result","is_error":false,"result":"ok","usage":{"input_tokens":10,"output_tokens":2},"total_cost_usd":0.07}')
+      return { ok: true, stdout: '', stderr: '', exitCode: 0 }
+    })
+    const events: HarnessEvent[] = []
+    const result = await createClaudeCodeHarness().run({ ...req, provider: { id: 'ds', protocol: 'anthropic-messages', apiKeyEnv: keyName } }, e => events.push(e))
+    expect(result.usage).toEqual({ inputTokens: 10, outputTokens: 2 })
+    expect(result.error).toBeUndefined()
+    vi.mocked(runProcess).mockImplementationOnce(async (_bin, _args, _req, options) => {
+      options?.onLine?.('{"type":"result","is_error":true,"result":"Timeout"}')
+      return { ok: false, stdout: '', stderr: '', exitCode: 1, error: '[claude-code:unrecognized_model] {"model":"ds"}' }
+    })
+    expect((await createClaudeCodeHarness().run({ ...req, provider: { id: 'ds', protocol: 'anthropic-messages', apiKeyEnv: keyName } }, ignore)).error).toBe('Claude Code：Timeout')
+    expect(events.find(e => e.type === 'usage')).toEqual({ type: 'usage', usage: { inputTokens: 10, outputTokens: 2 } })
   })
 
   it.each(['openai-chat', 'openai-responses'])('Codex %s 配置位于 resume 前，命令只引用变量名', async protocol => {
@@ -153,3 +171,11 @@ describe('existing adapter capabilities', () => {
     expect(harness.capabilities).toEqual({ ...capabilities, toolPhases: harness.id !== 'mock', readOnly: false, modelOverride: ['claude-code', 'codex'].includes(harness.id), effortOverride: harness.id === 'codex' })
   })
 })
+
+/** 改接别家 API 时 Claude Code 的模型、登录相关变量（见 claude-env.ts）。 */
+function claudeModelEnv(model: string): Record<string, string> {
+  return {
+    ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', API_TIMEOUT_MS: '600000',
+    ANTHROPIC_MODEL: model, ANTHROPIC_DEFAULT_OPUS_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model, ANTHROPIC_DEFAULT_HAIKU_MODEL: model, ANTHROPIC_SMALL_FAST_MODEL: model,
+  }
+}

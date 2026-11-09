@@ -1,10 +1,22 @@
-import type { AgentProfile, HarnessAdapter, HarnessCapabilities, HarnessRequest, HarnessSelector, ModelConfig, NodeDef, ProviderProtocol, TaktConfig, WorkflowDefinition } from '../types.js'
+import type { AgentProfile, HarnessAdapter, HarnessCapabilities, HarnessRequest, HarnessSelector, ModelConfig, NodeDef, ProviderConfig, ProviderProtocol, TaktConfig, WorkflowDefinition } from '../types.js'
 
 
 export interface SelectionContext {
   config: TaktConfig
   profiles: Record<string, AgentProfile>
   harnesses: Record<string, HarnessAdapter>
+}
+
+/** provider 提供的全部协议：主协议在前，再是 endpoints 里的。 */
+export function providerProtocols(provider: ProviderConfig): ProviderProtocol[] {
+  return [...new Set([provider.protocol, ...Object.keys(provider.endpoints ?? {})])]
+}
+
+/** 按 harness 能接的协议挑 provider 的入口：主协议优先，其次 endpoints；都对不上返回 undefined。 */
+export function providerFor(provider: ProviderConfig, accepts?: readonly ProviderProtocol[]): ProviderConfig | undefined {
+  if (!accepts || accepts.includes(provider.protocol)) return provider
+  const protocol = accepts.find((p) => provider.endpoints?.[p])
+  return protocol ? { ...provider, protocol, baseURL: provider.endpoints![protocol] } : undefined
 }
 
 export function harnessSelectors(selector: HarnessSelector): HarnessSelector[] {
@@ -26,12 +38,13 @@ export function resolveHarnessSelector(selector: HarnessSelector, config: TaktCo
   const alias = selector.model && config.models && Object.hasOwn(config.models, selector.model) ? config.models[selector.model] : undefined
   const model = alias?.id ?? selector.model
   const providerId = selector.provider ?? alias?.provider
-  const provider = providerId !== undefined && config.providers && Object.hasOwn(config.providers, providerId) ? config.providers[providerId] : undefined
-  if (providerId !== undefined && !provider) throw new Error(`provider 不存在：${providerId}`)
+  const configured = providerId !== undefined && config.providers && Object.hasOwn(config.providers, providerId) ? config.providers[providerId] : undefined
+  if (providerId !== undefined && !configured) throw new Error(`provider 不存在：${providerId}`)
   const capabilities: HarnessCapabilities = harness.capabilities ?? {}
-  if (provider && !capabilities.customProvider) throw new Error(`harness ${selector.harness} 不支持 customProvider`)
-  if (provider && capabilities.providerProtocols && !capabilities.providerProtocols.includes(provider.protocol)) {
-    throw new Error(`harness ${selector.harness} 不支持 provider 协议 ${provider.protocol}；支持：${capabilities.providerProtocols.join(' / ')}`)
+  if (configured && !capabilities.customProvider) throw new Error(`harness ${selector.harness} 不支持 customProvider`)
+  const provider = configured && providerFor(configured, capabilities.providerProtocols)
+  if (configured && !provider) {
+    throw new Error(`harness ${selector.harness} 不支持 provider 协议 ${providerProtocols(configured).join(' / ')}（${providerId}）；支持：${capabilities.providerProtocols!.join(' / ')}`)
   }
   if (capabilities.requiresProvider && !model?.trim()) throw new Error(`harness ${selector.harness} 需要非空模型`)
   if (capabilities.requiresProvider && !provider) throw new Error(`harness ${selector.harness} 需要明确 provider 或模型别名`)
