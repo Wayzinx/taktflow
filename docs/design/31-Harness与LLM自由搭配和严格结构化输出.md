@@ -1,6 +1,7 @@
 # 31 · Harness 与 LLM API 自由搭配、严格结构化输出
 
-> 状态：设计定稿，实施中（后端 docs/dev/m8-backend-c7.md，前端由 Claude 做）。
+> 状态：第一版已实现。协议桥与搭配 e39bd18（docs/dev/m8-backend-c7.md）；严格结构化输出 65abe33（docs/dev/m8-backend-c8.md）；设置页搭配矩阵、统一选择器 e03aed7。
+> 真实验收（DeepSeek）：claude-code / codex / trae 的直连与桥接各跑通一次工具往返，三者的原生结构约束（`--json-schema` / `--output-schema`）各跑通一次。Pi 本机未安装，只有单测。
 > 范围：第一版覆盖 Claude Code（CLI + ACP）、Codex、TRAE CLI、Pi 四个 harness，以及国内外常见的 LLM API。
 
 ## 1. 结论
