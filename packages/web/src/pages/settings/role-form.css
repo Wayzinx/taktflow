@@ -1,0 +1,239 @@
+/* 角色表单（docs/design/30 §3）：分节的表单 + 贴底的保存条。 */
+.rf-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+}
+.rf-head-title {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+  font-size: var(--text-ui);
+}
+.rf-head-title b {
+  font-size: var(--text-title);
+  font-weight: 600;
+  color: var(--text);
+}
+.rf-head-title .faint {
+  font-size: var(--text-meta);
+}
+
+.rf {
+  display: flex;
+  flex-direction: column;
+}
+.rf-sec {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: var(--sp-4);
+  padding: var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+}
+.rf-sec-head h3 {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+  color: var(--text);
+}
+.rf-sec-head p {
+  margin: 4px 0 0;
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.rf-sec-body {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.rf-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.rf-wide {
+  grid-column: 1 / -1;
+}
+.rf-empty {
+  margin: 0;
+  font-size: var(--text-meta);
+}
+
+/* 二选一：两张可点的小卡片 */
+.rf-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.rf-radio {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease),
+    background var(--dur-fast) var(--ease);
+}
+.rf-radio:hover {
+  border-color: var(--border-strong);
+}
+.rf-radio.on {
+  border-color: color-mix(in oklch, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+.rf-radio input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.rf-radio > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.rf-radio b {
+  font-weight: 500;
+  color: var(--text);
+}
+.rf-radio .faint {
+  font-size: var(--text-meta);
+  line-height: 1.45;
+}
+.rf-own {
+  display: grid;
+  gap: var(--sp-2);
+}
+.rf-add {
+  justify-self: start;
+}
+.rf-note {
+  margin: 0;
+  font-size: var(--text-meta);
+  line-height: 1.55;
+  color: var(--text-3);
+}
+.rf-check {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+.rf-check input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.rf-check .faint {
+  margin-left: var(--sp-2);
+  font-size: var(--text-meta);
+}
+.rf-instructions.textarea {
+  min-height: 200px;
+  background: var(--bg-sunken);
+  font-family: var(--font-mono);
+  font-size: var(--text-ui);
+  line-height: 1.65;
+}
+
+.rf-problems {
+  display: flex;
+  gap: var(--sp-2);
+  margin: var(--sp-3) var(--sp-4) 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-sm);
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+  font-size: var(--text-meta);
+  line-height: 1.55;
+}
+.rf-problems svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+}
+.rf-problems ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rf-used {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.rf-used-link {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  padding: 6px var(--sp-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: var(--text-ui);
+  text-decoration: none;
+}
+.rf-used-link:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.rf-used-link svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+.rf-save {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--divider);
+  border-radius: 0 0 var(--radius) var(--radius);
+  background: var(--surface);
+}
+.rf-changed {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.rf-save.dirty .rf-changed {
+  color: var(--accent-text);
+}
+.rf-reason.input {
+  width: 260px;
+}
+.rf-conflict {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--text-meta);
+  color: var(--st-failed);
+}
+
+@media (max-width: 1100px) {
+  .rf-sec {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-2);
+  }
+}

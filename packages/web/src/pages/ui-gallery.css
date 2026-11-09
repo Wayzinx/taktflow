@@ -69,3 +69,7 @@
 .uig-pad {
   padding: var(--sp-4);
 }
+.uig-col {
+  flex-direction: column;
+  align-items: flex-start;
+}

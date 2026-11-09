@@ -5,7 +5,7 @@ import { AgentMark, harnessHue, markOf } from '../components/agent-mark'
 import { BeeGlyph, LeadMark, StewardMark } from '../components/identity'
 import { useCrumbs } from '../components/layout'
 import { TaktRuler } from '../components/takt'
-import { Avatar, AvatarStack, Chip, EmptyState, ErrorState, Kbd, PageHeader, Segmented, SkeletonRows, StatusBadge, StatusDot, Tabs } from '../components/ui'
+import { Avatar, AvatarStack, Chip, EmptyState, ErrorState, Kbd, PageHeader, Segmented, SkeletonRows, StatusBadge, StatusDot, Switch, Tabs, TagInput, ToggleChips } from '../components/ui'
 import { NODE_STATUS, type Tone } from '../lib/status'
 import './ui-gallery.css'
 
@@ -55,6 +55,9 @@ export function UiGalleryPage() {
   useCrumbs([{ label: '组件陈列' }], [])
   const [seg, setSeg] = useState<'a' | 'b' | 'c'>('a')
   const [tab, setTab] = useState('one')
+  const [picked, setPicked] = useState(['money-format'])
+  const [globs, setGlobs] = useState(['src/**'])
+  const [on, setOn] = useState(true)
   return (
     <div className="page uig">
       <PageHeader title="组件陈列" description="全站的形象、徽标、按钮和空态只有这一套写法；新页面先在这里找，没有的先补进 components/ui。规则见 DESIGN.md「组件清单」。" />
@@ -204,6 +207,18 @@ export function UiGalleryPage() {
           <Chip tone="running">运行中</Chip>
           <Chip onRemove={() => undefined}>可移除</Chip>
           <Kbd combo="mod+k" />
+        </div>
+        <h3 className="uig-sub">多选与自由输入（ToggleChips / TagInput / Switch）</h3>
+        <div className="uig-row uig-col">
+          <ToggleChips ariaLabel="技能" mono options={['money-format', 'csv-export', 'playwright-e2e'].map((id) => ({ id, label: id }))} value={picked} onChange={setPicked} />
+          <ToggleChips ariaLabel="引用了但不存在" mono options={[{ id: 'wiki', label: 'wiki' }]} value={['wiki', 'gone-kb']} onChange={() => undefined} />
+          <div style={{ width: 360 }}>
+            <TagInput ariaLabel="写范围" mono value={globs} onChange={setGlobs} placeholder="src/**（回车添加）" validate={(v) => (v.startsWith('/') ? '用相对路径' : undefined)} />
+          </div>
+          <span className="uig-inline">
+            <Switch on={on} label="示例开关" onChange={setOn} />
+            <Switch on={false} label="停用的开关" onChange={() => undefined} disabled />
+          </span>
         </div>
         <Tabs
           value={tab}

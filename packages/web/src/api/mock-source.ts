@@ -8,6 +8,7 @@ import { createMockWorkflows, type WorkflowApi } from './mock-workflows'
 import { archivedSpaces, createMockSpaceCrud, draftRoute, extraSpaces, MOCK_SERVER_INFO } from './mock-crud'
 import { createMockKnowledge } from './mock-knowledge'
 import { createMockSteward } from './mock-steward'
+import { createMockM8 } from './mock-m8'
 import { mockFind, mockPicks } from './mock-solo'
 import type { DataSource } from './source'
 import type { CrudSource, KnowledgeSource } from './source-m4'
@@ -109,6 +110,14 @@ export function createMockSource(): DataSource {
       }
     },
   })
+  const m8 = createMockM8({ withSpace, workflowsOf, runtimeConfig: () => project().runtimeConfig() })
+  const runtimeSecrets: Pick<DataSource, 'putSecret'> = {
+    putSecret: async (name, value, reason) => {
+      const r = await project().putSecret(name, value, reason)
+      await m8.rememberSecret(name)
+      return r
+    },
+  }
   const crudApi: CrudSource = {
     serverInfo: () => delay(MOCK_SERVER_INFO, 50),
     createSpace: crud.createSpace,
@@ -224,7 +233,7 @@ export function createMockSource(): DataSource {
   }
 
   // 所有需求 / 运行类接口按当前空间转发；方法在调用时取空间，切换空间不需要重建数据源
-  const globals = { mock: true, forSpace, ...spaceApi, ...workflowApi, ...crudApi, ...steward, ...solo }
+  const globals = { mock: true, forSpace, ...spaceApi, ...workflowApi, ...crudApi, ...steward, ...solo, ...m8.api, ...runtimeSecrets }
   const root: DataSource = new Proxy(globals as DataSource, {
     get(target, key: string) {
       if (key in target) return target[key as keyof DataSource]

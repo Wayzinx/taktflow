@@ -161,3 +161,10 @@
   left: var(--sp-3);
   top: var(--sp-2);
 }
+.file-note {
+  margin: 0;
+  padding: var(--sp-6) var(--sp-4);
+  font-size: var(--text-ui);
+  line-height: 1.6;
+  color: var(--text-2);
+}

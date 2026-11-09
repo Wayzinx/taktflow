@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
-import { Plus, X, type LucideIcon } from 'lucide-react'
+import { Check, Plus, X, type LucideIcon } from 'lucide-react'
 import { toneSoftVar, toneVar, type Tone } from '../../lib/status'
 import './primitives.css'
 
@@ -77,6 +77,92 @@ export function Chips({ items, onRemove, onAdd, addLabel = '添加', className }
           {addLabel}
         </button>
       )}
+    </div>
+  )
+}
+
+export interface ToggleOption {
+  id: string
+  label: ReactNode
+  /** 悬停提示（例如技能的一句话说明）。 */
+  title?: string
+  /** 引用了但不存在：画成警示色，仍可点掉。 */
+  missing?: boolean
+}
+
+/**
+ * 多选标签（技能、知识库、渠道）：按下的带勾、强调色底；value 里有但 options 里没有的会补成"不存在"的标签，方便点掉。
+ *   <ToggleChips ariaLabel="技能" options={skills.map((s) => ({ id: s.name, label: s.name, title: s.description }))} value={sel} onChange={setSel} />
+ */
+export function ToggleChips({ options, value, onChange, ariaLabel, mono, className }: { options: ToggleOption[]; value: string[]; onChange: (next: string[]) => void; ariaLabel: string; mono?: boolean; className?: string }) {
+  const extra = value.filter((v) => !options.some((o) => o.id === v)).map((id): ToggleOption => ({ id, label: id, missing: true, title: '引用了但不存在' }))
+  return (
+    <div className={`ui-chips${className ? ` ${className}` : ''}`} role="group" aria-label={ariaLabel}>
+      {[...options, ...extra].map((o) => {
+        const on = value.includes(o.id)
+        return (
+          <button
+            key={o.id}
+            type="button"
+            className={`ui-tchip pressable${mono ? ' mono' : ''}${o.missing ? ' missing' : ''}`}
+            aria-pressed={on}
+            title={o.title}
+            onClick={() => onChange(on ? value.filter((v) => v !== o.id) : [...value, o.id])}
+          >
+            {on && <Check className="ui-chip-icon" aria-hidden />}
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * 自由输入的标签列表（glob、环境变量名）：回车或逗号添加，退格删最后一个；validate 返回错误文案时不加。
+ *   <TagInput ariaLabel="写范围" value={scope} onChange={setScope} placeholder="src/**" mono validate={(v) => (v.startsWith('/') ? '用相对路径' : undefined)} />
+ */
+export function TagInput({ value, onChange, placeholder, ariaLabel, mono, validate }: { value: string[]; onChange: (next: string[]) => void; placeholder?: string; ariaLabel: string; mono?: boolean; validate?: (v: string) => string | undefined }) {
+  const [text, setText] = useState('')
+  const [error, setError] = useState<string>()
+  const add = () => {
+    const v = text.trim().replace(/,$/, '')
+    if (!v) return
+    const bad = validate?.(v) ?? (value.includes(v) ? '已经有了' : undefined)
+    if (bad) return setError(bad)
+    onChange([...value, v])
+    setText('')
+    setError(undefined)
+  }
+  return (
+    <div className="ui-taginput">
+      <div className={`ui-taginput-box${error ? ' is-bad' : ''}`}>
+        {value.map((v) => (
+          <Chip key={v} className={mono ? 'mono' : undefined} onRemove={() => onChange(value.filter((x) => x !== v))}>
+            {v}
+          </Chip>
+        ))}
+        <input
+          className={`ui-taginput-input${mono ? ' mono' : ''}`}
+          value={text}
+          placeholder={value.length ? '' : placeholder}
+          aria-label={ariaLabel}
+          aria-invalid={!!error}
+          onChange={(e) => {
+            setText(e.target.value)
+            setError(undefined)
+            if (e.target.value.endsWith(',')) queueMicrotask(add)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              add()
+            } else if (e.key === 'Backspace' && !text && value.length) onChange(value.slice(0, -1))
+          }}
+          onBlur={add}
+        />
+      </div>
+      {error && <span className="ui-taginput-err" role="alert">{error}</span>}
     </div>
   )
 }

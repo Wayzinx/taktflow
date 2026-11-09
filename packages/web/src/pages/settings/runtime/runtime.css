@@ -1,6 +1,6 @@
 /* ---------------------------------------------------------------- 设置页「模型与 Harness」编辑（docs/design/27 §4） */
 
-/* 列表行：provider、角色路由 */
+/* 列表行：provider、默认路由 */
 .rt-rows {
   display: grid;
   margin: 0;
@@ -531,4 +531,18 @@
   .rt-acp-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+/* 默认路由行：角色档案自己写了 harness 时标出来（docs/design/30 §3） */
+.rt-override {
+  flex: none;
+  padding: 1px 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-label);
+  color: var(--text-3);
+  text-decoration: none;
+}
+.rt-override:hover {
+  border-color: var(--accent);
+  color: var(--accent-text);
 }

@@ -4,6 +4,7 @@ import { actingUserHeader } from '../lib/acting-user'
 import { createM4Http } from './client-m4'
 import { createM5Http } from './client-m5'
 import { createM6Http } from './client-m6'
+import { createM8Http } from './client-m8'
 import { fetchStream } from './sse'
 import { WorkflowConflictError, type DataSource, type EvalOutputSnapshot } from './source'
 
@@ -142,6 +143,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     ...createM4Http({ req, get, url: scoped, stream, stewardStream: (url, on) => fetchStream(url, on, () => actingUserHeader(true)) }),
     ...createM5Http({ req, get }),
     ...createM6Http({ req, get }),
+    ...createM8Http({ req, get }),
   }
 }
 

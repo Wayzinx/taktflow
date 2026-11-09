@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePresence } from '../lib/motion'
-import { BookOpen, Boxes, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Workflow, X } from 'lucide-react'
+import { BookOpen, Boxes, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Workflow, X, Zap } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
 import { spacePath } from '../lib/space'
@@ -179,6 +179,7 @@ function SpaceRail({ collapsed }: { collapsed: boolean }) {
     { to: '/knowledge', label: '知识库', icon: BookOpen, motion: 'open', active: path.startsWith('/knowledge') },
     { to: '/workflows', label: 'Workflow', icon: Workflow, motion: 'shift', active: path.startsWith('/workflows') },
     { to: '/eval', label: '评测', icon: FlaskConical, motion: 'swing', active: path === '/eval' },
+    { to: '/automations', label: '自动化', icon: Zap, motion: 'jolt', active: path === '/automations' },
     { to: '/settings', label: '空间设置', icon: Settings, motion: 'turn', active: path.startsWith('/settings') },
   ]
   const recent = project.data?.requirements.slice(0, 6) ?? []

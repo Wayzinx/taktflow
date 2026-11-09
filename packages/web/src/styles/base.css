@@ -250,6 +250,10 @@ p {
 .card-head .spacer {
   flex: 1;
 }
+/* 弹性占位：把后面的元素推到行尾（任何 flex 行里都能用） */
+.spacer {
+  flex: 1;
+}
 
 .section-label {
   font-size: var(--text-label);

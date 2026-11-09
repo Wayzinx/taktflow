@@ -186,7 +186,7 @@ export function CustomHarnessDrawer({ rt, editing, open, onClose }: { rt: Runtim
           {preset?.install && <span className="rt-note">安装：{preset.install}</span>}
         </Field>
       )}
-      <Field label="ID" req hint={editing ? '改名请删掉重加' : '角色路由里用它'}>
+      <Field label="ID" req hint={editing ? '改名请删掉重加' : '默认路由和角色档案里用它'}>
         <input className={`input mono${idBad && d.id ? ' is-bad' : ''}`} value={d.id} disabled={Boolean(editing)} placeholder={d.kind === 'acp' ? 'goose' : 'aider'} onChange={(e) => set({ id: e.target.value.trim() })} />
         {idBad && d.id && <span className="rt-field-err">{taken(d.id) ? `${d.id} 已被占用（内置或已添加）：换一个` : '只能用小写字母、数字、- 和 _'}</span>}
       </Field>

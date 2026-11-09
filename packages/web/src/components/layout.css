@@ -358,6 +358,9 @@
   .sb-item:hover svg[data-motion='turn'] {
     animation-name: nav-turn;
   }
+  .sb-item:hover svg[data-motion='jolt'] {
+    animation-name: nav-jolt;
+  }
   .sb-item:hover svg[data-motion='tiles'] {
     animation: none;
   }
@@ -402,6 +405,14 @@
   }
   65% {
     transform: rotate(7deg);
+  }
+}
+@keyframes nav-jolt {
+  35% {
+    transform: translate(-1px, -1.5px) rotate(-10deg);
+  }
+  70% {
+    transform: translate(0.5px, 0.5px) rotate(4deg);
   }
 }
 @keyframes nav-turn {

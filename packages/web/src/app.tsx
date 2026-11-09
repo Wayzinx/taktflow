@@ -28,6 +28,7 @@ const PAGES = {
   knowledge: () => import('./pages/knowledge'),
   knowledgeDetail: () => import('./pages/knowledge/detail'),
   uiGallery: () => import('./pages/ui-gallery'),
+  automations: () => import('./pages/automations'),
 }
 const AttentionPage = lazy(() => PAGES.attention().then((m) => ({ default: m.AttentionPage })))
 const EvalPage = lazy(() => PAGES.eval().then((m) => ({ default: m.EvalPage })))
@@ -42,6 +43,7 @@ const StewardDock = lazy(() => import('./components/steward/dock').then((m) => (
 const KnowledgeListPage = lazy(() => PAGES.knowledge().then((m) => ({ default: m.KnowledgeListPage })))
 const KnowledgeDetailPage = lazy(() => PAGES.knowledgeDetail().then((m) => ({ default: m.KnowledgeDetailPage })))
 const UiGalleryPage = lazy(() => PAGES.uiGallery().then((m) => ({ default: m.UiGalleryPage })))
+const AutomationsPage = lazy(() => PAGES.automations().then((m) => ({ default: m.AutomationsPage })))
 
 /** 首屏之后空闲时把各页面分包预取进缓存，切页时不再等下载。 */
 function usePrefetchPages() {
@@ -71,6 +73,7 @@ function SpaceRoutes({ path }: { path: string }) {
   if (path === '/settings') return <SettingsPage />
   if (path === '/workflows') return <WorkflowsListPage />
   if (path === '/eval') return <EvalPage />
+  if (path === '/automations') return <AutomationsPage />
   // 组件陈列（docs/design/30 §1）：不进导航，⌘K 搜"组件"可达
   if (path === '/ui') return <UiGalleryPage />
   // /settings/:tab 是 /settings?tab= 的别名（members / repos / skills / agents / workflows / knowledge / runtime）

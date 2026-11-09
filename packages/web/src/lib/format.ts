@@ -54,6 +54,18 @@ export function fmtDate(ts: string): string {
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** 将来的时间点说成人话：今天 18:30 / 明天 09:30 / 周一 18:30 / 11-20 18:30。 */
+export function fmtUpcoming(ts: string): string {
+  const d = new Date(ts)
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime()
+  const days = Math.round((day(d) - day(new Date())) / 86_400_000)
+  const hm = `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  if (days === 0) return `今天 ${hm}`
+  if (days === 1) return `明天 ${hm}`
+  if (days > 1 && days < 7) return `周${'日一二三四五六'[d.getDay()]} ${hm}`
+  return fmtDate(ts)
+}
+
 export function fmtTime(ts: string): string {
   const d = new Date(ts)
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`

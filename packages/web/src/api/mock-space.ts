@@ -28,19 +28,20 @@ const SKILLS = [
   skill('api-contract-review', '评审接口契约：错误码、幂等、分页和兼容性检查清单', '# 契约评审清单\n\n- [ ] 每个错误码都有触发条件和前端处理方式\n- [ ] 写接口说明幂等键\n- [ ] 列表接口有分页上限\n- [ ] 字段只增不删；改类型要走新版本'),
 ]
 
-const role = (r: string, title: string, description: string, harness: string, model: string, writeScope: string[], body: string) => ({
+const yamlList = (k: string, v?: string[]) => (v?.length ? `${k}:\n${v.map((w) => `  - ${w}`).join('\n')}\n` : '')
+const role = (r: string, title: string, description: string, harness: string, model: string, writeScope: string[], body: string, use: { skills?: string[]; knowledge?: string[] } = {}) => ({
   rec: { role: r, title, description, harness: { harness, model }, writeScope },
-  content: `---\nrole: ${r}\ntitle: ${title}\nharness: ${harness}\nmodel: ${model}\nwriteScope:\n${writeScope.map((w) => `  - ${w}`).join('\n')}\n---\n\n${body}\n`,
+  content: `---\nrole: ${r}\ntitle: ${title}\ndescription: ${description}\nharness: ${harness}\nmodel: ${model}\n${yamlList('skills', use.skills)}${yamlList('knowledge', use.knowledge)}${yamlList('writeScope', writeScope)}---\n\n${body}\n`,
 })
 
 const AGENTS = [
-  role('pm', '产品分析', '读 PRD 与纪要，产出澄清问题和 spec', 'claude-code', 'sonnet', ['spec/**', 'decisions/**'], '你负责把需求说清楚。只写"会影响实现或验收"的问题，每条验收标准写清输入和期望。'),
-  role('architect', '系分设计', '影响面分析、方案与接口契约', 'claude-code', 'sonnet', ['design/**'], '先查调用链确认影响面，再给方案。契约只描述行为规则，不写实现细节。'),
-  role('test-designer', '测分设计', '按 AC 设计用例，覆盖边界与异常', 'codex', 'gpt-5-codex', ['cases/**'], '每条 AC 至少一条正向、一条边界用例；用例 id 形如 TC-<模块>-<序号>。'),
-  role('dev', '研发', '在 worktree 里改代码并补单测', 'codex', 'gpt-5-codex', ['src/**', 'test/**'], '只改任务说明里列出的文件范围；每个改动配单测；不碰公共存放区里的基线产物。'),
-  role('reviewer', '代码评审', '按清单评审改动，给结论和问题清单', 'claude-code', 'sonnet', ['reports/review-*.md'], '结论只能是 通过 / 需修改；每个问题写严重程度、位置、建议。'),
+  role('pm', '产品分析', '读 PRD 与纪要，产出澄清问题和 spec', 'claude-code', 'sonnet', ['spec/**', 'decisions/**'], '你负责把需求说清楚。只写"会影响实现或验收"的问题，每条验收标准写清输入和期望。', { knowledge: ['wiki', 'git-history'] }),
+  role('architect', '系分设计', '影响面分析、方案与接口契约', 'claude-code', 'sonnet', ['design/**'], '先查调用链确认影响面，再给方案。契约只描述行为规则，不写实现细节。', { skills: ['api-contract-review'], knowledge: ['codegraph', 'orders-db', 'wiki'] }),
+  role('test-designer', '测分设计', '按 AC 设计用例，覆盖边界与异常', 'codex', 'gpt-5-codex', ['cases/**'], '每条 AC 至少一条正向、一条边界用例；用例 id 形如 TC-<模块>-<序号>。', { skills: ['money-format'], knowledge: ['wiki'] }),
+  role('dev', '研发', '在 worktree 里改代码并补单测', 'codex', 'gpt-5-codex', ['src/**', 'test/**'], '只改任务说明里列出的文件范围；每个改动配单测；不碰公共存放区里的基线产物。', { skills: ['money-format', 'csv-export'] }),
+  role('reviewer', '代码评审', '按清单评审改动，给结论和问题清单', 'claude-code', 'sonnet', ['reports/review-*.md'], '结论只能是 通过 / 需修改；每个问题写严重程度、位置、建议。', { skills: ['api-contract-review'], knowledge: ['rg', 'codegraph'] }),
   role('judge', '失败归因', '对失败用例做判决并路由修复', 'claude-code', 'sonnet', ['reports/verdict-*.json'], '判决类别：product_bug / case_defect / script_defect / env_issue / flaky / requirement_gap。证据不足时判 unknown，不要猜。'),
-  role('automation', '自动化脚本', '把用例转成可执行脚本', 'codex', 'gpt-5-codex', ['e2e/**'], '遵循 playwright-e2e 技能；脚本失败先自查选择器，再上报。'),
+  role('automation', '自动化脚本', '把用例转成可执行脚本', 'codex', 'gpt-5-codex', ['e2e/**'], '遵循 playwright-e2e 技能；脚本失败先自查选择器，再上报。', { skills: ['playwright-e2e'], knowledge: ['rg'] }),
 ]
 
 function seededSpace(): MockSpace {

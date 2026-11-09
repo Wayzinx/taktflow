@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
-import { ArrowDown, Crown, GraduationCap, Pencil, Plus, Route, Signpost, Trash2, X, type LucideIcon } from 'lucide-react'
+import { useAsync } from '../../../api'
+import { Link } from '../../../lib/router'
+import { ArrowDown, Crown, GraduationCap, Pencil, Plus, Signpost, Trash2, X, type LucideIcon } from 'lucide-react'
 import type { HarnessInfo, HarnessSelector, RuntimeSystemRole } from '@taktflow/core'
 import { EmptyState, ReasonDialog, Segmented, toast, useFlashRows, useStagger } from '../../../components/ui'
-import { EditorDrawer, EFFORTS, Field, type RuntimeApi } from './shared'
+import { EditorDrawer, EFFORTS, Field, selectorText, type RuntimeApi } from './shared'
 import { BeeGlyph } from '../../../components/identity'
 
 const SYSTEM: Array<{ id: RuntimeSystemRole; label: string; hint: string; icon: LucideIcon }> = [
@@ -15,7 +17,7 @@ const SYSTEM: Array<{ id: RuntimeSystemRole; label: string; hint: string; icon: 
 type Target = { kind: 'role'; id: string; isNew?: boolean } | { kind: 'system'; id: RuntimeSystemRole }
 
 /** harness + 模型 + effort 的一行选择器；备选也用它。 */
-function SelectorFields({ value, onChange, harnesses, models, compact }: { value: HarnessSelector; onChange: (v: HarnessSelector) => void; harnesses: HarnessInfo[]; models: string[]; compact?: boolean }) {
+export function SelectorFields({ value, onChange, harnesses, models, compact }: { value: HarnessSelector; onChange: (v: HarnessSelector) => void; harnesses: HarnessInfo[]; models: string[]; compact?: boolean }) {
   const h = harnesses.find((x) => x.id === value.harness)
   return (
     <div className={`rt-sel${compact ? ' compact' : ''}`}>
@@ -69,22 +71,22 @@ function RouteDrawer({ rt, harnesses, target, open, onClose }: { rt: RuntimeApi;
   const save = async (reason: string) => {
     if (target?.kind === 'system') await rt.patch({ system: { [target.id]: d.sel } }, reason)
     else await rt.patch({ roles: { [d.role]: d.sel } }, reason)
-    toast(`${sys ? sys.label : `角色 ${d.role}`} 的路由已更新`, { body: '新开的节点马上用新路由；正在跑的节点不受影响。' })
+    toast(`${sys ? sys.label : `角色 ${d.role}`} 的${sys ? '路由' : '默认路由'}已更新`, { body: '新开的节点马上用新路由；正在跑的节点不受影响。' })
   }
 
   return (
     <EditorDrawer
       open={open}
       onClose={onClose}
-      title={sys ? `系统角色：${sys.label}` : isNew ? '添加角色路由' : `角色路由：${d.role}`}
-      description={sys ? sys.hint : '这个角色的节点默认用哪个 harness、哪个模型；Agent 配置或节点里写了的以那边为准。'}
+      title={sys ? `系统角色：${sys.label}` : isNew ? '添加默认路由' : `默认路由：${d.role}`}
+      description={sys ? sys.hint : '角色档案里没写 harness 时，这个角色的节点用哪个 harness、哪个模型。优先级：节点 > 角色档案 > 默认路由 > 内置默认。'}
       canSave={Boolean(d.sel.harness) && !roleBad && (!isNew || Boolean(d.role))}
       onSave={save}
       onReload={rt.reload}
       width={520}
     >
       {isNew && (
-        <Field label="角色" req hint="和 Agent 配置里的 role 对上">
+        <Field label="角色" req hint="和角色档案的 role 对上">
           <input className={`input mono${roleBad && d.role ? ' is-bad' : ''}`} value={d.role} placeholder="dev" onChange={(e) => setD((x) => ({ ...x, role: e.target.value.trim() }))} />
           {roleBad && d.role && <span className="rt-field-err">{cfg.roles[d.role] ? `已经有 ${d.role} 的路由了：直接编辑它` : '小写字母开头，只能用小写字母、数字和 -'}</span>}
         </Field>
@@ -133,13 +135,16 @@ function SelChips({ s, harnesses }: { s?: HarnessSelector; harnesses: HarnessInf
   )
 }
 
-/** 角色路由 + 系统角色：一行一个，点编辑开抽屉。 */
+/** 默认路由（角色档案没写 harness 时用）+ 系统角色：一行一个，点编辑开抽屉。 */
 export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: HarnessInfo[] }) {
   const cfg = rt.cfg!
   const [view, setView] = useState<'roles' | 'system'>('roles')
   const [drawer, setDrawer] = useState<{ open: boolean; target?: Target }>({ open: false })
   const [removing, setRemoving] = useState<string>()
   const roles = useMemo(() => Object.entries(cfg.roles).sort(([a], [b]) => a.localeCompare(b)), [cfg.roles])
+  // 角色档案自己写了 harness 的，默认路由对它不生效（docs/design/30 §3）
+  const profiles = useAsync((d) => d.agentRoles().catch(() => []), [])
+  const pinned = useMemo(() => new Map((profiles.data ?? []).filter((p) => p.harness).map((p) => [p.role, p.harness!] as const)), [profiles.data])
   const flash = useFlashRows(roles.map(([r]) => r))
   const st = useStagger(roles.length)
   const open = (target: Target) => setDrawer({ open: true, target })
@@ -152,24 +157,24 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
           value={view}
           onChange={setView}
           size="sm"
-          ariaLabel="角色 / 系统角色"
+          ariaLabel="默认路由 / 系统角色"
           options={[
-            { value: 'roles', label: '角色', count: roles.length || undefined },
+            { value: 'roles', label: '默认路由', count: roles.length || undefined },
             { value: 'system', label: '系统角色' },
           ]}
         />
         <span className="spacer" />
         {view === 'roles' && (
           <button type="button" className="btn btn-sm" onClick={() => open({ kind: 'role', id: '', isNew: true })}>
-            <Plus aria-hidden /> 添加角色
+            <Plus aria-hidden /> 添加默认路由
           </button>
         )}
       </div>
       {view === 'roles' ? (
         roles.length === 0 ? (
-          <EmptyState compact icon={Route} title="还没有角色路由" body="给 dev、reviewer 这样的角色指定默认 harness 和模型；没指定的用 Agent 配置或空间缺省。" action={<button type="button" className="btn btn-sm btn-primary" onClick={() => open({ kind: 'role', id: '', isNew: true })}>添加角色</button>} />
+          <EmptyState compact title="还没有默认路由" body="给 dev、reviewer 这样的角色指定默认 harness 和模型；角色档案里写了的以档案为准。" action={<button type="button" className="btn btn-sm btn-primary" onClick={() => open({ kind: 'role', id: '', isNew: true })}>添加默认路由</button>} />
         ) : (
-          <ul className="rt-rows" aria-label="角色路由">
+          <ul className="rt-rows" aria-label="默认路由">
             {roles.map(([role, s], i) => {
               const sx = st(i)
               return (
@@ -177,11 +182,16 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
                   <div className="rt-row-main">
                     <span className="mono rt-id">{role}</span>
                     <SelChips s={s} harnesses={harnesses} />
+                    {pinned.has(role) && (
+                      <Link to={`/settings?tab=agents&name=${encodeURIComponent(role)}`} className="rt-override" title={`角色档案里写了 ${selectorText(pinned.get(role)!)}，这一行对它不生效`}>
+                        被角色档案覆盖
+                      </Link>
+                    )}
                     <span className="rt-row-acts">
                       <button type="button" className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'role', id: role })}>
                         <Pencil aria-hidden /> 编辑
                       </button>
-                      <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label={`删除 ${role} 的路由`} onClick={() => setRemoving(role)}>
+                      <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label={`删除 ${role} 的默认路由`} onClick={() => setRemoving(role)}>
                         <Trash2 />
                       </button>
                     </span>
@@ -219,12 +229,12 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
         open={Boolean(removing)}
         onClose={() => setRemoving(undefined)}
         risk="dangerous"
-        title={`删除角色 ${removing ?? ''} 的路由`}
-        description="删除后这个角色用 Agent 配置里写的 harness，没写就用空间缺省。"
+        title={`删除角色 ${removing ?? ''} 的默认路由`}
+        description="删除后这个角色用角色档案里写的 harness，没写就用内置默认。"
         confirmLabel="删除"
         onSubmit={async (reason) => {
           await rt.patch({ roles: { [removing!]: null } }, reason)
-          toast(`已删除角色 ${removing} 的路由`)
+          toast(`已删除角色 ${removing} 的默认路由`)
         }}
       />
     </div>

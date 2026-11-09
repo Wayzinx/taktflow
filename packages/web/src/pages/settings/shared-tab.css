@@ -1,0 +1,162 @@
+/* 共享资源（docs/design/30 §3）：仓库一行 + 角色 × 技能 / 知识库的矩阵。 */
+.shared {
+  display: grid;
+  gap: var(--sp-4);
+}
+.shared-repos {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+}
+.shared-repos > svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-3);
+}
+.shared-repos-text {
+  display: grid;
+  gap: 1px;
+  font-size: var(--text-ui);
+}
+.shared-repos-text b {
+  font-weight: 600;
+  color: var(--text);
+}
+.shared-repos-text .faint {
+  font-size: var(--text-meta);
+}
+.shared-repos-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.shared-table-wrap {
+  overflow-x: auto;
+}
+.shared-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-ui);
+}
+.shared-table th,
+.shared-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--divider);
+  text-align: left;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.shared-table thead th {
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.shared-group {
+  text-align: center !important;
+  font-weight: 600 !important;
+  color: var(--text-2) !important;
+}
+/* 列名竖着排太窄：斜 45° 会难读，这里保持横排但收窄，悬停看说明 */
+.shared-col {
+  max-width: 96px;
+  text-align: center !important;
+}
+.shared-col span {
+  display: inline-block;
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+.shared-table .grp-start {
+  border-left: 1px solid var(--divider);
+}
+.shared-row {
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.shared-row:hover,
+.shared-row:focus-visible {
+  background: var(--surface-hover);
+  outline: none;
+}
+.shared-role {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 200px;
+  max-width: 260px;
+}
+.shared-role .truncate {
+  font-weight: 500;
+  color: var(--text);
+}
+.shared-role .faint {
+  font-size: var(--text-meta);
+}
+.shared-run {
+  max-width: 220px;
+}
+.shared-run > span {
+  display: block;
+}
+.shared-run .faint {
+  font-size: var(--text-label);
+}
+.shared-cell {
+  text-align: center !important;
+}
+.shared-yes,
+.shared-all {
+  width: 15px;
+  height: 15px;
+  vertical-align: middle;
+}
+.shared-yes {
+  color: var(--accent-text);
+  stroke-width: 2.5;
+}
+.shared-all {
+  color: var(--text-3);
+  opacity: 0.55;
+}
+.shared-no {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  vertical-align: middle;
+}
+.shared-scope {
+  min-width: 140px;
+  max-width: 220px;
+  white-space: normal !important;
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.shared-table tfoot th,
+.shared-table tfoot td {
+  border-bottom: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.shared-table tfoot .unused {
+  color: var(--st-waiting);
+  font-weight: 600;
+}
+.shared-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--text-meta);
+}
+.shared-legend svg {
+  width: 13px;
+  height: 13px;
+}

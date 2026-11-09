@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { BookOpen, Boxes, FileText, Inbox, LayoutDashboard, ListTodo, Monitor, Moon, Play, Plus, Settings, Shapes, Sun, Workflow, type LucideIcon } from 'lucide-react'
+import { BookOpen, Boxes, FileText, Inbox, LayoutDashboard, LayoutGrid, ListTodo, Monitor, Moon, Play, Plus, Settings, Shapes, Sun, UserRoundCog, Workflow, Zap, type LucideIcon } from 'lucide-react'
 import { isMac } from '../../lib/shortcuts'
 import { askSteward, openCreateRequirement, openCreateSpace, openSteward } from '../../lib/ui-store'
 import type { CommandInfo, RequirementSummary, RunSummary } from '@taktflow/core'
@@ -68,6 +68,9 @@ const PAGES: Array<[string, string, LucideIcon, string]> = [
   ['/workflows', 'Workflow', Workflow, 'workflows pipeline liushuixian bianji'],
   ['/settings', '空间设置', Settings, 'settings space members repos models harness shezhi'],
   ['/settings?tab=lessons', '经验库', BookOpen, 'lessons jingyan 经验'],
+  ['/automations', '自动化', Zap, 'automations schedule cron im feishu slack webhook zidonghua 定时 通知 飞书 汇报'],
+  ['/settings?tab=agents', '角色', UserRoundCog, 'roles agents harness model skills juese 角色 技能'],
+  ['/settings?tab=shared', '共享资源', LayoutGrid, 'shared resources skills knowledge repos gongxiang 共享 资源'],
   ['/ui', '组件陈列', Shapes, 'ui components gallery design system zujian 组件 规范 头像 图标'],
 ]
 

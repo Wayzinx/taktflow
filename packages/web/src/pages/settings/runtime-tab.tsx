@@ -69,7 +69,7 @@ function Stats({ harnesses, models, cfg }: { harnesses?: HarnessInfo[]; models?:
         foot={missingKeys.length ? <>缺少：{[...new Set(missingKeys.map((m) => m.provider))].join(' · ')}</> : local ? <><b>{local}</b> 个存在本机密钥库 · 其余来自环境变量</> : '只检查密钥在不在，不读取值'}
       />
       <StatCard
-        label="角色路由"
+        label="默认路由"
         icon={<Route />}
         value={<CountUp value={bound.reduce((s, h) => s + h.roles.length, 0)} />}
         foot={bound.length ? bound.map((h) => `${h.id} ${h.roles.length}`).join(' · ') : '还没有角色指定默认 harness'}
