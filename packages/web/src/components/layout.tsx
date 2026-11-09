@@ -19,6 +19,7 @@ import './layout.css'
 import './topbar.css'
 import { usePulse } from './pulse'
 import { BeeGlyph } from './identity'
+import { onTabReturn } from '../lib/visible'
 
 // ---------------------------------------------------------------- 面包屑：页面声明，顶栏渲染
 
@@ -58,19 +59,24 @@ function useStewardUnreadSync() {
   const ds = useSource()
   useEffect(() => {
     let alive = true
-    void ds
-      .stewardFeed()
-      .then((items) => {
-        const last = items.find((i) => i.type === 'unread')
-        if (alive && last && last.type === 'unread') setStewardUnread(last.count)
-      })
-      .catch(() => undefined)
+    const load = () =>
+      void ds
+        .stewardFeed()
+        .then((items) => {
+          const last = items.find((i) => i.type === 'unread')
+          if (alive && last && last.type === 'unread') setStewardUnread(last.count)
+        })
+        .catch(() => undefined)
+    load()
     const off = ds.subscribeStewardFeed((item) => {
       if (item.type === 'unread') setStewardUnread(item.count)
     })
+    // 后台标签页的流断开过，回来补拉一次未读数
+    const offReturn = onTabReturn(load)
     return () => {
       alive = false
       off()
+      offReturn()
     }
   }, [ds])
 }

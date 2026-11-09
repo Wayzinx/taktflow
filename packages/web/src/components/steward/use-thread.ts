@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Proposal, StewardContextRef, StewardMessage, StewardPostRequest, StewardRuntime, StewardStreamEvent, StewardThread } from '@taktflow/core'
 import { useSource } from '../../api'
 import { applyStreamEvent, mergeDetail, settleLocal } from './thread-reducer'
+import { onTabReturn } from '../../lib/visible'
 
 /**
  * 一个管家会话的实时状态：拉详情 + 订阅线程 SSE（message / thinking / tool / delta / proposal / done / error），
@@ -88,6 +89,21 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
       setMessages((cur) => applyStreamEvent(cur, e))
     }
     return ds.subscribeSteward(threadId, on)
+  }, [ds, threadId])
+
+  // 后台标签页的流断开过（lib/visible），回来静默补拉一次：回复可能已经写完
+  useEffect(() => {
+    if (!threadId) return
+    return onTabReturn(() => {
+      ds.stewardThread(threadId).then(
+        (d) => {
+          setMessages((cur) => mergeDetail(cur, d.messages))
+          setProposals((cur) => ({ ...cur, ...Object.fromEntries(d.proposals.map((p) => [p.id, p])) }))
+          if (d.messages.at(-1)?.role !== 'user') setWaiting(false)
+        },
+        () => undefined,
+      )
+    })
   }, [ds, threadId])
 
   // 消息引用了还没拿到的提案（新会话的流在提案事件之后才连上，proposal 事件就错过了）：补拉一次详情

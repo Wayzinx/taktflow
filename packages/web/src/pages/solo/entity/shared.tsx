@@ -7,6 +7,7 @@ import { LaneTrack } from '../../../components/viz'
 import { refPath } from '../../../components/viz/ref'
 import { fmtRelative } from '../../../lib/format'
 import { Link } from '../../../lib/router'
+import { onTabReturn } from '../../../lib/visible'
 
 /** 刷新计数：bump 一次，依赖它的查询就重拉一次。 */
 export function useTick(): [number, () => void] {
@@ -35,8 +36,10 @@ export function useRunEvents(runId: string | undefined, live: boolean, onBatch: 
         cb.current()
       }, 400)
     })
+    const offReturn = onTabReturn(() => cb.current())
     return () => {
       off()
+      offReturn()
       if (timer) clearTimeout(timer)
     }
   }, [ds, runId, live])

@@ -4,6 +4,8 @@
  * 行为对齐 EventSource：断线 3 秒后重连；4xx（除 408 / 429）不再重连，避免无限重试一个打不开的流。
  */
 
+import { whileVisible } from '../lib/visible'
+
 /** 从缓冲里切出完整的事件（空行分隔），返回每个事件的 data（多行 data 用 \n 连接）与剩余缓冲。 */
 export function parseSse(buffer: string): { data: string[]; rest: string } {
   const text = buffer.replace(/\r\n?/g, '\n')
@@ -19,7 +21,12 @@ export function parseSse(buffer: string): { data: string[]; rest: string } {
   return { data, rest: text.slice(start) }
 }
 
+/** 后台标签页隐藏够久会断开、回来再连（lib/visible）；这些流没有游标，消费方用 onTabReturn 补拉。 */
 export function fetchStream<T>(url: string, on: (v: T) => void, headers: () => Record<string, string>, retryMs = 3000): () => void {
+  return whileVisible(() => openFetchStream(url, on, headers, retryMs))
+}
+
+function openFetchStream<T>(url: string, on: (v: T) => void, headers: () => Record<string, string>, retryMs: number): () => void {
   let closed = false
   let ctrl: AbortController | undefined
   let timer: ReturnType<typeof setTimeout> | undefined

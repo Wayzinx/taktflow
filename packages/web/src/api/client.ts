@@ -1,6 +1,7 @@
 import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
 import { actingUserHeader } from '../lib/acting-user'
+import { whileVisible } from '../lib/visible'
 import { createM4Http } from './client-m4'
 import { createM5Http } from './client-m5'
 import { createM6Http } from './client-m6'
@@ -147,19 +148,26 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
   }
 }
 
-/** SSE：默认事件（无 event: 行）交给 on；named 里的具名事件（如群聊的 `event: lead`）分别处理。 */
+/**
+ * SSE：默认事件（无 event: 行）交给 on；named 里的具名事件（如群聊的 `event: lead`）分别处理。
+ * 后台标签页隐藏够久会断开（lib/visible），回来时带 after=最后收到的事件 id 重连，运行和群聊的流据此补上中间的事件。
+ */
 export function stream<T>(url: string, on: (v: T) => void, named?: Record<string, (data: unknown) => void>): () => void {
-  const es = new EventSource(url)
-  const parse = (raw: unknown, fn: (v: never) => void) => {
-    try {
-      fn(JSON.parse(raw as string) as never)
-    } catch {
-      // 非 JSON 的保活行忽略
+  let last = ''
+  return whileVisible(() => {
+    const es = new EventSource(last ? `${url}${url.includes('?') ? '&' : '?'}after=${encodeURIComponent(last)}` : url)
+    const parse = (m: MessageEvent, fn: (v: never) => void) => {
+      if (m.lastEventId) last = m.lastEventId
+      try {
+        fn(JSON.parse(m.data as string) as never)
+      } catch {
+        // 非 JSON 的保活行忽略
+      }
     }
-  }
-  es.onmessage = (m) => parse(m.data, on)
-  for (const [name, fn] of Object.entries(named ?? {})) es.addEventListener(name, (m) => parse((m as MessageEvent).data, fn))
-  return () => es.close()
+    es.onmessage = (m) => parse(m, on)
+    for (const [name, fn] of Object.entries(named ?? {})) es.addEventListener(name, (m) => parse(m as MessageEvent, fn))
+    return () => es.close()
+  })
 }
 
 /** 真实 API 是否可达（1.5 秒超时）。 */

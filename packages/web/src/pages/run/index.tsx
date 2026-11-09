@@ -21,6 +21,7 @@ import { RunCounters } from './run-counters'
 import { TimeView } from './time/time-view'
 import './run.css'
 import './run-motion.css'
+import { onTabReturn } from '../../lib/visible'
 
 /** 整数读数：过渡中途也按整数显示（CountUp 默认格式会在中途露出小数）。 */
 
@@ -128,8 +129,14 @@ export function RunPage({ runId }: { runId: string }) {
         setLiveTick((t) => t + 1)
       }, 400)
     })
+    // 后台标签页断开过流：回来时重拉一次（从没收到过事件时没有游标可补）
+    const offReturn = onTabReturn(() => {
+      reload.current.run()
+      setLiveTick((t) => t + 1)
+    })
     return () => {
       off()
+      offReturn()
       if (timer) clearTimeout(timer)
     }
   }, [ds, runId, live])
