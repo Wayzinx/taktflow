@@ -17,7 +17,9 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
     for (const [id, adapter] of Object.entries(adapters)) {
       if (id !== 'native' && (!['claude-code', 'codex'].includes(id) || !adapter.capabilities?.mcp)) continue
       const availability = id === 'native' ? { ok: true } : await adapter.available().catch(() => ({ ok: false }))
-      const models = id === 'native' || adapter.capabilities?.customProvider ? Object.entries(config?.models ?? {}) : [[undefined, undefined] as const]
+      // 外部 harness 总能用自己的登录跑（自带模型）；能换 provider 的再列出空间里配的每个模型
+      const own = [[undefined, undefined] as const]
+      const models = id === 'native' ? Object.entries(config?.models ?? {}) : adapter.capabilities?.customProvider ? [...own, ...Object.entries(config?.models ?? {})] : own
       for (const [alias, model] of models) {
         const raw = model && config?.providers?.[model.provider]
         const configured = raw && providerConfig(model!.provider, raw)

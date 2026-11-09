@@ -72,6 +72,8 @@ it('匹配备用 provider 协议，runtime 校验与 native 会话选择优先�
   f.adapters['claude-code'] = adapter('claude-code', ['anthropic-messages'])
   const choices = await f.runtime.runtimeChoices!(prefs)
   expect(choices.find(c => c.harness === 'claude-code' && c.model === 'good')?.available).toBe(true)
+  // 能换 provider 的 harness 也列出"自带模型"，排在空间模型前面
+  expect(choices.filter(c => c.harness === 'claude-code')[0]).toMatchObject({ model: undefined, modelLabel: expect.stringContaining('自带模型'), available: true })
   await expect(f.runtime.resolveRuntime!(prefs, { harness: 'native', model: 'missing' })).rejects.toMatchObject({ status: 400 })
   await expect(f.runtime.resolveRuntime!(prefs, { harness: 'unknown' })).rejects.toMatchObject({ status: 400 })
   const native = await f.runtime.resolveRuntime!({ ...prefs, harness: { harness: 'codex', model: 'good' } }, { model: 'good' })
