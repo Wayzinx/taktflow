@@ -197,7 +197,6 @@ function Topbar({ onMenu, embedded = false }: { onMenu: () => void; embedded?: b
           <span className="kbd">{isMac ? '⌘K' : 'Ctrl K'}</span>
         </button>
       )}
-      <span className={`takt-track${running > 0 ? ' running' : ''}`} aria-hidden />
     </header>
   )
 }

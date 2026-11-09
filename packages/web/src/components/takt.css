@@ -87,39 +87,6 @@
   animation: takt-beat var(--takt) var(--ease-in-out) infinite;
 }
 
-/* ---------------------------------------------------------------- 顶栏下沿的传送带刻度 */
-.takt-track {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: -1px;
-  height: 4px;
-  pointer-events: none;
-  background: repeating-linear-gradient(90deg, var(--border-strong) 0 1px, transparent 1px 16px) bottom / 100% 3px no-repeat;
-  -webkit-mask: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  mask: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
-  opacity: 0.8;
-}
-/* 运行中：一段节拍橙沿刻度按拍子一格格推进 */
-.takt-track.running::after {
-  content: '';
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 64px;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent));
-  animation: takt-conveyor calc(var(--takt) * 24) steps(48) infinite;
-}
-@keyframes takt-conveyor {
-  from {
-    transform: translateX(-64px);
-  }
-  to {
-    transform: translateX(100vw);
-  }
-}
-
 /* 减少动态效果：所有节律静止，但"在跑"的信号仍可见 */
 @media (prefers-reduced-motion: reduce) {
   .takt-ruler.running > span {
@@ -130,10 +97,5 @@
   }
   .takt-beat.live .takt-beat-dot {
     animation: none;
-  }
-  .takt-track.running::after {
-    animation: none;
-    left: 12%;
-    transform: none;
   }
 }
