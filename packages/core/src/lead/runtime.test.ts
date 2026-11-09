@@ -51,6 +51,18 @@ async function setup(turns: Array<LeadTurn | Record<string, unknown>>, hooks: { 
 }
 const task = (overrides: Partial<TaskSpec> = {}): TaskSpec => ({ role: 'pm', title: '修改 AC-2', instructions: '修改 PRD AC-2', inputs: ['spec/prd.md'], outputs: [{ path: 'spec/prd.md', kind: 'spec' }], writeScope: ['requirements/**/spec/**'], ...overrides })
 
+it('前台 resumeTask 保留执行期 rejection，不把运行中状态当作成功返回', async () => {
+  const { stores, lead, requirement, message, options } = await setup([])
+  const dispatched = await lead.executeAction({ type: 'dispatch_task', task: task({ inputs: [], outputs: [], review: false }) }, requirement.id, await message(), undefined, 0)
+  await lead.drain()
+  const state = (await stores.runs.get(dispatched.refs!.taskRunId!))!
+  await stores.runs.save({ ...state, status: 'running' })
+  const failing = createLeadRuntime({ ...options, engineFactory: deps => ({ ...options.engineFactory(deps),
+    resume: async (_id, _workflow, opts) => { opts?.onStarted?.(); throw new Error('模拟执行期存储异常') },
+  }) })
+  await expect(failing.resumeTask(state.runId, { foreground: true })).rejects.toThrow('模拟执行期存储异常')
+})
+
 it.each([true, false])('重发创建新运行并在原 Lead 运行记账；无父运行仍可重发（parent=%s）', async parent => {
   const spec = task({ inputs: [], outputs: [], review: false })
   const action = { type: 'dispatch_task', task: spec } as const
@@ -311,11 +323,13 @@ it('start_run 启动普通 workflow；resume_run 不代答人工待办，人工�
   expect(await stores.runs.get(runId)).toMatchObject({ workflowId: workflow.id, status: 'waiting_human', kind: 'workflow' })
   turns.push({ reply: '继续', actions: [{ type: 'resume_run', runId }] })
   await send()
+  await lead.drain()
   expect((await stores.runs.get(runId))!.status).toBe('waiting_human')
   const item = (await stores.attention.list({ pending: true })).find((item) => item.runId === runId)!
   await stores.attention.answer(item.requestId, { decision: 'approve', by: { type: 'human', id: 'alice' } })
   turns.push({ reply: '继续', actions: [{ type: 'resume_run', runId }] })
   await send()
+  await lead.drain()
   expect((await stores.runs.get(runId))!.status).toBe('succeeded')
 })
 
@@ -339,6 +353,7 @@ it('临时任务评审进入人工裁决后，重建运行时可从保存的 Tas
   const answered = await stores.attention.answer(item.requestId, { decision: 'choice', answer: '放行', by: { type: 'human', id: 'alice' } })
   const restarted = createLeadRuntime(options)
   expect(await restarted.onAttention(answered)).toBe(true)
+  await restarted.drain()
   expect(await stores.runs.get(runId)).toMatchObject({ status: 'succeeded', origin: (before as TaskRunState).origin })
   expect(requests.filter((request) => request.env?.TAKT_ROLE === 'pm')).toHaveLength(1)
   expect(await stores.events.verify(runId)).toEqual({ ok: true })
@@ -594,7 +609,7 @@ it.each(['dead', 'missing', 'live'] as const)('run.resume 命令区分中断与�
     { id: 'next', title: '下一步', kind: 'script', needs: ['first'], run: next },
   ] }
   const runId = 'crashed'
-  const { stores, requirement, send } = await setup([{ reply: '恢复运行', actions: [{ type: 'resume_run', runId }] }], {
+  const { stores, requirement, send, lead } = await setup([{ reply: '恢复运行', actions: [{ type: 'resume_run', runId }] }], {
     workflows: { load: async () => workflow, get: async () => ({ rev: '1', source: '' }), replaceSource: async () => {} },
   })
   await stores.runs.create({ runId, workflowId: workflow.id, workflowVersion: workflow.version, requirementId: requirement.id,
@@ -606,6 +621,7 @@ it.each(['dead', 'missing', 'live'] as const)('run.resume 命令区分中断与�
     await writeFile(join(stores.taktDir, 'runs', runId, 'lease.json'), JSON.stringify({ pid: owner === 'live' ? process.pid : Number(stdout.trim()), host: hostname(), startedAt: new Date().toISOString() }))
   }
   const turn = (await send())!
+  await lead.drain()
   expect(turn.results[0]).toMatchObject({ ok: owner !== 'live', ...(owner === 'live' ? { message: '运行仍在执行' } : {}) })
   expect(next).toHaveBeenCalledTimes(owner === 'live' ? 0 : 1)
   expect((await stores.runs.get(runId))!.status).toBe(owner === 'live' ? 'running' : 'succeeded')
@@ -631,5 +647,6 @@ it('启动异常后移除本进程引擎记录，中断运行仍能继续', asyn
   const runId = started.refs!.runId!
   expect((await stores.runs.get(runId))!.status).toBe('running')
   expect(await lead.executeAction({ type: 'resume_run', runId }, requirement.id, trigger, undefined, 0)).toMatchObject({ ok: true })
+  await lead.drain()
   expect(next).toHaveBeenCalledTimes(1)
 })

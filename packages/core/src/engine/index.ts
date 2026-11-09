@@ -27,7 +27,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
   const active = new Map<string, Runtime>()
   const guard = new WriteGuard(deps.stores.projectDir, relative(deps.stores.projectDir, deps.stores.paths.requirements))
   const timestamp = () => (opts.now?.() ?? new Date()).toISOString()
-  async function execute(runtime: Runtime, resume = false): Promise<RunState> {
+  async function execute(runtime: Runtime, resume = false, onStarted?: () => void): Promise<RunState> {
     const id = runtime.state.runId
     if (active.has(id)) throw new Error(`运行正在执行：${id}`)
     active.set(id, runtime)
@@ -36,6 +36,8 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       if (persisted?.status === 'cancelled') return persisted
       await runtime.prepare()
       if (resume) await runtime.restoreAnswers()
+      // 通知只是启动回执，调用方的异常不能打断已经接手的运行。
+      try { onStarted?.() } catch {}
       return await runtime.run()
     } finally { active.delete(id) }
   }
@@ -77,7 +79,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         return execute(new Runtime(runtimeDeps, state, input.workflow, opts, guard))
       })
     },
-    async resume(runId, workflow) {
+    async resume(runId, workflow, resumeOptions) {
       return withRunLease(deps.stores, runId, async () => {
         const runtimeDeps = await currentProfiles()
         if (active.has(runId)) throw new Error(`运行正在执行：${runId}`)
@@ -87,7 +89,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         if (state.status === 'cancelled') return state
         workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
         validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
-        return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true)
+        return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true, resumeOptions?.onStarted)
       })
     },
     async cancel(runId) {

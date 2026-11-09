@@ -154,7 +154,8 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     const answer = input.answer === undefined ? undefined : text(input.answer, 'answer')
     if (decision === undefined && answer === undefined) throw new HttpError(400, 'decision 或 answer 至少填写一项')
     const item = await execute(stores, request, 'attention.answer', { requestId: params.requestId, decision, answer }, typeof input.reason === 'string' ? input.reason : '人工回答待办') as AttentionItem
-    if (item.kind !== 'assumption') await onAnswer?.(item)
+    // 接入运行时命令后，attention.answer 已负责续跑；回调只用于没有运行时的存储模式。
+    if (!catalog.getCommands && item.kind !== 'assumption') await onAnswer?.(item)
     return item
   })
   add('GET', '/api/harnesses', ({ stores }) => {

@@ -1,14 +1,15 @@
 import { loadRuntimeProfiles } from '../runtime-profiles.js'
 import { access } from 'node:fs/promises'
 import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
-import { RuntimeConfigError, validateHarnessSelector, type AttentionItem, type ProjectStores, type TaktConfig } from '@taktflow/core'
+import { resumeInBackground, RuntimeConfigError, validateHarnessSelector, type AttentionItem, type ProjectStores, type TaktConfig } from '@taktflow/core'
 import { createHarnesses } from '@taktflow/harness'
 import { createPrinter } from '../output.js'
 import { engineDependencies, loadRuntime, webDir, type ProjectContext } from '../project.js'
 import { serializeRun } from '../resume-lock.js'
 import { resumeOnce } from './run.js'
+import { executeCommand } from '../execute-command.js'
 import { createRuntimeCatalog } from '../catalog.js'
-import { createProjectLead, watchLeadEvents } from '../lead.js'
+import { createProjectLead, watchLeadEvents, type ProjectLead } from '../lead.js'
 import { validateRuntime } from '../runtime-validation.js'
 import { normalizeConfig, runtimeProviders, redactConfigError } from '../runtime-config.js'
 
@@ -191,7 +192,8 @@ export async function runServe(options: ServeOptions): Promise<void> {
     ...(options.host === undefined ? {} : { host: options.host }),
     ...(dir === undefined ? {} : { webDir: dir }),
     onSpaceAnswer: async (dir, item) => {
-      if (!await runtimes.get(dir)!.lead.onAttention(item)) await resumeAfterAnswer(runtimes.get(dir)!.context, item)
+      const runtime = runtimes.get(dir)!
+      await resumeAfterAnswer(runtime.context, item, runtime.lead)
     },
     prepareRuntime: async (stores, config) => {
       const runtime = runtimes.get(stores.projectDir)!
@@ -229,15 +231,25 @@ export async function runServe(options: ServeOptions): Promise<void> {
 }
 
 /**
- * Web 上回答待办后，在进程内 resume 对应运行。
- * 服务每请求重新 openProject，所以这里用 CLI 启动时加载的 context 也能读到最新状态。
+ * 自动交还待办走同一个 Lead 后台续跑入口；无 Lead 的旧调用保留 CLI 保存的运行选项。
  */
-export async function resumeAfterAnswer(context: ProjectContext, item: AttentionItem): Promise<void> {
+export async function resumeAfterAnswer(context: ProjectContext, item: AttentionItem, lead?: ProjectLead): Promise<void> {
+  if (lead) {
+    if (!await lead.onAttention(item)) await executeCommand(context.stores, lead.commands, 'run.resume', { runId: item.runId }, '待办回答后继续运行')
+    return
+  }
   await serializeRun(item.runId, async () => {
     const state = await context.stores.runs.get(item.runId)
     if (!state) return
     // 已终结的运行不需要 resume。
     if (state.status === 'succeeded' || state.status === 'failed' || state.status === 'cancelled') return
-    await resumeOnce(context, item.runId, { autoApprove: false, json: true }, createPrinter(true))
+    const report = async (error: unknown) => {
+      await context.stores.chat.post(item.requirementId, { author: { type: 'system', id: 'engine' }, kind: 'system',
+        text: `运行失败：${error instanceof Error ? error.message : String(error)}`, refs: { runId: item.runId } })
+    }
+    await resumeInBackground(onStarted => resumeOnce(context, item.runId, { autoApprove: false, json: true }, createPrinter(true), onStarted), {
+      onError: report,
+      onSettled: async result => { if (result?.status === 'failed') await report(Object.values(result.nodes).find(node => node.error)?.error ?? '节点执行失败') },
+    })
   })
 }

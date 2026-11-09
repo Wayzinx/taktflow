@@ -1,4 +1,5 @@
 import { runLiveness } from '../engine/lease.js'
+import { resumeInBackground } from '../engine/resume-background.js'
 import { reconcileAssumptions } from '../attention/timebox.js'
 import { withTaskReceiptLock } from './receipts.js'
 import { assertTaskResendable, checkDelegationHops, TaskResendConflictError } from './delegation.js'
@@ -185,7 +186,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
           const engine = engines.get(value.runId)
           if (!options.workflows) throw new Error('未接入 workflow 加载器')
           const workflow = await options.workflows.load(state.workflowId)
-          await (engine ?? instrument(message, workflow.title, profiles, async () => {})).resume(state.runId, workflow)
+          await resume(state, workflow, engine ?? instrument(message, workflow.title, profiles, async () => {}), message)
           break
         }
         case 'cancel_run': {
@@ -349,7 +350,31 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     })
   }
 
-  async function resumeTask(runId: string): Promise<RunState> {
+  async function resume(state: RunState, workflow: WorkflowDefinition, engine: Engine, message: RoomMessage): Promise<void> {
+    let started = false
+    const report = async (error: unknown) => {
+      await post(state.requirementId, { author: system, kind: 'system', text: `运行失败：${errorText(error)}`, replyTo: message.id, refs: { runId: state.runId } })
+    }
+    await resumeInBackground(onStarted => engine.resume(state.runId, workflow, { onStarted: () => {
+      started = true
+      engines.set(state.runId, engine)
+      onStarted()
+    } }), {
+      jobs, onError: report,
+      onSettled: async result => {
+        try {
+          // 节点异常会被引擎收敛为 failed 状态，不一定表现为 Promise rejection。
+          if (result?.status === 'failed') await report(Object.values(result.nodes).find(node => node.error)?.error ?? '节点执行失败')
+          if (result?.kind === 'task') await recordTaskImpact(stores, result)
+        } finally {
+          if (started && engines.get(state.runId) === engine) engines.delete(state.runId)
+          await refreshPresence(state.requirementId)
+        }
+      },
+    })
+  }
+
+  async function resumeTask(runId: string, options: { foreground?: boolean } = {}): Promise<RunState> {
     const state = await stores.runs.get(runId) as TaskRunState | undefined
     if (!state || !state.workflowId.startsWith('task:') || !state.origin || !state.args.__leadTask) throw new Error('缺少临时任务定义或来源')
     if (finished(state)) return state
@@ -357,11 +382,16 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     if (!trigger) throw new Error('任务触发消息不存在')
     const task = taskWorkflow(state.args.__leadTask as import('../types.js').TaskSpec, stores, profiles)
     const engine = engines.get(runId) ?? instrument(trigger, task.workflow.title, task.profiles, async () => {})
-    engines.set(runId, engine)
-    const resumed = await engine.resume(runId, task.workflow)
-    await recordTaskImpact(stores, resumed)
-    await refreshPresence(state.requirementId)
-    return resumed
+    // CLI 前台调用保留完整结果和异常；网页入口只等待启动回执。
+    if (options.foreground) {
+      try {
+        const result = await engine.resume(runId, task.workflow)
+        await recordTaskImpact(stores, result)
+        return result
+      } finally { await refreshPresence(state.requirementId) }
+    }
+    await resume(state, task.workflow, engine, trigger)
+    return (await stores.runs.get(runId))!
   }
 
   async function onAttention(input: AttentionItem): Promise<boolean> {

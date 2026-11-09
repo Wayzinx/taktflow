@@ -27,6 +27,7 @@ export function runtimeCommands(context: ProjectContext, lead: () => Pick<Projec
     dispatchTask: (input, by) => execute({ type: 'dispatch_task', task: input.task }, input, by),
     answerAttention: async (input, by) => {
       const item = await answerAttention(stores, input, by.actor)
+      // Lead 只等待引擎确认启动；运行寿命及收尾由 Lead.jobs 跟踪。
       if (!await lead().onAttention(item)) await execute({ type: 'resume_run', runId: item.runId }, { runId: item.runId }, by)
       return item
     },

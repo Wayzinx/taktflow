@@ -37,11 +37,30 @@ it('start 全程持有租约，另一个引擎不能 resume；结束后删除', 
   try {
     expect(JSON.parse(await readFile(lease(id), 'utf8'))).toMatchObject({ pid: process.pid, host: hostname(), startedAt: expect.any(String) })
     expect(await runLiveness(stores, id)).toBe('active')
-    await expect(createEngine(deps).resume(id, def)).rejects.toThrow(`运行正在由进程 ${process.pid} 执行`)
+    const onStarted = vi.fn()
+    await expect(createEngine(deps).resume(id, def, { onStarted })).rejects.toThrow(`运行正在由进程 ${process.pid} 执行`)
+    expect(onStarted).not.toHaveBeenCalled()
     expect(run).toHaveBeenCalledTimes(1)
   } finally { release(); await pending }
   expect(await runLiveness(stores, id)).toBe('idle')
   await expect(readFile(lease(id))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+
+it('resume 校验失败不通知启动；回执抛错也只调用一次并继续执行', async () => {
+  const { stores, deps, requirementId, lease } = await fixture()
+  const def = workflow([human({ id: 'ask', title: '确认', ask: '继续？', form: 'approve' })])
+  const engine = createEngine(deps)
+  const state = await engine.start({ workflow: def, requirementId })
+  const onStarted = vi.fn(() => { throw new Error('回执失败') })
+  await expect(engine.resume('missing', def, { onStarted })).rejects.toThrow('运行不存在')
+  await expect(engine.resume(state.runId, { ...def, version: '2' }, { onStarted })).rejects.toThrow('不匹配')
+  await expect(engine.resume(state.runId, { ...def, nodes: [{ id: 'agent', kind: 'agent', title: '执行', role: 'missing', prompt: '执行', harness: { harness: 'missing' } }] }, { onStarted })).rejects.toThrow()
+  expect(onStarted).not.toHaveBeenCalled()
+  const item = (await stores.attention.list({ pending: true }))[0]!
+  await stores.attention.answer(item.requestId, { decision: 'approve', by: { type: 'human', id: 'test' } })
+  expect((await engine.resume(state.runId, def, { onStarted })).status).toBe('succeeded')
+  expect(onStarted).toHaveBeenCalledTimes(1)
+  await expect(readFile(lease(state.runId))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
 it('running 节点和死租约可恢复，已完成节点不重复执行', async () => {

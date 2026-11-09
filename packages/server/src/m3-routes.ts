@@ -10,6 +10,7 @@ import { routingWorkflows } from './commands.js'
 
 export interface M3Callbacks {
   resolveRuntime?: EvalRuntimeResolver
+  /** 运行时命令负责回答后的续跑；HTTP 路由不再重复调用 onAnswer。 */
   getCommands?(stores: ProjectStores): CommandRegistry | Promise<CommandRegistry>
   getLeadPresence?(projectDir: string, requirementId: string): LeadPresence
   resendTask?(projectDir: string, requirementId: string, message: RoomMessage, reason: string): Promise<RoomMessage | undefined>
@@ -44,7 +45,9 @@ export function m3Routes(add: (method: string, path: string, handler: Handler) =
     const input = await body(request, false, params.id === 'requirement.create' ? 30 * 1024 * 1024 : 8 * 1024 * 1024)
     if (!input.input || typeof input.input !== 'object' || Array.isArray(input.input)) throw new HttpError(400, 'input 必须是对象')
     const allowEmptyReason = params.id === 'requirement.create'
-    return (await commands(stores, params.id)).run(params.id!, input.input as Record<string, unknown>, { actor: actor(request, stores), reason: input.reason === undefined ? undefined : text(input.reason, 'reason', allowEmptyReason) })
+    const result = await (await commands(stores, params.id)).run(params.id!, input.input as Record<string, unknown>, { actor: actor(request, stores), reason: input.reason === undefined ? undefined : text(input.reason, 'reason', allowEmptyReason) })
+    if (params.id === 'run.resume' && !result.ok) throw new HttpError(400, result.message)
+    return result
   })
   add('POST', '/api/requirements/:id/route', async ({ stores, request, params }) => {
     await requirement(stores, params.id!)

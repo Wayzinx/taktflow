@@ -80,14 +80,14 @@ export async function resumeWorkflow(cli: ParsedCli): Promise<number> {
   const current = await context.stores.runs.get(runId)
   if (current?.workflowId.startsWith('task:')) {
     const lead = await createProjectLead(await withMock(context, cli.options.mock))
-    const state = await serializeRun(runId, () => lead.resumeTask(runId))
+    const state = await serializeRun(runId, () => lead.resumeTask(runId, { foreground: true }))
     return finishOutput(context, printer, state)
   }
   const state = await serializeRun(runId, () => resumeOnce(context, runId, cli.options, printer))
   return finishOutput(context, printer, state)
 }
 
-export async function resumeOnce(context: ProjectContext, runId: string, options: RunOptions, printer: Printer): Promise<RunState> {
+export async function resumeOnce(context: ProjectContext, runId: string, options: RunOptions, printer: Printer, onStarted?: () => void): Promise<RunState> {
   const current = await context.stores.runs.get(runId)
   if (!current) throw new Error(`运行不存在：${runId}`)
   const saved = await readRunOptions(context.stores.taktDir, runId)
@@ -111,7 +111,7 @@ export async function resumeOnce(context: ProjectContext, runId: string, options
     harness,
     autoApprove: options.autoApprove,
   })
-  const resumed = await engine.resume(runId, workflow)
+  const resumed = await engine.resume(runId, workflow, { onStarted })
   await syncQuality(context.stores, runId)
   return resumed
 }

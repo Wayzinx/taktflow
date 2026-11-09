@@ -4,7 +4,7 @@ import { createServer as createTcpServer, type AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createEngine, initProject, openProject } from '@taktflow/core'
+import { createEngine, initProject, openProject, snapshotWorkflow, taskWorkflow } from '@taktflow/core'
 import { createServer, workflowStore, type RunningServer } from '@taktflow/server'
 import { main } from './index.js'
 import { createProjectLead } from './lead.js'
@@ -39,6 +39,24 @@ async function cli(root: string, args: string[]) {
   try { const code = await main([...args, '--project', root, '--json']); return { code, data: JSON.parse(output.join('')) } }
   finally { spy.mockRestore() }
 }
+
+it.each([false, true])('takt resume 临时任务仍等待执行结束，输出最终状态和退出码；失败=%s', async fail => {
+  const { stores, req } = await fixture([{ match: { role: 'pm' }, ...(fail ? { fail: '模拟执行失败' } : { writes: { '{{workspace}}/spec/prd.md': '恢复后的 PRD' }, finalText: '完成' }) }])
+  const context = await loadRuntime(stores.projectDir)
+  const spec = { role: 'pm', title: '补写 PRD', instructions: '写 PRD', outputs: [{ path: 'spec/prd.md', kind: 'spec' as const }], review: false as const }
+  const { workflow } = taskWorkflow(spec, stores, context.profiles)
+  const trigger = await stores.chat.post(req.id, { author: { type: 'human', id: 'alice' }, kind: 'text', text: '补写 PRD' })
+  await stores.runs.create({ runId: 'interrupted-task', workflowId: workflow.id, workflowVersion: workflow.version, requirementId: req.id,
+    status: 'running', startedAt: new Date().toISOString(), args: { __leadTask: spec }, expansions: [], kind: 'task',
+    origin: { kind: 'chat', messageId: trigger.id, by: trigger.author, title: spec.title },
+    nodes: { task: { id: 'task', status: 'running', attempts: 1, outputs: [] } },
+  }, snapshotWorkflow(workflow))
+  const result = await cli(stores.projectDir, ['resume', 'interrupted-task'])
+  expect(result.code).toBe(fail ? 1 : 0)
+  expect(result.data.status).toBe(fail ? 'failed' : 'succeeded')
+  if (!fail) expect((await stores.workspaces.readArtifact({ workspace: req.id, path: 'spec/prd.md' }))!.toString()).toBe('恢复后的 PRD')
+  expect(await stores.events.verify('interrupted-task')).toEqual({ ok: true })
+})
 
 it('chat post 在进程内触发 Lead，等待临时任务落盘，普通消息不触发', async () => {
   const { stores, req } = await fixture([

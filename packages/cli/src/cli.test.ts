@@ -3,7 +3,7 @@ import { realpathSync } from 'node:fs'
 import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { createInsights, openProject, type AttentionItem, type RunState } from '@taktflow/core'
 import { repoRoot } from './project.js'
 
@@ -199,7 +199,7 @@ it('serve HTTP 回答后在进程内恢复 direct workflow 和保存的 mock', a
   try {
     const response = await fetch(`${server.url}/api/attention/${run.attention[0]!.requestId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ decision: 'approve' }) })
     expect(response.status, await response.text()).toBe(200)
-    expect((await (await openProject(dir)).runs.get(run.runId))?.status).toBe('succeeded')
+    await vi.waitFor(async () => expect((await (await openProject(dir)).runs.get(run.runId))?.status).toBe('succeeded'))
     expect(await readFile(join(dir, '.takt/workspaces/REQ-001/tasks/done.md'), 'utf8')).toBe('done')
   } finally { await server.close() }
 }, 30000)

@@ -166,7 +166,7 @@ export async function runSpaceServer(options: import('./serve.js').ServeOptions)
         if (options.onLeadMention) await options.onLeadMention(id, message)
         else await (await ensure(dir)).lead.onMessage(id, message)
       }),
-      onSpaceAnswer: async (dir, item) => { const entry = await ensure(dir); if (!await entry.lead.onAttention(item)) await resumeAfterAnswer(entry.context, item) },
+      onSpaceAnswer: async (dir, item) => { const entry = await ensure(dir); await resumeAfterAnswer(entry.context, item, entry.lead) },
       getLeadPresence: (dir, id) => ready.get(dir)?.lead.getPresence(id) ?? { state: 'idle', since: new Date().toISOString() },
       subscribeLead: (dir, id, send) => {
         const key = `${dir}:${id}`, bucket = listeners.get(key) ?? new Set()
