@@ -151,19 +151,6 @@
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
   gap: var(--sp-3);
 }
-.solo-empty {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  margin: 0;
-  color: var(--text-2);
-  font-size: var(--text-ui);
-}
-.solo-empty svg {
-  width: 14px;
-  height: 14px;
-  color: var(--text-3);
-}
 /* 整页管家的首页是居中的窄栏（margin: 0 auto 会让网格项缩到内容宽）；这里跟着 Solo 的栏宽铺满 */
 .solo-sec .stwp-home {
   max-width: none;

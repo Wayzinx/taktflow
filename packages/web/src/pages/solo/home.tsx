@@ -1,10 +1,10 @@
-import { CornerDownRight } from 'lucide-react'
+import { CircleCheck } from 'lucide-react'
 import type { StewardContextRef, StewardPick } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { Bee } from '../../components/mascot'
 import { useEntityFocus } from '../../components/steward/focus'
 import { LaneTrack } from '../../components/viz'
-import { Skeleton, useStagger } from '../../components/ui'
+import { EmptyState, Skeleton, useStagger } from '../../components/ui'
 import { StewardHome } from '../steward/home'
 import { TonePill } from './entity/shared'
 
@@ -90,10 +90,7 @@ export function SoloHome({ ask }: { ask: (text: string, ctx?: StewardContextRef[
             ))}
           </div>
         ) : picks.data.length === 0 ? (
-          <p className="solo-empty">
-            <CornerDownRight aria-hidden />
-            没有等你、失败或刚变化的需求。直接问吧。
-          </p>
+          <EmptyState compact icon={CircleCheck} title="没有等你、失败或刚变化的需求" body="直接问吧，或 @ 一个需求、运行、节点。" />
         ) : (
           <div className="solo-picks">
             {picks.data.map((p, i) => {
