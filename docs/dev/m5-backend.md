@@ -52,7 +52,7 @@
    - `duties`：评审者的 `checklist`；rubric 检查项拆成条目（按行 / 编号拆，拆不开就整段一条）；command / acceptance 检查项用标题。
 2. **只读快照**（`engine/snapshots.ts`）：
    - 评审者、裁决者、rubric 调用前，把被评审对象（`target`）和比较依据（`references`）的**指定版本**写进 `.takt/snapshots/<runId>/<safeNodeName(检查点 id)>/files/`，清单写 `manifest.json` 并发 `snapshot.created`。同一修订同一轮的评审者共用内容相同的文件也各自一份清单（快照目录可以硬链接或复制，自己选简单可靠的）。
-   - 代码评审：快照里放统一 diff 与改动文件在当时 HEAD 的内容（`source: 'diff' | 'file'`，记 `repo / commit`）；评审者仍可在工作树里读上下文，但 prompt 只指向快照，清单如实记 readOnly。
+   - 代码评审：快照里放统一 diff 与改动文件在当时的内容（`source: 'diff' | 'file'`，记 `repo / commit`）。任务改动要到集成时才提交，所以取的是当时的工作区（含未跟踪文件，不含同步的技能），用临时 index 写成以 HEAD 为父的游离提交，`commit` 记这个提交；评审者仍可在工作树里读上下文，但 prompt 只指向快照，清单如实记 readOnly。
    - 只读：沙箱 provider 为 bwrap / docker 时把快照目录 `ro` 挂载并记 `sandbox`；否则 chmod 只读并记 `permissions`；都做不到记 `none`。
    - 评审者 prompt 改为列出快照路径与每个文件的角色；不再给存放区当前文件路径。
 3. **调用身份**（`engine/invocations.ts` + `harness.ts`）：

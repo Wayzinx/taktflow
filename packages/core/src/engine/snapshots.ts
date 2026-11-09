@@ -1,5 +1,6 @@
-import { chmod, mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { ArtifactRef, Checkpoint, SnapshotManifest } from '../types.js'
@@ -14,18 +15,29 @@ export interface SnapshotMaterial {
   ref?: ArtifactRef; repo?: string; commit?: string; content: Buffer | string
 }
 const git = promisify(execFile)
+// 任务的改动要到集成时才提交：用临时 index 把当时的工作区（含未跟踪文件）写成一个游离提交，
+// 快照照样绑定到确定的提交、混不进后来的改动，也不动 worktree 的 HEAD 和 index；同步进来的技能不算改动
 export async function codeMaterials(path: string, repo: string, base: string): Promise<SnapshotMaterial[]> {
-  const run = (args: string[]) => git('git', ['-C', path, ...args], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024 }).then(result => result.stdout)
-  const commit = (await run(['rev-parse', 'HEAD'])).toString().trim()
-  const patch = await run(['diff', base, commit, '--'])
-  const names = (await run(['diff', '--name-only', '--diff-filter=ACMRT', '-z', base, commit, '--'])).toString().split('\0').filter(Boolean)
-  const root = `code/${safeNodeName(repo)}/${sha256(path).slice(0, 12)}`
-  const materials: SnapshotMaterial[] = [{ path: `${root}/changes.diff`, role: 'target', source: 'diff', repo, commit, content: patch }]
-  for (const name of names) {
-    assertArtifactPath(name)
-    materials.push({ path: `${root}/files/${name}`, role: 'target', source: 'file', repo, commit, content: await run(['show', `${commit}:${name}`]) })
-  }
-  return materials
+  const scratch = await mkdtemp(join(tmpdir(), 'takt-snapshot-'))
+  const env = { ...process.env, GIT_INDEX_FILE: join(scratch, 'index') }
+  const run = (args: string[]) => git('git', ['-C', path, ...args], { encoding: 'buffer', maxBuffer: 32 * 1024 * 1024, env }).then(result => result.stdout)
+  try {
+    const head = (await run(['rev-parse', 'HEAD'])).toString().trim()
+    await run(['read-tree', head])
+    await run(['add', '-A', '--', '.', ':(exclude).agents/skills', ':(exclude).claude/skills'])
+    const tree = (await run(['write-tree'])).toString().trim()
+    const commit = tree === (await run(['rev-parse', `${head}^{tree}`])).toString().trim() ? head
+      : (await run(['-c', 'user.name=Taktflow', '-c', 'user.email=taktflow@localhost', 'commit-tree', tree, '-p', head, '-m', '评审快照'])).toString().trim()
+    const patch = await run(['diff', base, commit, '--'])
+    const names = (await run(['diff', '--name-only', '--diff-filter=ACMRT', '-z', base, commit, '--'])).toString().split('\0').filter(Boolean)
+    const root = `code/${safeNodeName(repo)}/${sha256(path).slice(0, 12)}`
+    const materials: SnapshotMaterial[] = [{ path: `${root}/changes.diff`, role: 'target', source: 'diff', repo, commit, content: patch }]
+    for (const name of names) {
+      assertArtifactPath(name)
+      materials.push({ path: `${root}/files/${name}`, role: 'target', source: 'file', repo, commit, content: await run(['show', `${commit}:${name}`]) })
+    }
+    return materials
+  } finally { await rm(scratch, { recursive: true, force: true }) }
 }
 export async function artifactMaterials(host: Pick<HarnessHost, 'deps'>, refs: ArtifactRef[], role: 'target' | 'reference'): Promise<SnapshotMaterial[]> {
   return Promise.all(refs.map(async ref => {

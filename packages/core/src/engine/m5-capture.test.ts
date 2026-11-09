@@ -171,18 +171,30 @@ it('门禁三态区分非零退出、抛错、超时和 rubric 解析失败', as
   expect(quality.checkpoints.at(-1)).toMatchObject({ duties: ['正确', '完整'], status: 'error', gate: { pass: false, status: 'error' } })
 })
 
-it('代码快照从当时 HEAD 读取 diff 和改动文件，不混入后来的工作树内容', async () => {
+it('代码快照取当时的工作区（含未提交、未跟踪的改动，不含同步的技能），绑定游离提交，不动 worktree，也不混入后来的改动', async () => {
   const root = await mkdtemp(join(tmpdir(), 'takt-code-snapshot-')); roots.push(root)
   const git = (...args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8' }).trim()
   git('init', '-b', 'main'); git('config', 'user.name', 'test'); git('config', 'user.email', 'test@localhost')
   await writeFile(join(root, 'a.txt'), 'before'); git('add', '.'); git('commit', '-m', 'base')
   const base = git('rev-parse', 'HEAD')
+  expect((await codeMaterials(root, 'app', base)).map(file => [file.source, file.commit, file.content.toString()])).toEqual([['diff', base, '']])
   await writeFile(join(root, 'a.txt'), 'committed'); git('add', '.'); git('commit', '-m', 'change')
+  const head = git('rev-parse', 'HEAD')
   await writeFile(join(root, 'a.txt'), 'dirty')
+  await mkdir(join(root, 'games'), { recursive: true }); await writeFile(join(root, 'games/new.js'), 'export const x = 1')
+  await mkdir(join(root, '.agents/skills/greeting'), { recursive: true }); await writeFile(join(root, '.agents/skills/greeting/SKILL.md'), '技能')
+  const status = git('status', '--porcelain')
   const materials = await codeMaterials(root, 'app', base)
-  expect(materials.find(file => file.source === 'file')?.content.toString()).toBe('committed')
-  expect(materials.find(file => file.source === 'diff')?.content.toString()).toContain('+committed')
-  expect(materials.every(file => file.commit === git('rev-parse', 'HEAD'))).toBe(true)
+  const files = Object.fromEntries(materials.filter(file => file.source === 'file').map(file => [file.path.split('/files/')[1], file.content.toString()]))
+  expect(files).toEqual({ 'a.txt': 'dirty', 'games/new.js': 'export const x = 1' })
+  const patch = materials.find(file => file.source === 'diff')!.content.toString()
+  expect(patch).toContain('+dirty'); expect(patch).toContain('+export const x = 1'); expect(patch).not.toContain('SKILL.md')
+  const commit = materials[0]!.commit!
+  expect(materials.every(file => file.commit === commit)).toBe(true)
+  expect(git('rev-parse', `${commit}^`)).toBe(head)
+  expect([git('rev-parse', 'HEAD'), git('status', '--porcelain')]).toEqual([head, status])
+  await writeFile(join(root, 'a.txt'), 'later')
+  expect(git('show', `${commit}:a.txt`)).toBe('dirty')
 })
 
 it('旧运行没有采集事件时返回空数组', async () => {
