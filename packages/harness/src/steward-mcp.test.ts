@@ -35,6 +35,7 @@ it('Codex MCP 令牌只进入子进程环境，使用只读沙箱且关闭 shell
     expect(args[args.indexOf('--sandbox') + 1]).toBe('read-only')
     expect(args).toContain('mcp_servers.takt.url="http://127.0.0.1:1234/api/steward/mcp"')
     expect(args).toContain('mcp_servers.takt.bearer_token_env_var="TAKT_MCP_TOKEN_0"')
+    expect(args).toContain('mcp_servers.takt.default_tools_approval_mode="approve"')
     expect(args).toContain('features.shell_tool=false')
     expect(req.env?.TAKT_MCP_TOKEN_0).toBe('test-turn-secret')
     expect(args.join(' ')).not.toContain('test-turn-secret')

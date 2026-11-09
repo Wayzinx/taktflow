@@ -103,7 +103,8 @@ function createCodexFamilyHarness(id: string, displayName: string, command: stri
       for (const [index, server] of (req.mcpServers ?? []).entries()) {
         if (!/^[A-Za-z0-9_-]+$/.test(server.name)) throw new Error('MCP 服务名不合法，请使用字母、数字、下划线或短横线')
         const prefix = `mcp_servers.${server.name}`, envName = `TAKT_MCP_TOKEN_${index}`
-        args.push('-c', `${prefix}.url=${tomlString(server.url)}`)
+        // exec 的审批策略是 never：MCP 工具默认要审批，会被一律拒掉；这些工具由调用方自己把关（管家的写操作走提案）
+        args.push('-c', `${prefix}.url=${tomlString(server.url)}`, '-c', `${prefix}.default_tools_approval_mode=${tomlString('approve')}`)
         const bearer = server.headers?.Authorization
         if (bearer) {
           if (!bearer.startsWith('Bearer ')) throw new Error('MCP 认证需要 Bearer 令牌，请重新发送消息')
