@@ -11,7 +11,7 @@ import { createPiHarness } from './adapters/pi.js'
 import { createCliHarness } from './adapters/cli-generic.js'
 import { createClaudeCodeHarness } from './claude-code.js'
 import type { ClaudeCodeOptions } from './claude-code.js'
-import { createCodexHarness } from './codex.js'
+import { createCodexHarness, createTraeHarness } from './codex.js'
 import type { CodexOptions } from './codex.js'
 import { createDshHarness } from './dsh.js'
 import type { DshOptions } from './dsh.js'
@@ -35,7 +35,7 @@ export { createCliHarness, createCliParser, inferCliCapabilities } from './adapt
 export type { CliParserOptions } from './adapters/cli-generic.js'
 export { createClaudeCodeHarness, createClaudeCodeParser } from './claude-code.js'
 export type { ClaudeCodeOptions } from './claude-code.js'
-export { createCodexHarness, createCodexParser } from './codex.js'
+export { createCodexHarness, createCodexParser, createTraeHarness } from './codex.js'
 export type { CodexOptions } from './codex.js'
 export { createDshHarness, createDshParser } from './dsh.js'
 export type { DshOptions } from './dsh.js'
@@ -74,6 +74,7 @@ export interface HarnessesOptions {
   pi?: Parameters<typeof createPiHarness>[0]
   mockScript?: MockScript
   claudeCode?: ClaudeCodeOptions
+  trae?: CodexOptions
   codex?: CodexOptions
   dsh?: DshOptions
 }
@@ -90,6 +91,7 @@ export function createHarnesses(options: HarnessesOptions = {}): Record<string, 
     mock: createMockHarness(options.mockScript ?? { steps: [] }),
     'claude-code': createClaudeCodeHarness(cliOptions('claude-code', options.claudeCode)),
     codex: createCodexHarness(cliOptions('codex', options.codex)),
+    trae: createTraeHarness(cliOptions('trae', options.trae)),
     dsh: createDshHarness(cliOptions('dsh', options.dsh)),
     'gemini-cli': createGeminiCliHarness(cliOptions('gemini-cli', options.geminiCli)),
     'cursor-agent': createCursorAgentHarness(cliOptions('cursor-agent', options.cursorAgent)),
@@ -99,7 +101,7 @@ export function createHarnesses(options: HarnessesOptions = {}): Record<string, 
     pi: createPiHarness(cliOptions('pi', options.pi)),
   }
   const builtins: Array<[string, string | undefined, string]> = [
-    ['claude-code', options.claudeCode?.bin, 'claude'], ['codex', options.codex?.bin, 'codex'],
+    ['claude-code', options.claudeCode?.bin, 'claude'], ['codex', options.codex?.bin, 'codex'], ['trae', options.trae?.bin, 'traecli'],
     ['dsh', options.dsh?.bin, options.config?.harnessOverrides?.dsh?.env?.DSH_BIN ?? options.dsh?.env?.DSH_BIN ?? process.env.DSH_BIN ?? 'dsh'],
     ['gemini-cli', options.geminiCli?.bin, 'gemini'], ['cursor-agent', options.cursorAgent?.bin, 'cursor-agent'],
     ['qwen-code', options.qwenCode?.bin, 'qwen'], ['kimi-cli', options.kimiCli?.bin, 'kimi'],
@@ -126,3 +128,4 @@ export function createHarnesses(options: HarnessesOptions = {}): Record<string, 
   }
   return harnesses
 }
+export { createProviderBridge } from './bridge/index.js'

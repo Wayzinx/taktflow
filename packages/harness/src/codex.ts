@@ -52,16 +52,23 @@ function tomlString(value: string): string {
 }
 
 export function createCodexHarness(options: CodexOptions = {}): HarnessAdapter {
-  const bin = options.bin ?? 'codex'
+  return createCodexFamilyHarness('codex', 'Codex', 'codex', options)
+}
+
+export function createTraeHarness(options: CodexOptions = {}): HarnessAdapter {
+  return createCodexFamilyHarness('trae', 'TRAE CLI', 'traecli', options)
+}
+
+function createCodexFamilyHarness(id: string, displayName: string, command: string, options: CodexOptions): HarnessAdapter {
+  const bin = options.bin ?? command
   const capabilities: HarnessCapabilities = {
     toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
     resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false,
     compactionEvents: false, customProvider: true, sandbox: false, mcp: true,
-    providerProtocols: ['openai-chat', 'openai-responses'],
+    providerProtocols: ['openai-responses'],
   }
   return {
-    id: 'codex',
-    displayName: 'Codex',
+    id, displayName,
     capabilities,
     async available() {
       const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })
@@ -72,22 +79,22 @@ export function createCodexHarness(options: CodexOptions = {}): HarnessAdapter {
       const args = ['exec', '--json', '--skip-git-repo-check', '--sandbox', req.readOnly ? 'read-only' : 'danger-full-access', '-C', req.cwd]
       if (req.provider) {
         const provider = req.provider
-        if (provider.protocol !== 'openai-chat' && provider.protocol !== 'openai-responses') {
-          return finalizeResult(req, { ok: false, finalText: '', error: 'Codex provider requires openai-chat or openai-responses protocol' }, { ok: true, stdout: '', stderr: '' })
+        if (provider.protocol !== 'openai-responses') {
+          return finalizeResult(req, { ok: false, finalText: '', error: `${displayName} provider 需要 openai-responses 协议` }, { ok: true, stdout: '', stderr: '' })
         }
         // Codex override 按点拆分路径，不按 TOML quoted key 解析。
         if (!/^[A-Za-z0-9_-]+$/.test(provider.id)) {
-          return finalizeResult(req, { ok: false, finalText: '', error: 'Codex provider id must match /^[A-Za-z0-9_-]+$/' }, { ok: true, stdout: '', stderr: '' })
+          return finalizeResult(req, { ok: false, finalText: '', error: `${displayName} provider id 只能包含字母、数字、下划线或短横线` }, { ok: true, stdout: '', stderr: '' })
         }
         const key = readProviderApiKey(req)
         if (key.name && !key.value) {
-          return finalizeResult(req, { ok: false, finalText: '', error: `Codex provider missing API key environment variable: ${key.name}` }, { ok: true, stdout: '', stderr: '' })
+          return finalizeResult(req, { ok: false, finalText: '', error: `${displayName} 缺少密钥 ${key.name}` }, { ok: true, stdout: '', stderr: '' })
         }
         const prefix = `model_providers.${provider.id}`
         args.push('-c', `model_provider=${tomlString(provider.id)}`, '-c', `${prefix}.name=${tomlString(provider.id)}`)
         if (provider.baseURL !== undefined) args.push('-c', `${prefix}.base_url=${tomlString(provider.baseURL)}`)
         if (key.name !== undefined) args.push('-c', `${prefix}.env_key=${tomlString(key.name)}`)
-        args.push('-c', `${prefix}.wire_api=${tomlString(provider.protocol === 'openai-chat' ? 'chat' : 'responses')}`)
+        args.push('-c', `${prefix}.wire_api=${tomlString('responses')}`)
       }
       for (const [index, server] of (req.mcpServers ?? []).entries()) {
         if (!/^[A-Za-z0-9_-]+$/.test(server.name)) throw new Error('MCP 服务名不合法，请使用字母、数字、下划线或短横线')
@@ -101,6 +108,7 @@ export function createCodexHarness(options: CodexOptions = {}): HarnessAdapter {
         }
       }
       if (req.mcpServers?.length) args.push('-c', 'features.shell_tool=false')
+      if (req.modelConfig?.contextWindow !== undefined) args.push('-c', `model_context_window=${req.modelConfig.contextWindow}`)
       if (req.model) args.push('-m', req.model)
       if (req.effort) args.push('-c', `model_reasoning_effort="${req.effort}"`)
       // 0.159.2 的 resume 子命令不接收 -C/--sandbox，公共选项必须放在它之前。

@@ -1,3 +1,4 @@
+import { createProviderBridge } from '@taktflow/harness'
 import { AutomationRuntime } from './automation-runtime.js'
 import type { RuntimeCallbacks } from './runtime-routes.js'
 import { startMaintenance } from './maintenance.js'
@@ -61,7 +62,8 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     }
     return pending
   }
-  const routeOptions = { ...options, automationRuntime }
+  const bridge = options.bridge ?? createProviderBridge()
+  const routeOptions = { ...options, bridge, automationRuntime }
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, routeOptions,
     options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
@@ -223,6 +225,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         server.close((error) => { if (error) reject(error); else resolve() })
         server.closeAllConnections()
       }))
+      closePromise = closePromise.finally(() => options.bridge ? undefined : bridge.close())
       return closePromise
     },
   }

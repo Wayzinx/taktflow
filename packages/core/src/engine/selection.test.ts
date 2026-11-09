@@ -82,3 +82,27 @@ describe('模型及 provider 早校验', () => {
     expect(() => validateWorkflowHarnesses(workflow, { ...context, profiles: {} })).toThrow('角色不存在')
   })
 })
+
+it('搭配五条规则与协议优先级', async () => {
+  const { resolvePairing } = await import('./selection.js')
+  const bridge = { supports: (a: string, b: string) => a === 'openai-responses' && ['openai-chat', 'anthropic-messages'].includes(b) || a === 'anthropic-messages' && b === 'openai-chat', open: async () => { throw new Error('不应打开') }, close: async () => {} }
+  const claude = { customProvider: true, providerProtocols: ['anthropic-messages'] }
+  const codex = { customProvider: true, providerProtocols: ['openai-responses'] }
+  const pi = { customProvider: true, providerProtocols: ['openai-chat', 'anthropic-messages', 'openai-responses', 'gemini'] }
+  const ds = { protocol: 'openai-chat', baseURL: 'http://chat', endpoints: { 'anthropic-messages': 'http://anthropic' } }
+  const rows = [
+    [claude, ds, { mode: 'direct', protocol: 'anthropic-messages' }],
+    [codex, ds, { mode: 'bridge', protocol: 'openai-responses', upstream: 'openai-chat' }],
+    [codex, { protocol: 'anthropic-messages' }, { mode: 'bridge', protocol: 'openai-responses', upstream: 'anthropic-messages' }],
+    [codex, { protocol: 'openai-chat', endpoints: { 'openai-responses': 'http://responses' } }, { mode: 'direct', protocol: 'openai-responses' }],
+    [pi, ds, { mode: 'direct', protocol: 'openai-chat' }],
+    ...pi.providerProtocols.map(protocol => [pi, { protocol }, { mode: 'direct', protocol }]),
+    [codex, undefined, { mode: 'builtin' }],
+  ] as const
+  for (const [caps, provider, pairing] of rows) expect(resolvePairing(caps as HarnessCapabilities, provider, bridge).pairing).toEqual(pairing)
+  expect(resolvePairing({ requiresProvider: true }, undefined, bridge).reason).toContain('provider')
+  expect(resolvePairing({}, ds, bridge).reason).toContain('只能用自带模型')
+  expect(resolvePairing(codex, { protocol: 'gemini' }, bridge).reason).toMatch(/gemini.*openai-responses/)
+  expect(resolvePairing(codex, ds).pairing).toBeUndefined()
+  expect(resolvePairing({ customProvider: true, providerProtocols: ['anthropic-messages', 'openai-chat'] }, ds).target?.baseURL).toBe('http://anthropic')
+})

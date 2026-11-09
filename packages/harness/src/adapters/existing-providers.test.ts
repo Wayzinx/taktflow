@@ -74,7 +74,7 @@ describe('existing adapter provider configuration', () => {
     expect(events.find(e => e.type === 'usage')).toEqual({ type: 'usage', usage: { inputTokens: 10, outputTokens: 2 } })
   })
 
-  it.each(['openai-chat', 'openai-responses'])('Codex %s 配置位于 resume 前，命令只引用变量名', async protocol => {
+  it.each(['openai-responses'])('Codex %s 配置位于 resume 前，命令只引用变量名', async protocol => {
     const request: HarnessRequest = {
       ...req, sessionId: 'previous',
       provider: { id: 'local', protocol, baseURL: 'https://example.invalid/v1', apiKeyEnv: keyName },
@@ -86,7 +86,7 @@ describe('existing adapter provider configuration', () => {
       'model_provider="local"', 'model_providers.local.name="local"',
       'model_providers.local.base_url="https://example.invalid/v1"',
       `model_providers.local.env_key="${keyName}"`,
-      `model_providers.local.wire_api="${protocol === 'openai-chat' ? 'chat' : 'responses'}"`,
+      `model_providers.local.wire_api="${'responses'}"`,
     ])
     expect(call[1].indexOf('resume')).toBeGreaterThan(call[1].lastIndexOf('-c'))
     expect(call[1].slice(-3)).toEqual(['resume', 'previous', '-'])
@@ -95,27 +95,27 @@ describe('existing adapter provider configuration', () => {
   })
 
   it('Codex TOML value 中的引号、反斜线和控制字符不能注入配置', async () => {
-    const provider = { id: 'team_A-1', protocol: 'openai-chat', baseURL: 'https://example.invalid/"\\\n\u0001\u007f', apiKeyEnv: 'KEY."\\\t' }
+    const provider = { id: 'team_A-1', protocol: 'openai-responses', baseURL: 'https://example.invalid/"\\\n\u0001\u007f', apiKeyEnv: 'KEY."\\\t' }
     await createCodexHarness().run({ ...req, provider, env: { [provider.apiKeyEnv]: 'fake-only' } }, ignore)
     const prefix = 'model_providers.team_A-1'
     expect(configs()).toEqual([
       'model_provider="team_A-1"', `${prefix}.name="team_A-1"`,
-      String.raw`${prefix}.base_url="https://example.invalid/\"\\\n\u0001\u007f"`, String.raw`${prefix}.env_key="KEY.\"\\\t"`, `${prefix}.wire_api="chat"`,
+      String.raw`${prefix}.base_url="https://example.invalid/\"\\\n\u0001\u007f"`, String.raw`${prefix}.env_key="KEY.\"\\\t"`, `${prefix}.wire_api="responses"`,
     ])
     expect(configs().some(config => /[\n\t\u0001\u007f]/.test(config))).toBe(false)
   })
 
   it.each(['', 'team.a', 'team/a', 'a"b', "a'b", 'a\\b', 'a b', 'a\nb', 'a\tb', 'a\u0000b', 'a\u007fb', '团队'])('Codex 拒绝特殊 provider id %j，不尝试 quoted key 转义', async id => {
     const events = vi.fn()
-    const result = await createCodexHarness().run({ ...req, provider: { id, protocol: 'openai-chat' } }, events)
-    expect(result).toMatchObject({ ok: false, finalText: '', error: 'Codex provider id must match /^[A-Za-z0-9_-]+$/' })
+    const result = await createCodexHarness().run({ ...req, provider: { id, protocol: 'openai-responses' } }, events)
+    expect(result).toMatchObject({ ok: false, finalText: '', error: 'Codex provider id 只能包含字母、数字、下划线或短横线' })
     expect(runProcess).not.toHaveBeenCalled()
     expect(events).not.toHaveBeenCalled()
   })
 
   it('Codex 可使用继承环境；无认证本地 provider 不产生 env_key 或 undefined', async () => {
     vi.stubEnv(keyName, 'inherited-fake-key')
-    expect((await createCodexHarness().run({ ...req, provider: { id: 'local', protocol: 'openai-chat', apiKeyEnv: keyName } }, ignore)).ok).toBe(true)
+    expect((await createCodexHarness().run({ ...req, provider: { id: 'local', protocol: 'openai-responses', apiKeyEnv: keyName } }, ignore)).ok).toBe(true)
     expect(configs()).toContain(`model_providers.local.env_key="${keyName}"`)
     vi.mocked(runProcess).mockClear()
     expect((await createCodexHarness().run({ ...req, provider: { id: 'local', protocol: 'openai-responses' } }, ignore)).ok).toBe(true)
@@ -124,14 +124,14 @@ describe('existing adapter provider configuration', () => {
 
   it.each([
     ['claude', createClaudeCodeHarness, 'anthropic-messages'],
-    ['codex', createCodexHarness, 'openai-chat'],
+    ['codex', createCodexHarness, 'openai-responses'],
   ] as const)('%s 缺失密钥或显式空覆盖必须在 spawn 前失败', async (_id, create, protocol) => {
     for (const inherited of [undefined, 'inherited-fake-key']) {
       vi.stubEnv(keyName, inherited)
       const events = vi.fn()
       const result = await create().run({ ...req, env: inherited ? { [keyName]: '' } : {}, provider: { id: 'test', protocol, apiKeyEnv: keyName } }, events)
       expect(result).toMatchObject({ ok: false, finalText: '', error: expect.stringContaining(keyName) })
-      expect(result.error).toContain('missing API key')
+      expect(result.error).toMatch(/missing API key|缺少密钥/)
       expect(result.error).not.toContain('inherited-fake-key')
       expect(events).not.toHaveBeenCalled()
     }
@@ -142,8 +142,8 @@ describe('existing adapter provider configuration', () => {
     [createClaudeCodeHarness, 'openai-chat', 'anthropic-messages'],
     [createClaudeCodeHarness, 'openai-responses', 'anthropic-messages'],
     [createClaudeCodeHarness, 'gemini', 'anthropic-messages'],
-    [createCodexHarness, 'anthropic-messages', 'openai-chat or openai-responses'],
-    [createCodexHarness, 'gemini', 'openai-chat or openai-responses'],
+    [createCodexHarness, 'anthropic-messages', 'openai-responses'],
+    [createCodexHarness, 'gemini', 'openai-responses'],
   ])('不匹配协议直接返回失败', async (create, protocol, supported) => {
     const event = vi.fn()
     const result = await create().run({ ...req, provider: { id: 'wrong', protocol } }, event)
@@ -164,7 +164,7 @@ describe('existing adapter provider configuration', () => {
 describe('existing adapter capabilities', () => {
   it.each([
     [createClaudeCodeHarness(), { providerProtocols: ['anthropic-messages'], resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
-    [createCodexHarness(), { providerProtocols: ['openai-chat', 'openai-responses'], resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
+    [createCodexHarness(), { providerProtocols: ['openai-responses'], resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
     [createDshHarness(), { resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false }],
     [createMockHarness({ steps: [] }), { resume: false, structuredOutput: false, toolEvents: true, usage: true, cost: true, compactionEvents: true, customProvider: false, sandbox: false, mcp: false }],
   ])('$id 只声明当前实现支持的能力', (harness, capabilities) => {
@@ -179,3 +179,9 @@ function claudeModelEnv(model: string): Record<string, string> {
     ANTHROPIC_MODEL: model, ANTHROPIC_DEFAULT_OPUS_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model, ANTHROPIC_DEFAULT_HAIKU_MODEL: model, ANTHROPIC_SMALL_FAST_MODEL: model,
   }
 }
+
+it('Claude 桥接注入本机地址与令牌，并把 NO_PROXY 保留给子进程', async () => {
+  const env = { TAKT_BRIDGE_TOKEN: 'synthetic-bridge-key', NO_PROXY: 'old,127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' }
+  await createClaudeCodeHarness().run({ ...req, env, provider: { id: 'chat', protocol: 'anthropic-messages', baseURL: 'http://127.0.0.1:12345/r/test', apiKeyEnv: 'TAKT_BRIDGE_TOKEN' } }, ignore)
+  expect(vi.mocked(runProcess).mock.calls[0]![2].env).toMatchObject({ ...env, ANTHROPIC_BASE_URL: 'http://127.0.0.1:12345/r/test', ANTHROPIC_AUTH_TOKEN: 'synthetic-bridge-key' })
+})

@@ -47,7 +47,7 @@ async function fakeProvider() {
 it('读视图预设、owner 权限、400 字段错误、409 与空密钥体约定', async () => {
   const f = await fixture()
   const initial = await f.view()
-  expect(initial.presets.providers.map(p => p.displayName)).toEqual(['OpenAI', 'Anthropic', 'DeepSeek', 'Moonshot', '智谱', '阿里百炼', '火山方舟', 'MiniMax', '硅基流动', 'OpenRouter', 'Azure OpenAI', 'Ollama', 'vLLM', 'LM Studio', 'LiteLLM'])
+  expect(initial.presets.providers.map(p => p.displayName)).toEqual(['OpenAI', 'Anthropic', 'DeepSeek', 'Moonshot', '智谱', '阿里百炼', '火山方舟', 'MiniMax 国际', 'MiniMax 国内', '方舟 Coding Plan', '硅基流动', 'OpenRouter', 'Azure OpenAI', 'Ollama', 'vLLM', 'LM Studio', 'LiteLLM'])
   expect(initial.presets.acp.length).toBeGreaterThanOrEqual(8)
   expect((await f.request('/api/space/runtime', 'PATCH', { baseRevision: initial.revision, reason: 'try', roles: {} }, 'bob')).status).toBe(403)
   expect((await f.request('/api/secrets/RUNTIME_TEST_KEY', 'PUT', { value: 'synthetic' }, 'bob')).status).toBe(403)
@@ -158,4 +158,38 @@ it('密钥 PUT/DELETE 的空间审计保留 reason、操作者、密钥名与操
     expect(data.reason).toBe(`  ${operation} 原因  `)
     expect(JSON.parse(data.message)).toEqual({ name: 'RUNTIME_TEST_KEY', operation })
   }
+})
+
+it('搭配矩阵与最小任务路由：embedding 排除、停用原因、计费门禁、只读和实际 pairing 摘要', async () => {
+  const { createProviderBridge } = await import('@taktflow/harness')
+  const bridge = createProviderBridge(); cleanups.push(() => bridge.close())
+  const run = vi.fn(async (req: import('@taktflow/core').HarnessRequest) => {
+    expect(req.prompt).toBe('只回复 OK'); expect(req.readOnly).toBe(true)
+    expect(req.tools).toEqual({ writeScope: [], allowBash: false })
+    expect(req.provider?.baseURL).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/r\//)
+    expect(req.env?.TAKT_BRIDGE_TOKEN).toHaveLength(64)
+    return { ok: true, finalText: 'OK', usage: { inputTokens: 2, outputTokens: 1 } }
+  })
+  const adapter: HarnessAdapter = { id: 'fake', displayName: 'fake', capabilities: { customProvider: true, providerProtocols: ['openai-responses'] }, available: async () => ({ ok: true }), run }
+  const f = await fixture({ bridge, resolveRuntime: async stores => ({ stores, profiles: {}, harnesses: { fake: adapter }, knowledge: [], bridge }), getHarnesses: async () => [
+    { id: 'fake', displayName: 'fake', source: 'plugin', available: true, capabilities: adapter.capabilities!, roles: [] },
+    { id: 'off', displayName: 'off', source: 'plugin', available: false, reason: '本空间已停用', capabilities: {}, roles: [] },
+  ] })
+  f.config.providers = { chat: { protocol: 'openai-chat', baseURL: 'http://127.0.0.1:1' }, embed: { protocol: 'openai-chat' }, mixed: { protocol: 'gemini' } }
+  f.config.models = { model: { provider: 'chat', id: 'raw' }, vector: { provider: 'embed', id: 'embed', kind: 'embedding' }, mixChat: { provider: 'mixed', id: 'chat' }, mixEmbed: { provider: 'mixed', id: 'embed', kind: 'embedding' } }
+  await writeFile(join(f.stores.projectDir, 'takt.config.json'), JSON.stringify(f.config))
+  const matrix = await (await f.request('/api/pairings')).json()
+  expect(matrix).toHaveLength(6)
+  expect(matrix).toContainEqual(expect.objectContaining({ harness: 'fake', provider: 'chat', status: 'bridge', protocol: 'openai-responses', upstream: 'openai-chat' }))
+  expect(matrix).toContainEqual(expect.objectContaining({ harness: 'fake', provider: null, status: 'builtin' }))
+  expect(matrix.filter((r: { harness: string }) => r.harness === 'off').every((r: { reason: string }) => r.reason === '本空间已停用')).toBe(true)
+  const target = { kind: 'pairing', harness: 'fake', model: 'model' }
+  expect((await f.request('/api/space/runtime/test', 'POST', { target })).status).toBe(400)
+  expect(run).not.toHaveBeenCalled()
+  const result = await (await f.request('/api/space/runtime/test', 'POST', { target, allowBilled: true })).json()
+  expect(result).toMatchObject({ ok: true, billed: true, latencyMs: expect.any(Number) })
+  expect(JSON.parse(result.detail)).toEqual({ pairing: { mode: 'bridge', protocol: 'openai-responses', upstream: 'openai-chat' }, usage: { inputTokens: 2, outputTokens: 1 } })
+  const req = run.mock.calls[0]![0]
+  expect((await fetch(req.provider!.baseURL + '/models', { headers: { authorization: `Bearer ${req.env!.TAKT_BRIDGE_TOKEN}` } })).status).toBe(404)
+  await expect(readFile(join(req.cwd, 'anything'))).rejects.toThrow()
 })

@@ -1,8 +1,9 @@
 import { explicitRoleHarness } from '../store/role-profile.js'
-import type { AgentProfile, HarnessAdapter, HarnessCapabilities, HarnessRequest, HarnessSelector, ModelConfig, NodeDef, ProviderConfig, ProviderProtocol, TaktConfig, WorkflowDefinition } from '../types.js'
+import type { AgentProfile, HarnessAdapter, HarnessCapabilities, HarnessRequest, HarnessSelector, ModelConfig, Pairing, ProviderBridge, NodeDef, ProviderConfig, ProviderProtocol, TaktConfig, WorkflowDefinition } from '../types.js'
 
 
 export interface SelectionContext {
+  bridge?: ProviderBridge
   config: TaktConfig
   profiles: Record<string, AgentProfile>
   harnesses: Record<string, HarnessAdapter>
@@ -13,11 +14,23 @@ export function providerProtocols(provider: ProviderConfig): ProviderProtocol[] 
   return [...new Set([provider.protocol, ...Object.keys(provider.endpoints ?? {})])]
 }
 
-/** 按 harness 能接的协议挑 provider 的入口：主协议优先，其次 endpoints；都对不上返回 undefined。 */
+/** 直连按 harness 的协议偏好；桥接按 provider 的主协议优先。 */
 export function providerFor(provider: ProviderConfig, accepts?: readonly ProviderProtocol[]): ProviderConfig | undefined {
-  if (!accepts || accepts.includes(provider.protocol)) return provider
-  const protocol = accepts.find((p) => provider.endpoints?.[p])
-  return protocol ? { ...provider, protocol, baseURL: provider.endpoints![protocol] } : undefined
+  const protocol = (accepts ?? [provider.protocol]).find(p => p === provider.protocol || provider.endpoints?.[p])
+  return protocol ? protocol === provider.protocol ? provider : { ...provider, protocol, baseURL: provider.endpoints![protocol] } : undefined
+}
+
+export function resolvePairing(capabilities: HarnessCapabilities, provider: ProviderConfig | undefined, bridge?: ProviderBridge): { pairing?: Pairing; target?: ProviderConfig; reason?: string } {
+  if (!provider) return capabilities.requiresProvider ? { reason: '需要明确 provider 或模型别名' } : { pairing: { mode: 'builtin' } }
+  if (!capabilities.customProvider) return { reason: '不支持 customProvider，该 harness 只能用自带模型' }
+  const target = providerFor(provider, capabilities.providerProtocols)
+  if (target) return { pairing: { mode: 'direct', protocol: target.protocol }, target }
+  for (const upstream of providerProtocols(provider)) {
+    for (const protocol of capabilities.providerProtocols ?? []) {
+      if (bridge?.supports(protocol, upstream)) return { pairing: { mode: 'bridge', protocol, upstream }, target: providerFor(provider, [upstream]) }
+    }
+  }
+  return { reason: `不支持 provider 协议 ${providerProtocols(provider).join(' / ')}；支持：${capabilities.providerProtocols?.join(' / ') || '无'}` }
 }
 
 export function harnessSelectors(selector: HarnessSelector): HarnessSelector[] {
@@ -31,8 +44,8 @@ export function selectHarness(role: string, selector: HarnessSelector | undefine
   return override ? { ...base, harness: override, fallback: undefined } : base
 }
 
-export function resolveHarnessSelector(selector: HarnessSelector, config: TaktConfig, harnesses: Record<string, HarnessAdapter>): {
-  harness: HarnessAdapter; model?: string; provider?: HarnessRequest['provider']; modelConfig?: ModelConfig
+export function resolveHarnessSelector(selector: HarnessSelector, config: TaktConfig, harnesses: Record<string, HarnessAdapter>, bridge?: ProviderBridge): {
+  harness: HarnessAdapter; model?: string; provider?: HarnessRequest['provider']; modelConfig?: ModelConfig; pairing?: Pairing
 } {
   const harness = Object.hasOwn(harnesses, selector.harness) ? harnesses[selector.harness] : undefined
   if (!harness) throw new Error(`harness 不存在：${selector.harness}`)
@@ -42,23 +55,19 @@ export function resolveHarnessSelector(selector: HarnessSelector, config: TaktCo
   const configured = providerId !== undefined && config.providers && Object.hasOwn(config.providers, providerId) ? config.providers[providerId] : undefined
   if (providerId !== undefined && !configured) throw new Error(`provider 不存在：${providerId}`)
   const capabilities: HarnessCapabilities = harness.capabilities ?? {}
-  if (configured && !capabilities.customProvider) throw new Error(`harness ${selector.harness} 不支持 customProvider`)
-  const provider = configured && providerFor(configured, capabilities.providerProtocols)
-  if (configured && !provider) {
-    throw new Error(`harness ${selector.harness} 不支持 provider 协议 ${providerProtocols(configured).join(' / ')}（${providerId}）；支持：${capabilities.providerProtocols!.join(' / ')}`)
-  }
+  const { pairing, target: provider, reason } = resolvePairing(capabilities, configured, bridge)
+  if (reason) throw new Error(`harness ${selector.harness} ${providerId && reason.includes('；支持：') ? reason.replace('；支持：', `（${providerId}）；支持：`) : reason}`)
   if (capabilities.requiresProvider && !model?.trim()) throw new Error(`harness ${selector.harness} 需要非空模型`)
-  if (capabilities.requiresProvider && !provider) throw new Error(`harness ${selector.harness} 需要明确 provider 或模型别名`)
   let modelConfig = alias?.provider === providerId ? alias : undefined
   if (!modelConfig) {
     const matching = Object.values(config.models ?? {}).filter((entry) => entry.provider === providerId && entry.id === model)
     if (matching.length === 1) modelConfig = matching[0]
   }
-  return { harness, model, provider: provider ? { ...provider, id: providerId! } : undefined, modelConfig }
+  return { harness, model, pairing, provider: provider ? { ...provider, id: providerId! } : undefined, modelConfig }
 }
 
-export function validateHarnessSelector(selector: HarnessSelector, config: TaktConfig, harnesses: Record<string, HarnessAdapter>): void {
-  for (const candidate of harnessSelectors(selector)) resolveHarnessSelector(candidate, config, harnesses)
+export function validateHarnessSelector(selector: HarnessSelector, config: TaktConfig, harnesses: Record<string, HarnessAdapter>, bridge?: ProviderBridge): void {
+  for (const candidate of harnessSelectors(selector)) resolveHarnessSelector(candidate, config, harnesses, bridge)
 }
 
 export function forEachRoleSelector(workflow: WorkflowDefinition, check: (role: string, selector?: HarnessSelector) => void): void {
@@ -75,5 +84,5 @@ export function forEachRoleSelector(workflow: WorkflowDefinition, check: (role: 
 }
 
 export function validateWorkflowHarnesses(workflow: WorkflowDefinition, context: SelectionContext, override?: string): void {
-  forEachRoleSelector(workflow, (role, selector) => validateHarnessSelector(selectHarness(role, selector, context, override), context.config, context.harnesses))
+  forEachRoleSelector(workflow, (role, selector) => validateHarnessSelector(selectHarness(role, selector, context, override), context.config, context.harnesses, context.bridge))
 }

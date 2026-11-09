@@ -1,12 +1,13 @@
-import { resolveSecret, type HarnessAdapter, type RuntimeTestRequest, type RuntimeTestResult, type TaktConfig } from '@taktflow/core'
+import { testPairing } from './pairing-test.js'
+import { resolveSecret, type ProviderBridge, type HarnessAdapter, type RuntimeTestRequest, type RuntimeTestResult, type TaktConfig } from '@taktflow/core'
 import { providerConfig, collectSecrets, createRedactor } from '@taktflow/harness'
 import { HttpError } from './http.js'
 
 export async function testRuntime(config: TaktConfig, request: RuntimeTestRequest,
-  harnesses: () => Promise<Record<string, HarnessAdapter>>): Promise<RuntimeTestResult> {
-  if (!request.target || !['provider', 'model', 'harness'].includes(request.target.kind)) throw new HttpError(400, 'target.kind 必须是 provider、model 或 harness')
+  harnesses: () => Promise<Record<string, HarnessAdapter>>, bridge?: ProviderBridge): Promise<RuntimeTestResult> {
+  if (!request.target || !['provider', 'model', 'harness', 'pairing'].includes(request.target.kind)) throw new HttpError(400, 'target.kind 必须是 provider、model、harness 或 pairing')
   const target = request.target
-  if (target.kind === 'pairing') throw new HttpError(400, '搭配测试尚未实现')
+  if (target.kind === 'pairing') return testPairing(config, request, harnesses, bridge)
   const id = target.kind === 'model' ? target.alias : target.id
   if (typeof id !== 'string' || !id.trim()) throw new HttpError(400, '请填写 target 的 id 或 alias')
   if (target.kind === 'model' && request.allowBilled !== true) throw new HttpError(400, '模型测试会发起一次最小计费请求；请显式设置 allowBilled: true')

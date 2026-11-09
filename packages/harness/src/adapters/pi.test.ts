@@ -185,7 +185,7 @@ process.stdin.on('end', () => {
 `, { mode: 0o700 })
     const harness = createHarnesses({ pi: { bin, provider: 'anthropic' } }).pi!
     expect(harness.capabilities).toMatchObject({ resume: true, compactionEvents: true, usage: true, cost: true,
-      structuredOutput: false, customProvider: false, sandbox: false, mcp: true })
+      structuredOutput: false, customProvider: true, sandbox: false, mcp: true })
     expect(await harness.available()).toEqual({ ok: true })
     const prompt = '-literal @missing.txt\nUnicode \u2028 \u2029'
     const result = await harness.run({ cwd: dir, prompt, model: 'test-model', effort: 'max',
@@ -223,9 +223,9 @@ next();
     const harness = createPiHarness({ bin: '/nonexistent-takt-pi' })
     expect(await harness.available()).toMatchObject({ ok: false, reason: expect.stringContaining('ENOENT') })
     expect(await harness.run({ cwd: tmpdir(), prompt: '', provider: { id: 'custom', protocol: 'openai-chat' } }, () => {}))
-      .toMatchObject({ ok: false, error: expect.stringContaining('customProvider') })
+      .toMatchObject({ ok: false, error: expect.stringContaining('需要 model') })
     expect(await createPiHarness({ bin: '/nonexistent-takt-pi', provider: 'anthropic' }).run({ cwd: tmpdir(), prompt: '' }, () => {}))
-      .toMatchObject({ ok: false, error: expect.stringContaining('--provider requires --model') })
+      .toMatchObject({ ok: false, error: expect.stringContaining('需要 model') })
   })
 
   it('transcript、事件及最终结果均脱敏', () => inTemp(async dir => {

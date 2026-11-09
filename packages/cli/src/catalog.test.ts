@@ -69,14 +69,14 @@ it('并发 settings 和兼容 catalog 请求合并加载与尚未完成的探测
   expect(f.available).toHaveBeenCalledTimes(1)
 })
 
-it('30 秒 TTL 和配置 mtime 分别使 runtime 与探测缓存失效', async () => {
+it('60 秒 TTL 和配置 mtime 分别使 runtime 与探测缓存失效', async () => {
   const f = await fixture()
   await f.catalog.getCatalog(f.stores)
-  f.setTime(29_999)
+  f.setTime(59_999)
   await f.catalog.getCatalog(f.stores)
   expect(f.load).toHaveBeenCalledTimes(1)
   expect(f.available).toHaveBeenCalledTimes(1)
-  f.setTime(30_000)
+  f.setTime(60_000)
   await Promise.all([f.catalog.getCatalog(f.stores), f.catalog.getCatalog(f.stores)])
   expect(f.load).toHaveBeenCalledTimes(2)
   expect(f.validate).toHaveBeenCalledTimes(2)

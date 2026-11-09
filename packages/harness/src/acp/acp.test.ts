@@ -275,3 +275,14 @@ it('引擎给的本机沙箱照常运行并带上沙箱环境变量；真隔离�
   expect(JSON.parse(ok.finalText)).toEqual({ TAKT_NODE: 'clarify' })
   expect(await harness.run({ prompt: 'x', cwd: dir, timeoutMs: 2000, sandbox: sandbox('bwrap') }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('bwrap 沙箱') })
 })
+
+it('Claude ACP 的桥地址、NO_PROXY 与令牌进入子进程，回显与事件脱敏', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'takt-acp-bridge-')); dirs.push(dir)
+  const echoEnv = ['ANTHROPIC_BASE_URL', 'ANTHROPIC_AUTH_TOKEN', 'NO_PROXY', 'no_proxy']
+  const harness = createAcpHarness({ id: 'claude-acp', kind: 'acp', preset: 'claude', command: [process.execPath, script], env: { FAKE_ACP_SCENARIO: JSON.stringify({ echoEnv }) } }, { projectDir: dir, handshakeTimeoutMs: 1000 })
+  const events: HarnessEvent[] = []
+  const result = await harness.run({ prompt: 'OK', cwd: dir, timeoutMs: 2000, provider: { id: 'chat', protocol: 'anthropic-messages', baseURL: 'http://127.0.0.1:12345/r/route', apiKeyEnv: 'TAKT_BRIDGE_TOKEN' }, env: { TAKT_BRIDGE_TOKEN: 'synthetic-bridge-acp-token', NO_PROXY: 'old,127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' } }, event => events.push(event))
+  expect(result.ok).toBe(true)
+  expect(JSON.parse(result.finalText)).toEqual({ ANTHROPIC_BASE_URL: 'http://127.0.0.1:12345/r/route', ANTHROPIC_AUTH_TOKEN: '[REDACTED]', NO_PROXY: 'old,127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost' })
+  expect(JSON.stringify(events)).not.toContain('synthetic-bridge-acp-token')
+})

@@ -18,12 +18,12 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllEnvs())
 
-const builtinIds = ['native', 'mock', 'claude-code', 'codex', 'dsh', 'gemini-cli', 'cursor-agent', 'qwen-code', 'kimi-cli', 'opencode', 'pi']
+const builtinIds = ['native', 'mock', 'claude-code', 'codex', 'trae', 'dsh', 'gemini-cli', 'cursor-agent', 'qwen-code', 'kimi-cli', 'opencode', 'pi']
 const custom = (id: string): CliHarnessConfig => ({ id, kind: 'cli', command: ['./tools/local-cli'], output: { format: 'text' } })
 const config = (...harnesses: CliHarnessConfig[]): TaktConfig => ({ project: { name: 'test' }, workflows: [], harnesses })
 
 describe('harness exports', () => {
-  it('默认包含 native 和十个 CLI/mock 适配器，空 mock 脚本可直接使用；创建时不探测 CLI', async () => {
+  it('默认包含 native 和十一个 CLI/mock 适配器，空 mock 脚本可直接使用；创建时不探测 CLI', async () => {
     const harnesses = createHarnesses()
     expect(Object.keys(harnesses)).toEqual(builtinIds)
     for (const [id, adapter] of Object.entries(harnesses)) expect(adapter.id).toBe(id)

@@ -54,7 +54,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
     async start(input) {
       const runtimeDeps = await currentProfiles()
       input = { ...input, workflow: configureRepositories(configureReviews(input.workflow, input.args ?? {}), input.args ?? {}) }
-      validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
+      validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses, bridge: deps.bridge }, opts.harnessOverride)
       validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
       const now = opts.now?.() ?? new Date()
@@ -89,7 +89,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
         if (state.status === 'cancelled') return state
         workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
-        validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
+        validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses, bridge: deps.bridge }, opts.harnessOverride)
         return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true, resumeOptions?.onStarted)
       })
     },
@@ -106,7 +106,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
         if (workflow.id !== state.workflowId || workflow.version !== state.workflowVersion) throw new Error('恢复的 workflow ID/version 与运行不匹配')
         const runtimeDeps = await currentProfiles()
         workflow = configureRepositories(configureReviews(workflow, state.args), state.args)
-        validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
+        validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses, bridge: deps.bridge }, opts.harnessOverride)
         return execute(new Runtime(runtimeDeps, state, workflow, opts, guard), true, retryOptions?.onStarted, { nodeIds, reason: retryOptions?.reason })
       })
     },

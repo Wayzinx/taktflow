@@ -411,7 +411,7 @@ describe('shared transport', () => {
 
 describe('configuration and resolution', () => {
   it('contains all fifteen presets and leaves deployment-specific addresses undefined', () => {
-    expect(Object.keys(PROVIDER_PRESETS)).toEqual(['openai', 'anthropic', 'deepseek', 'moonshot', 'zhipu', 'dashscope', 'ark', 'minimax', 'siliconflow', 'openrouter', 'azure-openai', 'ollama', 'vllm', 'lmstudio', 'litellm'])
+    expect(Object.keys(PROVIDER_PRESETS)).toEqual(['openai', 'anthropic', 'deepseek', 'moonshot', 'zhipu', 'dashscope', 'ark', 'minimax', 'minimax-cn', 'ark-coding', 'siliconflow', 'openrouter', 'azure-openai', 'ollama', 'vllm', 'lmstudio', 'litellm'])
     expect(PROVIDER_PRESETS['azure-openai'].baseURL).toBeUndefined()
     expect(PROVIDER_PRESETS.vllm.baseURL).toBeUndefined()
     expect(PROVIDER_PRESETS.litellm.baseURL).toBeUndefined()
@@ -482,7 +482,7 @@ describe('configuration and resolution', () => {
       endpoints: { 'anthropic-messages': 'https://api.deepseek.com/anthropic' } })
     expect(providerConfig('a', { protocol: 'openai-chat', preset: 'deepseek', endpoints: { 'anthropic-messages': 'https://proxy.invalid' } }).endpoints)
       .toEqual({ 'anthropic-messages': 'https://proxy.invalid' })
-    expect(providerConfig('a', { protocol: 'openai-chat', preset: 'moonshot' })).not.toHaveProperty('endpoints')
+    expect(providerConfig('a', { protocol: 'openai-chat', preset: 'moonshot' }).endpoints).toEqual({ 'anthropic-messages': 'https://api.moonshot.cn/anthropic' })
     expect(providerConfig('ollama', { protocol: 'openai-chat' })).toMatchObject({ baseURL: 'http://localhost:11434/v1' })
   })
 })

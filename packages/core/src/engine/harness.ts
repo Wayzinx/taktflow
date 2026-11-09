@@ -119,7 +119,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     for (const [index, selector] of chain.entries()) {
       host.signal.throwIfAborted()
       if (index) await host.emit('log', { level: 'warn', message: `切换 harness → ${selector.harness}：${previous}` }, node.id)
-      const { harness, model, provider, modelConfig } = resolveHarnessSelector(selector, stores.config, harnesses)
+      const { harness, model, provider, modelConfig, pairing } = resolveHarnessSelector(selector, stores.config, harnesses, host.deps.bridge)
       const available = await harness.available().catch((error: unknown) => ({ ok: false, reason: String(error) }))
       if (!available.ok) { previous = available.reason ?? `${selector.harness} unavailable`; continue }
       const resume = node.session === 'resume' && harness.capabilities?.resume
@@ -139,7 +139,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       await assertNoSymlinks(stores.taktDir, transcript)
       await mkdir(dirname(transcript), { recursive: true })
       const env: Record<string, string> = { TAKT_ROLE: node.role, TAKT_NODE: node.id, TAKT_NODE_ID: node.id, TAKT_KB_BASES: JSON.stringify(spec?.bases ?? []), TAKT_WORKSPACE: ctx.workspaceDir, TAKT_RUN_ID: host.state.runId, TAKT_REQ: ctx.requirementId, TAKT_TRANSCRIPT: transcript }
-      const apiKey = provider?.apiKeyEnv ? resolveSecret(provider.apiKeyEnv) : undefined
+      const apiKey = pairing?.mode !== 'bridge' && provider?.apiKeyEnv ? resolveSecret(provider.apiKeyEnv) : undefined
       if (provider?.apiKeyEnv && apiKey) env[provider.apiKeyEnv] = apiKey
       const sandbox = await sandboxCall(host, cwd, harness.id, ctx, env, node.timeoutMs, directories, identity.snapshot)
       let finishGuard: () => Promise<{ paths: string[]; action: 'flagged'; ambiguous: boolean }>
@@ -170,7 +170,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       let invocation: Awaited<ReturnType<typeof startInvocation>>
       try {
         const recipe = await recordRecipe(host, node, cwd, { ...selector, harness: harness.id, model }, recalled && !recalled.holdout ? recalled.lessons.map(lesson => lesson.id) : [], task)
-        invocation = await startInvocation(host, node.id, node.role, harness, selector, { model, effort: selector.effort }, index, cwd, identity, recipe.recipeKey)
+        invocation = await startInvocation(host, node.id, node.role, harness, selector, { model, effort: selector.effort, provider: provider?.id, pairing }, index, cwd, identity, recipe.recipeKey)
       } catch (error) {
         try { await finishGuard(); await finishOutputs() } finally { await sandbox.dispose() }
         throw error
@@ -181,7 +181,9 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       const toolStarts = new Map<string, number>()
       let eventChain = Promise.resolve()
       let eventError: unknown
+      const redactBridge = <T>(value: T): T => env.TAKT_BRIDGE_TOKEN ? JSON.parse(JSON.stringify(value).split(env.TAKT_BRIDGE_TOKEN).join('[REDACTED]')) as T : value
       const onEvent = (event: HarnessEvent): void => {
+        event = redactBridge(event)
         const receivedAt = Date.now()
         eventChain = eventChain.then(async () => {
           if (event.type === 'started') {
@@ -211,6 +213,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       }
       let result: HarnessResult | undefined
       let failure: unknown
+      let route: Awaited<ReturnType<NonNullable<EngineDeps['bridge']>['open']>> | undefined
       try {
         await host.emit('harness.message', { role: 'user', text: requestPrompt }, node.id, actor)
         const request: HarnessRequest = { prompt: requestPrompt, cwd, sandbox, model,
@@ -223,9 +226,19 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           tools: { writeScope: identity.snapshot ? [] : writeScope, allowBash: !identity.snapshot && profile.allowBash === true },
           signal: node.timeoutMs ? AbortSignal.any([host.signal, AbortSignal.timeout(node.timeoutMs)]) : host.signal,
         }
+        if (pairing?.mode === 'bridge') {
+          route = await host.deps.bridge!.open(provider!, pairing.protocol!, { model, signal: request.signal })
+          request.provider = route.provider
+          Object.assign(env, route.env)
+        }
         result = stores.kb ? await host.guard.system(['.takt/knowledge/queries.jsonl'], () => harness.run(request, onEvent)) : await harness.run(request, onEvent)
       } catch (error) { failure = error }
-      finally { try { await sandbox.dispose() } catch (error) { failure ??= error } }
+      finally { try { await route?.close() } catch (error) { failure ??= error }; try { await sandbox.dispose() } catch (error) { failure ??= error } }
+      if (result) result = redactBridge(result)
+      if (failure && env.TAKT_BRIDGE_TOKEN) {
+        if (failure instanceof Error) failure.message = redactBridge(failure.message)
+        else failure = redactBridge(String(failure))
+      }
       await eventChain
       let invocationFailure: unknown = failure ?? eventError
       try {

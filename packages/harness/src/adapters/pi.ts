@@ -1,7 +1,8 @@
-import { mkdir, open } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { mkdtemp, writeFile, rm, mkdir, open } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { tmpdir } from 'node:os'
 import type { HarnessAdapter, HarnessRequest, Usage } from '@taktflow/core'
-import { number, object, string, text } from '../parse.js'
+import { number, object, string, text, readProviderApiKey } from '../parse.js'
 import type { EventSink, JsonObject, StreamParser } from '../parse.js'
 import { collectSecrets, createRedactor, finalizeResult, runProcess } from '../process.js'
 import type { ProcessResult } from '../process.js'
@@ -204,7 +205,8 @@ export function createPiHarness(options: PiOptions = {}): HarnessAdapter {
     capabilities: {
       toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
       resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: true,
-      compactionEvents: true, customProvider: false, sandbox: false, mcp: true,
+      providerProtocols: ['openai-chat', 'anthropic-messages', 'openai-responses', 'gemini'],
+      compactionEvents: true, customProvider: true, sandbox: false, mcp: true,
     },
     async available() {
       const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })
@@ -212,19 +214,33 @@ export function createPiHarness(options: PiOptions = {}): HarnessAdapter {
     },
     async run(req, onEvent) {
       if (options.env && Object.keys(options.env).length) req = { ...req, env: { ...options.env, ...req.env } }
-      if (req.provider) return { ok: false, finalText: '', error: 'Pi does not support customProvider connection overrides; configure providers in Pi and select provider/model via model' }
-      if (options.provider && !req.model) return { ok: false, finalText: '', error: 'Pi --provider requires --model' }
+      if ((req.provider || options.provider) && !req.model) return { ok: false, finalText: '', error: 'Pi 选择 provider 时需要 model' }
       const args = ['--mode', 'json',
         ...(req.model ? ['--model', req.model] : []),
-        ...(options.provider ? ['--provider', options.provider] : []),
+        ...(!req.provider && options.provider ? ['--provider', options.provider] : []),
         ...(req.sessionId ? ['--session', req.sessionId] : []),
         ...(req.effort ? ['--thinking', req.effort] : []),
         ...(req.systemAppend ? ['--append-system-prompt', req.systemAppend] : []),
       ]
-      const parser = createPiParser(onEvent)
-      // 按 LF 实时处理完整 JSON 行，保留字符串内的 Unicode 分隔符。
-      const proc = await runPiProcess(bin, args, req, parser.onLine)
-      return finalizeResult(req, parser.result(), proc)
+      let directory: string | undefined
+      try {
+        if (req.provider) {
+          const apis: Record<string, string> = { 'openai-chat': 'openai-completions', 'openai-responses': 'openai-responses', 'anthropic-messages': 'anthropic-messages', gemini: 'google-generative-ai' }
+          const api = apis[req.provider.protocol]
+          if (!api) return { ok: false, finalText: '', error: 'Pi 不支持此 provider 协议' }
+          const key = readProviderApiKey(req)
+          if (key.name && !key.value) return { ok: false, finalText: '', error: `Pi 缺少密钥 ${key.name}` }
+          directory = await mkdtemp(join(tmpdir(), 'takt-pi-'))
+          const file = join(directory, 'provider.mjs'), name = `takt-${req.provider.id}`
+          const config = { baseUrl: req.provider.baseURL, api, apiKey: key.name ?? 'takt-no-api-key', headers: req.provider.headers,
+            models: [{ id: req.model, ...(req.modelConfig?.contextWindow === undefined ? {} : { contextWindow: req.modelConfig.contextWindow }) }] }
+          await writeFile(file, `export default function(pi) { pi.registerProvider(${JSON.stringify(name)}, ${JSON.stringify(config)}); }\n`, { mode: 0o600 })
+          args.push('-e', file, '--provider', name)
+        }
+        const parser = createPiParser(onEvent)
+        const proc = await runPiProcess(bin, args, req, parser.onLine)
+        return finalizeResult(req, parser.result(), proc)
+      } finally { if (directory) await rm(directory, { recursive: true, force: true }) }
     },
   }
 }

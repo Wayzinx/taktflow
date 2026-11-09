@@ -83,7 +83,7 @@ export function createRuntimeCatalog(options: {
   const validate = options.validate ?? validateRuntime
   const now = options.now ?? Date.now
   const mtime = options.mtime ?? (async (dir: string) => (await stat(join(dir, 'takt.config.json'))).mtimeMs)
-  const ttl = 30_000
+  const ttl = 60_000
   const runtimes = new Map<string, RuntimeEntry>()
   const probes = new WeakMap<ProjectContext, CacheEntry<HarnessInfo[]>>()
 

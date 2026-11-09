@@ -1,3 +1,4 @@
+import { processBridge } from './bridge.js'
 import { cliActor } from './actor.js'
 import { sha256 } from '@taktflow/core'
 import { access, readFile } from 'node:fs/promises'
@@ -207,6 +208,7 @@ export function createRunEngine(
 export function engineDependencies(context: ProjectContext): EngineDeps {
   return {
     stores: context.stores,
+    bridge: processBridge,
     harnesses: context.harnesses,
     profiles: context.profiles,
     knowledge: context.knowledge,

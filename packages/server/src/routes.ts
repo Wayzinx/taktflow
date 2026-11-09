@@ -1,3 +1,4 @@
+import { pairingMatrix } from './pairings.js'
 import { automationRoutes, type AutomationCallbacks } from './automation-routes.js'
 import { agentRoutes } from './agent-routes.js'
 import { runtimeRoutes, type RuntimeCallbacks } from './runtime-routes.js'
@@ -163,6 +164,11 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     // 接入运行时命令后，attention.answer 已负责续跑；回调只用于没有运行时的存储模式。
     if (!catalog.getCommands && item.kind !== 'assumption') await onAnswer?.(item)
     return item
+  })
+  add('GET', '/api/pairings', async ({ stores }) => {
+    const rows = catalog.getHarnesses ? await catalog.getHarnesses(stores) : catalog.getCatalog ? (await catalog.getCatalog(stores)).harnesses : undefined
+    if (!rows) throw new HttpError(501, '未接入运行时 harnesses 目录')
+    return pairingMatrix(stores.config, rows, catalog.bridge)
   })
   add('GET', '/api/harnesses', ({ stores }) => {
     if (catalog.getHarnesses) return catalog.getHarnesses(stores)

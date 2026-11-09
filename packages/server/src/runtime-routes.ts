@@ -1,5 +1,5 @@
 import { assertSecretName, patchRuntimeConfig, providerProtocols, readRuntimeConfig, RuntimeConfigError, setLocalSecret, systemWrite, validateHarnessSelector,
-  type ProjectStores, type RuntimeConfig, type RuntimeTestRequest, type TaktConfig } from '@taktflow/core'
+  type ProviderBridge, type ProjectStores, type RuntimeConfig, type RuntimeTestRequest, type TaktConfig } from '@taktflow/core'
 import { ACP_PRESETS, PROVIDER_PRESETS, createHarnesses, providerConfig, collectSecrets, createRedactor } from '@taktflow/harness'
 import { actor, authorize, body, HttpError, text } from './http.js'
 import type { Handler } from './routes.js'
@@ -8,9 +8,10 @@ import { testRuntime } from './runtime-test.js'
 import { auditSpace } from './space.js'
 
 export interface RuntimeCallbacks {
+  bridge?: ProviderBridge
   prepareRuntime?(stores: ProjectStores, config: TaktConfig): Promise<() => void>
 }
-const brands: Record<string, string> = { openai: 'OpenAI', anthropic: 'Anthropic', deepseek: 'DeepSeek', moonshot: 'Moonshot', zhipu: '智谱', dashscope: '阿里百炼', ark: '火山方舟', minimax: 'MiniMax', siliconflow: '硅基流动', openrouter: 'OpenRouter', 'azure-openai': 'Azure OpenAI', ollama: 'Ollama', vllm: 'vLLM', lmstudio: 'LM Studio', litellm: 'LiteLLM' }
+const brands: Record<string, string> = { openai: 'OpenAI', anthropic: 'Anthropic', deepseek: 'DeepSeek', moonshot: 'Moonshot', zhipu: '智谱', dashscope: '阿里百炼', ark: '火山方舟', minimax: 'MiniMax 国际', 'minimax-cn': 'MiniMax 国内', 'ark-coding': '方舟 Coding Plan', siliconflow: '硅基流动', openrouter: 'OpenRouter', 'azure-openai': 'Azure OpenAI', ollama: 'Ollama', vllm: 'vLLM', lmstudio: 'LM Studio', litellm: 'LiteLLM' }
 const presets: RuntimeConfig['presets'] = {
   providers: Object.entries(PROVIDER_PRESETS).map(([id, config]) => ({ id, displayName: brands[id]!, protocol: config.protocol, baseURL: config.baseURL, ...('apiKeyEnv' in config ? { apiKeyEnv: config.apiKeyEnv } : {}), ...('endpoints' in config ? { endpoints: config.endpoints } : {}) })),
   acp: ACP_PRESETS,
@@ -48,7 +49,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
             if (!builtinHarnesses.includes(id) && !stores.config.harnesses?.some(h => h.id === id)) harnesses[id] = harness
           }
           try {
-            for (const selector of [...Object.values(config.roles ?? {}), ...Object.values(readRuntimeConfig(config, presets).system)]) validateHarnessSelector(selector, normalized, harnesses)
+            for (const selector of [...Object.values(config.roles ?? {}), ...Object.values(readRuntimeConfig(config, presets).system)]) validateHarnessSelector(selector, normalized, harnesses, options.bridge)
           } catch { throw new RuntimeConfigError(400, 'roles/system：harness 与模型或 provider 协议不兼容；请检查选择的能力后重试') }
           return () => {}
         },
@@ -63,7 +64,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
     authorize(request, stores, 'owner')
     const input = await body(request)
     return testRuntime(stores.config, input as unknown as RuntimeTestRequest,
-      async () => (await options.resolveRuntime?.(stores))?.harnesses ?? createHarnesses({ config: stores.config, projectDir: stores.projectDir }))
+      async () => (await options.resolveRuntime?.(stores))?.harnesses ?? createHarnesses({ config: stores.config, projectDir: stores.projectDir }), options.bridge)
   })
   for (const method of ['PUT', 'DELETE']) add(method, '/api/secrets/:name', async ({ stores, request, params }) => {
     authorize(request, stores, 'owner')

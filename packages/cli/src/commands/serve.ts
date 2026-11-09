@@ -1,3 +1,4 @@
+import { processBridge } from '../bridge.js'
 import { loadRuntimeProfiles } from '../runtime-profiles.js'
 import { access } from 'node:fs/promises'
 import { discoverSpaces, createServer, type LeadMention, type ServerOptions } from '@taktflow/server'
@@ -71,7 +72,7 @@ export function liveRuntime(initial: ProjectContext) {
     }
     const next = { ...current, stores: { ...current.stores, config: normalized }, providers, harnesses }
     for (const selector of [...Object.values(normalized.roles ?? {}), normalized.lead?.harness, normalized.route?.harness, normalized.steward?.harness, normalized.lessons?.learner]) {
-      if (selector) validateHarnessSelector(selector, normalized, harnesses)
+      if (selector) validateHarnessSelector(selector, normalized, harnesses, processBridge)
     }
     let activated = false
     return { context: wrap(() => activated ? current : next), activate() { current = next; activated = true } }
@@ -157,7 +158,7 @@ export function liveProjects(initial: ProjectContext[],
   }
   return { runtimes, ensure, remove, async close() {
     await Promise.allSettled([...loading.values()])
-    await Promise.all([...runtimes.keys()].map(remove))
+    try { await Promise.all([...runtimes.keys()].map(remove)) } finally { await processBridge.close() }
   } }
 }
 
@@ -181,6 +182,7 @@ export async function runServe(options: ServeOptions): Promise<void> {
     printer.warn(`Web 控制台未构建（${webDir} 不存在），先运行 npm run build -w @taktflow/web；API 仍可用。`)
   }
   const serverOptions: ServerOptions = {
+    bridge: processBridge,
     onSpaceLoad: async stores => { await projects.ensure(stores.projectDir) },
     onSpaceUnload: projects.remove,
     onLeadMention: options.onLeadMention,
