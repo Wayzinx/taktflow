@@ -1173,6 +1173,8 @@ export interface AgentProfile {
   /** 默认写权限（glob）。节点上的 writeScope 只能收窄，不能放宽。 */
   writeScope: string[]
   readScope?: string[]
+  /** 能读的知识库（KnowledgeBase.id）；不写即空间绑定的全部。节点上的 knowledge.bases 优先。 */
+  knowledge?: string[]
   /** native harness 是否允许 bash 工具（默认关闭）。 */
   allowBash?: boolean
   /** 角色说明正文（markdown）。 */
@@ -1536,6 +1538,51 @@ export interface TaktConfig {
   providers?: Record<string, ProviderConfig>
   /** 模型别名：别名 → 配置。 */
   models?: Record<string, ModelConfig>
+  /** 自动化：定时或事件触发，启动 workflow / 写汇报 / 发通知（docs/design/30 §4）。 */
+  automations?: AutomationConfig[]
+  /** 通知渠道：飞书 / Lark 机器人、Slack、通用 Webhook。地址与签名密钥只写环境变量名。 */
+  channels?: ChannelConfig[]
+}
+
+// ============================================================ 自动化与通知渠道（docs/design/30 §4）
+
+export type AutomationEvent = 'run.finished' | 'run.failed' | 'requirement.created' | 'attention.overdue'
+
+export type AutomationTrigger =
+  /** 5 段 cron（分 时 日 月 周），按 serve 所在机器的时区。 */
+  | { schedule: string }
+  | {
+      event: AutomationEvent
+      /** 只对这些 workflow / 需求生效；不写即全部。 */
+      filter?: { workflowIds?: string[]; requirementIds?: string[] }
+    }
+
+export type AutomationAction =
+  /** 对需求跑 workflow。事件触发时 requirementId 默认取事件里的需求；定时触发必须写。 */
+  | { kind: 'start_workflow'; workflowId: string; requirementId?: string }
+  /** 汇报：空间内各需求的最新进展、等人的事、失败的运行（同管家 digest，按需求去重）。since 不写时取上次成功执行以来，首次为 24 小时。 */
+  | { kind: 'digest'; sinceHours?: number }
+  /** 只发消息。text 可用 {{requirement.title}} {{run.id}} {{run.status}} {{node.id}} {{link}} 占位。 */
+  | { kind: 'notify'; text: string }
+
+export interface AutomationConfig {
+  id: string
+  title: string
+  enabled: boolean
+  trigger: AutomationTrigger
+  action: AutomationAction
+  /** 执行结果发到哪些渠道（ChannelConfig.id）。digest / notify 必须至少一个。 */
+  notify?: { channels: string[] }
+}
+
+export interface ChannelConfig {
+  id: string
+  title?: string
+  kind: 'feishu' | 'slack' | 'webhook'
+  /** webhook 地址所在的环境变量名（或本机密钥库里的名字）。 */
+  urlEnv: string
+  /** 飞书机器人的签名校验密钥（可选）。 */
+  secretEnv?: string
 }
 
 // ============================================================ 评测与归因（docs/design/20）

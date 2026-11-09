@@ -37,6 +37,20 @@
  * | POST | /api/space/repos/:repoId/sync                  | { head } |
  * | GET  | /api/space/files?kind=skill|agent&name=        | SpaceFile（SKILL.md / 角色档案原文） |
  * | PUT  | /api/space/files?kind=skill|agent&name=        | 请求体 { content, reason } → SpaceFile |
+ * | --- 角色与自动化（docs/design/30 §3、§4） | | |
+ * | GET  | /api/space/agents                              | AgentRoleView[]（每个角色的结构化字段、生效的 harness 及来源、被哪些 workflow 节点用到） |
+ * | GET  | /api/space/agents/:role                        | AgentRoleView |
+ * | PUT  | /api/space/agents/:role                        | 请求体 AgentRoleWrite → AgentRoleView（owner；改 frontmatter、正文原样保留；revision 不一致 409；不存在时新建） |
+ * | DELETE| /api/space/agents/:role                       | 请求体 { reason } → 204（owner；还有 workflow 节点用它时 409 并列出节点） |
+ * | GET  | /api/space/automations                         | AutomationsView（自动化、通知渠道、各自状态） |
+ * | PUT  | /api/space/automations/:id                     | 请求体 { automation: AutomationConfig, reason } → AutomationView（owner；cron / 渠道 / workflow 校验失败 400 并指出字段） |
+ * | DELETE| /api/space/automations/:id                    | 请求体 { reason } → 204（owner） |
+ * | POST | /api/space/automations/:id/trigger             | 请求体 { reason } → AutomationRunRecord（立即执行一次；trigger 为 manual） |
+ * | GET  | /api/space/automations/:id/runs                | AutomationRunRecord[]（最近 20 次，新的在前） |
+ * | POST | /api/space/automations/:id/runs/:recordId/retry | 请求体 { reason } → AutomationRunRecord（按原触发输入重跑；只有 failed 的能重试） |
+ * | PUT  | /api/space/channels/:id                        | 请求体 { channel: ChannelConfig, reason } → ChannelView（owner） |
+ * | DELETE| /api/space/channels/:id                       | 请求体 { reason } → 204（owner；还有自动化引用时 409 并列出） |
+ * | POST | /api/space/channels/:id/test                   | 请求体 { reason } → AutomationDelivery（发一条测试消息） |
  * | --- workflow 协同编辑（docs/design/16） | | |
  * | GET  | /api/workflows                                 | WorkflowSummary[] |
  * | GET  | /api/workflows/:id                             | WorkflowDocument |
@@ -185,6 +199,9 @@ import type { AttentionItem, KnowledgeCaller } from './interfaces.js'
 import type {
   AcpHarnessConfig,
   Actor,
+  AutomationConfig,
+  AutomationEvent,
+  ChannelConfig,
   Checkpoint,
   CliHarnessConfig,
   HarnessOverride,
@@ -581,6 +598,107 @@ export interface SpaceDetail extends SpaceSummary {
   agents: Array<Pick<AgentProfile, 'role' | 'title' | 'description' | 'harness' | 'writeScope'>>
   workflows: WorkflowSummary[]
   knowledge: Array<{ id: string; kind: string; description: string }>
+}
+
+// ------------------------------------------------------------ 角色（docs/design/30 §3）
+
+/** 生效值来自哪一层：节点 > 角色 > 空间默认（config.roles）> 内置默认。 */
+export type SettingSource = 'role' | 'space-default' | 'builtin'
+
+export interface AgentRoleView {
+  role: string
+  title: string
+  description: string
+  /** 档案文件（相对空间根目录）；插件 / 内置角色没有文件时为空，第一次保存会在空间里建一份。 */
+  path?: string
+  origin: 'space' | 'plugin' | 'builtin'
+  /** 档案内容的哈希；PUT 时作为 baseRevision。 */
+  revision: string
+  /** 档案里写的 harness；没写为空。 */
+  harness?: HarnessSelector
+  /** 实际生效的 harness 及来源。 */
+  effective: { harness: HarnessSelector; source: SettingSource }
+  skills: string[]
+  /** 能读的知识库（KnowledgeBase.id）；不写即空间绑定的全部。 */
+  knowledge?: string[]
+  writeScope: string[]
+  readScope?: string[]
+  allowBash?: boolean
+  instructions: string
+  /** 用到这个角色的 workflow 节点；harness 列的是节点上自己写了 harness 的（会覆盖角色）。 */
+  usedBy: Array<{ workflowId: string; workflowTitle?: string; nodeId: string; harness?: HarnessSelector }>
+  /** 档案里引用了但空间里不存在的技能 / 知识库 / 模型，给出人能读的提示。 */
+  problems?: string[]
+}
+
+/** 角色写入：给了的字段整体替换，null 删除该字段（回到下一层的默认）；instructions 不给则正文不动。 */
+export interface AgentRoleWrite {
+  baseRevision?: string
+  reason: string
+  title?: string
+  description?: string
+  harness?: HarnessSelector | null
+  skills?: string[]
+  knowledge?: string[] | null
+  writeScope?: string[]
+  readScope?: string[] | null
+  allowBash?: boolean | null
+  instructions?: string
+}
+
+// ------------------------------------------------------------ 自动化与通知渠道（docs/design/30 §4）
+
+export interface AutomationsView {
+  automations: AutomationView[]
+  channels: ChannelView[]
+  /** 本机时区（定时触发按它算）。 */
+  timezone: string
+}
+
+export interface AutomationView extends AutomationConfig {
+  /** 定时触发的下一次时间；停用或事件触发时为空。 */
+  nextAt?: string
+  lastRun?: AutomationRunRecord
+  /** 引用的渠道 / workflow 不存在、cron 写错等，给出人能读的提示；有问题的自动化不会执行。 */
+  problems?: string[]
+}
+
+export interface ChannelView extends ChannelConfig {
+  /** urlEnv（和 secretEnv）现在从哪来；missing 时发不出去。不返回值。 */
+  url: SecretSource
+  secret?: SecretSource
+  /** 被哪些自动化引用。 */
+  usedBy: string[]
+}
+
+export interface AutomationRunRecord {
+  id: string
+  automationId: string
+  at: string
+  trigger: 'schedule' | 'event' | 'manual' | 'retry'
+  /** 事件触发时的事件；重试时沿用原记录的。 */
+  event?: { type: AutomationEvent; runId?: string; requirementId?: string; nodeId?: string }
+  status: 'running' | 'ok' | 'failed' | 'skipped'
+  /** 一句话结果，例如"已启动 run-xxx"、"已推送 3 个需求的进展"。 */
+  summary: string
+  error?: string
+  /** start_workflow 启动的运行。 */
+  runId?: string
+  /** 发出去的消息正文（纯文本，便于在界面上预览）。 */
+  text?: string
+  deliveries: AutomationDelivery[]
+  /** 重试的是哪条记录。 */
+  retryOf?: string
+  durationMs?: number
+}
+
+export interface AutomationDelivery {
+  channel: string
+  ok: boolean
+  /** 对方返回的 HTTP 状态。 */
+  status?: number
+  error?: string
+  at: string
 }
 
 export interface SpaceFile {
