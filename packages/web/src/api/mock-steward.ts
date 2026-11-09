@@ -1,8 +1,8 @@
 /**
  * 管家演示数据源（全局，不分空间）：会话、逐字流式回复（思考 → 工具卡逐个出现 → 正文逐字）、提案批准 / 拒绝 / 撤销、风险、汇报、动态。
- * 回复用确定性规则：说"风险"答风险，说"建 / 新建 + 需求"出新建需求提案，说"进度 / 处理 / 今天"答待办；进度、风险、待办附可视化块，其余给一段通用说明。
+ * 回复用确定性规则：问某个需求到哪了 / 运行图出实体视图（说不清是哪个出候选），说"风险"答风险，说"建 / 新建 + 需求"出新建需求提案，说"进度 / 处理 / 今天"答待办；进度、风险、待办附可视化块，其余给一段通用说明。
  */
-import type { Proposal, Risk, StewardBlock, StewardFeedItem, StewardMessage, StewardStreamEvent, StewardThread, StewardToolCall } from '@taktflow/core'
+import type { Proposal, Risk, StewardBlock, StewardFeedItem, StewardMessage, StewardStreamEvent, StewardThread, StewardToolCall, StewardTone } from '@taktflow/core'
 import { DEFAULT_PREFS, DEFAULT_PROFILE, ME, PRODUCT_METRICS, seedDigest, seedFeed, seedMessages, seedProposals, seedRisks, seedThreads, STEWARD, SUGGESTIONS } from './mock-steward-seed'
 import type { StewardSource } from './source-m4'
 
@@ -120,7 +120,63 @@ const ATTENTION_BLOCKS: StewardBlock[] = [
   },
 ]
 
-function plan(text: string): Plan {
+/** 演示空间里的需求：标题片段 → 编号、最近一次运行（Solo 的实体视图用，docs/design/28）。 */
+const REQS: Array<{ id: string; title: string; keys: RegExp; run: string; status: string; tone: StewardTone }> = [
+  { id: 'REQ-001', title: '问候语支持空名字', keys: /问候|空名字/, run: 'run-20261104-0001', status: '已交付', tone: 'success' },
+  { id: 'REQ-002', title: '订单导出支持 CSV', keys: /导出|csv|报表/i, run: 'run-20261104-0002', status: '研发测试 Loop · 进行中', tone: 'running' },
+  { id: 'REQ-003', title: '登录页增加图形验证码', keys: /验证码|登录/, run: 'run-20261104-0003', status: '需求理解 · 等你决定', tone: 'waiting' },
+  { id: 'REQ-004', title: '优惠券过期前 24 小时提醒', keys: /优惠券|提醒|过期/, run: 'run-20261104-0004', status: '系分设计 · 失败', tone: 'failed' },
+  { id: 'REQ-005', title: '搜索结果关键词高亮', keys: /搜索|高亮|关键词/, run: 'run-20261104-0005', status: '需求理解 · 等你决定', tone: 'waiting' },
+]
+const snap = (r: (typeof REQS)[number]) => ({ title: r.title, status: r.status, tone: r.tone, at: now() })
+
+/** 问某个需求"到哪了 / 运行图 / 等我决定的"时出实体视图；说不清是哪个就出候选。 */
+/** last：会话里上一次说到的需求号，用户说「它 / 这个」时沿用（真实管家靠模型读上下文）。 */
+function entityPlan(text: string, last?: string): Plan | undefined {
+  if (/(?:建|新建|创建)(?:一?个)?需求/.test(text)) return undefined
+  const no = /req[\s-]*0*(\d+)/i.exec(text)?.[1]
+  const hit = REQS.filter((r) => (no ? Number(r.id.slice(4)) === Number(no) : r.keys.test(text)))
+  const r = hit.length === 1 ? hit[0]! : /它|这个|那个/.test(text) && last ? REQS.find((x) => x.id === last) : undefined
+  const find = { tool: 'find', input: { q: text }, ok: true, summary: r ? `找了 1 个空间 → ${SPACE} / ${r.id}` : `找到 ${hit.length || 3} 个候选`, ms: 34 }
+  if (/等我决定|要我决定|等我的|审批/.test(text) && !r)
+    return {
+      thinking: '列出这个空间里等你回答 / 审批的事。',
+      tools: [{ tool: 'show', input: { view: 'attention' }, ok: true, summary: '实体视图：待办', ms: 12 }],
+      text: '**3 件**等你决定，最久的是 REQ-004 的重复失败，要你裁决是重试还是交给人。点一行在右侧处理。',
+      blocks: [{ type: 'entity', view: 'attention', ref: { type: 'space', id: SPACE, spaceId: SPACE, label: SPACE }, snapshot: { title: '等你决定的事', status: '3 件', tone: 'waiting', at: now() } }],
+      suggestions: ['REQ-004 为什么一直失败？'],
+    }
+  if (!r) {
+    if (!/到哪|卡在哪|进度怎么样|怎么样了|运行图|流程图/.test(text)) return undefined
+    const cands = (hit.length > 1 ? hit : REQS.filter((x) => x.tone !== 'success')).slice(0, 4)
+    return {
+      thinking: '没说是哪个需求，有几个都可能，让你点一个。',
+      tools: [find],
+      text: '找到几个在推进的需求，你说的是哪一个？',
+      blocks: [{ type: 'pick', items: cands.map((x) => ({ ref: req(x.id, `${x.id} ${x.title}`), snapshot: snap(x) })) }],
+    }
+  }
+  const ref = req(r.id, `${r.id} ${r.title}`)
+  if (/运行图|流程图|画布|dag|节点图/i.test(text))
+    return {
+      thinking: `取 ${r.id} 最近一次运行，画运行图。`,
+      tools: [find, { tool: 'show', input: { view: 'dag', runId: r.run }, ok: true, summary: '实体视图：运行图', ms: 15 }],
+      text: `这是 ${r.id} 最近一次运行（${r.run}）。点节点在右侧看详情。`,
+      blocks: [{ type: 'entity', view: 'dag', ref: { type: 'run', spaceId: SPACE, id: r.run, label: r.run }, snapshot: snap(r) }],
+      suggestions: ['失败判决在做什么？'],
+    }
+  return {
+    thinking: `${r.id} 的阶段、当前节点和等你的事以实时数据为准。`,
+    tools: [find, { tool: 'show', input: { view: 'card', requirementId: r.id }, ok: true, summary: '实体视图：需求卡', ms: 11 }],
+    text: `${r.id}「${r.title}」现在：**${r.status}**。下面的卡片是实时的，运行在动它就跟着动。`,
+    blocks: [{ type: 'entity', view: 'card', ref, snapshot: snap(r) }],
+    suggestions: ['看它的运行图', '这一轮为什么失败？'],
+  }
+}
+
+function plan(text: string, last?: string): Plan {
+  const e = entityPlan(text, last)
+  if (e) return e
   if (/风险|卡住|延期/.test(text))
     return {
       thinking: '查风险引擎当前未处理的风险，按级别排序。',
@@ -169,7 +225,7 @@ function plan(text: string): Plan {
   }
 }
 
-export function createMockSteward(): StewardSource {
+export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewardPicks'> {
   const threads = seedThreads()
   const messages = seedMessages()
   const proposals = seedProposals()
@@ -196,9 +252,19 @@ export function createMockSteward(): StewardSource {
   }
 
   /** 逐步生成管家回复：message(streaming) → thinking → 工具卡逐个出现 → 正文逐字 → 提案 → done。 */
+  /** 会话里最近一次出现的需求号：用户带的上下文或管家画过的实体。 */
+  const lastReq = (threadId: string) => {
+    for (const m of [...messages].reverse()) {
+      if (m.threadId !== threadId) continue
+      const refs = [...(m.context ?? []), ...(m.blocks ?? []).flatMap((b) => (b.type === 'entity' ? [b.ref] : []))]
+      const r = refs.find((x) => x.type === 'requirement')
+      if (r) return r.id
+    }
+  }
+
   async function reply(threadId: string, userText: string) {
     await sleep(420)
-    const p = plan(userText)
+    const p = plan(userText, lastReq(threadId))
     const msg: StewardMessage = { id: nid('m'), threadId, role: 'steward', at: now(), author: STEWARD, text: '', status: 'streaming', tools: [], citations: p.citations, suggestions: undefined }
     messages.push(msg)
     emit(threadId, { type: 'message', message: msg })

@@ -4,7 +4,7 @@ import { usePageContextExtra } from '../../lib/ui-store'
 import { useAsync } from '../../api'
 
 /** 全局页面（不属于任何空间）：不带空间上下文。 */
-const GLOBAL = /^\/(steward|spaces)(\/|$)/
+const GLOBAL = /^\/(solo|steward|spaces)(\/|$)/
 
 /**
  * 停靠面板自动带上的上下文（docs/design/22 §1.2）：按当前路由推导空间 / 需求 / 运行 / 节点 / workflow / 知识库，
@@ -48,6 +48,6 @@ export function pageKeyOf(path: string): { page: string; id?: string } {
     if (m) return { page, id: m.id }
   }
   const first = path.split('/').filter(Boolean)[0]
-  const pages: Record<string, string> = { requirements: 'requirements', attention: 'attention', workflows: 'workflows', knowledge: 'knowledge', settings: 'settings', eval: 'eval', spaces: 'spaces', steward: 'steward' }
+  const pages: Record<string, string> = { requirements: 'requirements', attention: 'attention', workflows: 'workflows', knowledge: 'knowledge', settings: 'settings', eval: 'eval', spaces: 'spaces', steward: 'steward', solo: 'steward' }
   return { page: first ? (pages[first] ?? first) : 'overview' }
 }

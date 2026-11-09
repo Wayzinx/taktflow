@@ -1,0 +1,354 @@
+/* 实体视图（docs/design/28 §2）：和可视化块同一张浅底圆角面；会话里、焦点面板里、停靠面板里共用。 */
+.ent {
+  container: ent / inline-size;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--divider);
+  text-align: start;
+  color: var(--text);
+}
+.ent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--text-meta);
+}
+.ent-space {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.ent-id {
+  color: var(--text-3);
+  white-space: nowrap;
+}
+.ent-title {
+  min-width: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.ent-gap,
+.ent-foot-gap {
+  flex: 1;
+}
+.ent-pill {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-meta);
+  white-space: nowrap;
+  color: var(--text-2);
+  background: var(--surface-hover);
+}
+.ent-pill:empty {
+  display: none;
+}
+.ent-pill[data-tone='running'] {
+  color: var(--st-running);
+  background: var(--st-running-soft);
+}
+.ent-pill[data-tone='waiting'] {
+  color: var(--st-waiting);
+  background: var(--st-waiting-soft);
+}
+.ent-pill[data-tone='failed'] {
+  color: var(--st-failed);
+  background: var(--st-failed-soft);
+}
+.ent-pill[data-tone='success'] {
+  color: var(--st-success);
+  background: var(--st-success-soft);
+}
+.ent-pill[data-tone='stale'] {
+  color: var(--st-stale);
+  background: var(--st-stale-soft);
+}
+.ent-note {
+  margin: 0;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+
+/* 阶段泳道 + 阶段名（窄容器里只留泳道） */
+.ent-lanes {
+  display: grid;
+  gap: 5px;
+}
+.ent-lanes .lane-track {
+  width: 100%;
+}
+.ent-lane-labels {
+  display: grid;
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.ent-lane-labels [data-st='running'],
+.ent-lane-labels [data-st='waiting_human'] {
+  color: var(--text);
+  font-weight: 500;
+}
+@container ent (max-width: 460px) {
+  .ent-lane-labels {
+    display: none;
+  }
+}
+
+/* 当前节点：蜂 + 名字 + 在做什么 */
+.ent-now {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.ent-now-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.ent-now-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--text-ui);
+}
+.ent-now-head .faint {
+  font-size: var(--text-meta);
+}
+.ent-card .att-card {
+  margin: 0;
+}
+
+.ent-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 -6px -4px 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.ent-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ent-live::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-3);
+}
+.ent-live[data-live]::before {
+  background: var(--st-success);
+  animation: ent-live calc(var(--takt) * 2) ease-in-out infinite;
+}
+@keyframes ent-live {
+  50% {
+    opacity: 0.35;
+  }
+}
+.ent-expand {
+  color: var(--accent-text);
+}
+
+/* 只读运行图 */
+.ent-canvas-box {
+  height: 240px;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+.ent-canvas {
+  height: 100%;
+}
+.ent-canvas .react-flow__node {
+  cursor: pointer;
+}
+
+/* 节点详情 */
+.ent-rows {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 6px 12px;
+  margin: 0;
+  font-size: var(--text-meta);
+}
+.ent-rows dt {
+  color: var(--text-3);
+}
+.ent-rows dd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+}
+.ent-ctx {
+  flex: 1;
+  max-width: 220px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--surface-hover);
+}
+.ent-ctx i {
+  display: block;
+  height: 100%;
+  background: var(--st-success);
+  transform-origin: left;
+  transition: transform var(--dur-slow) var(--ease-out-soft);
+}
+.ent-ctx[data-hot] i {
+  background: var(--st-waiting);
+}
+.ent-events {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.ent-events li {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+.ent-events time {
+  flex: none;
+  color: var(--text-3);
+}
+.ent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* 候选 */
+.ent-pick {
+  display: grid;
+  gap: 8px;
+}
+.ent-pick-title {
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.ent-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+.ent-mini {
+  position: relative;
+  gap: 8px;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  transition:
+    box-shadow var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease-out-soft);
+}
+.ent-mini:disabled {
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .ent-mini:not(:disabled):hover {
+    box-shadow: inset 0 0 0 1px var(--border-strong);
+    transform: translateY(-1px);
+  }
+}
+.ent-pick .ent-note {
+  padding-right: 18px;
+}
+.ent-pick-go {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+
+/* 会话里的待办：一行一件 */
+.ent-att-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin: 0 -6px;
+  padding: 0;
+  list-style: none;
+}
+.ent-att-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: start;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ent-att-ask {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-2);
+}
+.ent-att-row time {
+  flex: none;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .ent-att-row:hover {
+    background: var(--surface-hover);
+  }
+  .ent-att-row:hover .ent-att-ask {
+    color: var(--text);
+  }
+}
+@container ent (max-width: 420px) {
+  .ent-att-row time {
+    display: none;
+  }
+}
+
+/* 焦点面板里：卡片不套底，运行图占面板上半 */
+.ent-panel {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.ent-panel-canvas {
+  height: clamp(260px, 42vh, 420px);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px var(--divider);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ent-live[data-live]::before {
+    animation: none;
+  }
+  .ent-mini,
+  .ent-ctx i {
+    transition: none;
+  }
+}

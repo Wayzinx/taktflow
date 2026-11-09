@@ -101,7 +101,7 @@ export function SinceBanner() {
             </SinceColumn>
             <SinceColumn title="新风险" empty="没有新风险">
               {d.risks.map((r) => (
-                <Link key={r.key} to={r.evidence[0]?.href ?? '/steward'} className="since-item" onClick={() => click('risk')}>
+                <Link key={r.key} to={r.evidence[0]?.href ?? '/solo'} className="since-item" onClick={() => click('risk')}>
                   <span className={`since-level ${r.level}`}>{r.level === 'high' ? '高' : '中'}</span>
                   <span className="truncate">{r.title}</span>
                 </Link>
@@ -121,7 +121,7 @@ export function SinceBanner() {
             </SinceColumn>
           </div>
           <div className="since-foot">
-            <Link to="/steward?focus=digest" className="btn btn-sm btn-ghost" onClick={() => click('steward')}>
+            <Link to="/solo?focus=digest" className="btn btn-sm btn-ghost" onClick={() => click('steward')}>
               在管家里看完整汇报
             </Link>
           </div>

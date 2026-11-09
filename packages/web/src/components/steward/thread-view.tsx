@@ -18,6 +18,11 @@ export interface ThreadViewProps {
   empty?: ReactNode | ((ask: (text: string, ctx?: StewardContextRef[]) => void) => ReactNode)
   autoFocus?: boolean
   className?: string
+  /** 没有会话时输入框居中（Solo 首页）：hero 在输入框上方，empty 在下方。 */
+  hero?: ReactNode
+  /** @ 引用跨全部空间找（Solo）。 */
+  globalMentions?: boolean
+  placeholder?: string
 }
 
 function ThreadSkeleton() {
@@ -37,7 +42,7 @@ function ThreadSkeleton() {
 }
 
 /** 会话：消息列表（贴底自动滚动，用户往上翻时不打扰）+ 输入框。整页与停靠面板共用。 */
-export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context, onContext, empty, autoFocus, className }: ThreadViewProps) {
+export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context, onContext, empty, autoFocus, className, hero, globalMentions, placeholder }: ThreadViewProps) {
   const t = useStewardThread(threadId, onThreadCreated)
   const list = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -71,6 +76,19 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
     return t.send(text, { context: extra.context.length ? extra.context : undefined, attachments: extra.attachments.length ? extra.attachments : undefined })
   }
   const showEmpty = !threadId && t.messages.length === 0
+  const composer = <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={!!t.streamingId || t.waiting} autoFocus={autoFocus} globalMentions={globalMentions} placeholder={placeholder} />
+  const emptyBody = typeof empty === 'function' ? empty((text, c) => void send(text, { context: c ?? context, attachments: [] })) : empty
+
+  if (showEmpty && hero !== undefined)
+    return (
+      <div className={`stw-thread stw-thread-hero${className ? ` ${className}` : ''}`}>
+        <div className="stw-hero">
+          {hero}
+          {composer}
+          {emptyBody}
+        </div>
+      </div>
+    )
 
   return (
     <div className={`stw-thread${className ? ` ${className}` : ''}`}>
@@ -88,7 +106,7 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
         ) : t.loading && !t.messages.length ? (
           <ThreadSkeleton />
         ) : showEmpty ? (
-          typeof empty === 'function' ? empty((text, c) => void send(text, { context: c ?? context, attachments: [] })) : empty
+          emptyBody
         ) : (
           <div className="stw-msgs">
             {t.messages.map((m) => (
@@ -100,7 +118,7 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
                 showSuggestions={m.id === lastSteward}
                 onProposal={t.upsertProposal}
                 onPatch={(patch) => t.patchMessage(m.id, patch)}
-                onSuggest={(s) => void send(s, { context, attachments: [] })}
+                onSuggest={(s, c) => void send(s, { context: c ?? context, attachments: [] })}
               />
             ))}
             {t.waiting && (
@@ -116,9 +134,7 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
           </div>
         )}
       </div>
-      <div className="stw-thread-foot">
-        <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={!!t.streamingId || t.waiting} autoFocus={autoFocus} />
-      </div>
+      <div className="stw-thread-foot">{composer}</div>
     </div>
   )
 }

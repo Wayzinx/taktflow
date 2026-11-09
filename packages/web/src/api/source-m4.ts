@@ -41,6 +41,9 @@ import type {
   StewardPrefs,
   StewardStreamEvent,
   StewardThread,
+  StewardFindResult,
+  StewardFindType,
+  StewardPick,
   WorkflowConvertResult,
 } from '@taktflow/core'
 
@@ -111,6 +114,10 @@ export interface StewardSource {
   saveStewardProfile(content: string): Promise<{ content: string }>
   /** 页内"让管家……"建议，最多 3 条；space 缺省为当前空间。 */
   stewardSuggestions(q: { page: string; space?: string; id?: string }): Promise<string[]>
+  /** GET /steward/find：跨看得见的空间找需求 / 运行 / 节点 / workflow / 知识库（docs/design/28 §3）。 */
+  stewardFind(q: string, opts?: { types?: StewardFindType[]; spaceId?: string; limit?: number }): Promise<StewardFindResult>
+  /** GET /steward/picks：Solo 首页"你可能想看"。 */
+  stewardPicks(limit?: number): Promise<StewardPick[]>
   /** 产品健康：每个功能的效率与迭代信号。 */
   productMetrics(): Promise<ProductMetric[]>
   /** 交互事件上报（只存本机）；失败不抛错。 */

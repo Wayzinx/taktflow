@@ -29,6 +29,26 @@ export async function loadMentions(ds: DataSource): Promise<PickItem[]> {
   ]
 }
 
+const FIND_META: Record<StewardContextRef['type'], { icon: LucideIcon; section: string }> = {
+  space: { icon: FolderKanban, section: '空间' },
+  requirement: { icon: ListChecks, section: '需求' },
+  run: { icon: PlayCircle, section: '运行' },
+  node: { icon: PlayCircle, section: '节点' },
+  workflow: { icon: Workflow, section: 'workflow' },
+  knowledge: { icon: BookOpen, section: '知识库' },
+  file: { icon: BookOpen, section: '文件' },
+}
+
+/** 跨空间 @（Solo）：有字时按服务端 find 的排序，没字时列"你可能想看"的需求。 */
+export async function findMentions(ds: DataSource, q: string): Promise<PickItem[]> {
+  const items = q ? (await ds.stewardFind(q, { limit: 8 }).catch(() => ({ items: [] }))).items : await ds.stewardPicks(6).catch(() => [])
+  return items.map((c) => {
+    const meta = FIND_META[c.ref.type]
+    const label = c.ref.type === 'requirement' ? `${c.ref.id} ${c.snapshot.title}` : c.snapshot.title
+    return { key: `${c.ref.type}:${c.ref.spaceId ?? ''}/${c.ref.id}`, icon: meta.icon, label, hint: c.ref.spaceId, section: q ? meta.section : '你可能想看', insert: `@${c.ref.id}`, ref: { ...c.ref, label: c.ref.label ?? label } }
+  })
+}
+
 export function commandItems(list: CommandInfo[]): PickItem[] {
   return list.map((c) => ({ key: `cmd:${c.id}`, icon: SquareTerminal, label: c.title, hint: c.id, section: c.kind === 'query' ? '查询' : '命令', insert: `/${c.id} ` }))
 }

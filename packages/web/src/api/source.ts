@@ -102,6 +102,8 @@ export interface EvalOutputSnapshot {
 /** Web 用到的全部数据接口：真实 HTTP 客户端和演示数据实现同一份。 */
 export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, M5Source, M6Source {
   readonly mock: boolean
+  /** 绑定到某个空间的数据源（空间内接口固定加该空间前缀，不看当前地址）：Solo 这类全局页按实体所在空间取数（docs/design/28 §2）。 */
+  forSpace(spaceId: string): DataSource
   /** 当前用户（GET /me）：请求头 x-takt-user 指定，缺省为空间第一个 owner。 */
   me(): Promise<Viewer>
   project(): Promise<ProjectOverview>

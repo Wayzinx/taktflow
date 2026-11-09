@@ -1,4 +1,4 @@
-import type { KnowledgeBuild, KnowledgePublishResponse } from '@taktflow/core'
+import type { KnowledgeBuild, KnowledgePublishResponse, StewardPick } from '@taktflow/core'
 import { currentSpaceId } from '../lib/space'
 import { ApiRequestError, qs } from './client'
 import type { CrudSource, KnowledgeSource, StewardSource } from './source-m4'
@@ -55,6 +55,8 @@ export function createM4Http({ req, get, url, stream, stewardStream }: Http): Cr
     stewardProfile: () => get('/steward/profile'),
     saveStewardProfile: (content) => req('PUT', '/steward/profile', { content }),
     stewardSuggestions: ({ page, space, id }) => get(`/steward/suggestions${qs({ page, space: space ?? currentSpaceId(), id })}`),
+    stewardFind: (q, opts = {}) => get(`/steward/find${qs({ q, types: opts.types?.join(','), space: opts.spaceId, limit: opts.limit })}`),
+    stewardPicks: (limit) => get<{ items: StewardPick[] }>(`/steward/picks${qs({ limit })}`).then((r) => r.items),
     productMetrics: () => get('/steward/metrics'),
     reportProductEvent: (e) => req<void>('POST', '/steward/events', e).catch(() => undefined),
 

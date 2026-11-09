@@ -138,7 +138,7 @@ export function StewardDock() {
           <button ref={historyBtn} type="button" className="btn btn-ghost btn-icon btn-sm" title="历史会话" aria-label="历史会话" aria-haspopup="menu" onClick={() => setHistory(true)}>
             <History />
           </button>
-          <button type="button" className="btn btn-ghost btn-icon btn-sm" title={withShortcut('在整页打开', 'mod+j')} aria-label="在整页打开" onClick={() => navigate(`/steward${threadId ? `?thread=${threadId}` : ''}`)}>
+          <button type="button" className="btn btn-ghost btn-icon btn-sm" title={withShortcut('在整页打开', 'mod+j')} aria-label="在整页打开" onClick={() => navigate(`/solo${threadId ? `?thread=${threadId}` : ''}`)}>
             <Maximize2 />
           </button>
           <Menu

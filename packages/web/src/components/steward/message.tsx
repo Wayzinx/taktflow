@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Copy, CornerDownRight, Forward, ThumbsDown, ThumbsUp } from 'lucide-react'
-import type { Proposal, StewardDelegation, StewardMessage } from '@taktflow/core'
+import type { Proposal, StewardContextRef, StewardDelegation, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Bee } from '../mascot'
 import { normReceipt, ReceiptRail, ResendButton } from '../receipt'
@@ -97,7 +97,8 @@ export interface MessageViewProps {
   showSuggestions?: boolean
   onProposal: (p: Proposal) => void
   onPatch: (patch: Partial<StewardMessage>) => void
-  onSuggest: (text: string) => void
+  /** 追问；ctx 给了就用它作这条消息的上下文（候选块点选）。 */
+  onSuggest: (text: string, ctx?: StewardContextRef[]) => void
 }
 
 /**

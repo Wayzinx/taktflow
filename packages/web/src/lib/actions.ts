@@ -138,10 +138,11 @@ const STEWARD: Record<string, (input: Record<string, unknown>) => [string, strin
   propose: (i) => ['起草', `提案「${shortTarget(str(i.title))}」`],
   ask_lead: (i) => ['转达', `${str(i.requirementId)} 的 Lead`],
   show: () => ['绘制', '可视化'],
+  find: (i) => ['查找', `「${shortTarget(str(i.q))}」`],
 }
 const str = (v: unknown) => (typeof v === 'string' ? v : v === undefined ? '' : String(v))
 
-const STEWARD_KIND: Record<string, ActionKind> = { 查看: 'read', 核对: 'search', 读取: 'read', 检索: 'knowledge', 起草: 'edit', 转达: 'delegate' }
+const STEWARD_KIND: Record<string, ActionKind> = { 查看: 'read', 核对: 'search', 查找: 'search', 读取: 'read', 检索: 'knowledge', 起草: 'edit', 转达: 'delegate' }
 
 export function stewardAction(t: StewardToolCall): Action {
   const [verb, target] = STEWARD[t.tool]?.(t.input ?? {}) ?? ['调用', t.tool]
@@ -153,6 +154,9 @@ export function stewardAction(t: StewardToolCall): Action {
     if (t.tool === 'show') {
       const n = /(\d+) 个块/.exec(t.summary ?? '')?.[1]
       if (n) a.result = `${n} 个块`
+    } else if (t.tool === 'find' && out && typeof out === 'object' && !Array.isArray(out) && Array.isArray((out as { items?: unknown[] }).items)) {
+      const n = (out as { items: unknown[] }).items.length
+      a.result = n ? `${n} 个` : '没找到'
     } else if ((t.tool === 'resolve_space' || t.tool === 'resolve_requirement') && out && typeof out === 'object' && !Array.isArray(out)) a.result = out.exact ? '找到' : '没找到'
     else if (t.tool === 'knowledge_search' && out && typeof out === 'object' && !Array.isArray(out) && Array.isArray(out.hits)) a.result = `${out.hits.length} 条命中`
     else if (Array.isArray(out)) a.result = `${out.length} 条`

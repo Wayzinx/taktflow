@@ -39,9 +39,9 @@ export function SettingsPage() {
   const { query } = useLocation()
   const raw = query.get('tab')
   const tab: Tab = TABS.includes(raw as Tab) ? (raw as Tab) : 'members'
-  // 管家的离线回复会链到 settings?tab=steward：管家设置是全局的，在 /steward 的设置抽屉里
+  // 管家的离线回复会链到 settings?tab=steward：管家设置是全局的，在 Solo 的设置抽屉里
   useEffect(() => {
-    if (raw === 'steward') navigate('/steward?drawer=settings', { replace: true })
+    if (raw === 'steward') navigate('/solo?drawer=settings', { replace: true })
   }, [raw])
   const q = useAsync((ds) => ds.space(), [])
   const sp = q.data

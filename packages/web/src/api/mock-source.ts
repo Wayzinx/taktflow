@@ -8,6 +8,7 @@ import { createMockWorkflows, type WorkflowApi } from './mock-workflows'
 import { archivedSpaces, createMockSpaceCrud, draftRoute, extraSpaces, MOCK_SERVER_INFO } from './mock-crud'
 import { createMockKnowledge } from './mock-knowledge'
 import { createMockSteward } from './mock-steward'
+import { mockFind, mockPicks } from './mock-solo'
 import type { DataSource } from './source'
 import type { CrudSource, KnowledgeSource } from './source-m4'
 
@@ -36,8 +37,19 @@ export function createMockSource(): DataSource {
   const crud = createMockSpaceCrud(spaces, archived, () => undefined)
   const steward = createMockSteward()
 
+  // forSpace：调用期间把"当前空间"钉在绑定的空间上（方法在调用时同步取空间）
+  let pinned: string | undefined
+  const pin = <T,>(id: string, fn: () => T): T => {
+    const prev = pinned
+    pinned = id
+    try {
+      return fn()
+    } finally {
+      pinned = prev
+    }
+  }
   function current(): MockSpace | undefined {
-    const id = currentSpaceId()
+    const id = pinned ?? currentSpaceId()
     return id ? spaces.find((s) => s.detail.id === id) : spaces[0]
   }
   function project(): ProjectSource {
@@ -189,9 +201,31 @@ export function createMockSource(): DataSource {
       }),
   }
 
+  // Solo：find / picks 按各空间的需求现算
+  const soloSpaces = () => Promise.all(spaces.map(async (sp) => ({ id: sp.detail.id, name: sp.detail.name, requirements: await pin(sp.detail.id, () => project().requirements()) })))
+  const solo = {
+    stewardFind: async (q: string, opts?: Parameters<DataSource['stewardFind']>[1]) => delay(mockFind(await soloSpaces(), q, opts), 80),
+    stewardPicks: async (limit?: number) => delay(mockPicks(await soloSpaces(), limit), 80),
+  }
+  const bound = new Map<string, DataSource>()
+  const forSpace = (id: string): DataSource => {
+    let b = bound.get(id)
+    if (!b) {
+      b = new Proxy({} as DataSource, {
+        get(_t, key: string) {
+          if (key === 'forSpace') return forSpace
+          const v = pin(id, () => root[key as keyof DataSource]) as unknown
+          return typeof v === 'function' ? (...a: unknown[]) => pin(id, () => (v as (...x: unknown[]) => unknown)(...a)) : v
+        },
+      })
+      bound.set(id, b)
+    }
+    return b
+  }
+
   // 所有需求 / 运行类接口按当前空间转发；方法在调用时取空间，切换空间不需要重建数据源
-  const globals = { mock: true, ...spaceApi, ...workflowApi, ...crudApi, ...steward }
-  return new Proxy(globals as DataSource, {
+  const globals = { mock: true, forSpace, ...spaceApi, ...workflowApi, ...crudApi, ...steward, ...solo }
+  const root: DataSource = new Proxy(globals as DataSource, {
     get(target, key: string) {
       if (key in target) return target[key as keyof DataSource]
       if (key.startsWith('knowledge') || /Knowledge/.test(key)) return kb[key as keyof KnowledgeSource]
@@ -200,4 +234,5 @@ export function createMockSource(): DataSource {
       return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(p) : v
     },
   })
+  return root
 }

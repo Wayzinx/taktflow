@@ -1,13 +1,20 @@
-import type { CSSProperties } from 'react'
+import { lazy, Suspense, type CSSProperties } from 'react'
 import { ArrowUpRight, CircleAlert, CircleCheck, Info, MessageCircleQuestion, SquareTerminal, TriangleAlert } from 'lucide-react'
 import type { StewardAction, StewardBlock, StewardContextRef, StewardTone } from '@taktflow/core'
 import { openCommand } from '../command-palette'
 import { Bars, Checklist, LaneTrack, StatTiles, Timeline, currentCell, LANE_LABEL, refPath } from '../viz'
+import { Skeleton } from '../ui'
 import { fmtRelative } from '../../lib/format'
 import { navigate } from '../../lib/router'
 import type { Tone } from '../../lib/status'
 import './blocks.css'
 
+// 实体视图要用运行图等重组件：按需加载，没出现实体块的会话不下载
+const EntityBlockView = lazy(() => import('../../pages/solo/entity').then((m) => ({ default: m.EntityBlockView })))
+const PickBlockView = lazy(() => import('../../pages/solo/entity').then((m) => ({ default: m.PickBlockView })))
+const entityFallback = <Skeleton h={120} r={12} />
+
+type Ask = (text: string, ctx?: StewardContextRef[]) => void
 const toneOf = (t?: StewardTone): Tone | undefined => (t && t !== 'neutral' ? t : undefined)
 const open = (ref?: StewardContextRef) => {
   const path = ref && refPath(ref)
@@ -76,7 +83,7 @@ function Table({ block }: { block: Extract<StewardBlock, { type: 'table' }> }) {
 
 const CALLOUT_ICON = { success: CircleCheck, failed: CircleAlert, waiting: TriangleAlert, stale: TriangleAlert, running: Info, neutral: Info }
 
-function Actions({ items, onAsk }: { items: StewardAction[]; onAsk?: (text: string) => void }) {
+function Actions({ items, onAsk }: { items: StewardAction[]; onAsk?: Ask }) {
   return (
     <div className="vb-actions">
       {items.map((a, i) => {
@@ -93,7 +100,7 @@ function Actions({ items, onAsk }: { items: StewardAction[]; onAsk?: (text: stri
   )
 }
 
-function Body({ block, onAsk }: { block: StewardBlock; onAsk?: (text: string) => void }) {
+function Body({ block, onAsk }: { block: StewardBlock; onAsk?: Ask }) {
   switch (block.type) {
     case 'stats':
       return <StatTiles className="tiles-sm" label={block.title ?? '读数'} tiles={block.items.map((t, i) => ({ key: `${i}`, label: t.label, value: t.value, unit: t.unit, tone: toneOf(t.tone), hint: t.hint, onClick: open(t.ref) }))} />
@@ -121,6 +128,18 @@ function Body({ block, onAsk }: { block: StewardBlock; onAsk?: (text: string) =>
     }
     case 'actions':
       return <Actions items={block.items} onAsk={onAsk} />
+    case 'entity':
+      return (
+        <Suspense fallback={entityFallback}>
+          <EntityBlockView block={block} />
+        </Suspense>
+      )
+    case 'pick':
+      return (
+        <Suspense fallback={entityFallback}>
+          <PickBlockView block={block} onPick={onAsk} />
+        </Suspense>
+      )
     default:
       return null
   }
@@ -130,12 +149,12 @@ function Body({ block, onAsk }: { block: StewardBlock; onAsk?: (text: string) =>
  * 管家回答里的可视化块（docs/design/24）：正文之后逐块"组装"入场（间隔 60ms）。
  * 按钮只追问 / 跳转 / 打开预填命令表单，不直接执行写操作。
  */
-export function StewardBlocks({ blocks, onAsk }: { blocks: StewardBlock[]; onAsk?: (text: string) => void }) {
+export function StewardBlocks({ blocks, onAsk }: { blocks: StewardBlock[]; onAsk?: Ask }) {
   return (
     <div className="vb-stack">
       {blocks.map((b, i) => {
         const title = 'title' in b ? b.title : undefined
-        const bare = b.type === 'actions' || b.type === 'callout' || b.type === 'stats'
+        const bare = b.type === 'actions' || b.type === 'callout' || b.type === 'stats' || b.type === 'entity' || b.type === 'pick'
         return (
           <section key={i} className={`vb${bare ? ' vb-bare' : ''}`} data-type={b.type} style={{ '--i': i } as CSSProperties} aria-label={title}>
             {title && <div className="vb-title">{title}</div>}

@@ -40,10 +40,10 @@ export function qs(params: Record<string, string | number | boolean | undefined>
 }
 
 /** 基于 fetch 的类型化客户端，路由与 packages/core/src/api.ts 顶部的接口表一一对应。 */
-export function createHttpSource(base = '/api'): DataSource {
-  // 多空间：当前 URL 带 /s/:spaceId 时空间内接口加同样的前缀；全局接口（GLOBAL_PATH）不加
+export function createHttpSource(base = '/api', space?: string): DataSource {
+  // 多空间：当前 URL 带 /s/:spaceId 时空间内接口加同样的前缀；全局接口（GLOBAL_PATH）不加。绑定了空间（forSpace）时用绑定的
   const scoped = (path: string) => {
-    const sid = currentSpaceId()
+    const sid = space ?? currentSpaceId()
     return sid && !GLOBAL_PATH.test(path) ? `${base}/s/${enc(sid)}${path}` : base + path
   }
   async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -66,8 +66,10 @@ export function createHttpSource(base = '/api'): DataSource {
   }
   const get = <T,>(path: string) => req<T>('GET', path)
 
+  const bound = new Map<string, DataSource>()
   return {
     mock: false,
+    forSpace: (id) => bound.get(id) ?? bound.set(id, createHttpSource(base, id)).get(id)!,
     project: () => get('/project'),
     me: () => get('/me'),
     requirements: () => get('/requirements'),

@@ -1,4 +1,4 @@
-import { useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react'
+import { createContext, useContext, useSyncExternalStore, type AnchorHTMLAttributes, type MouseEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { splitSpace, spacePath } from './space'
 
@@ -99,12 +99,23 @@ export function matchPath(pattern: string, path: string): Record<string, string>
   return params
 }
 
+/** 子树里的页内路径属于哪个空间（api 的 SpaceScope 设置）：全局页（Solo）里展示别的空间的对象时，链接要指向那个空间。 */
+const LinkSpace = createContext<string | undefined>(undefined)
+export const LinkSpaceProvider = LinkSpace.Provider
+
+/** 页内路径 → 带空间前缀的路径：在 SpaceScope 里用绑定的空间，否则交给 href / navigate 按当前地址补。 */
+export function useSpaceHref(): (to: string) => string {
+  const space = useContext(LinkSpace)
+  return (to) => (space && to.startsWith('/') && !to.startsWith('/s/') ? spacePath(space, to) : to)
+}
+
 export function Link({ to, onClick, ...rest }: AnchorHTMLAttributes<HTMLAnchorElement> & { to: string }) {
+  const target = useSpaceHref()(to)
   const handle = (e: MouseEvent<HTMLAnchorElement>) => {
     onClick?.(e)
     if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
     e.preventDefault()
-    navigate(to)
+    navigate(target)
   }
-  return <a href={href(to)} onClick={handle} {...rest} />
+  return <a href={href(target)} onClick={handle} {...rest} />
 }

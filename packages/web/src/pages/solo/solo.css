@@ -1,0 +1,292 @@
+/* Solo（docs/design/28 §1）：左栏会话 / 动态 · 中间对话 · 右侧焦点面板；整页铺满工作区，不留页边距。 */
+.shell-content:has(> .page-view > .solo),
+.shell-content:has(> .solo) {
+  padding: 0;
+}
+.solo {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  height: calc(100dvh - var(--topbar-h));
+}
+.solo[data-panel='open'] {
+  grid-template-columns: 280px minmax(0, 1fr) clamp(420px, 36vw, 620px);
+}
+
+/* ---------------------------------------------------------------- 左栏 */
+.solo-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: 0;
+  padding: var(--sp-4) var(--sp-3) var(--sp-3);
+  border-right: 1px solid var(--divider);
+}
+.solo-new {
+  justify-content: center;
+}
+.solo-side .stwp-side {
+  flex: 1;
+  background: none;
+  box-shadow: none;
+  border: 0;
+  border-radius: 0;
+}
+.solo-side .stwp-side-head {
+  padding: 0 0 var(--sp-2);
+}
+.solo-side .stwp-side-body {
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------- 对话 */
+.solo-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.solo-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-4) var(--sp-2) var(--sp-8);
+}
+.solo-head-title {
+  min-width: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+}
+.solo-head-gap {
+  flex: 1;
+}
+.solo-head .faint {
+  flex: none;
+  font-size: var(--text-meta);
+}
+.solo-thread {
+  flex: 1;
+  min-height: 0;
+}
+.solo-thread .stw-thread-list {
+  padding: var(--sp-2) var(--sp-8) var(--sp-4);
+}
+.solo-thread .stw-thread-foot {
+  padding: var(--sp-2) var(--sp-8) var(--sp-6);
+}
+.solo-thread .stw-thread-foot .stw-composer {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+/* 首页：打招呼 → 大输入框 → 建议 → 你可能想看 → 今天 */
+.stw-thread-hero {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.stw-hero {
+  display: grid;
+  gap: var(--sp-5);
+  width: min(800px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 7vh 0 64px;
+}
+.solo-hello {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+.solo-hello-bee {
+  margin-bottom: 4px;
+}
+.solo-hello h1 {
+  margin: 0;
+  font-size: var(--text-display);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.solo-hello p {
+  margin: 0;
+}
+.stw-hero > .stw-composer {
+  padding: var(--sp-3) var(--sp-3) var(--sp-2);
+  border-radius: var(--r-lg);
+  box-shadow: var(--elev-2);
+}
+.stw-hero > .stw-composer .stw-input {
+  min-height: 52px;
+  font-size: var(--text-body);
+}
+.solo-home {
+  display: grid;
+  gap: var(--sp-8);
+}
+.solo-chips {
+  justify-content: center;
+}
+.solo-chips b {
+  margin-left: 4px;
+  color: var(--st-waiting);
+}
+.solo-sec {
+  display: grid;
+  gap: var(--sp-3);
+}
+.solo-sec-h {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: 600;
+}
+.solo-sec-h .faint {
+  font-size: var(--text-meta);
+  font-weight: 400;
+}
+.solo-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--sp-3);
+}
+.solo-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--text-ui);
+}
+.solo-empty svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+/* 整页管家的首页是居中的窄栏（margin: 0 auto 会让网格项缩到内容宽）；这里跟着 Solo 的栏宽铺满 */
+.solo-sec .stwp-home {
+  max-width: none;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- 焦点面板 */
+.solo-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border-left: 1px solid var(--divider);
+  background: var(--bg-sunken);
+  animation: solo-panel-in var(--dur-enter) var(--ease-out-soft) backwards;
+}
+@keyframes solo-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.solo-panel-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 48px;
+  padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+}
+.solo-crumbs {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.solo-crumb {
+  min-width: 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.solo-crumb:disabled,
+b.solo-crumb {
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  .solo-crumb:not(:disabled):hover {
+    background: var(--surface-hover);
+    color: var(--text);
+  }
+}
+.solo-panel-tools {
+  flex: none;
+  display: flex;
+  gap: 2px;
+}
+.solo-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-4);
+}
+.solo-panel .ent {
+  background: var(--surface);
+}
+
+/* 面板打开时，不够宽就让出左栏（会话至少留 560px） */
+@media (max-width: 1720px) {
+  .solo[data-panel='open'] {
+    grid-template-columns: minmax(0, 1fr) clamp(400px, 42vw, 560px);
+  }
+  .solo[data-panel='open'] .solo-side {
+    display: none;
+  }
+}
+/* 窄屏：面板改成从底部升起，会话保持全宽 */
+@media (max-width: 1100px) {
+  .solo,
+  .solo[data-panel='open'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .solo-side {
+    display: none;
+  }
+  .solo-panel {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 30;
+    max-height: min(72dvh, 680px);
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: var(--elev-3);
+    animation-name: solo-sheet-in;
+  }
+  @keyframes solo-sheet-in {
+    from {
+      transform: translateY(24px);
+      opacity: 0;
+    }
+  }
+  .solo-head,
+  .solo-thread .stw-thread-list,
+  .solo-thread .stw-thread-foot {
+    padding-left: var(--sp-4);
+    padding-right: var(--sp-4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .solo-panel {
+    animation: none;
+  }
+}

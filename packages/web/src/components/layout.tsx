@@ -118,6 +118,7 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const project = useAsync((ds) => ds.project(), [])
   const pending = project.data?.attention.length ?? 0
   const items = [
+    { to: '/solo', label: 'Solo', icon: Sparkles, active: path === '/solo' },
     { to: '/', label: '总览', icon: LayoutDashboard, active: path === '/' },
     { to: '/requirements', label: '需求', icon: ListTodo, active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements, create: true },
     { to: '/attention', label: '待办', icon: Inbox, active: path === '/attention', badge: pending },

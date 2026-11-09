@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { LinkSpaceProvider } from '../lib/router'
 import { createHttpSource, probeApi } from './client'
 import type { DataSource } from './source'
 
@@ -21,6 +22,20 @@ export function DataProvider({ children, fallback }: { children: ReactNode; fall
   }, [])
   if (!source) return <>{fallback}</>
   return <SourceContext.Provider value={source}>{children}</SourceContext.Provider>
+}
+
+/**
+ * 子树里的空间内接口和页内链接都固定到这个空间（docs/design/28 §2）：Solo 是全局页，实体视图按各自的 spaceId 取数、跳转。
+ * spaceId 为空时原样透传。
+ */
+export function SpaceScope({ spaceId, children }: { spaceId?: string; children: ReactNode }) {
+  const ds = useSource()
+  if (!spaceId) return <>{children}</>
+  return (
+    <SourceContext.Provider value={ds.forSpace(spaceId)}>
+      <LinkSpaceProvider value={spaceId}>{children}</LinkSpaceProvider>
+    </SourceContext.Provider>
+  )
 }
 
 export function useSource(): DataSource {

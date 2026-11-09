@@ -3,7 +3,7 @@ import { ArrowUpRight, Check, CornerDownLeft, FileClock, Gauge, GitBranch, Histo
 import type { AttentionItem } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../api'
 import { actorName, fmtRelative } from '../lib/format'
-import { Link, navigate } from '../lib/router'
+import { Link, navigate, useSpaceHref } from '../lib/router'
 import { TimeboxBar } from './timebox'
 import { toast } from './ui'
 import './attention-card.css'
@@ -22,6 +22,9 @@ const KIND_META = {
   workflow_change: { label: '流程变更', icon: Workflow },
   assumption: { label: '待确认假设', icon: Lightbulb },
 } as const
+
+/** 待办的类别标签：引擎类别优先，否则按表单类型。 */
+export const attentionMeta = (item: AttentionItem) => (item.kind && item.kind !== 'node' ? KIND_META[item.kind] : undefined) ?? FORM_META[item.form]
 
 const artifactHref = (r: NonNullable<AttentionItem['boundTo']>[number]) => `/req/${r.workspace}?tab=artifacts&path=${encodeURIComponent(r.path)}${r.version ? `&v=${r.version}` : ''}`
 
@@ -158,11 +161,12 @@ function AssumptionOrigin({ item }: { item: AttentionItem }) {
 /** 一条待办：审批 / 回答 / 选择，可以直接在卡片里处理。 */
 export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem; reqTitle?: string; compact?: boolean }) {
   const ds = useSource()
+  const at = useSpaceHref()
   const [text, setText] = useState('')
   const [choice, setChoice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(!compact)
-  const meta = (item.kind && item.kind !== 'node' ? KIND_META[item.kind] : undefined) ?? FORM_META[item.form]
+  const meta = attentionMeta(item)
   const Icon = meta.icon
   const answered = Boolean(item.answeredAt)
 
@@ -173,7 +177,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
       if (label === '已改答')
         toast(`${label}：${item.requirementId} · ${item.nodeId}`, {
           body: '这个节点与依赖它的节点已标为过期，恢复运行后会按新的回答重跑。',
-          action: { label: '去运行页', onClick: () => navigate(`/run/${item.runId}?node=${encodeURIComponent(item.nodeId)}`) },
+          action: { label: '去运行页', onClick: () => navigate(at(`/run/${item.runId}?node=${encodeURIComponent(item.nodeId)}`)) },
         })
       else toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : label === '已确认假设' ? '假设已确认，运行照常继续。' : '已提交，运行将自动继续。', tone: 'success' })
       invalidate()

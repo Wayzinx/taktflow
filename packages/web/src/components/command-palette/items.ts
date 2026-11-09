@@ -62,7 +62,7 @@ const PAGES: Array<[string, string, LucideIcon, string]> = [
   ['/requirements', '需求列表', ListTodo, 'requirements xuqiu'],
   ['/attention', '待办', Inbox, 'attention todo daiban'],
   ['/knowledge', '知识库', BookOpen, 'knowledge zhishi kb rag wiki'],
-  ['/steward', '管家', Sparkles, 'steward guanjia assistant agent'],
+  ['/solo', 'Solo · 管家', Sparkles, 'solo steward guanjia assistant agent 管家 对话'],
   ['/spaces', '全部空间', Boxes, 'spaces kongjian'],
   ['/workflows', 'Workflow', Workflow, 'workflows pipeline liushuixian bianji'],
   ['/settings', '空间设置', Settings, 'settings space members repos models harness shezhi'],

@@ -13,7 +13,7 @@ import { OverviewPage } from './pages/overview'
 import { NotFoundPage } from './pages/placeholder'
 import { RequirementsPage } from './pages/requirements'
 
-// 按需加载（docs/design/22 §3.5：首屏 JS 增量 ≤ 60KB）：管家整页、停靠面板、知识库页
+// 按需加载（docs/design/22 §3.5：首屏 JS 增量 ≤ 60KB）：Solo、停靠面板、知识库页
 // 总览与需求列表是最常见的首屏，随主包；其余页面按路由分包（画布、运行详情、评测、设置各自较重），首屏渲染后空闲时预取
 const PAGES = {
   attention: () => import('./pages/attention'),
@@ -24,7 +24,7 @@ const PAGES = {
   spaces: () => import('./pages/spaces'),
   workflow: () => import('./pages/workflow'),
   workflowsList: () => import('./pages/workflows-list'),
-  steward: () => import('./pages/steward'),
+  solo: () => import('./pages/solo'),
   knowledge: () => import('./pages/knowledge'),
   knowledgeDetail: () => import('./pages/knowledge/detail'),
 }
@@ -36,7 +36,7 @@ const SettingsPage = lazy(() => PAGES.settings().then((m) => ({ default: m.Setti
 const SpacesPage = lazy(() => PAGES.spaces().then((m) => ({ default: m.SpacesPage })))
 const WorkflowEditorPage = lazy(() => PAGES.workflow().then((m) => ({ default: m.WorkflowEditorPage })))
 const WorkflowsListPage = lazy(() => PAGES.workflowsList().then((m) => ({ default: m.WorkflowsListPage })))
-const StewardPage = lazy(() => PAGES.steward().then((m) => ({ default: m.StewardPage })))
+const SoloPage = lazy(() => PAGES.solo().then((m) => ({ default: m.SoloPage })))
 const StewardDock = lazy(() => import('./components/steward/dock').then((m) => ({ default: m.StewardDock })))
 const KnowledgeListPage = lazy(() => PAGES.knowledge().then((m) => ({ default: m.KnowledgeListPage })))
 const KnowledgeDetailPage = lazy(() => PAGES.knowledgeDetail().then((m) => ({ default: m.KnowledgeDetailPage })))
@@ -59,7 +59,9 @@ function Routes() {
 function SpaceRoutes({ path }: { path: string }) {
   if (path === '/' || path === '') return <OverviewPage />
   // 全局路由：带不带 /s/:space 前缀都能访问
-  if (path === '/steward') return <StewardPage />
+  if (path === '/solo') return <SoloPage />
+  // 原管家整页并入 Solo（docs/design/28）：旧地址带着查询参数跳过去
+  if (path === '/steward') return <Redirect to={`/solo${location.search}`} />
   if (path === '/spaces') return <SpacesPage />
   if (path === '/requirements') return <RequirementsPage />
   if (path === '/attention') return <AttentionPage />
