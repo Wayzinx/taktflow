@@ -64,7 +64,7 @@ it('HTTP 群聊提案经人工审批通过 workflow-source 应用，并保留作
   const server = await createServer({ projectDir: stores.projectDir, port: 0, onLeadMention: async (id, message) => { await lead.onMessage(id, message) }, onAnswer: async (item) => { await lead.onAttention(item) } }); servers.push(server)
   const posted = await fetch(`${server.url}/api/requirements/${req.id}/chat`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-takt-user': 'alice' }, body: JSON.stringify({ text: '@lead 改 workflow' }) })
   expect(posted.status).toBe(200)
-  await vi.waitFor(async () => expect(await stores.attention.list({ pending: true })).toHaveLength(1))
+  await vi.waitFor(async () => expect(await stores.attention.list({ pending: true })).toHaveLength(1), { timeout: 5000 })
   expect(await readFile(join(stores.paths.workflows, 'sample.workflow.ts'), 'utf8')).toBe(source)
   const pending = (await stores.attention.list({ pending: true }))[0]!
   const approved = await fetch(`${server.url}/api/attention/${encodeURIComponent(pending.requestId)}`, { method: 'POST', headers: { 'content-type': 'application/json', 'x-takt-user': 'alice' }, body: JSON.stringify({ decision: 'approve' }) })

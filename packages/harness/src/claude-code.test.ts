@@ -136,7 +136,7 @@ describe('Claude adapter', () => {
     const result = await createClaudeCodeHarness({ bin: '/custom/claude' }).run(request, event => events.push(event))
     expect(runProcess).toHaveBeenCalledWith('/custom/claude', ['-p', '--output-format', 'stream-json', '--verbose',
       '--model', 'opus', '--resume', 'old', '--append-system-prompt', 'system', '--permission-mode', 'bypassPermissions', '--setting-sources', 'project,local'],
-    request, { stdin: req.prompt, onLine: expect.any(Function) })
+    { ...request, env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', TEST: '1' } }, { stdin: req.prompt, onLine: expect.any(Function) })
     expect(result.ok).toBe(true)
     expect(events.some(event => event.type === 'usage')).toBe(true)
   })
@@ -146,6 +146,12 @@ describe('Claude adapter', () => {
     await createClaudeCodeHarness().run({ ...req, env: { TAKT_CLAUDE_SETTING_SOURCES: 'user,project,local' } }, () => {})
     const args = vi.mocked(runProcess).mock.calls[0]![1]
     expect(args.slice(args.indexOf('--setting-sources'), args.indexOf('--setting-sources') + 2)).toEqual(['--setting-sources', 'user,project,local'])
+  })
+
+  it('流水线里默认关自动记忆，env 显式给了就按给的', async () => {
+    mockOutput('{"type":"result","result":"done"}')
+    await createClaudeCodeHarness().run({ ...req, env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0' } }, () => {})
+    expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: '0' })
   })
 
   it('新会话不附加 resume/model/system 参数', async () => {

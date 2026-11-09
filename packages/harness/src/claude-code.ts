@@ -104,6 +104,8 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
       // 接别家 API 时 Claude Code 仍按 Anthropic 价目算 total_cost_usd，不能当真；成本由引擎按模型价格算
       const sink = req.provider ? withoutCost(onEvent) : onEvent
       const parser = createClaudeCodeParser(sink)
+      // 自动记忆会往个人 ~/.claude/projects 写东西，流水线里关掉（env 里显式给了就按给的）
+      processReq = { ...processReq, env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', ...processReq.env } }
       const proc = await runProcess(bin, args, processReq, { stdin: req.prompt, onLine: parser.onLine })
       const result = finalizeResult(req, parser.result(), proc)
       if (req.provider && result.usage) delete result.usage.costUsd

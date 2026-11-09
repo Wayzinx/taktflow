@@ -188,7 +188,11 @@ export async function runProcess(
 
   result.stdout = redact(rawStdout)
   result.stderr = redact(rawStderr)
-  addError(fallbackErrors(`${result.stdout}\n${result.stderr}`, result.exitCode !== 0 || Boolean(result.error)) ?? '')
+  // 有事件解析器时 stdout 是 agent 的正文和工具输出（读到的文件里可能就有 timeout / rate limit 字样），
+  // 错误由解析器从事件里取；进程成功就只看 stderr。纯文本输出没有事件，仍然两边都看。
+  const failed = result.exitCode !== 0 || Boolean(result.error)
+  const parsed = Boolean(options.onLine ?? options.onJsonLine)
+  addError(fallbackErrors(failed || !parsed ? `${result.stdout}\n${result.stderr}` : result.stderr, failed) ?? '')
   if (result.exitCode !== 0 || result.error) addError(result.stderr.trim())
   if (result.error !== undefined) result.error = redact(result.error)
   result.ok = result.exitCode === 0 && !result.error

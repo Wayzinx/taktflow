@@ -239,6 +239,17 @@ describe('runProcess', () => {
     expect(result.error?.toLowerCase()).toContain(keyword.match(/429|503|401/)?.[0] ?? keyword.toLowerCase())
   })
 
+  it('有事件解析器且退出 0 时，stdout 里的工具输出提到 timeout / rate limit 不算降级错误', async () => {
+    const lines: string[] = []
+    const code = 'console.log(JSON.stringify({type:"tool_result",content:"API_TIMEOUT_MS=600000; on timeout or rate limit retry"}))'
+    const result = await run(code, {}, { onLine: line => lines.push(line) })
+    expect(result).toMatchObject({ ok: true, exitCode: 0 })
+    expect(result.error).toBeUndefined()
+    expect(lines).toHaveLength(1)
+    const stderr = await run(`${code}; console.error("Request timeout")`, {}, { onLine: () => {} })
+    expect(stderr).toMatchObject({ ok: false, error: expect.stringMatching(/timeout/i) })
+  })
+
   it('成功文本偶然包含数字不会误判为错误', async () => {
     const result = await run('console.log(JSON.stringify({input_tokens:429, output_tokens:503, cached_tokens:401})); console.log("processed 429 files and 503 records; see page 401")')
     expect(result.ok).toBe(true)

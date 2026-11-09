@@ -53,7 +53,7 @@ describe('existing adapter provider configuration', () => {
     vi.mocked(runProcess).mockClear()
     const env = { ANTHROPIC_BASE_URL: 'https://example.invalid', OTHER: 'kept' }
     await createClaudeCodeHarness().run({ cwd: tmpdir(), prompt: '', env, provider: { id: 'local', protocol: 'anthropic-messages' } }, ignore)
-    expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual({ ...env, ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', API_TIMEOUT_MS: '600000' })
+    expect(vi.mocked(runProcess).mock.calls[0]![2].env).toEqual({ ...env, ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', API_TIMEOUT_MS: '600000', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' })
   })
 
   it('Claude 接别家 API 时丢掉按 Anthropic 价目算的成本，token 照报', async () => {
@@ -175,7 +175,7 @@ describe('existing adapter capabilities', () => {
 /** 改接别家 API 时 Claude Code 的模型、登录相关变量（见 claude-env.ts）。 */
 function claudeModelEnv(model: string): Record<string, string> {
   return {
-    ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', API_TIMEOUT_MS: '600000',
+    ANTHROPIC_API_KEY: '', CLAUDE_CODE_OAUTH_TOKEN: '', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', API_TIMEOUT_MS: '600000', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
     ANTHROPIC_MODEL: model, ANTHROPIC_DEFAULT_OPUS_MODEL: model, ANTHROPIC_DEFAULT_SONNET_MODEL: model, ANTHROPIC_DEFAULT_HAIKU_MODEL: model, ANTHROPIC_SMALL_FAST_MODEL: model,
   }
 }
