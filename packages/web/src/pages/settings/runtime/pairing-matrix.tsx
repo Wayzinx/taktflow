@@ -1,8 +1,8 @@
 import { useMemo, useRef, useState } from 'react'
-import { ArrowLeftRight, ArrowRight, House, Minus, TriangleAlert } from 'lucide-react'
+import { ArrowLeftRight, ArrowRight, House, Minus, ServerOff, TriangleAlert } from 'lucide-react'
 import type { HarnessInfo, ModelInfo, PairingInfo, ProviderProtocol, RuntimeTestResult } from '@taktflow/core'
 import { useAsync } from '../../../api'
-import { ErrorState, Popover, Skeleton } from '../../../components/ui'
+import { EmptyState, ErrorState, Popover, Skeleton } from '../../../components/ui'
 import { PROTOCOL_SHORT, TestButton, TestOutcome, type RuntimeApi } from './shared'
 import './pairing.css'
 
@@ -157,6 +157,16 @@ export function PairingMatrix({ rt, harnesses, models }: { rt: RuntimeApi; harne
         {head}
         <div className="card pm-card">
           <Skeleton h={180} />
+        </div>
+      </>
+    )
+
+  if (!cols.length)
+    return (
+      <>
+        {head}
+        <div className="card">
+          <EmptyState compact icon={ServerOff} title="还没有可用的 harness" body="上面的 harness 都没装好或已停用；装好一个（Claude Code、Codex、TRAE CLI、Pi），这里就会列出它能接哪些模型 API。" />
         </div>
       </>
     )
