@@ -1895,6 +1895,8 @@ export interface InvocationStart {
   provider?: string
   /** harness 与 LLM API 怎么接上的（docs/design/31 §2）。 */
   pairing?: Pairing
+  /** 结构化输出没通过校验后的第几次修正追问（docs/design/31 §5）；正常调用缺省。 */
+  repair?: number
   at: Timestamp
 }
 
