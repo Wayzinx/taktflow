@@ -233,6 +233,13 @@ export async function runServe(options: ServeOptions): Promise<void> {
 /**
  * 自动交还待办走同一个 Lead 后台续跑入口；无 Lead 的旧调用保留 CLI 保存的运行选项。
  */
+const backgroundResumes = new Set<Promise<unknown>>()
+
+/** 等无 Lead 时的后台续跑全部收尾（含质量同步）；测试清理目录前要等，否则还在写的文件会让 rm 报 ENOTEMPTY。 */
+export async function settleBackgroundResumes(): Promise<void> {
+  while (backgroundResumes.size) await Promise.allSettled([...backgroundResumes])
+}
+
 export async function resumeAfterAnswer(context: ProjectContext, item: AttentionItem, lead?: ProjectLead): Promise<void> {
   if (lead) {
     if (!await lead.onAttention(item)) await executeCommand(context.stores, lead.commands, 'run.resume', { runId: item.runId }, '待办回答后继续运行')
@@ -250,6 +257,7 @@ export async function resumeAfterAnswer(context: ProjectContext, item: Attention
     await resumeInBackground(onStarted => resumeOnce(context, item.runId, { autoApprove: false, json: true }, createPrinter(true), onStarted), {
       onError: report,
       onSettled: async result => { if (result?.status === 'failed') await report(Object.values(result.nodes).find(node => node.error)?.error ?? '节点执行失败') },
+      jobs: backgroundResumes,
     })
   })
 }

@@ -193,7 +193,7 @@ it('serve HTTP 回答后在进程内恢复 direct workflow 和保存的 mock', a
   const run = await json<State>(dir, ['run', 'custom.workflow.ts', '--req', 'REQ-001', '--harness', 'mock', '--mock', mock])
   const { createServer } = await import('@taktflow/server')
   const { loadRuntime } = await import('./project.js')
-  const { resumeAfterAnswer } = await import('./commands/serve.js')
+  const { resumeAfterAnswer, settleBackgroundResumes } = await import('./commands/serve.js')
   const context = await loadRuntime(dir)
   const server = await createServer({ projectDir: dir, host: '127.0.0.1', port: 0, onAnswer: (item) => resumeAfterAnswer(context, item) })
   try {
@@ -201,7 +201,7 @@ it('serve HTTP 回答后在进程内恢复 direct workflow 和保存的 mock', a
     expect(response.status, await response.text()).toBe(200)
     await vi.waitFor(async () => expect((await (await openProject(dir)).runs.get(run.runId))?.status).toBe('succeeded'))
     expect(await readFile(join(dir, '.takt/workspaces/REQ-001/tasks/done.md'), 'utf8')).toBe('done')
-  } finally { await server.close() }
+  } finally { await server.close(); await settleBackgroundResumes() }
 }, 30000)
 
 async function copyCleanExample(source: string, destination: string): Promise<void> {
