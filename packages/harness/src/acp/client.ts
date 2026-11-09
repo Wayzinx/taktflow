@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface, type Interface } from 'node:readline'
-import type { HarnessRequest } from '@taktflow/core'
+import { childEnv, type HarnessRequest } from '@taktflow/core'
 import { object, RpcError, type ObjectValue } from './protocol.js'
 
 interface Pending { resolve: (value: ObjectValue) => void; reject: (error: Error) => void; timer?: ReturnType<typeof setTimeout> }
@@ -19,7 +19,7 @@ export class AcpClient {
     private readonly onNotification: (method: string, params: ObjectValue) => void,
     private readonly onRequest: (method: string, params: ObjectValue) => Promise<unknown>) {
     this.child = spawn(command[0]!, command.slice(1), {
-      cwd: req.cwd, env: { ...process.env, ...req.env }, stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
+      cwd: req.cwd, env: childEnv(req.env), stdio: ['pipe', 'pipe', 'pipe'], detached: process.platform !== 'win32',
     })
     this.ended = new Promise(resolve => this.child.once('close', () => { this.closed = true; resolve() }))
     this.child.on('error', () => this.fail(new Error('ACP 进程启动失败，请检查命令路径、安装和执行权限')))

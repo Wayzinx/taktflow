@@ -69,6 +69,14 @@ it('诊断分开"不是 JSON"和"处理不了"，空行跳过', async () => {
   expect(await (await fixture({ blankLines: true })).run()).toMatchObject({ ok: true })
 })
 
+it('ACP agent 不继承外层 Claude Code 会话的标记和消息令牌', async () => {
+  vi.stubEnv('CLAUDE_CODE_SESSION_ID', 'host-session'); vi.stubEnv('CLAUDE_CODE_MESSAGING_TOKEN', 'host-token')
+  try {
+    const result = await (await fixture({ echoEnv: ['CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_MESSAGING_TOKEN', 'FAKE_ACP_TRACE'] })).run()
+    expect(JSON.parse(result.finalText)).toMatchObject({ CLAUDE_CODE_SESSION_ID: null, CLAUDE_CODE_MESSAGING_TOKEN: null, FAKE_ACP_TRACE: expect.any(String) })
+  } finally { vi.unstubAllEnvs() }
+})
+
 it('agent RPC 错误与输出脱敏，不回传环境密钥', async () => {
   const f = await fixture({ rpcError: 'synthetic-acp-key-value' })
   const result = await f.run({ env: { API_KEY: 'synthetic-acp-key-value' } })

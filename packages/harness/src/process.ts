@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { mkdir, open } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { createInterface } from 'node:readline'
-import { extractJsonBlock } from '@taktflow/core'
+import { childEnv, extractJsonBlock } from '@taktflow/core'
 import type { HarnessRequest, HarnessResult } from '@taktflow/core'
 
 export { extractJsonBlock } from '@taktflow/core'
@@ -84,7 +84,7 @@ export async function runProcess(
           cwd: req.cwd, env: req.env, stdin: options.stdin === undefined ? 'ignore' : 'pipe',
         }) : spawn(command, args, {
           cwd: req.cwd,
-          env: { ...process.env, ...req.env },
+          env: childEnv(req.env),
           stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
           // 独立进程组允许回收继承了输出管道的后代，避免 close 永远不触发。
           detached: process.platform !== 'win32',

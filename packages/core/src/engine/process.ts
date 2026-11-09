@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process'
+import { childEnv } from '../util/child-env.js'
 
 export function command(run: string, cwd: string, env: Record<string, string>, signal?: AbortSignal): Promise<{ code: number; output: string }> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(signal.reason); return }
     const grouped = process.platform !== 'win32'
-    const child = spawn('sh', ['-c', run], { cwd, env: { ...process.env, ...env }, detached: grouped })
+    const child = spawn('sh', ['-c', run], { cwd, env: childEnv(env), detached: grouped })
     let output = ''
     let settled = false
     let stopping = false

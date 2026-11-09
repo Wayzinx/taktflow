@@ -250,6 +250,16 @@ describe('runProcess', () => {
     expect(stderr).toMatchObject({ ok: false, error: expect.stringMatching(/timeout/i) })
   })
 
+  it('不把外层 Claude Code 会话的标记和消息令牌传给子进程；请求显式给的照传', async () => {
+    vi.stubEnv('CLAUDE_CODE_SESSION_ID', 'host-session'); vi.stubEnv('CLAUDE_CODE_MESSAGING_TOKEN', 'host-token'); vi.stubEnv('CLAUDECODE', '1')
+    vi.stubEnv('TAKT_KEEP', 'kept')
+    try {
+      const code = 'console.log(JSON.stringify({ s: process.env.CLAUDE_CODE_SESSION_ID, t: process.env.CLAUDE_CODE_MESSAGING_TOKEN, c: process.env.CLAUDECODE, k: process.env.TAKT_KEEP }))'
+      expect(JSON.parse((await run(code)).stdout)).toEqual({ k: 'kept' })
+      expect(JSON.parse((await run(code, { env: { CLAUDECODE: 'explicit' } })).stdout)).toEqual({ c: 'explicit', k: 'kept' })
+    } finally { vi.unstubAllEnvs() }
+  })
+
   it('成功文本偶然包含数字不会误判为错误', async () => {
     const result = await run('console.log(JSON.stringify({input_tokens:429, output_tokens:503, cached_tokens:401})); console.log("processed 429 files and 503 records; see page 401")')
     expect(result.ok).toBe(true)
