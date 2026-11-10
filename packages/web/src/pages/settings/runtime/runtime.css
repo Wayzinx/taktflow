@@ -391,14 +391,6 @@
   width: 13px;
   height: 13px;
 }
-.rt-pm-refresh .spin {
-  animation: rt-spin 0.9s linear infinite;
-}
-@keyframes rt-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .rt-pm-list {
   display: flex;
   flex-basis: 100%;
@@ -561,6 +553,10 @@
     animation: rt-reveal var(--dur-slow) var(--ease-out-soft) both;
   }
   .rt-test[aria-busy] svg {
+    animation: spin var(--takt) linear infinite;
+  }
+  /* 刷新模型列表时图标转；减少动效时静止，按钮的 aria-busy 和文字照样说明在刷新 */
+  .rt-pm-refresh .spin {
     animation: spin var(--takt) linear infinite;
   }
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { Check, ChevronDown, ChevronRight, Search, Settings2 } from 'lucide-react'
 import { BrandIcon } from '../brand/brand-icon'
 import { Link } from '../../lib/router'
-import { Popover } from '../ui'
+import { Popover, SkeletonRows } from '../ui'
 import { sameModel, type Effort, type PickerHarness, type PickerModel, type PickerValue } from './types'
 import './harness-picker.css'
 
@@ -141,7 +141,7 @@ export function HarnessPicker({
               </button>
             )}
             <div className="hp-hlist" role="listbox" aria-label="harness">
-              {loading && up.length === 0 && <p className="hp-empty">正在检测本机的 harness…</p>}
+              {loading && up.length === 0 && <SkeletonRows rows={3} gap={10} />}
               {shown.map((h) => {
                 const on = h.id === activeH?.id
                 const chosen = value?.harness === h.id
@@ -252,7 +252,7 @@ export function HarnessPicker({
                 </div>
               </>
             ) : (
-              <p className="hp-empty">{loading ? '正在检测…' : '没有可用的 harness'}</p>
+              loading ? <SkeletonRows rows={3} gap={10} icon={false} /> : <p className="hp-empty">没有可用的 harness</p>
             )}
           </div>
         </div>

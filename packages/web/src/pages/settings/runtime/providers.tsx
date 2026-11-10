@@ -4,7 +4,7 @@ import type { CatalogList, ProviderConfig, RuntimeTestResult } from '@taktflow/c
 import { invalidate, useSource } from '../../../api'
 import { useRuntimeCatalog } from '../../../components/harness-picker/use-catalog'
 import { fmtRelative } from '../../../lib/format'
-import { EmptyState, Menu, ReasonDialog, Segmented, toast, useFlashRows, useStagger } from '../../../components/ui'
+import { EmptyState, Menu, ReasonDialog, Segmented, Skeleton, toast, useFlashRows, useStagger } from '../../../components/ui'
 import { protocolColor } from '../../../lib/capabilities'
 import { EditorDrawer, Field, KeySource, SECRET, TestButton, TestOutcome, type RuntimeApi } from './shared'
 
@@ -134,6 +134,7 @@ function ProviderModels({ id, list, onRefreshed }: { id: string; list?: CatalogL
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   if (!list) return null
+  // ux-audit: ok 和服务端「还在列」的占位错误比对，不是界面文案
   const loading = list.error === '正在获取…'
   const live = list.models.filter((m) => !m.deprecated)
   const gone = list.models.length - live.length
@@ -152,7 +153,7 @@ function ProviderModels({ id, list, onRefreshed }: { id: string; list?: CatalogL
   return (
     <div className="rt-pmodels">
       {loading ? (
-        <span className="faint">正在列模型…</span>
+        <Skeleton w={120} h={12} />
       ) : (
         <button type="button" className="rt-pm-toggle" aria-expanded={open} onClick={() => setOpen((x) => !x)} disabled={!list.models.length}>
           <b className="num">{live.length}</b> 个模型
@@ -165,7 +166,7 @@ function ProviderModels({ id, list, onRefreshed }: { id: string; list?: CatalogL
           {list.error ? (list.source === 'preset' ? `没列出来，用的${SOURCE.preset}：${list.error}` : `刷新失败，显示上次结果：${list.error}`) : `${SOURCE[list.source]}${list.fetchedAt ? ` · ${fmtRelative(list.fetchedAt)}` : ''}`}
         </span>
       )}
-      <button type="button" className="btn btn-sm btn-ghost btn-icon rt-pm-refresh" aria-label={`重新列出 ${id} 的模型`} title="重新列出模型" disabled={busy || loading} onClick={refresh}>
+      <button type="button" className="btn btn-sm btn-ghost btn-icon rt-pm-refresh" aria-label={`重新列出 ${id} 的模型`} title="重新列出模型" aria-busy={busy || undefined} disabled={busy || loading} onClick={refresh}>
         <RefreshCw className={busy ? 'spin' : undefined} />
       </button>
       {open && (
