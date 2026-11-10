@@ -438,8 +438,10 @@
 }
 
 /* ---------------------------------------------------------------- 交付泳道（总览） */
-.req-lanes {
+.req-lanes-box {
   container: lanes / inline-size;
+}
+.req-lanes {
   display: grid;
   gap: 2px;
   margin: 0;
@@ -583,10 +585,15 @@
   color: var(--text-3);
   text-align: end;
 }
-/* 宽容器：标题 | 泳道 + 当前 | 等你 / Token 三列 */
+/* 宽容器：标题 | 泳道 + 当前 | 等你 / Token 三列；列宽定在列表上，各行用 subgrid 对齐 */
 @container lanes (min-width: 680px) {
-  .req-lane {
+  .req-lanes {
     grid-template-columns: minmax(0, 1fr) minmax(200px, 0.8fr) auto;
+    column-gap: 16px;
+  }
+  .req-lane {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
     grid-template-areas: 'main progress side';
   }
   .rl-progress {

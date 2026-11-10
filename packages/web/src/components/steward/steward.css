@@ -292,6 +292,9 @@ button.stw-thinking:hover {
 .stw-composer {
   position: relative;
   display: grid;
+  /* 列宽跟着输入框走：默认的 auto 列会被工具栏（不换行的提示、模型名）撑宽，按钮跑到框外 */
+  grid-template-columns: minmax(0, 1fr);
+  container: composer / inline-size;
   gap: var(--sp-1);
   padding: var(--sp-2);
   border: 1px solid var(--border-strong);
@@ -351,7 +354,14 @@ button.stw-thinking:hover {
   text-overflow: ellipsis;
 }
 .stw-send {
+  margin-left: auto;
   border-radius: var(--r-sm);
+}
+/* 窄输入框（Solo 对话栏、停靠面板）：快捷键提示让位给模型名 */
+@container composer (max-width: 480px) {
+  .stw-composer-hint {
+    display: none;
+  }
 }
 .stw-drop {
   position: absolute;

@@ -39,7 +39,7 @@ export function RequirementsTable({
             <th style={{ width: 84 }}>ID</th>
             <th>需求</th>
             {full && (
-              <th className="c-owner" style={{ width: 92 }}>
+              <th className="c-owner" style={{ width: 120 }}>
                 负责人
               </th>
             )}

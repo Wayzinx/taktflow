@@ -123,7 +123,13 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
             <span className="req-fact">创建于 {fmtRelative(r.createdAt)}</span>
             <span className="req-fact">更新于 {fmtRelative(r.updatedAt)}</span>
             <span className="req-fact">
-              <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens · <span className="mono">{fmtCost(r.usage.costUsd)}</span>
+              <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens
+              {r.usage.costUsd ? (
+                <>
+                  {' · '}
+                  <span className="mono">{fmtCost(r.usage.costUsd)}</span>
+                </>
+              ) : null}
             </span>
             <span className="req-fact">
               公共存放区 <span className="mono">.takt/workspaces/{id}/</span>

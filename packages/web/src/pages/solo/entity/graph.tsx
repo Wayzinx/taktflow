@@ -34,6 +34,9 @@ export function useRunLive(runId: string) {
   return { d, tick, error: q.error }
 }
 
+/** 节点上方的重做 / 轮次徽标、右侧的打回回环都画在节点框外，fitView 只量节点框：四边按像素留够，不被面板边裁掉。 */
+const FIT_PADDING = { top: '40px', right: '48px', bottom: '24px', left: '24px' } as const
+
 /**
  * 只读运行图（运行页画布的同一套布局、节点与边）：聚焦选中节点所在阶段，否则聚焦在跑的阶段。
  * 会话里（interactive 为 false）不抢滚轮，滚动照常翻会话；焦点面板里可以缩放平移。
@@ -53,7 +56,7 @@ export function RunGraph({ detail, selected, onSelect, interactive }: { detail: 
   const stageId = sel?.stage ?? active?.id ?? stages[stages.length - 1]?.id
   const fit = (i: ReactFlowInstance<FlowNode>, animate: boolean) => {
     const ids = stageId ? (layout.stageNodes.get(stageId) ?? []) : []
-    void i.fitView({ nodes: ids.length ? [...ids, `__lane__/${stageId}`].map((id) => ({ id })) : undefined, padding: 0.12, maxZoom: 0.95, minZoom: 0.3, duration: animate ? 400 : 0 })
+    void i.fitView({ nodes: ids.length ? [...ids, `__lane__/${stageId}`].map((id) => ({ id })) : undefined, padding: FIT_PADDING, maxZoom: 0.95, minZoom: 0.3, duration: animate ? 400 : 0 })
   }
   const fitRef = useRef(fit)
   fitRef.current = fit
