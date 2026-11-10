@@ -1,7 +1,8 @@
 import type { EventEnvelope, EventPayloads, QualityMetrics } from '../types.js'
 import { readReviewRounds, type ReviewWorkspace } from './review-rounds.js'
 
-export async function qualityMetrics(events: EventEnvelope[], workspace: ReviewWorkspace): Promise<QualityMetrics> {
+/** runIds：要统计评审轮次的运行，默认取 events 里出现过的运行（调用方只传了部分事件时显式给出）。 */
+export async function qualityMetrics(events: EventEnvelope[], workspace: ReviewWorkspace, runIds = new Set(events.map(event => event.runId))): Promise<QualityMetrics> {
   const result: QualityMetrics = { verified: 0, intercepted: 0, interceptedBy: { gate: 0, review: 0, judge: 0, completion: 0, fingerprint: 0 } }
   for (const event of events) {
     if (event.type === 'gate.result') {
@@ -14,7 +15,7 @@ export async function qualityMetrics(events: EventEnvelope[], workspace: ReviewW
     else if (event.type === 'node.checks' && (event.data as EventPayloads['node.checks']).unmet.length) result.interceptedBy.completion++
     else if (event.type === 'retry.suppressed') result.interceptedBy.fingerprint++
   }
-  for (const { round } of await readReviewRounds(workspace, new Set(events.map(event => event.runId)))) {
+  for (const { round } of await readReviewRounds(workspace, runIds)) {
     if (!round.passed) result.interceptedBy.review += round.records.flatMap(record => record.issues)
       .filter(issue => issue.severity === 'blocker' || issue.severity === 'major').length
   }

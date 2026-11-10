@@ -1,4 +1,4 @@
-import { runLiveness, nodeQuality, nodeChanges, recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, stageProgress, summarizeRun, type NodeDetail, type DailyActivity, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunSpark, type RunState, type SnapshotNode, type Usage, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
+import { runLiveness, nodeQuality, nodeChanges, recipeOf, currentNode, withAttentionStaleness, reviewDetail, addUsage, deriveRequirementState, loadRunGraph, buildRunGraph, createInsights, runDigest, stageProgress, summarizeRun, type NodeDetail, type DailyActivity, type ProjectOverview, type ProjectStores, type Requirement, type RequirementSummary, type RunSpark, type RunState, type SnapshotNode, type Usage, type EventPayloads, type WorkflowSnapshot } from '@taktflow/core'
 import { HttpError, relativePath, runId as validRunId, safeId } from './http.js'
 
 export async function requirement(stores: ProjectStores, id: string): Promise<Requirement> {
@@ -143,13 +143,16 @@ export async function nodeDetail(stores: ProjectStores, runId: string, nodeId: s
 
 export async function runSummaries(stores: ProjectStores, states: RunState[]) {
   return Promise.all(states.map(async (state) => {
-    const events = await stores.events.read(state.runId)
+    // 摘要只用到结束事件里的用量和派发事件，按事件文件与运行状态缓存，不必每次轮询都整份解析事件日志
+    const { summary, dispatch } = await runDigest(stores, state, 'run-summary', (events) => ({
+      summary: summarizeRun(state, events),
+      dispatch: events.find((event) => event.type === 'task.dispatched' && (event.data as EventPayloads['task.dispatched']).taskRunId === state.runId)?.data as EventPayloads['task.dispatched'] | undefined,
+    }))
     const explicit = state as RunState & Pick<import('@taktflow/core').RunSummary, 'kind' | 'origin'>
     const messages = await stores.chat.list(state.requirementId)
     const taskMessage = messages.find((message) => message.refs?.taskRunId === state.runId && message.replyTo)
     const trigger = messages.find((message) => message.id === taskMessage?.replyTo)
-    const dispatch = events.find((event) => event.type === 'task.dispatched' && (event.data as EventPayloads['task.dispatched']).taskRunId === state.runId)?.data as EventPayloads['task.dispatched'] | undefined
     const origin = explicit.origin ?? (trigger ? { kind: 'chat' as const, messageId: trigger.id, by: trigger.author, title: dispatch?.title ?? taskMessage!.text } : undefined)
-    return { ...summarizeRun(state, events), ...(await runLiveness(stores, state.runId, state) === 'interrupted' ? { interrupted: true as const } : {}), tier: state.route?.tier, kind: explicit.kind ?? (state.workflowId.startsWith('task:') || taskMessage || dispatch ? 'task' as const : 'workflow' as const), ...(origin ? { origin } : {}) }
+    return { ...summary, ...(await runLiveness(stores, state.runId, state) === 'interrupted' ? { interrupted: true as const } : {}), tier: state.route?.tier, kind: explicit.kind ?? (state.workflowId.startsWith('task:') || taskMessage || dispatch ? 'task' as const : 'workflow' as const), ...(origin ? { origin } : {}) }
   }))
 }

@@ -1,10 +1,14 @@
 import type { Insights, ProjectStores } from '../interfaces.js'
-import type { RequirementMetrics, TraceGraph } from '../types.js'
+import type { EventType, RequirementMetrics, TraceGraph } from '../types.js'
 import { acCoverage, readArtifactData } from './artifacts.js'
 import { eventMetrics } from './event-metrics.js'
 import { buildTraceGraph } from './trace.js'
 import { addUsage, summarizeUsage } from './usage.js'
 import { qualityMetrics } from './quality.js'
+import { runDigest } from './run-digest.js'
+
+/** 质量计数用到的事件类型：摘要里只留这些，不把整份事件放进缓存。 */
+const QUALITY_TYPES = new Set<EventType>(['gate.result', 'review.round', 'judge.verdict', 'node.checks', 'retry.suppressed'])
 
 export class FsInsights implements Insights {
   constructor(private readonly stores: ProjectStores) {}
@@ -27,8 +31,12 @@ export class FsInsights implements Insights {
       verdicts: {}, usage: { inputTokens: 0, outputTokens: 0 }, acCoverage: acCoverage(artifacts),
     }
     const batches = await Promise.all(runs.map(async (run) => {
-      const [events, snapshot] = await Promise.all([this.stores.events.read(run.runId), this.stores.runs.getWorkflow(run.runId)])
-      return { runId: run.runId, events, counts: eventMetrics(events, run, snapshot), usage: summarizeUsage(events) }
+      const snapshot = await this.stores.runs.getWorkflow(run.runId)
+      const digest = await runDigest(this.stores, run, 'metrics', (events) => ({
+        counts: eventMetrics(events, run, snapshot), usage: summarizeUsage(events),
+        quality: events.filter((event) => QUALITY_TYPES.has(event.type)), hasEvents: events.length > 0,
+      }), snapshot)
+      return { runId: run.runId, ...digest }
     }))
     metrics.runUsage = Object.fromEntries(batches.map((batch) => [batch.runId, batch.usage]))
     let total = 0
@@ -43,7 +51,8 @@ export class FsInsights implements Insights {
       }
       metrics.usage = addUsage(metrics.usage, usage)
     }
-    metrics.quality = await qualityMetrics(batches.flatMap(batch => batch.events), { store: this.stores.workspaces, requirementId })
+    metrics.quality = await qualityMetrics(batches.flatMap(batch => batch.quality), { store: this.stores.workspaces, requirementId },
+      new Set(batches.filter(batch => batch.hasEvents).map(batch => batch.runId)))
     if (total > 0) metrics.firstPassRate = passed / total
     return metrics
   }
