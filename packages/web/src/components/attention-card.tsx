@@ -241,7 +241,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
       {answered ? (
         <div className={`att-result${item.handedBack ? ' is-back' : ''}`}>
           {item.handedBack ? <Undo2 /> : <Check />}
-          <span>
+          <span title={item.answer}>
             {answerLabel(item)}
             {item.answer && <span className="faint"> · {item.answer}</span>}
           </span>

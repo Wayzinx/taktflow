@@ -85,3 +85,9 @@ export function useAsync<T>(fn: (ds: DataSource) => Promise<T>, deps: unknown[])
   const fresh = state.key === key
   return { data: fresh ? state.data : undefined, error: fresh ? state.error : undefined, loading: !fresh || state.loading, reload: () => setTick((t) => t + 1) }
 }
+
+/** 成员 id → 显示名（空间成员表里的 name）；找不到就原样用 id。 */
+export function useMemberName(): (id: string) => string {
+  const members = useAsync((ds) => ds.space(), []).data?.members
+  return (id) => members?.find((m) => m.id === id)?.name ?? id
+}

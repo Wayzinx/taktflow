@@ -1,4 +1,5 @@
 import type { RequirementSummary } from '@taktflow/core'
+import { useMemberName } from '../api'
 import { Avatar, StatusDot, useFlashRows, useStagger, vtName } from '../components/ui'
 import { TierGlyph, TIER_LABEL } from '../components/tier-glyph'
 import { LANE_LABEL, LaneTrack, RunBars, cellsOf, currentCell } from '../components/viz'
@@ -40,6 +41,7 @@ export function StageCell({ r }: { r: RequirementSummary }) {
 export function RequirementLanes({ rows, risks }: { rows: RequirementSummary[]; risks?: RiskIndex }) {
   const st = useStagger(rows.length)
   const flash = useFlashRows(rows.map((r) => r.id))
+  const nameOf = useMemberName()
   return (
     <div className="req-lanes-box">
       <ul className="req-lanes">
@@ -76,9 +78,9 @@ export function RequirementLanes({ rows, risks }: { rows: RequirementSummary[]; 
                     </span>
                   )}
                   {r.owner && (
-                    <span className="rl-owner" title={r.owner}>
-                      <Avatar name={r.owner} size={14} />
-                      <span className="truncate">{r.owner}</span>
+                    <span className="rl-owner" title={nameOf(r.owner)}>
+                      <Avatar name={nameOf(r.owner)} size={14} />
+                      <span className="truncate">{nameOf(r.owner)}</span>
                     </span>
                   )}
                   <span title={r.updatedAt}>{fmtRelative(r.updatedAt)}</span>

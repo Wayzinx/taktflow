@@ -10,6 +10,7 @@ import { TierGlyph, TIER_LABEL } from "../components/tier-glyph";
 import { RunBars } from "../components/viz";
 import { fmtCost, fmtRelative, fmtTokens, totalTokens } from "../lib/format";
 import { navigate } from "../lib/router";
+import { useMemberName } from "../api";
 import { REQ_STATUS } from "../lib/status";
 import { CurrentNodeCell } from "./requirements-current";
 import { StageCell } from "./overview-lanes";
@@ -30,6 +31,7 @@ export function RequirementsTable({
 }) {
   const st = useStagger(rows.length);
   const flash = useFlashRows(rows.map((r) => r.id));
+  const nameOf = useMemberName();
   // 容器查询按可用宽度收起次要列（停靠面板打开时主区只有 ~750px，固定列宽会把标题列挤没）
   return (
     <div className="req-table-wrap">
@@ -107,8 +109,8 @@ export function RequirementsTable({
                   <div className="req-meta">
                     {r.owner && (
                       <>
-                        <Avatar name={r.owner} size={14} />
-                        <span>{r.owner}</span>
+                        <Avatar name={nameOf(r.owner)} size={14} />
+                        <span>{nameOf(r.owner)}</span>
                         <span className="dot-sep" />
                       </>
                     )}
@@ -132,8 +134,8 @@ export function RequirementsTable({
                 <td className="c-owner">
                   {r.owner && (
                     <span className="owner-cell">
-                      <Avatar name={r.owner} size={20} />
-                      <span className="truncate">{r.owner}</span>
+                      <Avatar name={nameOf(r.owner)} size={20} />
+                      <span className="truncate" title={nameOf(r.owner)}>{nameOf(r.owner)}</span>
                     </span>
                   )}
                 </td>
