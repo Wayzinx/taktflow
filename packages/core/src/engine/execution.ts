@@ -28,7 +28,7 @@ export async function workingDirectory(host: HarnessHost, node: AgentNodeDef, ct
     const events = await host.deps.stores.events.read(ctx.runId, { nodeId: node.id, types: ['worktree.created'] })
     const previous = host.state.nodes[node.id]?.worktree ?? events.map((event) => event.data as EventPayloads['worktree.created']).filter((tree) => tree.repo === node.repo).at(-1)
     if (previous?.repo === node.repo) { ns.worktree = previous; host.state.nodes[node.id]!.worktree = previous; await host.save(); return previous.path }
-    const tree = await host.guard.system(['.takt/worktrees/**'], () => repos.createWorktree({ repoId: node.repo!, runId: ctx.runId, nodeId: node.id }))
+    const tree = await host.guard.system(['.takt/worktrees/**'], async () => repos.createWorktree({ repoId: node.repo!, runId: ctx.runId, nodeId: node.id, ...await stackOn(host, node, ctx) }))
       .catch((error: unknown) => { throw new BlockedError(`worktree 引导失败：${error instanceof Error ? error.message : String(error)}`) })
     if (tree.bootstrap) {
       await host.emit('worktree.bootstrapped', { ...tree.bootstrap, repo: node.repo, path: tree.path }, node.id)
@@ -40,6 +40,29 @@ export async function workingDirectory(host: HarnessHost, node: AgentNodeDef, ct
     await host.emit('worktree.created', ns.worktree, node.id)
   }
   return ns.worktree.path
+}
+
+// 有依赖的任务叠在上游任务的改动上：先把上游 worktree 的改动提交到它的分支，新 worktree 从那里开，多个上游再依次合并。
+// 否则每个任务都从默认分支开，后一个任务看不到前一个任务的代码，集成时各分支各自新增同一批文件而冲突。
+async function stackOn(host: HarnessHost, node: AgentNodeDef, ctx: NodeContext): Promise<{ base?: string; merge?: string[] }> {
+  const { repos } = host.deps
+  const explicit = typeof node.base === 'function' ? node.base(ctx) : node.base
+  if (!repos?.commit || !host.graph) return explicit ? { base: explicit } : {}
+  const nodeId = node.id, repo = node.repo!
+  const upstream = (id: string) => {
+    const seen = new Set<string>()
+    const visit = (current: string) => { for (const need of host.graph!.get(current)?.def.needs ?? []) if (!seen.has(need)) { seen.add(need); visit(need) } }
+    visit(id)
+    return seen
+  }
+  const trees = [...upstream(nodeId)].filter((id) => host.state.nodes[id]?.worktree?.repo === repo)
+  // 只叠最近的上游：更早的上游已经在它们的分支里（评审节点和被评审节点共用同一个 worktree）
+  const nearest = new Map<string, string>()
+  for (const id of trees) if (!trees.some((other) => other !== id && upstream(other).has(id))) nearest.set(host.state.nodes[id]!.worktree!.path, id)
+  const heads: string[] = []
+  for (const [path, id] of nearest) heads.push(await repos.commit(path, `任务 ${id}`))
+  const [base, ...merge] = explicit ? [explicit, ...heads] : heads
+  return base ? { base, ...(merge.length ? { merge } : {}) } : {}
 }
 
 export async function saveWorktreeDiff(host: HarnessHost, nodeId: string, ns: NodeState, base?: string, actor?: Actor): Promise<void> {

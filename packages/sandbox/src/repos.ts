@@ -10,6 +10,8 @@ async function git(cwd: string, args: string[], allowed = [0]): Promise<string> 
   return result.stdout
 }
 
+const IDENTITY = ['-c', 'user.name=Taktflow', '-c', 'user.email=taktflow@localhost']
+
 function safeNode(node: string): string {
   assertNodeId(node)
   return /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(node)
@@ -49,7 +51,7 @@ export function createRepoManager(options: { projectDir: string; taktDir: string
     }
     return (await git(dir, ['rev-parse', '--verify', '--end-of-options', `${repo.url ? 'refs/remotes/origin/' : 'refs/heads/'}${repo.defaultBranch}^{commit}`])).trim()
   }
-  async function owner(path: string): Promise<{ path: string; source: string; key: string }> {
+  async function owner(path: string): Promise<{ path: string; source: string; key: string; repo: RepoBinding }> {
     const target = resolve(path)
     const rel = relative(worktrees, target)
     if (!rel || rel.startsWith(`..${sep}`) || rel === '..' || isAbsolute(rel) || rel.split(sep).length !== 2) throw new Error('Worktree path is outside managed run/node directories')
@@ -60,7 +62,7 @@ export function createRepoManager(options: { projectDir: string; taktDir: string
     for (const repo of repos) {
       const dir = source(repo)
       const repoCommon = repo.url ? await realpath(dir) : await key(repo)
-      if (repoCommon === common) return { path: target, source: dir, key: await key(repo) }
+      if (repoCommon === common) return { path: target, source: dir, key: await key(repo), repo }
     }
     throw new Error('Worktree does not belong to a configured repository')
   }
@@ -83,6 +85,15 @@ export function createRepoManager(options: { projectDir: string; taktDir: string
         await mkdir(dirname(path), { recursive: true })
         await git(source(repo), ['worktree', 'add', '-b', branch, path, base])
         try {
+          // 依赖多个上游任务时，从第一个上游开出后依次合并其余上游
+          for (const commit of input.merge ?? []) {
+            const resolved = (await git(source(repo), ['rev-parse', '--verify', '--end-of-options', `${commit}^{commit}`])).trim()
+            const merged = await collect(launch('git', ['-C', path, ...IDENTITY, 'merge', '--no-edit', '--no-ff', resolved]), undefined, 120_000)
+            if (merged.code !== 0) {
+              const conflicts = (await git(path, ['diff', '--name-only', '--diff-filter=U'])).split('\n').filter(Boolean)
+              throw new Error(`叠加上游任务的改动冲突：${conflicts.join(', ') || `合并 ${resolved.slice(0, 12)} 失败`}；请调整任务依赖或手工合并后重试`)
+            }
+          }
           let sharedSource = source(repo)
           if (repo.url && repo.share?.length) {
             sharedSource = resolve(options.taktDir, 'repos', `${repo.id}-checkout`)
@@ -110,6 +121,16 @@ export function createRepoManager(options: { projectDir: string; taktDir: string
         const untracked = (await git(repo.path, ['ls-files', '--others', '--exclude-standard', '-z'])).split('\0').filter(Boolean)
         for (const file of untracked) patch += await git(repo.path, ['diff', '--no-index', '--binary', '--no-ext-diff', '--no-textconv', '--', '/dev/null', file], [0, 1])
         return { patch, files: [...new Set([...changed.split('\0').filter(Boolean), ...untracked])].sort() }
+      })
+    },
+    async commit(worktreePath, message) {
+      const tree = await owner(worktreePath)
+      return withLock(tree.key, async () => {
+        // 和集成一致：同步进来的技能、共享目录的软链不算任务改动
+        const excluded = ['.agents/skills', '.claude/skills', ...tree.repo.share ?? []].map(path => `:(exclude)${path}`)
+        await git(tree.path, ['add', '-A', '--', '.', ...excluded])
+        if ((await git(tree.path, ['diff', '--cached', '--name-only'])).trim()) await git(tree.path, [...IDENTITY, 'commit', '--no-verify', '-m', message])
+        return (await git(tree.path, ['rev-parse', 'HEAD'])).trim()
       })
     },
     async removeWorktree(worktreePath) {

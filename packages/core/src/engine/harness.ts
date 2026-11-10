@@ -110,7 +110,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     await stores.runs.saveContext(host.state.runId, context)
     await host.emit('context.assembled', context, node.id)
     const prompt = [skills, ...summaries, lessonText, ...artifacts,
-      identity.snapshot ? snapshotPrompt(stores.taktDir, identity.snapshot) : `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集。`,
+      identity.snapshot ? snapshotPrompt(stores.taktDir, identity.snapshot) : `公共存放区：${ctx.workspaceDir}，需要读的文件：${(ns.inputs ?? []).map((i) => i.path).join(', ')}，需要产出的文件：${(node.outputs ?? []).map((o) => o.path).join(', ')}，写权限：角色 ${JSON.stringify(profile.writeScope)} 与节点 ${JSON.stringify(node.writeScope ?? profile.writeScope)} 的交集；运行脚本、测试生成的文件也算你的写入，写到范围外会判越界。`,
       task, knowledgeTools, completion,
     ].filter(Boolean).join('\n\n')
     const priorOutputs = ns.outputs.length || node.session !== 'resume' ? ns.outputs

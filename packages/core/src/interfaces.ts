@@ -195,10 +195,12 @@ export interface RepoManager {
    * 建 worktree 后按 RepoBinding.share 软链共享目录、执行 bootstrap；引导失败时抛错（错误信息带输出末尾），
    * 调用方据此把节点置为 blocked。
    */
-  createWorktree(input: { repoId: string; runId: RunId; nodeId: NodeId; base?: string }): Promise<{ path: string; branch: string; base: string; bootstrap?: { command?: string; shared: string[]; ok: boolean; ms: number; output?: string } }>
+  createWorktree(input: { repoId: string; runId: RunId; nodeId: NodeId; base?: string; /** 从 base 开出后依次合并的提交（依赖多个上游任务时）；冲突时抛错且不留下 worktree。 */ merge?: string[] }): Promise<{ path: string; branch: string; base: string; bootstrap?: { command?: string; shared: string[]; ok: boolean; ms: number; output?: string } }>
   /** worktree 相对 base 的改动（统一 diff 文本 + 改动文件列表）。 */
   diff(worktreePath: string, base: string): Promise<{ patch: string; files: string[] }>
   removeWorktree(worktreePath: string): Promise<void>
+  /** 把 worktree 里未提交的改动（不含同步的技能和共享目录）提交到它的分支，返回 HEAD；没有改动时返回原 HEAD。 */
+  commit?(worktreePath: string, message: string): Promise<string>
 }
 
 /** 一个项目空间的全部存储。 */

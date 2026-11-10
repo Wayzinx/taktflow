@@ -5,7 +5,7 @@
  */
 import { agent, defineWorkflow, gate, human, judge, loop, planner, review, script } from '@taktflow/core'
 import { integrate } from './taktflow-standard.integration.js'
-import { codeWasFixed, converged, expandTask, freezeBaseline, qualityReport, repairPrompt, runCases, traceCoverage } from './taktflow-standard.hooks.js'
+import { codeWasFixed, converged, expandTask, freezeBaseline, integratedBranch, qualityReport, repairPrompt, runCases, traceCoverage } from './taktflow-standard.hooks.js'
 
 export default defineWorkflow({
   id: 'taktflow-standard', title: '作者版标准交付流水线', version: '0.3.0',
@@ -58,7 +58,7 @@ export default defineWorkflow({
         script({ id: 'run-cases', title: '执行用例', run: runCases, outputs: [{ path: 'evidence/**', kind: 'evidence' }] }),
         judge({ id: 'judge', title: '失败判决', role: 'judge', needs: ['run-cases'], target: 'run-cases',
           routes: { product_bug: 'fix-code', script_defect: 'fix-script', case_defect: 'fix-case', flaky: 'ignore', env_issue: 'human', requirement_gap: 'human', unknown: 'human' } }),
-        agent({ id: 'fix-code', goal: '依据失败证据修复产品行为', owner: 'rd', completion: ["修复差异仅涉及产品代码且未改用例或弱化断言", "修复差异关联判决中的失败用例和根因"], title: '修复产品代码', role: 'dev', repo: 'app', needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
+        agent({ id: 'fix-code', goal: '依据失败证据修复产品行为', owner: 'rd', completion: ["修复差异仅涉及产品代码且未改用例或弱化断言", "修复差异关联判决中的失败用例和根因"], title: '修复产品代码', role: 'dev', repo: 'app', base: integratedBranch, needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
           outputs: [{ path: 'tasks/repair.diff', kind: 'code-change' }], prompt: repairPrompt('fix-code', '按证据修复产品代码，禁止改用例与测试。将修复 diff 写入 tasks/repair.diff。') }),
         review({ id: 'review-fix', title: '修复代码评审', needs: ['fix-code'], when: codeWasFixed, target: { code: { repo: 'app' } },
           author: { role: 'dev' }, reviewers: [{ role: 'reviewer', focus: '修复有效性、无弱化测试', checklist: ["修复覆盖判决指出的根因", "未弱化原有测试断言", "回归范围覆盖受影响分支"] }], maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'fix-code', maxReworks: 1 } }),

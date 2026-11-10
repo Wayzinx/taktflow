@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { promisify } from 'node:util'
 import { agent, review, type JudgeVerdict, type NodeContext, type PlannedItem } from '@taktflow/core'
@@ -44,14 +44,18 @@ export function expandTask(item: PlannedItem) {
   ]
 }
 export async function runCases(ctx: NodeContext) {
-  const actual = await readFile(join(ctx.projectDir, String(ctx.args.testScript ?? 'tests/run-cases.mjs')), 'utf8')
+  const script = String(ctx.args.testScript ?? 'tests/run-cases.mjs')
+  const actual = await readFile(join(ctx.projectDir, script), 'utf8')
   if (actual !== await ctx.readArtifact('scripts/run-cases.mjs')) return { status: 'blocked' as const, message: '实际执行脚本与评审产物不一致' }
   await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
   const integration = ctx.resultOf('integration') as { path?: string } | undefined
   const cwd = integration?.path ?? ctx.projectDir
   if (cwd !== ctx.projectDir) {
-    await mkdir(join(cwd, 'tests'), { recursive: true })
-    await writeFile(join(cwd, String(ctx.args.testScript ?? 'tests/run-cases.mjs')), actual)
+    // 测试由自动化写在空间根目录、不进任务分支：脚本所在目录（用例模块、公共库）整个带进集成 worktree，否则执行器只拿到一个文件
+    const dir = dirname(script)
+    if (dir !== '.') await cp(join(ctx.projectDir, dir), join(cwd, dir), { recursive: true, force: true })
+    else await mkdir(cwd, { recursive: true })
+    await writeFile(join(cwd, script), actual)
   }
   try {
     await execute('/bin/sh', ['-c', String(ctx.args.caseCommand ?? 'npm test')], {
@@ -68,6 +72,10 @@ export async function runCases(ctx: NodeContext) {
     return { status: 'blocked' as const, message: '用例汇总缺失、重复或未覆盖冻结用例' }
   }
   return { data: { total: result.cases.length, failures: result.cases.filter((test) => test.status !== 'passed').map((test) => ({ subject: test.id, status: test.status, evidence: test.evidence })) } }
+}
+/** 修复代码从集成分支开 worktree：任务代码只在集成分支里会合 */
+export function integratedBranch(ctx: NodeContext): string | undefined {
+  return (ctx.resultOf('integration') as { branch?: string } | undefined)?.branch
 }
 export function converged(ctx: NodeContext) {
   const result = ctx.resultOf('run-cases') as { failures?: unknown[] } | undefined

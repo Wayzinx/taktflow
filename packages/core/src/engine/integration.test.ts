@@ -132,6 +132,33 @@ it('集成节点合并真实任务分支，冲突时保存冲突文件并使节�
   expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
 })
 
+it('有依赖的任务叠在上游的改动上：后一个任务看得到前一个的代码，diff 只含自己的改动，集成不冲突；修复节点可指定从集成分支开', async () => {
+  const f = await fixture(async (req) => {
+    const file = join(req.cwd, 'src/a.ts')
+    await writeFile(file, (await readFile(file, 'utf8')) + req.env!.TAKT_NODE + '\n')
+    return 'done'
+  })
+  const state = await createEngine(f.deps, { concurrency: 1 }).start({ requirementId: f.req.id, workflow: f.workflow([
+    { id: 'one', kind: 'agent', title: '实现一', role: 'dev', repo: 'app', prompt: '实现' },
+    { id: 'two', kind: 'agent', title: '实现二', role: 'dev', repo: 'app', prompt: '实现', needs: ['one'] },
+    { id: 'integration', kind: 'script', title: '集成', needs: ['two'], run: integrate, outputs: [{ path: 'tasks/integration.json', kind: 'code-change' }] },
+    { id: 'fix', kind: 'agent', title: '修复', role: 'dev', repo: 'app', prompt: '修复', needs: ['integration'],
+      base: (ctx) => (ctx.resultOf('integration') as { branch?: string } | undefined)?.branch },
+  ]) })
+  expect(state.status).toBe('succeeded')
+  const one = state.nodes.one!.worktree!, two = state.nodes.two!.worktree!
+  expect(two.base).toBe(git(one.path, ['rev-parse', 'HEAD']))
+  expect(git(one.path, ['log', '-1', '--format=%s'])).toBe('任务 one')
+  expect(await readFile(join(two.path, 'src/a.ts'), 'utf8')).toBe('base\none\ntwo\n')
+  const diff = (await f.stores.workspaces.readArtifact({ workspace: f.req.id, path: diffPath('two') }))!.toString()
+  expect(diff).toContain('+two'); expect(diff).not.toContain('+one')
+  const integration = state.nodes.integration!.result as { path: string; conflicts: string[] }
+  expect(integration.conflicts).toEqual([])
+  expect(await readFile(join(integration.path, 'src/a.ts'), 'utf8')).toBe('base\none\ntwo\n')
+  expect(await readFile(join(state.nodes.fix!.worktree!.path, 'src/a.ts'), 'utf8')).toBe('base\none\ntwo\nfix\n')
+  expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
+})
+
 it('动态节点的安全 diff 名称稳定且互不碰撞', () => {
   expect(diffPath('planner/item/code')).not.toBe(diffPath('planner_item_code'))
   expect(diffPath('planner/item/code')).toMatch(/^tasks\/[A-Za-z0-9_-]+\.diff$/)

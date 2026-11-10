@@ -241,6 +241,11 @@ export interface AgentNodeDef extends BaseNodeDef {
   /** 在哪个绑定代码仓库里工作：引擎为节点创建独立 worktree 并作为 cwd。 */
   repo?: string
   /**
+   * worktree 从哪个提交开（分支名或提交）；可按上游结果算，返回 undefined 时用默认分支。
+   * 不设时：依赖同仓库的上游任务就叠在它们的改动上，否则从默认分支开。
+   */
+  base?: string | ((ctx: NodeContext) => string | undefined)
+  /**
    * 完成标准：逐条可验证。引擎要求结果带 checks（每条一项、pass 为 true 时必须有证据），
    * 任何一条缺失 / 未通过 / 无证据即节点失败，不以进程退出码为准。
    */
