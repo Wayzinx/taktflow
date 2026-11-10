@@ -5,7 +5,7 @@ import { AgentMark, harnessHue } from '../../../components/agent-mark'
 import { LeadMark } from '../../../components/identity'
 import { RouteCard } from '../../../components/route-card'
 import { Avatar } from '../../../components/ui'
-import { fmtTime } from '../../../lib/format'
+import { fmtTime, tidyText } from '../../../lib/format'
 import { AttentionMessage } from './attention-message'
 import { hasLeadMarks, LeadText } from './lead-text'
 import { MessageRefs } from './message-refs'
@@ -50,11 +50,12 @@ export function MemberAvatar({ kind, name, id, role, harness, size = 24, busy }:
 }
 
 function SystemLine({ m }: { m: RoomMessage }) {
+  const text = tidyText(m.text)
   return (
     <div className="chat-system" role="note">
       <Info aria-hidden="true" />
-      <span className="chat-system-text" title={m.text.length > 120 ? m.text : undefined}>
-        {m.text}
+      <span className="chat-system-text" title={text.length > 120 ? text : undefined}>
+        {text}
       </span>
       <time className="mono faint" dateTime={m.at}>
         {fmtTime(m.at).slice(0, 5)}

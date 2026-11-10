@@ -82,9 +82,49 @@ export function initials(name: string): string {
   return /[一-龥]/.test(clean) ? clean.slice(-2) : clean.slice(0, 2).toUpperCase()
 }
 
+const RUN_END: Record<string, string> = { succeeded: '成功', failed: '失败', cancelled: '已取消', waiting_human: '等人处理', running: '运行中' }
+const VERDICT_WORD: Record<string, string> = {
+  product_bug: '代码缺陷', case_defect: '用例缺陷', script_defect: '脚本缺陷', env_issue: '环境问题', flaky: '不稳定', requirement_gap: '需求缺口',
+  test_data: '测试数据', deployment: '部署问题', permission: '权限问题', external_dependency: '外部依赖', unknown: '无法判定',
+}
+
+/** 把一段原始 JSON 说成人话；认不出的返回 undefined。 */
+function jsonGist(raw: string): string | undefined {
+  let value: unknown
+  try { value = JSON.parse(raw) } catch { return undefined }
+  if (Array.isArray(value) && value.every((v) => v && typeof v === 'object' && 'subject' in v)) {
+    const list = value as Array<{ subject: string; category?: string }>
+    const head = list.slice(0, 3).map((v) => `${v.subject}（${VERDICT_WORD[v.category ?? ''] ?? v.category ?? '待定'}）`).join('、')
+    return `${list.length} 条判决：${head}${list.length > 3 ? ' 等' : ''}`
+  }
+  if (!value || typeof value !== 'object') return undefined
+  const o = value as Record<string, unknown>
+  if (Array.isArray(o.records)) {
+    const issues = (o.records as Array<{ issues?: unknown[] }>).reduce((n, r) => n + (Array.isArray(r.issues) ? r.issues.length : 0), 0)
+    return `${typeof o.round === 'number' ? `第 ${o.round} 轮评审` : '评审'}：${o.records.length} 位评审提了 ${issues} 个问题`
+  }
+  const said = [o.result, o.message].find((v) => typeof v === 'string' && v.trim()) as string | undefined
+  const kind = typeof o.subtype === 'string' && o.subtype !== 'success' ? o.subtype : undefined
+  return [kind, said].filter(Boolean).join('：') || undefined
+}
+
+/**
+ * 给人看的消息：系统消息、待办提问里夹着的原始 JSON 换成要点（判决、评审意见、harness 报错），
+ * 运行结束的状态码换成中文。旧消息存的是原文，展示时整理；新消息在引擎里就写成人话。
+ */
+export function tidyText(text: string): string {
+  let out = text.replace(/^运行结束：(\w+)$/, (all, status: string) => (RUN_END[status] ? `运行结束：${RUN_END[status]}` : all))
+  const at = out.search(/[[{]/)
+  if (at >= 0 && out.length - at > 60) {
+    const gist = jsonGist(out.slice(at).trim())
+    if (gist) out = `${out.slice(0, at).trimEnd()}${gist}`
+  }
+  return out
+}
+
 /** 长文本的一行摘要：换行并成空格，超长截断。待办提问、通知正文、悬停提示这类只看要点的地方用。 */
 export function summaryLine(text: string, max = 140): string {
-  const line = text.replace(/\s+/g, ' ').trim()
+  const line = tidyText(text).replace(/\s+/g, ' ').trim()
   return line.length > max ? `${line.slice(0, max)}…` : line
 }
 

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ArrowUpRight, Check, CornerDownLeft, FileClock, Gauge, GitBranch, History, Lightbulb, MessageSquareText, PencilLine, RefreshCcwDot, ShieldAlert, TriangleAlert, Undo2, UserRound, UserRoundCheck, Workflow, X } from 'lucide-react'
 import type { AttentionItem } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../api'
-import { actorName, fmtRelative } from '../lib/format'
+import { actorName, fmtRelative, tidyText } from '../lib/format'
 import { Link, navigate, useSpaceHref } from '../lib/router'
 import { TimeboxBar } from './timebox'
 import { toast } from './ui'
@@ -137,7 +137,7 @@ function AssumptionOrigin({ item }: { item: AttentionItem }) {
       {origin && (
         <p className="att-ask">
           <span className="att-label">原问题</span>
-          {origin.ask}
+          {tidyText(origin.ask)}
         </p>
       )}
       <p className="att-assume">
@@ -170,7 +170,8 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
   const [open, setOpen] = useState(!compact)
   const [full, setFull] = useState(false)
   // 长提问（例如门禁明细）先收成几行，要看再展开，免得一张卡片占满整屏
-  const long = !compact && (item.ask.length > LONG_ASK || item.ask.split('\n').length > 6)
+  const ask = tidyText(item.ask)
+  const long = !compact && (ask.length > LONG_ASK || ask.split('\n').length > 6)
   const meta = attentionMeta(item)
   const Icon = meta.icon
   const answered = Boolean(item.answeredAt)
@@ -219,7 +220,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
         <AssumptionOrigin item={item} />
       ) : (
         <>
-          <p className={`att-ask${long ? (full ? ' full' : ' clamped') : ''}`}>{long && !full ? item.ask.slice(0, LONG_ASK * 3) : item.ask}</p>
+          <p className={`att-ask${long ? (full ? ' full' : ' clamped') : ''}`}>{long && !full ? ask.slice(0, LONG_ASK * 3) : ask}</p>
           {long && (
             <button type="button" className="att-more" aria-expanded={full} onClick={() => setFull((x) => !x)}>
               {full ? '收起' : '展开全文'}
