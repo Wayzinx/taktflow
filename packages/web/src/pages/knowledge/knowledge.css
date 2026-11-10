@@ -103,7 +103,7 @@
 .kb-section-head .faint { font-size: var(--text-meta); }
 
 .kb-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-4); }
-.kb-kpi { display: grid; gap: 4px; padding: var(--sp-4); background: var(--surface-raised); border-radius: var(--r-md); box-shadow: var(--elev-1); }
+.kb-kpi { display: grid; align-content: start; gap: 4px; padding: var(--sp-4); background: var(--surface-raised); border-radius: var(--r-md); box-shadow: var(--elev-1); }
 .kb-kpi-k { font-size: var(--text-meta); color: var(--text-3); }
 .kb-kpi-v { font-size: var(--text-display); font-weight: 600; line-height: 1.15; font-variant-numeric: tabular-nums; color: var(--t, var(--text)); }
 .kb-kpi-hint { font-size: var(--text-meta); color: var(--text-3); }

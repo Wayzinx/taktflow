@@ -723,11 +723,15 @@
 }
 .kpi {
   display: flex;
-  align-items: center;
+  /* 说明折行的卡更高：文字从顶上排，几张卡的标题和数字才在同一条线上；右侧小图仍居中 */
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--sp-2);
   padding: var(--sp-4) var(--sp-5);
   box-shadow: -1px 0 0 var(--divider), 0 -1px 0 var(--divider);
+}
+.kpi > :not(:first-child) {
+  align-self: center;
 }
 .kpi-label {
   font-size: var(--text-label);

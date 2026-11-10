@@ -271,6 +271,8 @@
 }
 .ent-mini {
   position: relative;
+  /* 同一行的卡等高：内容从顶上排，有进度条的和没有的卡标题对齐 */
+  align-content: start;
   gap: 8px;
   border: 0;
   cursor: pointer;

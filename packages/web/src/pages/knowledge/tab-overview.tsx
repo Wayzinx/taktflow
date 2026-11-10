@@ -62,10 +62,10 @@ export function OverviewTab({ base, live, onBuild, onPublish }: { base: Knowledg
   return (
     <div className="kb-overview">
       <div className="kb-kpis">
-        <Stat label="7 天查询" value={has ? u.queries : undefined} format={(v) => Math.round(v).toLocaleString()} />
+        <Stat label="7 天查询" value={has ? u.queries : undefined} format={(v) => Math.round(v).toLocaleString()} hint="运行和检索测试查了几次" />
         <Stat label="命中率" value={has ? u.hitRate : undefined} format={(v) => pct(v)} hint="top k 里至少一条相关" />
         <Stat label="引用率" value={has ? u.citedRate : undefined} format={(v) => pct(v)} hint="命中被产物引用" />
-        <Stat label="无结果率" value={has ? u.emptyRate : undefined} format={(v) => pct(v)} tone={has && u.emptyRate > 0.1 ? 'waiting' : undefined} />
+        <Stat label="无结果率" value={has ? u.emptyRate : undefined} format={(v) => pct(v)} tone={has && u.emptyRate > 0.1 ? 'waiting' : undefined} hint="一条都没查到的占比" />
         <Stat label="Recall@10" value={recall} format={(v) => v.toFixed(2)} hint={base.lastEval ? `${fmtRelative(base.lastEval.at)}评测` : '还没有评测'} tone={recall === undefined ? undefined : recall >= 0.85 ? 'success' : recall >= 0.75 ? 'waiting' : 'failed'} />
       </div>
 

@@ -47,14 +47,22 @@ function Stats({ harnesses, models, cfg }: { harnesses?: HarnessInfo[]; models?:
       <StatCard
         label="Harness 可用"
         icon={<Cpu />}
-        tone={down.length ? 'var(--st-failed)' : undefined}
+        tone={down.some((h) => h.roles.length > 0) ? 'var(--st-failed)' : undefined}
         value={
           <>
             <CountUp value={available.length} />
             <span className="stat-unit">/ {live.length}</span>
           </>
         }
-        foot={down.length ? <>不可用：{down.map((h) => h.id).join(' · ')}</> : '全部可用'}
+        foot={
+          down.some((h) => h.roles.length > 0) ? (
+            <>有角色在用但不可用：{down.filter((h) => h.roles.length > 0).map((h) => h.id).join(' · ')}</>
+          ) : down.length ? (
+            <>{down.length} 个没装或没登录，没有角色在用</>
+          ) : (
+            '全部可用'
+          )
+        }
       />
       <StatCard label="模型" icon={<Boxes />} value={<CountUp value={models.length} />} foot={<><b>{providers.size}</b> 个 provider · <b>{protocols.size}</b> 种协议</>} />
       <StatCard

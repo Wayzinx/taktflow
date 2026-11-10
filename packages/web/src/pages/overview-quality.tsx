@@ -20,6 +20,14 @@ function sumBy(reqs: RequirementSummary[]): Record<Source, number> {
   return by
 }
 
+/** 拆分说明：按数量从多到少列两项，剩下的并成"其他"，加起来等于总数。 */
+function breakdown(items: Array<[string, number]>): string {
+  const sorted = [...items].sort((x, y) => y[1] - x[1])
+  const shown = sorted.length > 3 ? sorted.slice(0, 2) : sorted
+  const rest = sorted.slice(shown.length).reduce((n, [, v]) => n + v, 0)
+  return [...shown.map(([label, n]) => `${label} ${n}`), ...(rest ? [`其他 ${rest}`] : [])].join(' · ')
+}
+
 /**
  * 总览读数"已校验 / 拦截"：拦截按来源拆分取各需求的 quality 合计（totals 只有总数）；色段宽度是静态 flex 比例。
  */
@@ -37,7 +45,7 @@ export function qualityTile(totals: ProjectOverview['totals'], requirements: Req
         / <CountUp value={totals.intercepted ?? 0} from0 /> 拦截
       </>
     ),
-    hint: parts.length ? parts.slice(0, 3).map((s) => `${s.label} ${by[s.key]}`).join(' · ') : '交付前被拦下的问题',
+    hint: parts.length ? breakdown(parts.map((s) => [s.label, by[s.key]])) : '交付前被拦下的问题',
     children:
       total > 0 ? (
         <div className="share-bar" aria-label="拦截按来源拆分">
