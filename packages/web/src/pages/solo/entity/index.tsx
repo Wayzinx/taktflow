@@ -1,8 +1,10 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { CornerDownRight } from 'lucide-react'
 import type { StewardBlock, StewardContextRef } from '@taktflow/core'
 import { SpaceScope, useAsync } from '../../../api'
-import { encodeFocus, focusOf, useEntityFocus, type FocusTarget } from '../../../components/steward/focus'
+import { encodeFocus, fileFocus, focusOf, useEntityFocus, type FocusTarget } from '../../../components/steward/focus'
+import { SkeletonRows } from '../../../components/ui'
+import { ArtifactPreview } from '../../requirement/artifacts-tab'
 import { LaneTrack } from '../../../components/viz'
 import { AttentionView, RequirementCard, StagesView } from './card'
 import { DagView, NodeView, RunGraph, useRunLive } from './graph'
@@ -106,6 +108,18 @@ function RequirementPanel({ target, onNode }: { target: FocusTarget; onNode: (ru
   )
 }
 
+/** 需求里的一个产物：和需求页「公共产物」同一个预览；版本在面板里切，点溯源换成那个文件。 */
+function FilePanel({ target, onTarget }: { target: FocusTarget; onTarget: (t: FocusTarget) => void }) {
+  const reqId = target.ref.parent!
+  const list = useAsync((ds) => ds.artifacts(reqId), [reqId])
+  const [version, setVersion] = useState<number>()
+  const record = list.data?.find((r) => r.path === target.ref.id)
+  if (list.error && !list.data) return <p className="ent-note">拿不到 {reqId} 的产物：{list.error.message}</p>
+  if (!list.data) return <SkeletonRows rows={6} gap={10} />
+  if (!record) return <p className="ent-note">{reqId} 的公共产物里没有 {target.ref.id}，可能已经移走或改名。</p>
+  return <ArtifactPreview reqId={reqId} record={record} version={version} onVersion={setVersion} onOpen={(path) => onTarget(fileFocus(target.ref.spaceId!, reqId, path))} />
+}
+
 /** 焦点面板的内容：按对象类型换视图，全部在对象所在空间里取数。 */
 export function EntityPanel({ target, onTarget }: { target: FocusTarget; onTarget: (t: FocusTarget) => void }) {
   const runRef = (id: string): StewardContextRef => ({ type: 'run', spaceId: target.ref.spaceId, id, label: id })
@@ -114,6 +128,8 @@ export function EntityPanel({ target, onTarget }: { target: FocusTarget; onTarge
       <div className="ent-panel">
         {target.ref.type === 'run' ? (
           <RunPanel target={target} onNode={(node) => onTarget({ ref: target.ref, node })} />
+        ) : target.ref.type === 'file' && target.ref.parent ? (
+          <FilePanel target={target} onTarget={onTarget} />
         ) : target.ref.type === 'requirement' ? (
           <RequirementPanel target={target} onNode={(runId, node) => onTarget({ ref: runRef(runId), node })} />
         ) : (

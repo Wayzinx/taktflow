@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, FileCode2, FileJson, FileText, FolderOpen, GitCommitHorizontal, Image as ImageIcon, MessageSquare, Pencil, Send, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, FileCode2, FileJson, FileText, FolderOpen, GitCommitHorizontal, Image as ImageIcon, MessageSquare, Pencil, Send, Star, TriangleAlert, X } from 'lucide-react'
 import type { ArtifactEditResponse, ArtifactKind, ArtifactRecord, ArtifactVersion, RequirementDetail, RunDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { Avatar, EmptyState, ErrorState, GlideMark, Segmented, Skeleton, SkeletonRows, toast, useGlide } from '../../components/ui'
@@ -39,6 +39,20 @@ const kindRank = (k: ArtifactKind) => {
   return i < 0 ? ARTIFACT_KIND_ORDER.length : i
 }
 
+/**
+ * 核心文档：需求文档、技术方案、测试方案、报告——置顶常显，一眼找到；其余产物按组、按类型收起，要看再展开。
+ * 一个需求能攒下几百个产物（REQ-003：证据 259、评审 93、用例 80），全部平铺时核心文档埋在里面找不到。
+ */
+const CORE_KINDS: ArtifactKind[] = ['spec', 'design', 'test-plan', 'report']
+const CORE_NAME: Partial<Record<ArtifactKind, string>> = { spec: '需求文档', design: '技术方案', 'test-plan': '测试方案' }
+const REPORT_NAME: Record<string, string> = { 'quality.md': '质量报告', 'impact.md': '影响面报告' }
+function coreName(r: ArtifactRecord) {
+  const file = r.path.split('/').pop() ?? r.path
+  return r.title ?? (r.kind === 'report' ? REPORT_NAME[file] : CORE_NAME[r.kind]) ?? file
+}
+/** 类型里的产物不多于这个数时默认展开。 */
+const OPEN_UP_TO = 3
+
 /** "当前阶段产物"：由最近一次流水线运行里当前阶段的节点产出（任一版本）。 */
 function currentStagePaths(detail: RequirementDetail, run?: RunDetail): Set<string> | undefined {
   if (!detail.stage || !run) return undefined
@@ -55,10 +69,25 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
   const stageTitle = detail?.stages.find((s) => s.id === detail.stage)?.title
   const records = onlyCurrent && all && stagePaths ? all.filter((r) => stagePaths.has(r.path)) : all
   const selectedPath = query.get('path') ?? records?.find((r) => r.kind === 'spec')?.path ?? records?.[0]?.path
+  const core = useMemo(() => (records ?? []).filter((r) => CORE_KINDS.includes(r.kind)).sort((a, b) => CORE_KINDS.indexOf(a.kind) - CORE_KINDS.indexOf(b.kind) || a.path.localeCompare(b.path)), [records])
   const groups = useMemo(() => {
     if (!records) return []
-    return SPEC_GROUPS.map((g) => ({ ...g, items: records.filter((r) => inGroup(g, r.kind)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)) })).filter((g) => g.items.length)
+    const rest = records.filter((r) => !CORE_KINDS.includes(r.kind))
+    return SPEC_GROUPS.map((g) => {
+      const items = rest.filter((r) => inGroup(g, r.kind))
+      const kinds = [...new Set(items.map((r) => r.kind))].sort((a, b) => kindRank(a) - kindRank(b))
+      return { ...g, count: items.length, kinds: kinds.map((kind) => ({ kind, items: items.filter((r) => r.kind === kind) })) }
+    }).filter((g) => g.count)
   }, [records])
+  // 展开的类型：少的默认展开；选中的产物所在类型自动展开
+  const [opened, setOpened] = useState<Set<ArtifactKind>>(() => new Set())
+  const [closed, setClosed] = useState<Set<ArtifactKind>>(() => new Set())
+  const selectedKind = records?.find((r) => r.path === selectedPath)?.kind
+  const isOpen = (kind: ArtifactKind, count: number) => opened.has(kind) || ((count <= OPEN_UP_TO || kind === selectedKind) && !closed.has(kind))
+  const toggle = (kind: ArtifactKind, open: boolean) => {
+    setOpened((s) => { const n = new Set(s); if (open) n.add(kind); else n.delete(kind); return n })
+    setClosed((s) => { const n = new Set(s); if (open) n.delete(kind); else n.add(kind); return n })
+  }
   const [listRef, glide] = useGlide<HTMLElement>('.art-item.active')
   const scopeSwitch = stagePaths && (
     <div className="art-scope">
@@ -118,27 +147,62 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
       <nav ref={listRef} className={`card art-list${glide ? ' has-glide' : ''}`} aria-label="产物列表">
         <GlideMark glide={glide} className="art-glide" />
         {scopeSwitch}
+        {core.length > 0 && (
+          <div className="art-core-group" aria-label="核心文档">
+            <div className="art-group-head art-core-head">
+              <span>
+                <Star aria-hidden />
+                核心文档
+              </span>
+              <span className="num">{core.length}</span>
+            </div>
+            {core.map((r) => {
+              const Icon = fileIcon(r)
+              const v = latest(r)
+              return (
+                <button key={r.path} className={`art-item art-core${r.path === selected.path ? ' active' : ''}`} onClick={() => setQuery({ path: r.path, v: undefined })}>
+                  <Icon className="art-item-icon" />
+                  <span className="art-item-text">
+                    <span className="art-item-title truncate">{coreName(r)}</span>
+                    <span className="art-item-path truncate mono">{r.path}</span>
+                  </span>
+                  <span className={`art-ver mono${r.versions.length > 1 ? ' multi' : ''}`}>v{v.version}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
         {groups.map((g) => (
           <div key={g.id} className="art-group">
             <div className="art-group-head">
               <span>{g.label}</span>
-              <span className="num">{g.items.length}</span>
+              <span className="num">{g.count}</span>
             </div>
-            {g.items.map((r) => {
-              const Icon = fileIcon(r)
-              const v = latest(r)
+            {g.kinds.map(({ kind, items }) => {
+              const open = isOpen(kind, items.length)
               return (
-                <button key={r.path} className={`art-item${r.path === selected.path ? ' active' : ''}`} onClick={() => setQuery({ path: r.path, v: undefined })}>
-                  <Icon className="art-item-icon" />
-                  <span className="art-item-text">
-                    <span className="art-item-title truncate">{r.title ?? r.path.split('/').pop()}</span>
-                    <span className="art-item-path truncate">
-                      {r.title !== ARTIFACT_KIND[r.kind] && <span className="art-item-kind">{ARTIFACT_KIND[r.kind]}</span>}
-                      <span className="mono">{r.path}</span>
-                    </span>
-                  </span>
-                  <span className={`art-ver mono${r.versions.length > 1 ? ' multi' : ''}`}>v{v.version}</span>
-                </button>
+                <div key={kind} className="art-kind">
+                  <button type="button" className="art-kind-head" aria-expanded={open} onClick={() => toggle(kind, !open)}>
+                    <ChevronRight className="art-kind-chev" aria-hidden />
+                    <span className="truncate">{ARTIFACT_KIND[kind]}</span>
+                    <span className="num faint">{items.length}</span>
+                  </button>
+                  {open &&
+                    items.map((r) => {
+                      const Icon = fileIcon(r)
+                      const v = latest(r)
+                      return (
+                        <button key={r.path} className={`art-item art-item-nested${r.path === selected.path ? ' active' : ''}`} onClick={() => setQuery({ path: r.path, v: undefined })}>
+                          <Icon className="art-item-icon" />
+                          <span className="art-item-text">
+                            <span className="art-item-title truncate">{r.title ?? r.path.split('/').pop()}</span>
+                            <span className="art-item-path truncate mono">{r.path}</span>
+                          </span>
+                          <span className={`art-ver mono${r.versions.length > 1 ? ' multi' : ''}`}>v{v.version}</span>
+                        </button>
+                      )
+                    })}
+                </div>
               )
             })}
           </div>
@@ -190,10 +254,22 @@ function VersionMenu({ record, version, onPick }: { record: ArtifactRecord; vers
   )
 }
 
-function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRecord }) {
+/**
+ * 产物预览。默认用地址里的 ?v= / ?path= 选版本、跳溯源；放在别处（Solo 焦点面板）时由调用方接管：
+ * version 为当前版本（缺省最新），onVersion 换版本，onOpen 打开溯源里的另一个产物。
+ */
+export function ArtifactPreview({ reqId, record, version: chosen, onVersion, onOpen }: {
+  reqId: string
+  record: ArtifactRecord
+  version?: number
+  onVersion?: (v: number | undefined) => void
+  onOpen?: (path: string, version?: number) => void
+}) {
   const ds = useSource()
   const { query } = useLocation()
-  const version = Number(query.get('v')) || latest(record).version
+  const pickVersion = onVersion ?? ((v: number | undefined) => setQuery({ v: v === undefined ? undefined : String(v) }))
+  const open = onOpen ?? ((path: string, v?: number) => setQuery({ path, v: v ? String(v) : undefined }))
+  const version = (onVersion ? chosen : Number(query.get('v'))) || latest(record).version
   const ver = record.versions.find((v) => v.version === version) ?? latest(record)
   const content = useAsync((s) => s.artifact(reqId, record.path, ver.version), [reqId, record.path, ver.version])
   const [editing, setEditing] = useState(false)
@@ -217,7 +293,7 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
       const res = await ds.editArtifact(reqId, record.path, { content: draft, reason: reason.trim(), impact })
       setResult(res)
       setEditing(false)
-      setQuery({ v: undefined })
+      pickVersion(undefined)
       toast(`已保存为 v${res.version}`, { body: res.staleNodes.length ? `${res.staleNodes.length} 个节点因此过期，需要重跑。` : '没有节点读过这个产物。', tone: res.staleNodes.length ? 'stale' : 'success' })
       invalidate()
     } catch (e) {
@@ -246,7 +322,7 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
           </button>
         </div>
         <div className="art-head-actions">
-          <VersionMenu record={record} version={ver.version} onPick={(v) => setQuery({ v: v === latest(record).version ? undefined : String(v) })} />
+          <VersionMenu record={record} version={ver.version} onPick={(v) => pickVersion(v === latest(record).version ? undefined : v)} />
           {!image && !editing && (
             <button className="btn btn-sm" onClick={startEdit} disabled={!content.data}>
               <Pencil />
@@ -281,7 +357,7 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
         <div className="art-derived">
           <span className="faint">溯源</span>
           {ver.derivedFrom.map((d) => (
-            <button key={`${d.path}@${d.version}`} className="chip mono" onClick={() => setQuery({ path: d.path, v: d.version ? String(d.version) : undefined })}>
+            <button key={`${d.path}@${d.version}`} className="chip mono" onClick={() => open(d.path, d.version)}>
               {d.path}
               {d.version ? `@v${d.version}` : ''}
             </button>

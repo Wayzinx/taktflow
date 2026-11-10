@@ -5,7 +5,7 @@ import { refPath } from '../../components/viz/ref'
 import { Link } from '../../lib/router'
 import { EntityPanel } from './entity'
 
-const LABEL: Partial<Record<StewardContextRef['type'], string>> = { space: '空间', requirement: '需求', run: '运行' }
+const LABEL: Partial<Record<StewardContextRef['type'], string>> = { space: '空间', requirement: '需求', run: '运行', file: '文件' }
 
 /**
  * 焦点面板（docs/design/28 §1）：默认跟随会话里最新出现的实体；📌 固定后不再跟随。
@@ -23,7 +23,19 @@ export function FocusPanel({ target, follow, onFollow, onTarget, onClose }: { ta
               {space}
             </button>
           )}
-          {target.ref.type !== 'space' && (
+          {target.ref.type === 'file' && target.ref.parent && (
+            <>
+              <span aria-hidden>›</span>
+              <button type="button" className="solo-crumb mono" onClick={() => onTarget({ ref: { type: 'requirement', spaceId: target.ref.spaceId, id: target.ref.parent!, label: target.ref.parent } })} title="需求">
+                {target.ref.parent}
+              </button>
+              <span aria-hidden>›</span>
+              <b className="solo-crumb mono truncate" title={target.ref.id}>
+                {target.ref.label ?? target.ref.id}
+              </b>
+            </>
+          )}
+          {target.ref.type !== 'space' && target.ref.type !== 'file' && (
             <>
               <span aria-hidden>›</span>
               <button type="button" className="solo-crumb mono" disabled={!target.node} onClick={() => onTarget({ ref: target.ref })} title={LABEL[target.ref.type]}>

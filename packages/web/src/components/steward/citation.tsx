@@ -1,8 +1,25 @@
-import { Fragment, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, BookOpen, CircleAlert, FileText, FolderKanban, Inbox, ListChecks, PlayCircle, Radio, Workflow, type LucideIcon } from 'lucide-react'
 import type { StewardCitation } from '@taktflow/core'
 import { Popover } from '../ui'
 import { jumpTo } from './jump'
+import { filePagePath, fileFocusOf, useEntityFocus } from './focus'
+import { useLocation } from '../../lib/router'
+import { spacePath } from '../../lib/space'
+
+type LinkOpener = (href: string, label?: string) => { href: string; go: () => void }
+
+/** 点站内链接 / 引用：指向需求里的产物时，Solo 在右侧面板打开、别处去需求的产物页；其余照常跳转并高亮。 */
+function useLinkOpener(): LinkOpener {
+  const focus = useEntityFocus()
+  const { spaceId } = useLocation()
+  return useCallback((href: string, label?: string) => {
+    const file = fileFocusOf(href, spaceId)
+    if (!file) return { href, go: () => jumpTo(href, label) }
+    const page = spacePath(file.ref.spaceId!, filePagePath(file))
+    return { href: page, go: () => (focus ? focus.open(file) : jumpTo(page, label)) }
+  }, [focus, spaceId])
+}
 
 const KIND: Record<NonNullable<StewardCitation['kind']>, { icon: LucideIcon; label: string }> = {
   space: { icon: FolderKanban, label: '空间' },
@@ -21,6 +38,7 @@ export const citationKind = (c: StewardCitation) => KIND[c.kind ?? 'event'] ?? K
 
 /** 正文里的 [n]：悬停 250ms 预览来源，点击跳转并在目标页高亮定位。 */
 export function CitationRef({ n, c }: { n: number; c: StewardCitation }) {
+  const opener = useLinkOpener()
   const ref = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -48,7 +66,7 @@ export function CitationRef({ n, c }: { n: number; c: StewardCitation }) {
         onBlur={hide}
         onClick={() => {
           setOpen(false)
-          jumpTo(c.href, c.label)
+          opener(c.href, c.label).go()
         }}
       >
         {n}
@@ -73,21 +91,22 @@ export function CitationRef({ n, c }: { n: number; c: StewardCitation }) {
 /** 粗体、行内代码、Markdown 链接 [文字](/站内路径 或 http(s) 地址)、[n] 引用。 */
 const INLINE = /(\*\*[^*]+\*\*)|(`[^`]+`)|\[([^\]\n]+)\]\(((?:\/|https?:\/\/)[^)\s]*)\)|(\[\d+\])/g
 
-function inline(text: string, cites: StewardCitation[] | undefined, key: string): ReactNode[] {
+function inline(text: string, cites: StewardCitation[] | undefined, key: string, opener: LinkOpener): ReactNode[] {
   const out: ReactNode[] = []
   let last = 0
   let i = 0
   for (const m of text.matchAll(INLINE)) {
     if (m.index > last) out.push(text.slice(last, m.index))
     const k = `${key}-${i++}`
-    if (m[1]) out.push(<strong key={k}>{inline(m[1].slice(2, -2), cites, k)}</strong>)
+    if (m[1]) out.push(<strong key={k}>{inline(m[1].slice(2, -2), cites, k, opener)}</strong>)
     else if (m[2]) out.push(<code key={k}>{m[2].slice(1, -1)}</code>)
     else if (m[3] && m[4]) {
       const href = m[4]
-      // 站内路径走 jumpTo（带空间前缀与高亮），外链新开标签页
+      const link = href.startsWith('/') ? opener(href, m[3]) : undefined
+      // 站内路径走 jumpTo（带空间前缀与高亮），产物文件在右侧面板打开，外链新开标签页
       out.push(
-        href.startsWith('/') ? (
-          <a key={k} href={href} className="stw-link" onClick={(e) => (e.preventDefault(), jumpTo(href, m[3]))}>
+        link ? (
+          <a key={k} href={link.href} className="stw-link" onClick={(e) => (e.preventDefault(), link.go())}>
             {m[3]}
           </a>
         ) : (
@@ -109,6 +128,7 @@ function inline(text: string, cites: StewardCitation[] | undefined, key: string)
 
 /** 管家正文：段落、行首 "- " 列表、粗体、行内代码、链接、[n] 引用；流式时最后一段末尾带光标。 */
 export function StewardText({ text, citations, streaming }: { text: string; citations?: StewardCitation[]; streaming?: boolean }) {
+  const opener = useLinkOpener()
   const blocks = text.split(/\n{2,}/)
   return (
     <div className="stw-text">
@@ -119,7 +139,7 @@ export function StewardText({ text, citations, streaming }: { text: string; cita
           return (
             <ul key={bi}>
               {lines.map((l, li) => (
-                <li key={li} className={streaming && last && li === lines.length - 1 ? 'stream-caret' : undefined}>{inline(l.replace(/^\s*[-*] /, ''), citations, `${bi}-${li}`)}</li>
+                <li key={li} className={streaming && last && li === lines.length - 1 ? 'stream-caret' : undefined}>{inline(l.replace(/^\s*[-*] /, ''), citations, `${bi}-${li}`, opener)}</li>
               ))}
             </ul>
           )
@@ -128,7 +148,7 @@ export function StewardText({ text, citations, streaming }: { text: string; cita
             {lines.map((l, li) => (
               <Fragment key={li}>
                 {li > 0 && <br />}
-                {inline(l, citations, `${bi}-${li}`)}
+                {inline(l, citations, `${bi}-${li}`, opener)}
               </Fragment>
             ))}
           </p>

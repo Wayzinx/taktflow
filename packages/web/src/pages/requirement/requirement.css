@@ -79,6 +79,70 @@
   color: var(--text-3);
   letter-spacing: 0.02em;
 }
+/* 核心文档：置顶、带强调底色，和下面按类型收起的产物区分开 */
+.art-core-group {
+  margin-bottom: 6px;
+  padding: 2px 2px 4px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.art-core-group + .art-group {
+  border-top: none;
+}
+.art-core-head {
+  color: var(--accent-text);
+}
+.art-core-head > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.art-core-head svg {
+  width: 12px;
+  height: 12px;
+}
+.art-core .art-item-title {
+  font-weight: 600;
+}
+.art-core .art-item-icon {
+  color: var(--accent-text);
+}
+/* 一类产物一行，点开才列出文件 */
+.art-kind-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease);
+}
+.art-kind-head:hover {
+  background: var(--surface-hover);
+}
+.art-kind-head .num {
+  margin-left: auto;
+  font-size: var(--text-label);
+}
+.art-kind-chev {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.art-kind-head[aria-expanded='true'] .art-kind-chev {
+  transform: rotate(90deg);
+}
+.art-item-nested {
+  padding-left: 22px;
+}
 .art-item {
   display: flex;
   align-items: center;

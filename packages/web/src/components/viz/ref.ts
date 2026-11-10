@@ -9,6 +9,7 @@ export function refPath(ref: StewardContextRef): string | undefined {
     : ref.type === 'run' ? `/run/${ref.id}`
     : ref.type === 'workflow' ? `/workflows/${ref.id}`
     : ref.type === 'knowledge' ? `/knowledge/${ref.id}`
+    : ref.type === 'file' && ref.parent ? `/req/${ref.parent}?tab=artifacts&path=${encodeURIComponent(ref.id)}`
     : ref.type === 'node' && ref.parent ? `${ref.parent.startsWith('run-') ? '/run/' : '/workflows/'}${ref.parent}?node=${encodeURIComponent(ref.id)}`
     : undefined
   if (!rest) return undefined
