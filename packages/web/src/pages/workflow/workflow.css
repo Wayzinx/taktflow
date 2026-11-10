@@ -8,9 +8,15 @@
 .wf-body > * {
   min-height: 0;
 }
-@media (max-width: 1280px) {
+/* 常见笔记本宽度下三栏会把画布挤到 500px 出头：节点面板只留名字（说明在悬停提示里），属性栏收窄 */
+@media (max-width: 1600px) {
   .wf-body {
-    grid-template-columns: 188px minmax(0, 1fr) 300px;
+    grid-template-columns: 148px minmax(0, 1fr) 300px;
+  }
+  .wf-palette-hint,
+  .wf-palette-how,
+  .wf-palette-grip {
+    display: none;
   }
 }
 /* 管家停靠面板打开（宽屏让出 440px）：收起节点面板，画布保持可用，好看清幽灵预览 */

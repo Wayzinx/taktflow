@@ -31,7 +31,7 @@ export function AskStewardButton({ workflowId, selectedNodeId }: { workflowId: s
     }
     openSteward({ context })
   }
-  const tip = first ? `有 ${mine.length} 个改这个 workflow 的提案等你决定：${first.p.title}` : `${withShortcut('问管家', 'mod+j')}：会带上这个 workflow${selectedNodeId ? `和选中的 ${selectedNodeId}` : ''}`
+  const tip = first ? `有 ${mine.length} 个改这条流水线的提案等你决定：${first.p.title}` : `${withShortcut('问管家', 'mod+j')}：会带上这条流水线${selectedNodeId ? `和选中的 ${selectedNodeId}` : ''}`
   return (
     <button type="button" className="btn btn-sm" title={tip} onClick={open}>
       <BeeGlyph />

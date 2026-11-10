@@ -34,10 +34,10 @@ export function NodePalette({ wf, onSelect }: { wf: WorkflowDocState; onSelect?:
       {wf.readOnly ? (
         <p className="wf-palette-note">
           <Lock />
-          只读 workflow，不能新增节点
+          只读流水线，不能新增节点
         </p>
       ) : (
-        <p className="wf-palette-note">拖到画布的阶段泳道或 Loop 框中；点击则加到所选阶段末尾。</p>
+        <p className="wf-palette-note wf-palette-how">拖到画布的阶段泳道或 Loop 框中；点击则加到所选阶段末尾。</p>
       )}
       <ul className="wf-palette-list">
         {PALETTE.map((item) => (
@@ -51,7 +51,7 @@ export function NodePalette({ wf, onSelect }: { wf: WorkflowDocState; onSelect?:
                 e.dataTransfer.effectAllowed = 'copy'
               }}
               onClick={() => add(item)}
-              title={item.kind === 'review' ? '打开评审节点配置向导' : `新增${item.label}节点`}
+              title={`${item.hint}。${item.kind === 'review' ? '点击打开评审节点配置向导' : `点击新增${item.label}节点`}`}
             >
               <KindIcon kind={item.kind} size={24} />
               <span className="wf-palette-text">

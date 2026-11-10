@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react'
-import { applyEdgeChanges, applyNodeChanges, Background, BackgroundVariant, Controls, Panel, ReactFlow, ReactFlowProvider, useReactFlow, type Connection, type EdgeChange, type NodeChange } from '@xyflow/react'
+import { applyEdgeChanges, applyNodeChanges, Background, BackgroundVariant, Controls, Panel, ReactFlow, ReactFlowProvider, useReactFlow, type Connection, type EdgeChange, type NodeChange, type Viewport } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { Lock } from 'lucide-react'
 import type { WorkflowEdit } from '@taktflow/core'
 import { findNode, lit, literalOf, needsOf } from '../../../api/workflow-edit'
 import { toast } from '../../../components/ui'
+import { currentSpaceId } from '../../../lib/space'
 import { useIsDark } from '../../../lib/theme'
 import { addNode, type Placement } from '../palette/add-node'
 import { DRAG_MIME, paletteItem } from '../palette/node-defaults'
@@ -26,6 +27,26 @@ export interface WorkflowCanvasProps {
   highlight?: string[]
   /** 管家 workflow 提案的幽灵预览（A 组 ghost-overlay.tsx；骨架预留）。 */
   ghost?: WorkflowPreview
+}
+
+/** 画布视口是个人的浏览位置：只记在本机，不写进共享的 layout（否则一个人拖动画布，所有人下次打开都停在那里）。 */
+const viewportKey = (id: string) => `takt:wf-viewport:${currentSpaceId() ?? ''}:${id}`
+function readViewport(id?: string): Viewport | undefined {
+  if (!id) return undefined
+  try {
+    const v = JSON.parse(localStorage.getItem(viewportKey(id)) ?? 'null') as Viewport | null
+    return v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.zoom) ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+function writeViewport(id: string | undefined, v: Viewport) {
+  if (!id) return
+  try {
+    localStorage.setItem(viewportKey(id), JSON.stringify(v))
+  } catch {
+    // 存储不可用：下次从第一个泳道打开
+  }
 }
 
 /** React Flow 画布：阶段泳道、节点卡片、连线即依赖（setNeeds）、拖动（wf.saveLayout）、loop / planner 分组。只读时禁用交互。 */
@@ -186,9 +207,9 @@ function Canvas({ wf, selected, onSelect, highlight, ghost }: WorkflowCanvasProp
         onNodeDragStop={onNodeDragStop}
         onNodeClick={(_, n) => n.type !== 'lane' && onSelect(n.id)}
         onPaneClick={() => onSelect(undefined)}
-        onMoveEnd={(_, viewport) => !locked && wf.layout && wf.saveLayout({ ...wf.layout, viewport })}
-        // 没存过视口时从第一个泳道开始、按可读的缩放打开；fitView 会把 20+ 节点的流水线缩到看不清
-        defaultViewport={wf.layout?.viewport ?? { x: 16, y: 12, zoom: 0.8 }}
+        onMoveEnd={(_, viewport) => writeViewport(wf.doc?.id, viewport)}
+        // 本机没看过时从第一个泳道开始、按可读的缩放打开；fitView 会把 20+ 节点的流水线缩到看不清
+        defaultViewport={readViewport(wf.doc?.id) ?? { x: 16, y: 12, zoom: 0.8 }}
         nodesDraggable={!locked}
         nodesConnectable={!locked}
         elementsSelectable

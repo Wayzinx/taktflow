@@ -99,7 +99,7 @@ export function RoutingMeta({ model, disabled, apply }: { model: EditableWorkflo
         <span id="wf-meta-routing-title" className="section-label">路由与总负责</span>
         <span className="faint">路由器与 Lead 读这些</span>
       </div>
-      {text('useWhen', '适用场景', '路由器据此在多个 workflow 之间选择；写改动形状，不写技术栈', 3)}
+      {text('useWhen', '适用场景', '路由器据此在多条流水线之间选择；写改动形状，不写技术栈', 3)}
       <Field label="适用档位" hint={(literalOf<Tier[]>(tiersV) ?? []).length === 0 ? '未选：不限档位' : '只按改动形状分档；人可以在路由卡上改档'} htmlFor="wf-meta-tiers">
         {tiersV?.kind === 'code' ? (
           <CodeValue id="wf-meta-tiers" code={tiersV.code} disabled />
