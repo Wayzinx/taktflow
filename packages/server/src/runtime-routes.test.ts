@@ -171,7 +171,8 @@ it('搭配矩阵与最小任务路由：embedding 排除、停用原因、计费
     return { ok: true, finalText: 'OK', usage: { inputTokens: 2, outputTokens: 1 } }
   })
   const adapter: HarnessAdapter = { id: 'fake', displayName: 'fake', capabilities: { customProvider: true, providerProtocols: ['openai-responses'] }, available: async () => ({ ok: true }), run }
-  const f = await fixture({ bridge, resolveRuntime: async stores => ({ stores, profiles: {}, harnesses: { fake: adapter }, knowledge: [], bridge }), getHarnesses: async () => [
+  const off: HarnessAdapter = { ...adapter, id: 'off', capabilities: {}, available: async () => ({ ok: false, reason: '本空间已停用' }) }
+  const f = await fixture({ bridge, resolveRuntime: async stores => ({ stores, profiles: {}, harnesses: { fake: adapter, off }, knowledge: [], bridge }), getHarnesses: async () => [
     { id: 'fake', displayName: 'fake', source: 'plugin', available: true, capabilities: adapter.capabilities!, roles: [] },
     { id: 'off', displayName: 'off', source: 'plugin', available: false, reason: '本空间已停用', capabilities: {}, roles: [] },
   ] })

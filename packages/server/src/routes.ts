@@ -1,3 +1,4 @@
+import { catalogHarnesses, legacyCatalog } from './harness-catalog.js'
 import { pairingMatrix } from './pairings.js'
 import { harnessCatalogInfo } from '@taktflow/harness'
 import { automationRoutes, type AutomationCallbacks } from './automation-routes.js'
@@ -167,19 +168,19 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     return item
   })
   add('GET', '/api/pairings', async ({ stores }) => {
-    const rows = catalog.getHarnesses ? await catalog.getHarnesses(stores) : catalog.getCatalog ? (await catalog.getCatalog(stores)).harnesses : undefined
+    const rows = catalog.resolveRuntime || catalog.getHarnesses || catalog.getCatalog ? await catalogHarnesses(stores, catalog) : undefined
     if (!rows) throw new HttpError(501, '未接入运行时 harnesses 目录')
     return pairingMatrix(stores.config, rows, catalog.bridge)
   })
   add('GET', '/api/harnesses', async ({ stores, url }) => {
     const includeTest = url.searchParams.get('includeTest') === '1'
-    const rows = catalog.getHarnesses ? await catalog.getHarnesses(stores, includeTest) : catalog.getCatalog ? (await catalog.getCatalog(stores, includeTest)).harnesses : undefined
+    const rows = catalog.resolveRuntime || catalog.getHarnesses || catalog.getCatalog ? await catalogHarnesses(stores, catalog) : undefined
     if (!rows) throw new HttpError(501, '未接入运行时 harnesses 目录')
     return rows.map(row => harnessCatalogInfo(row, stores.config)).filter(row => includeTest || !row.testOnly)
   })
   add('GET', '/api/models', ({ stores }) => {
     if (catalog.getModels) return catalog.getModels(stores)
-    if (catalog.getCatalog) return catalog.getCatalog(stores).then((value) => value.models)
+    if (catalog.getCatalog) return legacyCatalog(stores, catalog).then((value) => value.models)
     throw new HttpError(501, '未接入运行时 models 目录')
   })
   return router

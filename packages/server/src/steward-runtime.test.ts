@@ -6,6 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { initProject, StewardAgent, type HarnessAdapter, type HarnessRequest, type ProviderBridge, type StewardPrefs } from '@taktflow/core'
 import { createStewardDeps } from './steward-routes.js'
 import { stewardRuntime } from './steward-runtime.js'
+import { clearHarnessAvailability } from './harness-availability.js'
 import { StewardMcp } from './steward-mcp.js'
 import { fail, json } from './http.js'
 import { STREAMING } from './routes.js'
@@ -190,6 +191,7 @@ it('原始 native 模型与自带模型可解析，账号未就绪仅拒绝自�
   const f = await fixture()
   expect((await f.runtime.resolveRuntime!(prefs, { provider: 'chat', model: 'raw' })).chat).toBeTypeOf('function')
   f.adapters.codex.available = async () => ({ ok: true, ownReady: false, ownReason: '请登录' })
+  clearHarnessAvailability(f.stores.projectDir)
   await expect(f.runtime.resolveRuntime!(prefs, { harness: 'codex', model: 'own-raw' })).rejects.toMatchObject({ status: 400, message: '请登录' })
   expect((await f.runtime.resolveRuntime!(prefs, { harness: 'codex', provider: 'chat', model: 'raw' })).run).toBeTypeOf('function')
   const choices = await f.runtime.runtimeChoices!(prefs)

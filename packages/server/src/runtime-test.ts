@@ -1,3 +1,4 @@
+import { harnessAvailability } from './harness-availability.js'
 import { providerRequest, listProviderModels } from './provider-request.js'
 import { testPairing } from './pairing-test.js'
 import { type ProviderBridge, type HarnessAdapter, type RuntimeTestRequest, type RuntimeTestResult, type TaktConfig } from '@taktflow/core'
@@ -5,7 +6,7 @@ import { providerConfig, collectSecrets, createRedactor } from '@taktflow/harnes
 import { HttpError } from './http.js'
 
 export async function testRuntime(config: TaktConfig, request: RuntimeTestRequest,
-  harnesses: () => Promise<Record<string, HarnessAdapter>>, bridge?: ProviderBridge, fetcher: typeof fetch = fetch): Promise<RuntimeTestResult> {
+  harnesses: () => Promise<Record<string, HarnessAdapter>>, bridge?: ProviderBridge, fetcher: typeof fetch = fetch, projectDir?: string): Promise<RuntimeTestResult> {
   if (!request.target || !['provider', 'model', 'harness', 'pairing'].includes(request.target.kind)) throw new HttpError(400, 'target.kind 必须是 provider、model、harness 或 pairing')
   const target = request.target
   if (target.kind === 'pairing') return testPairing(config, request, harnesses, bridge)
@@ -22,7 +23,7 @@ export async function testRuntime(config: TaktConfig, request: RuntimeTestReques
     if (!harness) throw new HttpError(400, 'harness 不存在；请先登记 harness')
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      const probe = await Promise.race([harness.available(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('探测超过 10 秒；请检查启动命令')), 10_000) })])
+      const probe = await Promise.race([harnessAvailability(config, projectDir, harness, true), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('探测超过 10 秒；请检查启动命令')), 10_000) })])
       return result(probe.ok, probe.ok ? 'Harness 可用' : probe.reason ?? 'Harness 不可用；请检查启动命令', probe.detail)
     } catch { return result(false, 'Harness 探测失败或超时；请检查启动命令和安装状态') }
     finally { clearTimeout(timer) }

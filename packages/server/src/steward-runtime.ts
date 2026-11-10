@@ -1,3 +1,4 @@
+import { harnessAvailability } from './harness-availability.js'
 import { providerFor, providerProtocols, resolvePairing, resolveHarnessSelector, resolveSecret, StewardError, type BridgeRoute, type HarnessAdapter, type ProviderBridge, type StewardDeps, type StewardPrefs, type StewardRuntimeChoice } from '@taktflow/core'
 import { createHarnesses, createProvider, providerConfig, createRedactor } from '@taktflow/harness'
 import type { StewardMcp } from './steward-mcp.js'
@@ -21,7 +22,7 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
     for (const [id, adapter] of Object.entries(adapters)) {
       // 管家靠 MCP 调 takt 的工具：外部 harness 只列能接 MCP 的
       if (id !== 'native' && !adapter.capabilities?.mcp) continue
-      const availability: Awaited<ReturnType<HarnessAdapter['available']>> = id === 'native' ? { ok: true } : await adapter.available().catch(() => ({ ok: false }))
+      const availability: Awaited<ReturnType<HarnessAdapter['available']>> = id === 'native' ? { ok: true } : await harnessAvailability(config, stores?.projectDir, adapter)
       // 外部 harness 总能用自己的登录跑（自带模型）；能换 provider 的再列出空间里配的每个模型
       const own = [[undefined, undefined] as const]
       const models = id === 'native' ? Object.entries(config?.models ?? {}) : adapter.capabilities?.customProvider ? [...own, ...Object.entries(config?.models ?? {})] : own
@@ -63,7 +64,7 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
       catch (error) { throw new StewardError(400, (error as Error).message) }
       const { harness: adapter, model: modelId, modelConfig, provider, pairing } = resolved
       if (adapter.id !== 'native' && !adapter.capabilities?.mcp) throw new StewardError(400, '这个 harness 不支持管家的 MCP 工具')
-      const availability = adapter.id === 'native' ? { ok: true } : await adapter.available()
+      const availability = adapter.id === 'native' ? { ok: true } : await harnessAvailability(config, stores.projectDir, adapter)
       if (!availability.ok) throw new StewardError(400, `${adapter.displayName} 未安装或不可用，请安装后重新选择`)
       if (!provider && 'ownReady' in availability && availability.ownReady === false) throw new StewardError(400, availability.ownReason ?? '自带账号未就绪')
       if (modelConfig?.kind === 'embedding') throw new StewardError(400, '嵌入模型不能用于对话')

@@ -1,3 +1,4 @@
+import { clearHarnessAvailability } from './harness-availability.js'
 import { assertSecretName, patchRuntimeConfig, providerProtocols, readRuntimeConfig, RuntimeConfigError, setLocalSecret, systemWrite, validateHarnessSelector,
   type ProviderBridge, type ProjectStores, type RuntimeConfig, type RuntimeTestRequest, type TaktConfig } from '@taktflow/core'
 import { ACP_PRESETS, PROVIDER_PRESETS, createHarnesses, providerConfig, collectSecrets, createRedactor, withProviderPresets } from '@taktflow/harness'
@@ -63,6 +64,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
           return () => {}
         },
       })
+      if (input.harnesses || input.harnessOverrides) clearHarnessAvailability(stores.projectDir)
       return view(stores.config)
     } catch (error) {
       if (error instanceof RuntimeConfigError) throw new HttpError(error.status, createRedactor(collectSecrets(undefined, stores.config.providers))(error.message))
@@ -73,7 +75,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
     authorize(request, stores, 'owner')
     const input = await body(request)
     return testRuntime(stores.config, input as unknown as RuntimeTestRequest,
-      async () => (await options.resolveRuntime?.(stores))?.harnesses ?? createHarnesses({ config: stores.config, projectDir: stores.projectDir }), options.bridge, options.catalogFetch)
+      async () => (await options.resolveRuntime?.(stores))?.harnesses ?? createHarnesses({ config: stores.config, projectDir: stores.projectDir }), options.bridge, options.catalogFetch, stores.projectDir)
   })
   for (const method of ['PUT', 'DELETE']) add(method, '/api/secrets/:name', async ({ stores, request, params }) => {
     authorize(request, stores, 'owner')

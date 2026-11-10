@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Readable } from 'node:stream'
@@ -7,6 +7,9 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { initProject, type HarnessAdapter, type HarnessInfo, type RuntimeCatalog } from '@taktflow/core'
 import { routes, type RequestContext } from './routes.js'
 import type { ServerOptions } from './index.js'
+import { stewardRuntime } from './steward-runtime.js'
+import { createStewardDeps } from './steward-routes.js'
+import { StewardMcp } from './steward-mcp.js'
 
 const dirs: string[] = []
 afterEach(async () => { vi.useRealTimers(); vi.unstubAllEnvs(); await Promise.all(dirs.splice(0).map(dir => rm(dir, { recursive: true, force: true }))) })
@@ -99,4 +102,101 @@ it('离线补全为 unavailable，缺少密钥项不发 provider 请求', async 
   expect(result.providers[0]).toMatchObject({ keyPresent: false, models: { source: 'preset', error: '缺少密钥 CATALOG_API_KEY' } })
   expect(fetcher).toHaveBeenCalledOnce()
   expect(fetcher.mock.calls[0]![0]).toBe('https://models.dev/api.json')
+})
+
+it('目录、harness 列表、搭配与管家 choices 共享探测，测试按钮强制更新', async () => {
+  const f = await fixture()
+  const probe = vi.fn(async () => ({ ok: true, ownReady: true }))
+  f.harnesses.codex!.available = probe
+  f.harnesses.codex!.capabilities!.mcp = true
+  await Promise.all([f.request('/api/space/runtime/catalog'), f.request('/api/harnesses'), f.request('/api/pairings')])
+  expect(probe).toHaveBeenCalledOnce()
+  const deps = createStewardDeps({ projectDir: f.stores.projectDir }, 'owner')
+  const open = deps.open
+  deps.open = async id => ({ ...await open(id), stores: f.stores })
+  const mcp = new StewardMcp()
+  try {
+    const runtime = stewardRuntime(deps, 'owner', mcp, () => '', () => f.harnesses)
+    const prefs = { trust: 'confirm' as const, digestTimes: [] }
+    expect((await runtime.runtimeChoices!(prefs)).find(row => row.harness === 'codex')).toMatchObject({ available: true })
+    await runtime.runtimeChoices!(prefs)
+    expect(probe).toHaveBeenCalledOnce()
+    probe.mockResolvedValue({ ok: true, ownReady: false })
+    expect(await f.request('/api/space/runtime/test', 'POST', { target: { kind: 'harness', id: 'codex' } })).toMatchObject({ ok: true })
+    expect(probe).toHaveBeenCalledTimes(2)
+    expect((await f.request('/api/harnesses') as HarnessInfo[])[0]).toMatchObject({ ownReady: false })
+    expect((await runtime.runtimeChoices!(prefs)).find(row => row.harness === 'codex' && !row.model)).toMatchObject({ available: false })
+  } finally { mcp.close() }
+})
+
+it('冷目录超时后继续探测，下一次请求读取后台结果，不再等待 2.8 秒', async () => {
+  const f = await fixture()
+  let release!: (value: { ok: boolean }) => void
+  const probe = vi.fn(() => new Promise<{ ok: boolean }>(resolve => { release = resolve }))
+  f.harnesses.codex!.available = probe
+  // 先热好模型目录；本场景只让可用性探测阻塞。
+  await f.request('/api/space/runtime/catalog/refresh', 'POST', { target: { kind: 'provider', id: 'openai' } })
+  await f.request('/api/space/runtime/catalog/refresh', 'POST', { target: { kind: 'harness', id: 'codex' } })
+  vi.useFakeTimers()
+  const cold = f.request('/api/space/runtime/catalog')
+  await vi.waitFor(() => expect(probe).toHaveBeenCalledOnce())
+  await vi.advanceTimersByTimeAsync(2_800)
+  expect((await cold as RuntimeCatalog).harnesses.find(h => h.id === 'codex')).toMatchObject({ available: false, reason: '正在检测…' })
+  release({ ok: true })
+  await vi.advanceTimersByTimeAsync(0)
+  const began = Date.now()
+  expect((await f.request('/api/space/runtime/catalog') as RuntimeCatalog).harnesses.find(h => h.id === 'codex')).toMatchObject({ available: true })
+  expect(Date.now() - began).toBe(0)
+  expect(probe).toHaveBeenCalledOnce()
+})
+
+it('保存 harnessOverrides 和 harnesses 后重新探测，包括改回原配置', async () => {
+  const f = await fixture()
+  await writeFile(join(f.stores.projectDir, 'takt.config.json'), JSON.stringify(f.stores.config))
+  const probe = vi.fn(async () => ({ ok: true }))
+  f.harnesses.codex!.available = probe
+  await f.request('/api/harnesses')
+  for (const patch of [
+    { harnessOverrides: { codex: { env: { SYNTHETIC: 'changed' } } } },
+    { harnessOverrides: { codex: null } },
+    { harnesses: { extra: { id: 'extra', kind: 'cli', command: ['synthetic-cli'], output: { format: 'text' } } } },
+  ]) {
+    const current = await f.request('/api/space/runtime') as { revision: string }
+    await f.request('/api/space/runtime', 'PATCH', { baseRevision: current.revision, reason: '缓存失效测试', ...patch })
+    await f.request('/api/harnesses')
+  }
+  expect(probe).toHaveBeenCalledTimes(4)
+})
+
+it('仅注入旧目录回调时列表并发去重，过期返回旧值并后台刷新', async () => {
+  let release!: (value: HarnessInfo[]) => void
+  const rows: HarnessInfo[] = [{ id: 'synthetic', displayName: 'Synthetic', source: 'plugin', capabilities: {}, roles: [], available: true }]
+  const getHarnesses = vi.fn(async () => rows)
+  const f = await fixture({ resolveRuntime: undefined, getHarnesses })
+  vi.useFakeTimers()
+  await Promise.all([f.request('/api/harnesses'), f.request('/api/harnesses'), f.request('/api/pairings')])
+  expect(getHarnesses).toHaveBeenCalledOnce()
+  getHarnesses.mockImplementation(() => new Promise(resolve => { release = resolve }))
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(await f.request('/api/harnesses')).toMatchObject([{ available: true }])
+  expect(getHarnesses).toHaveBeenCalledTimes(2)
+  release([{ ...rows[0]!, available: false, reason: 'new result' }])
+  await vi.advanceTimersByTimeAsync(0)
+  expect(await f.request('/api/harnesses')).toMatchObject([{ available: false, reason: 'new result' }])
+})
+
+it('统一目录保留覆盖信息，同名 env 的不同密钥均脱敏', async () => {
+  const f = await fixture()
+  f.stores.config.harnessOverrides = {
+    codex: { env: { API_KEY: 'synthetic-first-key', NORMAL: 'visible-config-value' } },
+    mock: { env: { API_KEY: 'synthetic-second-key' } },
+  }
+  f.harnesses.codex!.available = async () => ({ ok: false, reason: 'synthetic-first-key' })
+  f.harnesses.mock!.available = async () => ({ ok: false, reason: 'synthetic-second-key' })
+  const rows = await f.request('/api/harnesses?includeTest=1') as HarnessInfo[]
+  expect(rows.find(row => row.id === 'codex')).toMatchObject({ override: { env: { API_KEY: '[REDACTED]', NORMAL: '[REDACTED]' } } })
+  for (const value of [rows, await f.request('/api/space/runtime/catalog?includeTest=1')]) {
+    expect(JSON.stringify(value)).not.toContain('synthetic-first-key')
+    expect(JSON.stringify(value)).not.toContain('synthetic-second-key')
+  }
 })
