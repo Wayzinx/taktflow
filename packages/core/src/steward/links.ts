@@ -9,6 +9,8 @@ export const stewardLinks = {
     `/s/${e(space)}/run/${e(id)}${node ? `?node=${e(node)}` : ''}`,
   workflow: (space: string, id: string) => `/s/${e(space)}/workflows/${e(id)}`,
   knowledge: (space: string, id: string) => `/s/${e(space)}/knowledge/${e(id)}`,
+  /** 需求公共存放区里的一个产物（path 相对需求目录）。 */
+  artifact: (space: string, id: string, path: string) => `/s/${e(space)}/req/${e(id)}?tab=artifacts&path=${e(path)}`,
   settings: (space: string, tab: string) => `/s/${e(space)}/settings?tab=${e(tab)}`,
   attention: (space: string) => `/s/${e(space)}/attention`,
 }

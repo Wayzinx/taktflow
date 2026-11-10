@@ -1,8 +1,16 @@
 import { open } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { relative, resolve, sep } from 'node:path'
 import { assertNoSymlinks, isEnoent } from '../store/fs-utils.js'
 import { writableProjectFile } from '../commands/crud-commands.js'
 import { StewardError } from './contracts.js'
+
+/** 空间内相对路径落在需求目录下时，拆出需求 ID 和需求内路径。 */
+export function requirementFile(root: string, requirementsDir: string, file: string): { id: string; path: string } | undefined {
+  const dir = relative(root, requirementsDir).split(sep).join('/')
+  if (!dir || dir.startsWith('..') || !file.startsWith(`${dir}/`)) return undefined
+  const [id, ...rest] = file.slice(dir.length + 1).split('/')
+  return id && rest.length ? { id, path: rest.join('/') } : undefined
+}
 
 export async function stewardFile(root: string, file: string, write = false): Promise<string> {
   if (

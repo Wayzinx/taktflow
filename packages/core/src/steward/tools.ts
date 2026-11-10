@@ -19,7 +19,7 @@ import {
 } from './contracts.js'
 import { StewardStore } from './store.js'
 import { stewardLinks as links } from './links.js'
-import { readStewardFile, redactSecrets } from './files.js'
+import { readStewardFile, redactSecrets, requirementFile } from './files.js'
 import { StewardProposals } from './proposals.js'
 import { refreshRisks } from './risks.js'
 import { productMetrics } from './metrics.js'
@@ -554,7 +554,9 @@ export class StewardTools {
       case 'read_file': {
         const content = await readStewardFile(space!.dir, String(input.path))
         data = { path: input.path, content, hash: sha256(content ?? '') }
-        cite(String(input.path), links.settings(spaceId!, 'general'), 'file')
+        // 需求目录里的文件引用到需求的产物页，其他文件仍指向空间设置
+        const artifact = requirementFile(space!.dir, space!.stores.paths.requirements, String(input.path))
+        cite(String(input.path), artifact ? links.artifact(spaceId!, artifact.id, artifact.path) : links.settings(spaceId!, 'general'), 'file')
         break
       }
       case 'knowledge_search': {
