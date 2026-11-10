@@ -76,8 +76,13 @@ function createCodexFamilyHarness(id: string, displayName: string, command: stri
     id, displayName,
     capabilities,
     async listModels() {
-      const output = await listCliModels(bin, id === 'codex' ? ['debug', 'models'] : ['models'], options.env)
-      return id === 'codex' ? parseCodexModels(output) : parseTraeModels(output)
+      if (id === 'codex') return parseCodexModels(await listCliModels(bin, ['debug', 'models'], options.env))
+      // TRAE CLI 的 debug models 带每个模型的推理档（选择器靠它显示思考强度）；没有这个子命令的旧版本退回只有 ID 的 models
+      try {
+        return parseCodexModels(await listCliModels(bin, ['debug', 'models'], options.env))
+      } catch {
+        return parseTraeModels(await listCliModels(bin, ['models'], options.env))
+      }
     },
     async available() {
       const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })

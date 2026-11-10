@@ -88,7 +88,7 @@
 | harness | 怎么列 | 带 effort |
 |---|---|---|
 | Codex | `codex debug models`（JSON：slug、display_name、context_window、supported_reasoning_levels、default_reasoning_level；跳过 `visibility` 为隐藏的） | 有 |
-| TRAE CLI | `traecli models` | 视输出 |
+| TRAE CLI | `traecli debug models`（JSON 数组，带推理档）；旧版本退回 `traecli models` | 有（debug models） |
 | Claude Code | 固定别名 opus / sonnet / haiku | 本机 help 存在 --effort 时提供五档，默认 high |
 | Pi / OpenCode / dsh | 各自的列模型命令或配置；能核实的才接 | 视输出 |
 

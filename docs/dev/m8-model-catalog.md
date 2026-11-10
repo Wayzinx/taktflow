@@ -21,7 +21,7 @@
 - `model-cache.ts` 共用 6 小时缓存和同项刷新去重。provider 缓存位于 cache/models，harness 位于 cache/harness-models，models.dev 位于 cache/models-dev.json。文件保存指纹、fetchedAt 和筛选后的 value，不保存密钥或原始响应。provider 指纹包括实际 baseURL 与主协议；harness 指纹包括命令与覆盖配置的哈希。
 - 过期缓存立即返回，后台刷新；强制刷新同步等待。失败不覆盖上次成功缓存，内存短暂退避 30 秒，强制刷新绕过退避。临时文件写完后 rename，损坏缓存重新拉取。
 - `runtime-catalog.ts` 并行发现并最多等 2.8 秒，为响应序列化保留余量。无缓存且未完成时返回预设和“正在获取…”。models.dev 慢或失败不阻止 provider 列表返回。缺少密钥不请求 provider。
-- Codex 解析 debug models 的 JSON，严格保留 visibility=list。TRAE 的 models 输出已核实为逐行 ID；拒绝混入标题或空格的未知文本。Claude 固定三种别名，通过当前可执行文件的 help 检测 effort。三种命令复用现有脱敏进程执行器，超时 20 秒，不写 transcript。
+- Codex 解析 debug models 的 JSON，严格保留 visibility=list。TRAE 先读 `traecli debug models`（与 Codex 同格式的 JSON，但顶层是数组，带 supported_reasoning_levels / default_reasoning_level，选择器据此显示思考强度），没有该子命令时退回 `traecli models` 的逐行 ID；拒绝混入标题或空格的未知文本。Claude 固定三种别名，通过当前可执行文件的 help 检测 effort。三种命令复用现有脱敏进程执行器，超时 20 秒，不写 transcript。
 - 网络通过 `ServerOptions.catalogFetch` 或 ModelCatalog 构造参数注入；测试不请求外部服务。CLI 输出解析测试替换 runProcess，不启动真实 CLI。
 
 ## 测试索引

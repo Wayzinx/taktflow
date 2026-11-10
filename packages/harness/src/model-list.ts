@@ -5,10 +5,12 @@ import { object } from './parse.js'
 const efforts: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const effort = (value: unknown): Effort | undefined => efforts.includes(value as Effort) ? value as Effort : undefined
 
+/** codex / TRAE CLI 的 `debug models`：Codex 输出 { models: [...] }，TRAE CLI 直接输出数组，行格式相同。 */
 export function parseCodexModels(output: string): CatalogModel[] {
-  const data = object(JSON.parse(output))
-  if (!Array.isArray(data.models)) throw new Error('Codex 模型列表缺少 models 数组')
-  return data.models.flatMap(value => {
+  const parsed: unknown = JSON.parse(output)
+  const rows = Array.isArray(parsed) ? parsed : object(parsed).models
+  if (!Array.isArray(rows)) throw new Error('Codex 模型列表缺少 models 数组')
+  return rows.flatMap(value => {
     const row = object(value)
     if (row.visibility !== 'list') return []
     if (typeof row.slug !== 'string' || !row.slug.trim()) throw new Error('Codex 模型列表缺少 slug')

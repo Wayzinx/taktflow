@@ -40,6 +40,20 @@ it('Codex visibility 过滤；none/minimal/未知档丢弃，max 保留', () => 
   expect(() => parseCodexModels('{')).toThrow()
 })
 
+it('TRAE debug models 是数组，带推理档；未知档（ultra）丢弃', async () => {
+  // 2026-11-10 本机 traecli debug models 的片段
+  reply(JSON.stringify([
+    { slug: 'GPT-6.1-Sol', display_name: 'GPT-6.1-Sol', visibility: 'list', default_reasoning_level: 'medium',
+      supported_reasoning_levels: ['low', 'medium', 'high', 'xhigh', 'ultra'].map(effort => ({ effort })) },
+    { slug: 'Seed-Code', display_name: 'Seed-Code', visibility: 'list', supported_reasoning_levels: [] },
+  ]))
+  expect(await createTraeHarness().listModels!()).toEqual([
+    { id: 'GPT-6.1-Sol', label: 'GPT-6.1-Sol', reasoning: true, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium', origin: 'harness' },
+    { id: 'Seed-Code', label: 'Seed-Code', origin: 'harness' },
+  ])
+  expect(execFile).toHaveBeenCalledWith('traecli', ['debug', 'models'], expect.anything(), expect.any(Function))
+})
+
 it('TRAE 逐行公开模型样本保留原 ID，拒绝无法可靠解析的文本', async () => {
   const output = 'DeepSeek-V4-Pro\nGPT-5.2\n'
   reply(output)
