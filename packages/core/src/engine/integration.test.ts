@@ -9,6 +9,7 @@ import { createEngine } from './index.js'
 import { diffPath } from './execution.js'
 import type { AgentProfile, HarnessRequest, SandboxProvider, SandboxSpec, WorkflowDefinition } from '../types.js'
 import { integrate } from '../../../../templates/workflows/taktflow-standard.integration.js'
+import { runCases } from '../../../../templates/workflows/taktflow-standard.hooks.js'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
@@ -157,6 +158,32 @@ it('有依赖的任务叠在上游的改动上：后一个任务看得到前一�
   expect(await readFile(join(integration.path, 'src/a.ts'), 'utf8')).toBe('base\none\ntwo\n')
   expect(await readFile(join(state.nodes.fix!.worktree!.path, 'src/a.ts'), 'utf8')).toBe('base\none\ntwo\nfix\n')
   expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
+})
+
+it('执行用例：先清掉各用例上一轮的证据（基线等根目录文件保留），整个测试目录带进集成 worktree', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-run-cases-')); roots.push(root)
+  const project = join(root, 'project'), workspace = join(root, 'ws'), integration = join(root, 'integration')
+  const runner = `import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { answer } from './lib/answer.mjs'
+const evidence = join(process.env.TAKT_WORKSPACE, 'evidence')
+mkdirSync(join(evidence, 'TC-1'), { recursive: true })
+writeFileSync(join(evidence, 'TC-1', 'log.txt'), String(answer))
+writeFileSync(join(evidence, 'summary.json'), JSON.stringify({ cases: [{ id: 'TC-1', status: 'passed', evidence: 'evidence/TC-1/log.txt' }] }))
+`
+  await mkdir(join(project, 'tests/lib'), { recursive: true }); await mkdir(join(workspace, 'cases'), { recursive: true }); await mkdir(join(workspace, 'evidence/TC-1'), { recursive: true }); await mkdir(integration)
+  await writeFile(join(project, 'tests/run-cases.mjs'), runner); await writeFile(join(project, 'tests/lib/answer.mjs'), 'export const answer = 42\n')
+  await writeFile(join(workspace, 'scripts.mjs'), runner)
+  await writeFile(join(workspace, 'cases/TC-1.json'), JSON.stringify({ id: 'TC-1', covers: ['AC-1'] }))
+  await writeFile(join(workspace, 'evidence/TC-1/result.json'), '{"actual":"上一轮的结果"}'); await writeFile(join(workspace, 'evidence/baseline.txt'), '基线')
+  const read = async (path: string) => { try { return await readFile(join(workspace, path === 'scripts/run-cases.mjs' ? 'scripts.mjs' : path), 'utf8') } catch { return undefined } }
+  const ctx = { projectDir: project, workspaceDir: workspace, args: { caseCommand: 'node tests/run-cases.mjs' }, readArtifact: read,
+    resultOf: (id: string) => id === 'integration' ? { path: integration } : undefined, log: () => {} } as unknown as Parameters<typeof runCases>[0]
+  expect(await runCases(ctx)).toEqual({ data: { total: 1, failures: [] } })
+  await expect(readFile(join(workspace, 'evidence/TC-1/result.json'), 'utf8')).rejects.toThrow()
+  expect(await readFile(join(workspace, 'evidence/TC-1/log.txt'), 'utf8')).toBe('42')
+  expect(await readFile(join(workspace, 'evidence/baseline.txt'), 'utf8')).toBe('基线')
+  expect(await readFile(join(integration, 'tests/lib/answer.mjs'), 'utf8')).toBe('export const answer = 42\n')
 })
 
 it('动态节点的安全 diff 名称稳定且互不碰撞', () => {

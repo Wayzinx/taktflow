@@ -48,6 +48,10 @@ export async function runCases(ctx: NodeContext) {
   const actual = await readFile(join(ctx.projectDir, script), 'utf8')
   if (actual !== await ctx.readArtifact('scripts/run-cases.mjs')) return { status: 'blocked' as const, message: '实际执行脚本与评审产物不一致' }
   await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
+  // 上一轮或别人留下的单条证据不能混进这一轮：按冻结用例清掉各自的证据目录，证据根目录下的基线等文件保留
+  for (const test of await cases(ctx)) {
+    if (/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(test.id)) await rm(join(ctx.workspaceDir, 'evidence', test.id), { recursive: true, force: true })
+  }
   const integration = ctx.resultOf('integration') as { path?: string } | undefined
   const cwd = integration?.path ?? ctx.projectDir
   if (cwd !== ctx.projectDir) {
