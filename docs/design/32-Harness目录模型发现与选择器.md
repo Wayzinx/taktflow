@@ -1,0 +1,178 @@
+# 32 · Harness 目录、模型发现与选择器
+
+> 状态：设计中（2026-11-10）。接着 [31](31-Harness与LLM自由搭配和严格结构化输出.md) 做：31 解决了「协议对不上怎么办」，这篇解决「有哪些模型、哪些 harness 真能接、界面上怎么选」。
+> 参考：sub2api 的上游模型同步（实时列表 → 配置兜底 → models.dev 补元数据）；OpenClaw 把 provider、模型、agent runtime 分成三层，模型目录用 models.dev 补元数据、合并而不覆盖手填；Hermes 列模型的缓存策略（过期先用旧的，后台刷新）；Orca、Paperclip 让每个 harness 自己列模型和 effort。
+
+## 1. 结论
+
+- **三层不变**：
+  - provider：认证方式、能列哪些模型、模型怎么命名。
+  - 模型：一个 provider 里的一个模型 ID，带上下文、推理档等元数据。
+  - harness：拿这个模型跑 agent 循环的执行器。OpenClaw 管这一层叫 agent runtime。
+  - harness 回答的是「这个模型用什么跑」，不是模型从哪来。
+- **模型以发现为主，手填为辅**：
+  - provider 的模型实时从列表接口拿，再补元数据。
+  - harness 自带的模型（订阅账号、内置额度）由 harness 自己列。
+  - 手填只用来补充和覆盖。
+- **搭配逐个 harness 核实**：
+  - 只登记实测过的注入方式。
+  - 这次补齐 DeepSeek Harness（dsh）、OpenCode、Qwen Code，新增 Hermes、OpenClaw 两个适配器。
+- **harness 目录说人话**：
+  - 一个 harness 一行，带图标、来源说明（「使用个人 Claude 订阅」「走 API：DeepSeek」）和状态。
+  - mock 只给测试用，不进界面。
+  - native 改名为「直连 API（内置）」。
+  - Claude Code 的 CLI 和 ACP 是同一个 agent 的两种接法，在界面上并成一行，接法是一个选项。
+  - 内置 harness 不可用时可以隐藏，自定义的可以删除。
+- **选择器两级**：
+  - 先选 harness，右侧弹出模型面板，带 effort 和标签。
+  - 角色、节点、系统角色、管家、Solo 共用这一个选择器。
+
+## 2. 现状的问题
+
+- **模型列表**：
+  - 列表只有两个来源：预设里写死的一两个名字（多数已过期），加上手填的别名。
+  - provider 的「测试」其实已经调了列表接口（`runtime-test.ts`），但只回报「返回 N 个模型」，结果没有存下来。
+- **自带模型**：Claude 订阅、ChatGPT 账号、TRAE 额度这些自带模型没有列表，只能选「默认模型」。
+- **能接 API 的 harness**：customProvider 按 harness 写死了。
+  - dsh 实际能接：它的 `llm-pi-ai` 插件支持 OpenAI Chat / Responses / Anthropic 三种协议，可以自定义 baseURL、模型和 effort。
+  - OpenCode、Qwen Code 也能接。
+  - 但这三个的适配器都标成了「不支持」。
+  - Hermes、OpenClaw 没有适配器。
+- **两个 Claude**：
+  - 内置的 `claude-code` 走 CLI（`claude -p --output-format stream-json`）。
+  - 本空间加的 ACP 条目走官方的 Claude Agent ACP 适配器。
+  - 两个都是 Claude Code，只是接法不同。界面上看起来像两个不同的 harness。
+- **mock 和 native 都是 taktflow 自己的实现，不是第三方 harness**：
+  - mock：测试替身，按脚本回放事件，不调模型。
+  - native：taktflow 自带的最小 agent 循环，直接调 LLM API，没有外部 CLI。
+
+## 3. 模型目录
+
+### 3.1 provider 发现
+
+- **按协议调列表接口**：
+
+  | 协议 | 列表接口 | 说明 |
+  |---|---|---|
+  | openai-chat / openai-responses | `GET {baseURL}/models` | Bearer 认证 |
+  | anthropic-messages | `GET {baseURL}/v1/models` | `x-api-key`、`anthropic-version`；按 `has_more` / `last_id` 翻页 |
+  | gemini | `GET {baseURL}/v1beta/models` | 按 `nextPageToken` 翻页 |
+
+- **只留能对话的模型**：
+  - 去掉 embedding、语音、图像生成、审核类，判断依据是元数据里的输入输出模态，或 ID 关键字。
+  - embedding 单独归类，给知识库用。
+- **列不出来时退回预设和手填**：包括不支持列表、401、超时。界面写明原因，并给「重试」。
+- **缓存**：
+  - 存在 `.takt/cache/models/<provider>.json`，不写进 `takt.config.json`。
+  - 6 小时过期。过期后先返回旧的，后台再刷新。
+  - 「刷新」按钮强制重新拉。
+- **合并，不覆盖**：
+  - 优先级：手填 > 发现 > 预设。
+  - 手填条目覆盖同 ID 的元数据，但不限制发现范围。
+  - 上游不再列出的模型标「上游已下架」。已被角色引用的仍然可以选，也仍然能运行。
+
+### 3.2 元数据补全
+
+- **来源顺序**：
+  1. 列表响应自带的字段，如 `context_length`、DeepSeek 的 `api_capabilities`。
+  2. models.dev（`https://models.dev/api.json`），6 小时缓存。先按 baseURL 主机匹配 provider，再按模型 ID 匹配。
+  3. 手填。
+- **只补缺，不覆盖前面已有的值**。
+- **补的字段**：显示名、上下文窗口、最大输出、是否推理、支持的 effort 档与默认档、输入模态、工具调用、价格。价格只用于成本估算。
+- **拉不到 models.dev 就不补**，不报错。离线也能用。
+
+### 3.3 harness 自带模型
+
+适配器可以实现 `listModels()`，结果同样缓存，并带上拉取时间和错误：
+
+| harness | 怎么列 | 带 effort |
+|---|---|---|
+| Codex | `codex debug models`（JSON：slug、display_name、context_window、supported_reasoning_levels、default_reasoning_level；跳过 `visibility` 为隐藏的） | 有 |
+| TRAE CLI | `traecli models` | 视输出 |
+| Claude Code | 固定别名 opus / sonnet / haiku，加上环境里配置的模型 | 固定档 |
+| Pi / OpenCode / dsh | 各自的列模型命令或配置；能核实的才接 | 视输出 |
+
+列不出来时，界面显示「使用 harness 默认模型」。额度、负载只在 harness 或 provider 真给数据时才显示，第一版不做，也不显示估算值。
+
+## 4. 搭配：逐个 harness 核实
+
+| harness | 自带 | 能接的协议 | 注入方式 | 本次 |
+|---|---|---|---|---|
+| Claude Code（CLI / ACP） | Claude 登录 | anthropic-messages（openai-chat 经桥） | 环境变量 | 已有 |
+| Codex | ChatGPT 登录 | openai-responses（chat / anthropic 经桥） | `-c model_providers.*` | 已有 |
+| TRAE CLI | TRAE 额度 | openai-responses | 同 Codex | 已有 |
+| Pi | Pi 已配的 provider | chat / anthropic / responses / gemini | 临时扩展文件 | 已有 |
+| DeepSeek Harness（dsh） | DeepSeek 账号 | openai-chat、openai-responses、anthropic-messages | 临时 `--patch` 叠加层：`llm-pi-ai.providers.<id>`，加 `agent-default-model` | 新 |
+| OpenCode | OpenCode 已配 | openai-chat、anthropic-messages | 运行时注入 provider 配置（核实后定） | 新 |
+| Qwen Code | Qwen 登录 | openai-chat | `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL`（核实后定） | 新 |
+| Hermes | Hermes 已配 | openai-chat | 自定义 provider（核实后定） | 新适配器 |
+| OpenClaw | OpenClaw 已配 | openai-chat、anthropic、responses | 临时 `models.providers` 配置（核实后定） | 新适配器 |
+| Gemini CLI | Google 登录 | 只有 Gemini | — | 只能自带 |
+| Cursor Agent / GitHub Copilot / Kimi CLI | 各自账号 | — | — | 只能自带 |
+| 直连 API（native） | — | chat / anthropic | 进程内 | 已有 |
+
+- **只登记核实过的**。每种注入方式要有两层测试：
+  - 单测：断言实际生成的参数和环境变量。
+  - 本机装了这个 CLI 时，再真跑一次最小任务。
+- **核实不了的保持「只能自带」**，在输出里写明缺什么。
+- **注入不改用户的全局配置**，与 31 一致：用临时文件或环境变量，跑完删掉。
+
+## 5. Harness 目录
+
+- **`HarnessInfo` 加字段**：
+  - `icon`：图标键。
+  - `ownLabel`：自带来源说明，如「使用个人 Claude 订阅」。
+  - `install`：未安装时的安装提示。
+  - `hidden`：已隐藏。
+  - `testOnly`：mock 用。
+  - `transports`：Claude Code 的 `cli` / `acp`。
+- **图标**：
+  - 前端内置一套品牌标识（来源 @lobehub/icons，MIT），按 `icon` 取。
+  - 没有对应图标的用首字母。
+- **mock**：
+  - 不出现在目录和选择器里。
+  - 已经指到 mock 的角色照常能跑；设置页提示「这是测试替身」。
+- **Claude Code 的接法**：
+  - 内置 `claude-code` 支持 `harnessOverrides['claude-code'].transport = 'acp'`，用官方 ACP 适配器跑同一个 agent。
+  - 自定义的 Claude ACP 条目在界面上标「Claude Code · ACP 接法」，可以删除。
+  - 不自动迁移角色引用。
+- **隐藏与删除**：
+  - 内置的不可用 harness 可以「隐藏」，用已有的 `harnessOverrides.<id>.disabled`。
+  - 列表底部有「显示已隐藏（N）」。
+  - 自定义的可以删除。
+
+## 6. 选择器
+
+- **左栏 harness 列表**，每行：
+  - 图标和名称。
+  - 「推荐」标记：角色默认或系统推荐的那个。
+  - 副标题：自带来源，或「未安装 · 安装方法」。
+  - 当前选中的模型和 effort。
+- **右侧模型面板**：
+  - 分组：「自带（使用个人 XX）」，然后是每个能搭的 provider，组名旁标直连 / 桥接。
+  - 每行：模型名，加标签（推理、上下文 128K、桥接、已下架）。
+  - 选中后显示 effort 档：只列这个模型支持的档，默认档预选。
+  - 超过 12 个模型时出现搜索框。
+- **不可用的组合默认不显示**。打开「显示不可用」后置灰显示，并给出原因。
+- **触发按钮**显示「图标 Harness · 模型 · effort」。
+
+## 7. 接口
+
+- `GET /api/space/runtime/catalog` 返回 `RuntimeCatalog`：
+  - `harnesses[]`：HarnessInfo 的新字段，加上 `own`（自带模型列表）和 `accepts`（能接的协议）。
+  - `providers[]`：`{ id, displayName, icon, protocols, keyPresent, models }`。
+  - `pairings[]`：沿用 31 的 PairingInfo。
+- **模型列表 `CatalogList`**：
+  - 外层：`{ models, fetchedAt?, source: 'live' | 'cache' | 'preset', error? }`。
+  - 每个模型 `CatalogModel`：`{ id, label, contextWindow?, maxOutput?, reasoning?, efforts?, defaultEffort?, input?, toolCall?, price?, origin: 'discovered' | 'preset' | 'manual', alias?, deprecated? }`。
+- **刷新**：`POST /api/space/runtime/catalog/refresh`，`target` 为 `{ kind: 'provider' | 'harness', id }`，强制刷新一项。
+- **选择结果沿用 `HarnessSelector`**：
+  - 格式：`{ harness, provider?, model, effort? }`，`model` 填厂商模型 ID。
+  - 不必先建模型别名。已有别名照常可用。
+
+## 8. 不在第一版
+
+- 额度与负载显示。
+- 跨 provider 的同名模型合并。
+- 按模型自动挑 harness（OpenClaw 的 auto 模式）。
+- 不能运行时注入配置的 harness。比如需要改全局配置文件才能换 provider 的，第一版不接。
