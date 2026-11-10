@@ -103,8 +103,9 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const completion = completionPrompt(node.completion)
     add('prompt', node.title, [task, completion, retryNote].filter(Boolean).join('\n'))
     const budgetTokens = stores.config.contextBudgetTokens ?? 200000
-    // 输入按声明顺序内联，放不下的只给路径让 agent 自己读：全文硬塞会让整个提示超出 harness 的上下文窗口
-    let room = budgetTokens - items.reduce((sum, item) => sum + item.tokens, 0)
+    // 输入按声明顺序内联，放不下的只给路径让 agent 自己读：全文硬塞会让整个提示超出 harness 的上下文窗口。
+    // 只用一半预算：另一半留给 harness 自带的系统提示与工具、运行中读的文件，以及「字符数 / 4」对 JSON、中文的低估
+    let room = Math.floor(budgetTokens / 2) - items.reduce((sum, item) => sum + item.tokens, 0)
     const artifacts: string[] = [], deferred: string[] = []
     for (const input of inputs) {
       const tokens = estimateTokens(input.text), included = tokens <= room

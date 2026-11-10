@@ -190,7 +190,7 @@ it('输入超出上下文预算时按声明顺序内联，放不下的只给路�
   const [snapshot] = (await stores.runs.getContext(state.runId, 'read')).snapshots
   expect(snapshot?.items.find((item) => item.ref === 'evidence/big.log')).toMatchObject({ included: false, reason: '超出上下文预算，只给路径' })
   expect(snapshot?.items.find((item) => item.ref === 'spec.md')).toMatchObject({ included: true })
-  expect(snapshot!.totalTokens).toBeLessThanOrEqual(400)
+  expect(snapshot!.totalTokens).toBeLessThanOrEqual(200)
 })
 
 it('harness 按 available 和可重试错误降级，知识与实时事件落盘且审计链有效', async () => {
