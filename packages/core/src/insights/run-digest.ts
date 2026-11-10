@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import type { ProjectStores } from '../interfaces.js'
 import { eventsFile } from '../store/paths.js'
-import type { EventEnvelope, RunState } from '../types.js'
+import type { EventEnvelope, EventType, RunState } from '../types.js'
 
 /**
  * 从一次运行的事件算出的摘要（用量、首轮通过、质量计数……）按「事件文件 + 运行状态 + 附加输入」缓存。
@@ -44,4 +44,19 @@ export async function runDigest<T>(
   })()
   pending.set(`${id}\0${key}`, task)
   try { return await task } finally { pending.delete(`${id}\0${key}`) }
+}
+
+/** 只用到几种事件时：按类型过滤后的列表走同一份缓存（每种类型组合各一份），返回值只读。 */
+export function runEventsOf(stores: ProjectStores, state: RunState, types: readonly EventType[]): Promise<EventEnvelope[]> {
+  const wanted = new Set(types)
+  return runDigest(stores, state, `types:${[...wanted].sort().join(',')}`, (events) => events.filter((event) => wanted.has(event.type)))
+}
+
+/** 最后一条事件的时间（没有事件时为 undefined）。 */
+export function runLastEventAt(stores: ProjectStores, state: RunState): Promise<string | undefined> {
+  return runDigest(stores, state, 'last-at', (events) => {
+    let last: string | undefined
+    for (const event of events) if (!last || event.ts > last) last = event.ts
+    return last
+  })
 }

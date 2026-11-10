@@ -6,6 +6,10 @@ import { addUsage, summarizeUsage } from '../insights/usage.js'
 import { readReviewRounds } from '../insights/review-rounds.js'
 import { snapshotNodes } from '../engine/recipe.js'
 import { listDefects } from '../defects/index.js'
+import { runEventsOf } from '../insights/run-digest.js'
+
+/** 成绩单用到的事件类型：按类型取缓存的子集，不再每次整份解析每个运行的事件日志。 */
+const SCORECARD_EVENT_TYPES = ['node.started', 'node.recipe', 'node.finished', 'node.failed', 'node.checks', 'invocation.started', 'retry.suppressed', 'artifact.edited', 'judge.verdict'] as const
 
 export interface ScorecardOptions { by: 'node' | 'recipe' | 'skill'; workflowId?: string }
 interface Sample {
@@ -23,7 +27,7 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
   const runs = (await stores.runs.list()).filter((run) => !options.workflowId || run.workflowId === options.workflowId)
   const samples: Sample[] = []
   for (const run of runs) {
-    const events = await stores.events.read(run.runId), artifacts = await stores.workspaces.listArtifacts(run.requirementId)
+    const events = await runEventsOf(stores, run, SCORECARD_EVENT_TYPES), artifacts = await stores.workspaces.listArtifacts(run.requirementId)
     const snapshot = await stores.runs.getWorkflow(run.runId)
     const definitions = snapshotNodes([...(snapshot?.nodes ?? []), ...run.expansions.flatMap((entry) => entry.nodes ?? [])])
     for (const [nodeId, state] of Object.entries(run.nodes)) {
@@ -94,7 +98,7 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
         && (!source.runId || sample.run.runId === source.runId))) sample.escapes.add(identity)
     }
     const seenEdits = new Set<string>()
-    for (const run of runs.filter((item) => item.requirementId === req)) for (const event of await stores.events.read(run.runId)) {
+    for (const run of runs.filter((item) => item.requirementId === req)) for (const event of await runEventsOf(stores, run, SCORECARD_EVENT_TYPES)) {
       if (event.type === 'artifact.edited' && event.actor.type === 'human') {
         const edit = event.data as EventPayloads['artifact.edited'], identity = canonicalJson(edit.ref)
         if (seenEdits.has(identity)) continue

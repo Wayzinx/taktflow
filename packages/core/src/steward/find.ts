@@ -1,6 +1,7 @@
 import type { StewardContextRef, StewardFindResult, StewardFindType, StewardPrefs } from '../api.js'
 import type { RunState } from '../types.js'
 import { entityRun, entitySnapshot, pipelineRuns } from './entity.js'
+import { runLastEventAt } from '../insights/run-digest.js'
 import { type StewardDeps, type StewardSpace, StewardError, timestamp } from './contracts.js'
 
 export const FIND_TYPES: StewardFindType[] = ['space', 'requirement', 'run', 'node', 'workflow', 'knowledge']
@@ -55,8 +56,8 @@ function matchEntity(q: string, id: string, title: string, type: StewardFindType
 /** 结束的运行以结束时间为准（恢复运行会清掉 endedAt）；只有没结束的才读事件找最后动静。 */
 export async function runActivityAt(space: StewardSpace, run: RunState): Promise<string> {
   if (run.endedAt) return [run.startedAt, run.endedAt].sort().at(-1)!
-  const events = await space.stores.events.read(run.runId)
-  return [run.startedAt, ...events.map(event => event.ts)].sort().at(-1)!
+  const last = await runLastEventAt(space.stores, run)
+  return [run.startedAt, ...last ? [last] : []].sort().at(-1)!
 }
 export async function requirementActivityAt(space: StewardSpace, id: string, updatedAt: string): Promise<string> {
   const runs = await space.stores.runs.list({ requirementId: id })

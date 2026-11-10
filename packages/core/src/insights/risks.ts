@@ -5,12 +5,16 @@ import { listDefects } from '../defects/index.js'
 import { scorecards } from '../eval/scorecards.js'
 import { budgetUsage } from '../util/budget.js'
 import { stewardLinks } from '../steward/links.js'
+import { runEventsOf, runLastEventAt } from './run-digest.js'
+
+const RISK_EVENT_TYPES = ['harness.usage', 'retry.suppressed', 'review.exhausted', 'gate.result'] as const
 
 export type ComputedRisk = Omit<Risk, 'state'>
 export interface RiskThresholds { waitingMediumMs?: number; waitingHighMs?: number; stalledMs?: number; budgetMedium?: number; budgetHigh?: number; deadlineRatio?: number }
 export interface RiskSnapshot {
   requirements: Requirement[]
-  runs: Array<{ run: RunState; events: EventEnvelope[] }>
+  /** lastAt：最后一条事件的时间；给了就不必把全部事件传进来（events 可以只是风险要用的那几类）。 */
+  runs: Array<{ run: RunState; events: EventEnvelope[]; lastAt?: string }>
   attention: AttentionItem[]
   defects?: Array<{ id: string; requirementId: string; title: string }>
   scorecards?: NodeScorecard[]
@@ -26,7 +30,7 @@ export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now
     const age = time - Date.parse(item.createdAt)
     if (!item.answeredAt && age > (thresholds.waitingMediumMs ?? 4 * 3600000)) add('waiting-human', age > (thresholds.waitingHighMs ?? 24 * 3600000) ? 'high' : 'medium', item.requirementId, item.requestId, '待办等待过久', item.ask, item.runId, item.nodeId)
   }
-  for (const { run, events } of snapshot.runs) {
+  for (const { run, events, lastAt } of snapshot.runs) {
     const live = ['running', 'waiting_human'].includes(run.status)
     if (live) {
       const used = { tokens: 0, costUsd: 0, minutes: Math.max(0, (time - Date.parse(run.startedAt)) / 60000) }
@@ -39,6 +43,7 @@ export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now
     // 不展开成参数：长运行的事件能有几十万条，Math.max(...events) 会爆栈
     let last = Date.parse(run.startedAt)
     for (const event of events) last = Math.max(last, Date.parse(event.ts))
+    if (lastAt) last = Math.max(last, Date.parse(lastAt))
     if (run.status === 'running' && time - last > (thresholds.stalledMs ?? 15 * 60000)) add('stalled', 'high', run.requirementId, run.runId, '运行长时间无新事件', '请检查运行中的节点', run.runId)
     const relevant = new Map<string, EventEnvelope>()
     for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
@@ -63,7 +68,11 @@ export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now
 }
 export async function computeRisks(stores: ProjectStores, spaceId: string, now: Date, thresholds?: RiskThresholds): Promise<ComputedRisk[]> {
   const requirements = await stores.workspaces.listRequirements(), runs = await stores.runs.list()
-  return computeRiskSnapshot({ requirements, runs: await Promise.all(runs.map(async (run) => ({ run, events: await stores.events.read(run.runId) }))),
+  // 风险只看用量、重复失败、评审卡住、门禁结果和最后一条事件的时间：按类型取缓存的子集，不再每次整份解析事件日志
+  return computeRiskSnapshot({ requirements, runs: await Promise.all(runs.map(async (run) => {
+    const [events, lastAt] = await Promise.all([runEventsOf(stores, run, RISK_EVENT_TYPES), runLastEventAt(stores, run)])
+    return { run, events, lastAt }
+  })),
     attention: await stores.attention.list({ pending: true }),
     defects: (await Promise.all(requirements.map((req) => listDefects(stores, req.id)))).flat().filter((d) => d.status === 'confirmed'),
     scorecards: await scorecards(stores, { by: 'node' }),
