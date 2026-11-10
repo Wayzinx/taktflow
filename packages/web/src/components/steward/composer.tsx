@@ -8,7 +8,7 @@ import { commandItems, filterItems, findMentions, loadMentions, triggerAt, useLa
 type Attachment = NonNullable<StewardPostRequest['attachments']>[number]
 const MAX_FILE = 200_000
 const refKey = (c: StewardContextRef) => `${c.type}:${c.id}`
-const CTX_LABEL: Record<StewardContextRef['type'], string> = { space: '空间', requirement: '需求', run: '运行', node: '节点', workflow: 'workflow', knowledge: '知识库', file: '文件' }
+const CTX_LABEL: Record<StewardContextRef['type'], string> = { space: '空间', requirement: '需求', run: '运行', node: '节点', workflow: '流水线', knowledge: '知识库', file: '文件' }
 
 export interface ComposerProps {
   draft: string
@@ -202,7 +202,7 @@ export function Composer({ draft, onDraft, context, onContext, onSend, busy, pla
         onKeyDown={onKey}
       />
       <div className="stw-composer-bar">
-        <button type="button" className="btn btn-ghost btn-icon btn-sm" title="引用空间、需求、运行、workflow、知识库（@）" aria-label="引用" onClick={() => insertTrigger('@')}>
+        <button type="button" className="btn btn-ghost btn-icon btn-sm" title="引用空间、需求、运行、流水线、知识库（@）" aria-label="引用" onClick={() => insertTrigger('@')}>
           <AtSign />
         </button>
         <button type="button" className="btn btn-ghost btn-icon btn-sm" title="选命令（/）" aria-label="命令" onClick={() => insertTrigger('/')}>

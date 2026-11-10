@@ -36,7 +36,7 @@ export function UsageTab({ base }: { base: KnowledgeBaseDetail }) {
           <table className="table">
             <thead>
               <tr>
-                <th>workflow · 节点</th>
+                <th>流水线 · 节点</th>
                 <th className="r">查询</th>
                 <th>引用率</th>
               </tr>

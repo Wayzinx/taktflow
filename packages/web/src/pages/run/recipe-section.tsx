@@ -61,7 +61,7 @@ export function RecipeSection({ recipe }: { recipe?: NodeRecipe }) {
           {recipe.harness && <span className="mono faint"> · {recipe.harness}</span>}
           {recipe.effort && <span className="mono faint"> · effort {recipe.effort}</span>}
         </dd>
-        <dt>Workflow</dt>
+        <dt>流水线</dt>
         <dd className="mono">
           {recipe.workflowId}@{recipe.workflowVersion}
           {recipe.workflowRev && <span className="faint"> · {recipe.workflowRev}</span>}

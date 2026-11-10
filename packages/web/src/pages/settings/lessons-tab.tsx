@@ -87,7 +87,7 @@ export function LessonsTab({ space }: { space?: SpaceDetail }) {
             })}
           </ul>
         )}
-        <p className="lessons-note faint">经验只在命中触发条件时注入 prompt（每条 ≤ 600 token）；不会改门禁，也不会改 workflow。</p>
+        <p className="lessons-note faint">经验只在命中触发条件时注入 prompt（每条 ≤ 600 token）；不会改门禁，也不会改流水线。</p>
       </div>
       {current && (
         <TabPanel key={current.id}>

@@ -7,7 +7,7 @@ export function WorkflowsTab({ space }: { space?: SpaceDetail }) {
   return (
     <div className="card">
       <div className="card-head">
-        <span className="card-title">Workflow</span>
+        <span className="card-title">流水线</span>
         {space && (
           <span className="faint">
             <span className="num">{space.workflows.length}</span> 个 · 最近 <span className="num">{runs}</span> 次运行

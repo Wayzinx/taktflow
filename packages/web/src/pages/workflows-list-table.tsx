@@ -15,8 +15,8 @@ export function WorkflowTable({ workflows }: { workflows?: WorkflowSummary[] }) 
       <EmptyState
         compact
         icon={Workflow}
-        title="这个空间还没有 workflow"
-        body="流水线决定需求怎么交付。告诉管家你们的流程，它会生成一条可以在画布上改的 workflow。"
+        title="这个空间还没有流水线"
+        body="流水线决定需求怎么交付。告诉管家你们的流程，它会生成一条可以在画布上改的流水线。"
         stewardAsk="帮我建一条标准交付流水线：需求 → 设计 → 研发 → 测试 → 交付"
       />
     )
@@ -27,7 +27,7 @@ export function WorkflowTable({ workflows }: { workflows?: WorkflowSummary[] }) 
       <table className="table wf-table">
         <thead>
           <tr>
-            <th>Workflow</th>
+            <th>流水线</th>
             <th>编辑</th>
             <th className="r">节点</th>
             <th className="r">最近运行</th>

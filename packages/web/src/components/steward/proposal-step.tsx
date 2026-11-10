@@ -76,7 +76,7 @@ function WorkflowPreviewButton({ proposalId, threadId, step }: { proposalId: str
 /** 提案里的一步：标题 + 对应预览（命令 → 参数表单，workflow → diff + 画布幽灵预览，文件 → diff）。 */
 export function ProposalStepView({ index, step, original, preview, proposalId, threadId, editable, onChange }: { index: number; step: ProposalStep; original?: ProposalStep; preview?: Preview; proposalId: string; threadId: string; editable: boolean; onChange: (s: ProposalStep) => void }) {
   const Icon = STEP_ICON[step.kind]
-  const title = step.title ?? (step.kind === 'command' ? step.commandId : step.kind === 'workflow' ? `修改 workflow ${step.workflowId}` : `写入 ${step.path}`)
+  const title = step.title ?? (step.kind === 'command' ? step.commandId : step.kind === 'workflow' ? `修改流水线 ${step.workflowId}` : `写入 ${step.path}`)
   const target = step.kind === 'command' ? step.commandId : step.kind === 'workflow' ? `${step.workflowId}@${step.baseRev.slice(0, 7)}` : step.path
   return (
     <li className="stw-step">

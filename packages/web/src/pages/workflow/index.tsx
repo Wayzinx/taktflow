@@ -28,7 +28,7 @@ export function WorkflowEditorPage({ id }: { id: string }) {
   const [view, setView] = useState<'canvas' | 'source'>('canvas')
   const [history, setHistory] = useState(false)
   const title = literalOf<string>(wf.model?.meta.title) ?? id
-  useCrumbs([{ label: 'Workflow', to: '/workflows' }, { label: <span className="mono">{id}</span> }], [id])
+  useCrumbs([{ label: '流水线', to: '/workflows' }, { label: <span className="mono">{id}</span> }], [id])
   // A 组挂载点：停靠面板自动带上选中的节点；提案卡写入的幽灵预览
   usePageContext(selected ? [{ type: 'node', id: selected, parent: id, label: selected }] : [], [selected, id])
   const ghost = useWorkflowPreview(id)

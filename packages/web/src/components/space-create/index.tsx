@@ -91,7 +91,7 @@ export function SpaceCreateDialog() {
       open={st.open}
       onClose={closeCreateSpace}
       title="新建空间"
-      description={single ? undefined : '每个空间是一条独立的交付线：自己的需求、workflow、成员和知识库'}
+      description={single ? undefined : '每个空间是一条独立的交付线：自己的需求、流水线、成员和知识库'}
       size="lg"
       dismissible={!f.name}
       className="sc-dialog"

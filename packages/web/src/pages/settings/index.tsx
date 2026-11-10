@@ -75,7 +75,7 @@ export function SettingsPage() {
               { id: 'skills', label: '技能', icon: Puzzle, count: sp?.skills.length },
               { id: 'agents', label: '角色', icon: UserRoundCog, count: sp?.agents.length },
               { id: 'shared', label: '共享资源', icon: LayoutGrid },
-              { id: 'workflows', label: 'Workflow', icon: Workflow, count: sp?.workflows.length },
+              { id: 'workflows', label: '流水线', icon: Workflow, count: sp?.workflows.length },
               { id: 'knowledge', label: '知识库', icon: BookOpen, count: bindings.data?.length },
               { id: 'lessons', label: '经验', icon: Lightbulb },
               { id: 'runtime', label: '模型与 Harness', icon: Cpu },

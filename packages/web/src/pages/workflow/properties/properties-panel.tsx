@@ -37,7 +37,7 @@ export function PropertiesPanel({ wf, nodeId }: { wf: WorkflowDocState; nodeId?:
         <div className="wf-pane-head">
           <Settings2 className="wf-pane-icon" />
           <div className="wf-pane-title">
-            <span className="section-label">Workflow</span>
+            <span className="section-label">流水线</span>
             <span className="mono faint truncate">{model.meta.id}</span>
           </div>
         </div>

@@ -183,7 +183,7 @@ function SpaceRail({ collapsed }: { collapsed: boolean }) {
     { to: '/requirements', label: '需求', icon: ListTodo, motion: 'drop', active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements, create: true },
     { to: '/attention', label: '待办', icon: Inbox, motion: 'pop', active: path === '/attention', badge: pending },
     { to: '/knowledge', label: '知识库', icon: BookOpen, motion: 'open', active: path.startsWith('/knowledge') },
-    { to: '/workflows', label: 'Workflow', icon: Workflow, motion: 'shift', active: path.startsWith('/workflows') },
+    { to: '/workflows', label: '流水线', icon: Workflow, motion: 'shift', active: path.startsWith('/workflows') },
     { to: '/eval', label: '评测', icon: FlaskConical, motion: 'swing', active: path === '/eval' },
     { to: '/automations', label: '自动化', icon: Zap, motion: 'jolt', active: path === '/automations' },
     { to: '/settings', label: '空间设置', icon: Settings, motion: 'turn', active: path.startsWith('/settings') },

@@ -144,7 +144,7 @@ export function AutomationEditor({ open, onClose, initial, isNew, channels, take
               ))}
             </div>
             {'event' in d.trigger && d.trigger.event !== 'requirement.created' && (wq.data?.length ?? 0) > 0 && (
-              <Field label="只看这些 workflow" hint="不选就是全部">
+              <Field label="只看这些流水线" hint="不选就是全部">
                 <ToggleChips ariaLabel="只看这些 workflow" mono options={(wq.data ?? []).map((w) => ({ id: w.id, label: w.id, title: w.title }))} value={filter?.workflowIds ?? []} onChange={(workflowIds) => setFilter({ ...filter, workflowIds })} />
               </Field>
             )}
@@ -193,7 +193,7 @@ export function AutomationEditor({ open, onClose, initial, isNew, channels, take
           <div className="au-ed-row">
             <Field label="workflow" req>
               <select className="select mono" value={d.action.workflowId} onChange={(e) => set({ action: { ...(d.action as Extract<AutomationAction, { kind: 'start_workflow' }>), workflowId: e.target.value } })}>
-                {!d.action.workflowId && <option value="">选一个 workflow</option>}
+                {!d.action.workflowId && <option value="">选一条流水线</option>}
                 {(wq.data ?? []).map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.id} · {w.title}

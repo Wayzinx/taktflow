@@ -292,7 +292,7 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
         <textarea className="textarea rf-instructions" spellCheck={false} aria-label="角色说明" value={d.instructions} onChange={(e) => set({ instructions: e.target.value })} />
       </Sec>
 
-      <Sec title="谁在用" hint="用到这个角色的 workflow 节点。">
+      <Sec title="谁在用" hint="用到这个角色的流水线节点。">
         {v.usedBy.length ? (
           <ul className="rf-used">
             {v.usedBy.map((u) => (
@@ -307,7 +307,7 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
             ))}
           </ul>
         ) : (
-          <p className="faint rf-empty">还没有 workflow 节点用它。</p>
+          <p className="faint rf-empty">还没有流水线节点用它。</p>
         )}
       </Sec>
 
@@ -373,7 +373,7 @@ export function RoleHead({ role, title, harness, origin, path, mode, onMode, onD
             onClose={() => setRemoving(false)}
             risk="dangerous"
             title={`删除角色 ${title}`}
-            description={`删除 ${path ?? `agents/${role}.md`}。还有 workflow 节点用它时删不了，会列出是哪些节点。`}
+            description={`删除 ${path ?? `agents/${role}.md`}。还有流水线节点用它时删不了，会列出是哪些节点。`}
             confirmLabel="删除"
             onSubmit={async (reason) => {
               await ds.deleteAgentRole(role, reason)

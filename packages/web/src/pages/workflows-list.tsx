@@ -9,7 +9,7 @@ import { BeeGlyph } from '../components/identity'
 
 /** /workflows：当前空间的 workflow 列表（ds.workflows()），点进 /workflows/:id 编辑器。 */
 export function WorkflowsListPage() {
-  useCrumbs([{ label: 'Workflow' }], [])
+  useCrumbs([{ label: '流水线' }], [])
   const q = useAsync((ds) => ds.workflows(), [])
   const suggestions = useStewardSuggestions('workflows')
   const editable = q.data?.filter((w) => w.editable).length ?? 0
@@ -17,7 +17,7 @@ export function WorkflowsListPage() {
   return (
     <div className="page wf-page wf-list-page">
       <PageHeader
-        title="Workflow"
+        title="流水线"
         description={
           q.data ? (
             q.data.length ? (
@@ -32,7 +32,7 @@ export function WorkflowsListPage() {
         suggestions={suggestions}
         actions={
           <>
-            <button type="button" className="btn btn-sm" onClick={() => askSteward('帮我新建一条 workflow：')}>
+            <button type="button" className="btn btn-sm" onClick={() => askSteward('帮我新建一条流水线：')}>
               <BeeGlyph />
               让管家新建
             </button>

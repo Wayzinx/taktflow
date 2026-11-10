@@ -175,7 +175,7 @@ export function OverviewTab({ d, runId, requirementId }: { d: NodeDetail; runId:
               </div>
             ))}
           </div>
-          <p className="faint d-note">模型决定拆成哪些条目，workflow 代码决定每个条目展开成什么节点、最多拆多少、可用哪些角色。</p>
+          <p className="faint d-note">模型决定拆成哪些条目，流水线代码决定每个条目展开成什么节点、最多拆多少、可用哪些角色。</p>
         </div>
       )}
 

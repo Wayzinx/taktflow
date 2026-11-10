@@ -453,7 +453,7 @@ function RunFootnote({ detail }: { detail: RunDetail }) {
   return (
     <div className="run-footnote">
       <span>
-        画布展示这次运行用的流程快照；要改流程去 Workflow 编辑器
+        画布展示这次运行用的流程快照；要改流程去流水线编辑器
       </span>
       {exp && (
         <span>

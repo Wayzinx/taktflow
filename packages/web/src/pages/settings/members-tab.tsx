@@ -7,7 +7,7 @@ import { COMMON_DUTIES, DutiesEditor } from './duties-editor'
 
 const ROLES: Array<{ id: SpaceMember['role']; label: string; can: string }> = [
   { id: 'owner', label: 'owner', can: '全部权限，含成员与绑定仓库' },
-  { id: 'maintainer', label: 'maintainer', can: '改 workflow 与配置、取消运行' },
+  { id: 'maintainer', label: 'maintainer', can: '改流水线与配置、取消运行' },
   { id: 'member', label: 'member', can: '发起运行、审批、在群里派活' },
   { id: 'viewer', label: 'viewer', can: '只读' },
 ]

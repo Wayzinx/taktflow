@@ -167,7 +167,7 @@ export function AutomationsPage() {
     <div className="page au">
       <PageHeader
         title="自动化"
-        description="定时或在事件发生时自动做一件事：发进展汇报、发告警、启动 workflow，结果推到飞书 / Slack / Webhook。"
+        description="定时或在事件发生时自动做一件事：发进展汇报、发告警、启动流水线，结果推到飞书 / Slack / Webhook。"
         actions={
           v && v.automations.length > 0 ? (
             <>
