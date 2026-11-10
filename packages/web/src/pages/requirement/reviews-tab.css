@@ -113,7 +113,19 @@
   font-size: var(--text-meta);
   color: var(--text-2);
 }
+.rvs-verdict {
+  max-width: 100%;
+  min-width: 0;
+}
+/* 评审者名字长（test-designer）、列又窄时截断，悬停看全名 */
+.rvs-verdict > .mono {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .rvs-verdict svg {
+  flex: none;
   width: 12px;
   height: 12px;
   color: var(--tone);

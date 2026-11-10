@@ -271,8 +271,9 @@
 }
 .ent-mini {
   position: relative;
-  /* 同一行的卡等高：内容从顶上排，有进度条的和没有的卡标题对齐 */
-  align-content: start;
+  /* 同一行的卡等高：头和标题从顶上排，说明行贴底，有进度条的和没有的卡上下都对齐 */
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   border: 0;
   cursor: pointer;
@@ -292,6 +293,9 @@
 }
 .ent-pick .ent-note {
   padding-right: 18px;
+}
+.ent-mini > .ent-note {
+  margin-top: auto;
 }
 .ent-pick-go {
   position: absolute;
