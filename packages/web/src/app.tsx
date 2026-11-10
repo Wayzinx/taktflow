@@ -106,10 +106,11 @@ function RouteFallback() {
   )
 }
 
-/** 停靠面板第一次打开时才加载。 */
+/** 停靠面板第一次打开时才加载；管家整页本身就是对话，不再叠一个面板（"问管家"落到整页的输入框，见 SoloPage）。 */
 function DockMount() {
   const dock = useStewardDock()
-  if (!dock.open && dock.nonce === 0) return null
+  const { path } = useLocation()
+  if (path === '/solo' || (!dock.open && dock.nonce === 0)) return null
   return (
     <Suspense fallback={null}>
       <StewardDock />

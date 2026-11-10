@@ -81,7 +81,7 @@ function useStewardUnreadSync() {
   }, [ds])
 }
 
-/** 导轨顶部的图标按钮：管家停靠面板 ⌘J（只在空间模式；Solo 本身就是管家）/ 搜索 ⌘K / 收起 ⌘B。 */
+/** 导轨顶部的图标按钮：管家停靠面板 ⌘J（只在空间模式；管家模式本身就是整页对话）/ 搜索 ⌘K / 收起 ⌘B。 */
 function RailTools({ collapsed, mode }: { collapsed: boolean; mode: RailMode }) {
   const unread = useStewardUnread()
   const dock = useStewardDock()
@@ -138,7 +138,7 @@ const lastHref: Record<RailMode, string> = { solo: '/solo', space: '/' }
 function Sidebar({ open, onClose, mode }: { open: boolean; onClose: () => void; mode: RailMode }) {
   const collapsed = useSidebarCollapsed()
   const modes = [
-    { mode: 'solo' as const, label: 'Solo', icon: BeeGlyph, title: '和管家直接对话，跨空间看需求、运行和节点' },
+    { mode: 'solo' as const, label: '管家', icon: BeeGlyph, title: '和管家对话：问进度、查原因、让它代办；跨空间看需求、运行和节点' },
     { mode: 'space' as const, label: '空间', icon: Boxes, title: '当前空间的总览、需求、待办与设置' },
   ]
   return (

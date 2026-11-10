@@ -8,6 +8,7 @@ import { focusAnchor } from '../../components/steward/jump'
 import { ThreadView } from '../../components/steward/thread-view'
 import { fmtRelative } from '../../lib/format'
 import { setQuery, useLocation } from '../../lib/router'
+import { closeSteward, useStewardDock } from '../../lib/ui-store'
 import { HealthDrawer } from '../steward/health-drawer'
 import { SettingsDrawer } from '../steward/settings-drawer'
 import { FocusPanel } from './focus-panel'
@@ -36,7 +37,7 @@ export function SoloPage() {
   const [follow, setFollow] = useState(!focus)
   const followRef = useRef(follow)
   followRef.current = follow
-  useCrumbs([{ label: 'Solo' }], [])
+  useCrumbs([{ label: '管家' }], [])
 
   useEffect(() => {
     if (rawFocus && !focus && !threadId) focusAnchor([rawFocus], 120)
@@ -62,22 +63,46 @@ export function SoloPage() {
 
   // 换会话（侧栏点了别的会话或"新对话"）：恢复跟随，由新会话里的对象重新决定焦点；回到首页时清空草稿和上下文
   const lastThread = useRef(threadId)
+  const pendingAsk = useRef<{ draft: string; context?: StewardContextRef[] } | undefined>(undefined)
   useEffect(() => {
     if (lastThread.current === threadId) return
     lastThread.current = threadId
     setFollow(true)
     if (!threadId) {
-      setDraft('')
-      setCtx([])
+      setDraft(pendingAsk.current?.draft ?? '')
+      setCtx(pendingAsk.current?.context ?? [])
+      pendingAsk.current = undefined
     }
   }, [threadId])
+
+  // 这一页本身就是和管家的对话，不再叠停靠面板：进来时面板若还开着就收起；之后的"问管家"（⌘J、带问题的入口）落到本页
+  const dock = useStewardDock()
+  const seenAsk = useRef(dock.nonce)
+  useEffect(() => {
+    if (!dock.open) return
+    const fresh = dock.nonce !== seenAsk.current
+    seenAsk.current = dock.nonce
+    closeSteward()
+    if (!fresh) return
+    if (dock.threadId) setQuery({ thread: dock.threadId })
+    else if (dock.prefill && threadId) {
+      // 带着新问题：开新对话（和停靠面板一致），草稿等回到首页后再填
+      pendingAsk.current = { draft: dock.prefill, context: dock.context }
+      setQuery({ thread: undefined, focus: undefined })
+    } else if (dock.prefill) {
+      setDraft(dock.prefill)
+      if (dock.context) setCtx(dock.context)
+    }
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.solo-main textarea')?.focus())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dock.open, dock.nonce])
   const onCreated = useCallback((t: StewardThread) => setQuery({ thread: t.id }), [])
   const current = threads.data?.find((t) => t.id === threadId)
 
   return (
     <EntityFocusContext.Provider value={api}>
       <div className="solo" data-panel={focus ? 'open' : undefined}>
-        <section className="solo-main" aria-label={threadId ? '对话' : 'Solo 首页'}>
+        <section className="solo-main" aria-label={threadId ? '对话' : '管家首页'}>
           <header className="solo-head">
             {threadId && <h2 className="solo-head-title truncate">{current?.title ?? '会话'}</h2>}
             {current && <span className="faint num">更新于 {fmtRelative(current.updatedAt)}</span>}
