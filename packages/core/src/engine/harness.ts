@@ -97,16 +97,22 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const lessonText = recalled && !recalled.holdout && recalled.text ? `经验：\n${recalled.text}` : ''
     if (lessonText) add('lesson', '经验', lessonText)
     if (recalled?.lessons.length) await host.emit('lesson.recalled', { ids: recalled.lessons.map((lesson) => lesson.id), holdout: recalled.holdout, tokens: recalled.tokens }, node.id)
-    const artifacts: string[] = []
-    for (const input of identity.snapshot ? [] : ns.inputs ?? []) {
-      const text = (await stores.workspaces.readArtifact(input))?.toString()
-      add('artifact', input.path, text ?? '', input.path)
-      artifacts.push(`${input.path}@${input.version ?? 'latest'}：\n${text ?? ''}`)
-    }
+    const inputs: Array<{ path: string; version?: number; text: string }> = []
+    for (const input of identity.snapshot ? [] : ns.inputs ?? []) inputs.push({ path: input.path, version: input.version, text: (await stores.workspaces.readArtifact(input))?.toString() ?? '' })
     const schema = completionSchema(node.resultSchema, node.completion)
     const completion = completionPrompt(node.completion)
     add('prompt', node.title, [task, completion, retryNote].filter(Boolean).join('\n'))
-    const context = { nodeId: node.id, at: host.timestamp(), budgetTokens: stores.config.contextBudgetTokens ?? 200000, totalTokens: items.reduce((sum, item) => sum + item.tokens, 0), items }
+    const budgetTokens = stores.config.contextBudgetTokens ?? 200000
+    // 输入按声明顺序内联，放不下的只给路径让 agent 自己读：全文硬塞会让整个提示超出 harness 的上下文窗口
+    let room = budgetTokens - items.reduce((sum, item) => sum + item.tokens, 0)
+    const artifacts: string[] = [], deferred: string[] = []
+    for (const input of inputs) {
+      const tokens = estimateTokens(input.text), included = tokens <= room
+      items.push({ id: `artifact-${items.length}`, source: 'artifact', title: input.path, ref: input.path, tokens, included, ...(included ? {} : { reason: '超出上下文预算，只给路径' }) })
+      if (included) { room -= tokens; artifacts.push(`${input.path}@${input.version ?? 'latest'}：\n${input.text}`) } else deferred.push(input.path)
+    }
+    if (deferred.length) artifacts.push(`以下输入超出上下文预算没有内联，需要时从公共存放区读取：${deferred.join(', ')}`)
+    const context = { nodeId: node.id, at: host.timestamp(), budgetTokens, totalTokens: items.filter((item) => item.included).reduce((sum, item) => sum + item.tokens, 0), items }
     await stores.runs.saveContext(host.state.runId, context)
     await host.emit('context.assembled', context, node.id)
     const prompt = [skills, ...summaries, lessonText, ...artifacts,

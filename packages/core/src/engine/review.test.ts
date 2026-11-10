@@ -170,6 +170,29 @@ it('嵌套 loop 的内层轮次独立初始化，外层下一轮完整重跑子 
   expect(iterations).toEqual([1, 1])
 })
 
+it('输入超出上下文预算时按声明顺序内联，放不下的只给路径并在账本里标未注入', async () => {
+  const { stores, requirementId } = await fixture()
+  stores.config.contextBudgetTokens = 400
+  const author = { type: 'system' as const, id: 'fixture' }
+  await stores.workspaces.writeArtifact({ ref: { workspace: requirementId, path: 'spec.md' }, content: '规格要点', kind: 'input', author })
+  await stores.workspaces.writeArtifact({ ref: { workspace: requirementId, path: 'evidence/big.log' }, content: '大'.repeat(4000), kind: 'evidence', author })
+  let prompt = ''
+  const mock: HarnessAdapter = {
+    id: 'mock', displayName: 'mock', available: async () => ({ ok: true }),
+    run: async (req) => { prompt = req.prompt; return { ok: true, finalText: '完成' } },
+  }
+  const state = await createEngine({ stores, profiles: { dev: profile }, harnesses: { mock }, knowledge: [] })
+    .start({ requirementId, workflow: workflow([agent({ id: 'read', title: '读输入', role: 'dev', prompt: '评估影响', inputs: [{ path: 'spec.md' }, { path: 'evidence/**' }] })]) })
+  expect(state.status).toBe('succeeded')
+  expect(prompt).toContain('规格要点')
+  expect(prompt).not.toContain('大'.repeat(100))
+  expect(prompt).toContain('以下输入超出上下文预算没有内联，需要时从公共存放区读取：evidence/big.log')
+  const [snapshot] = (await stores.runs.getContext(state.runId, 'read')).snapshots
+  expect(snapshot?.items.find((item) => item.ref === 'evidence/big.log')).toMatchObject({ included: false, reason: '超出上下文预算，只给路径' })
+  expect(snapshot?.items.find((item) => item.ref === 'spec.md')).toMatchObject({ included: true })
+  expect(snapshot!.totalTokens).toBeLessThanOrEqual(400)
+})
+
 it('harness 按 available 和可重试错误降级，知识与实时事件落盘且审计链有效', async () => {
   const { stores, requirementId } = await fixture()
   const calls: string[] = []

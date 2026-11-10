@@ -25,7 +25,7 @@
 - **agent**：
   1. 解析 role → AgentProfile（不存在则报错）；harness 选择优先级：节点 harness > profile.harness > config.roles[role] > `{ harness: 'mock' }`；按 fallback 链依次 `available()`，可重试错误（结果 error 含 429/503/401/sign in/timeout）换下一个，每次切换记 log。
   2. 预取知识：`node.knowledge` 每条按 intent 选 `knowledge` 里 intents 包含它的源，命中写进上下文，记 `knowledge.query`。
-  3. 组装上下文账本（ContextSnapshot）：role 说明、inputs 解析到的存放区文件（只列路径和 token 估算，不内联全文）、知识命中摘要、prompt；预算 = config.contextBudgetTokens ?? 200000；记 `context.assembled` 并 `runs.saveContext`。
+  3. 组装上下文账本（ContextSnapshot）：role 说明、inputs 解析到的存放区文件（按声明顺序内联全文，放不下预算的只给路径并记 `included: false`）、知识命中摘要、prompt；预算 = config.contextBudgetTokens ?? 200000；记 `context.assembled` 并 `runs.saveContext`。
   4. 渲染最终 prompt：角色说明 + 任务 prompt + 「公共存放区：<绝对路径>，需要读的文件：…，需要产出的文件：…，写权限：…」+ 有 resultSchema 时要求最后输出一个 ```json 代码块。
      调用 harness 时 `req.env` 必须带 `TAKT_ROLE`、`TAKT_NODE`、`TAKT_WORKSPACE`、`TAKT_RUN_ID`、`TAKT_TRANSCRIPT`（= runs/<RUN>/transcripts/<nodeId>.jsonl），cwd = projectDir。
   5. 写权限守卫：执行前对 projectDir 做文件快照（listFiles + sha），执行后再快照，变化的文件不匹配 writeScope（节点 writeScope ∩ profile.writeScope；`.takt/workspaces/<REQ>/**` 下产物路径相对 projectDir 计算）→ 记 `guard.violation`。项目是 git 仓库时对越界的已跟踪文件 `git checkout -- <file>`、对新增文件删除（action=reverted），否则 action=flagged；有违规节点记 blocked。
