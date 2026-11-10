@@ -1,6 +1,6 @@
 import type { CatalogModel, Effort } from '@taktflow/core'
+import { execFile } from 'node:child_process'
 import { object } from './parse.js'
-import { runProcess } from './process.js'
 
 const efforts: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const effort = (value: unknown): Effort | undefined => efforts.includes(value as Effort) ? value as Effort : undefined
@@ -28,10 +28,15 @@ export function parseTraeModels(output: string): CatalogModel[] {
   return [...new Set(lines)].map(id => ({ id, label: id, origin: 'harness' }))
 }
 
-export async function listCliModels(bin: string, args: string[], env?: Record<string, string>): Promise<string> {
-  const proc = await runProcess(bin, args, { prompt: '', cwd: process.cwd(), env: { ...env, TAKT_TRANSCRIPT: '' }, timeoutMs: 20_000 })
-  if (!proc.ok) throw new Error(proc.error || '列出自带模型失败；请检查命令和登录状态')
-  return proc.stdout
+/** 只读一次命令输出、只看退出码：runProcess 会把输出里的 overloaded / sign in / timeout 当报错，而 claude --help、codex 模型说明里正好有这些词。 */
+export function listCliModels(bin: string, args: string[], env?: Record<string, string>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(bin, args, { env: { ...process.env, ...env }, timeout: 20_000, maxBuffer: 32 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (!error) return resolve(stdout)
+      const detail = String(stderr).trim().split(/\r?\n/).slice(-2).join(' ') || error.message
+      reject(new Error(`列出自带模型失败：${detail}`))
+    })
+  })
 }
 
 export async function listClaudeModels(bin: string, env?: Record<string, string>): Promise<CatalogModel[]> {
