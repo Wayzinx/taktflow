@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import {
-  createEngine, initProject, snapshotWorkflow,
+  createEngine, initProject, snapshotWorkflow, withdrawArtifact,
   type Actor, type ApiError, type ArtifactComment, type ArtifactContent, type ArtifactEditResponse,
   type ArtifactRecord, type AttentionItem, type EventEnvelope, type HarnessAdapter, type HarnessInfo,
   type HarnessRequest, type ModelInfo, type NodeContext,
@@ -43,6 +43,20 @@ async function getJson<T>(url: string, headers?: Record<string, string>): Promis
   const body = (await res.json()) as T
   return { status: res.status, body }
 }
+
+it('撤回产物不在当前列表中，HTTP 指定历史版本仍能读取', async () => {
+  const f = await makeFixture()
+  const { url } = await startServer({ projectDir: f.root })
+  const ref = { workspace: f.requirementId, path: 'spec/spec.md' }
+  await withdrawArtifact(f.stores, { ref, author: { type: 'human', id: 'tester' }, reason: '旧规格无效' })
+  const endpoint = `${url}/api/requirements/${f.requirementId}`
+  expect((await getJson<ArtifactRecord[]>(`${endpoint}/artifacts`)).body.some(a => a.path === ref.path)).toBe(false)
+  expect((await getJson(`${endpoint}/artifact?path=${ref.path}`)).status).toBe(404)
+  const old = await getJson<ArtifactContent>(`${endpoint}/artifact?path=${ref.path}&version=1`)
+  expect(old.status).toBe(200)
+  expect(old.body.content).toContain('AC-1')
+  expect((await getJson(`${endpoint}/artifact?path=${ref.path}&version=2`)).status).toBe(404)
+})
 
 interface Fixture {
   root: string

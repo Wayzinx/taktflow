@@ -9,7 +9,7 @@ import { runQualityCommand } from './commands/quality.js'
 import { runM3Command } from './commands/m3.js'
 import { runInit } from './commands/init.js'
 import { runReqList, runReqNew, runReqEdit, runReqCreateCommand, type CrudCliOptions } from './commands/req.js'
-import { runWsGet, runWsList, runWsLog, runWsPut } from './commands/ws.js'
+import { runWsGet, runWsList, runWsLog, runWsPut, runWsWithdraw } from './commands/ws.js'
 import { runWorkflow, resumeWorkflow } from './commands/run.js'
 import { runAnswer } from './commands/answer.js'
 import { runStatus, runTrace } from './commands/status.js'
@@ -120,7 +120,13 @@ async function dispatch(cli: ParsedCli): Promise<number> {
         await runWsLog(options.project, rest[0]!, rest[1]!, options.json)
         return 0
       }
-      throw new UsageError('ws 子命令：put | get | ls | log')
+      if (sub === 'withdraw') {
+        const [, ...rest] = args
+        expectPositionals('ws withdraw', rest, 1)
+        await runWsWithdraw(options.project, rest[0]!, options)
+        return 0
+      }
+      throw new UsageError('ws 子命令：put | get | ls | log | withdraw')
     }
     case 'run':
       expectPositionals('run', args, 1, 1)

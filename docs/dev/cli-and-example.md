@@ -4,6 +4,8 @@
 
 ## CLI：`takt`
 
+`takt ws withdraw <path> --reason <原因> [--req <id>]` 记录人工撤回版本并使旧版本的读者失效；省略 `--req` 时只在唯一需求下执行，`ws log` 和指定版本的 `ws get` 保留历史查询。
+
 入口 `packages/cli/src/index.ts`（首行 `#!/usr/bin/env node`）。参数解析用 `node:util` 的 `parseArgs`，不引入框架。全局选项：`--project <dir>`（默认 cwd，向上找 takt.config.json）、`--json`（机器可读输出）。
 
 | 命令 | 行为 |

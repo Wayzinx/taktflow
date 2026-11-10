@@ -41,8 +41,8 @@ describe('ids and tokens', () => {
     expect(nextRequirementId(['REQ-9007199254740993'])).toBe('REQ-9007199254740994')
   })
 
-  it.each(['', 'abcd', 'abcde', '中文字符数', '🙂🙂🙂'])('estimates UTF-8 bytes like decoded text %j', (text) => {
-    expect(estimateTokens(text)).toBe(Math.ceil(text.length / 4))
+  it.each([['', 0], ['abcd', 1], ['abcde', 2], ['中文字符数', 5], ['中文，。Ａ！', 6], ['abcde中文', 4], ['かな한글', 4], ['🙂🙂🙂', 2]] as const)('estimates UTF-8 bytes like decoded text %j', (text, expected) => {
+    expect(estimateTokens(text)).toBe(expected)
     expect(estimateTokens(Buffer.from(text))).toBe(estimateTokens(text))
     expect(estimateTokens(new Uint8Array(Buffer.from(text)))).toBe(estimateTokens(text))
   })

@@ -3,6 +3,31 @@ import { expect, it, vi } from 'vitest'
 import type { HarnessAdapter, HarnessRequest, TaktConfig } from '@taktflow/core'
 import { testRuntime } from './runtime-test.js'
 
+it.each(['OK。', ' ok! ', '\nOk\n'])('搭配测试接受首尾标点和大小写：%j', async finalText => {
+  const h: HarnessAdapter = { id: 'h', displayName: 'h', available: async () => ({ ok: true }), run: async () => ({ ok: true, finalText }) }
+  expect(await testRuntime({ project: { name: '' }, workflows: [] }, { target: { kind: 'pairing', harness: 'h' }, allowBilled: true }, async () => ({ h }))).toMatchObject({ ok: true })
+})
+
+it('搭配失败消息包含收到的内容', async () => {
+  const h: HarnessAdapter = { id: 'h', displayName: 'h', available: async () => ({ ok: true }), run: async () => ({ ok: true, finalText: '好的' }) }
+  expect(await testRuntime({ project: { name: '' }, workflows: [] }, { target: { kind: 'pairing', harness: 'h' }, allowBilled: true }, async () => ({ h }))).toMatchObject({ ok: false, message: '搭配未返回 OK（收到：好的）' })
+})
+
+it('搭配失败内容先脱敏再截断到 80 字，不把失败响应 OK 判成功', async () => {
+  const secret = 'pairing-test-secret-value'
+  vi.stubEnv('TAKT_PAIRING_TEST_SECRET', secret)
+  try {
+    const h: HarnessAdapter = { id: 'h', displayName: 'h', available: async () => ({ ok: true }), run: async () => ({ ok: true, finalText: secret + '好'.repeat(100) }) }
+    const config: TaktConfig = { project: { name: '' }, workflows: [], providers: { p: { protocol: 'openai-responses', apiKeyEnv: 'TAKT_PAIRING_TEST_SECRET' } } }
+    const result = await testRuntime(config, { target: { kind: 'pairing', harness: 'h' }, allowBilled: true }, async () => ({ h }))
+    expect(result.ok).toBe(false)
+    expect(result.message).not.toContain(secret)
+    expect([...result.message.match(/收到：(.*)）/s)![1]!]).toHaveLength(80)
+    h.run = async () => ({ ok: false, finalText: 'OK!', error: '任务失败' })
+    expect(await testRuntime(config, { target: { kind: 'pairing', harness: 'h' }, allowBilled: true }, async () => ({ h }))).toMatchObject({ ok: false, message: '任务失败（收到：OK!）' })
+  } finally { vi.unstubAllEnvs() }
+})
+
 it.each(['builtin', 'direct'])('搭配测试 %s 的结果、用量、临时目录清理', async mode => {
   let observed: HarnessRequest | undefined
   const run = vi.fn(async (req: HarnessRequest) => { observed = req; return { ok: true, finalText: 'OK', usage: { inputTokens: 1, outputTokens: 2 } } })

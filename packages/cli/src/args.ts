@@ -91,6 +91,7 @@ export const HELP = `用法：takt <命令> [选项]
   ws get <REQ> <path> [--version n]             读产物
   ws ls <REQ>                                   列出产物
   ws log <REQ> <path>                           产物版本历史
+  ws withdraw <path> --reason <原因> [--req <id>] 撤回当前产物，保留历史
   route <REQ> [--hint <text>] [--tier T1 --reason <text>]
   cmd ls | cmd <id> --input '<json>' [--reason <text>]
   lessons ls|show|retire|activate [id] [--reason <text>]

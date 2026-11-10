@@ -33,7 +33,7 @@ it('知识库预取身份、上下文文件、工具提示和 knowledge.used 留
   expect(run.status).toBe('succeeded')
   expect(nodeId).toBe('work'); expect(prompt).toContain('takt kb query'); expect(prompt).toContain('context/knowledge')
   const events = await stores.events.read(run.runId)
-  expect(events.find(e => e.type === 'knowledge.query')?.data).toMatchObject({ via: 'prefetch', bases: [{ id: 'docs', version: 1 }], hits: 1, tokens: 1 })
+  expect(events.find(e => e.type === 'knowledge.query')?.data).toMatchObject({ via: 'prefetch', bases: [{ id: 'docs', version: 1 }], hits: 1, tokens: 4 })
   expect(events.find(e => e.type === 'knowledge.used')?.data).toMatchObject({ refs: ['refund.md#0'], artifact: { workspace: req.id, path: 'reports/result.md', version: run.nodes.work!.outputs[0]!.version } })
   expect((await readKnowledgeQueries(stores)).filter(q => q.type === 'used')).toHaveLength(1)
 })

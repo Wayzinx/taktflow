@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { listFiles, matchGlob } from '../util/glob.js'
 import { sha256 } from '../util/hash.js'
@@ -6,10 +6,12 @@ import type { ArtifactRecord } from '../types.js'
 import { assertNoSymlinks, isEnoent, readJsonFile } from '../store/fs-utils.js'
 import { withLock } from '../store/locks.js'
 
-type Scope = { profile: string[]; node?: string[] }
+type Scope = { profile: string[]; node?: string[]; worktrees?: string[] }
+type CachedHash = { stamp: string; hash: string }
 type SystemChange = { before?: Map<string, string>; after?: Map<string, string>; done: Promise<void> }
 type Window = { scope: Scope; start: number; end: number; uncertain?: boolean; system?: boolean; change?: SystemChange }
 const guards = new Map<string, Set<WeakRef<WriteGuard>>>()
+const worktreeCaches = new WeakMap<WriteGuard, Map<string, CachedHash>>()
 const collected = new FinalizationRegistry<{ root: string; ref: WeakRef<WriteGuard> }>(({ root, ref }) => {
   const entries = guards.get(root)
   entries?.delete(ref)
@@ -32,10 +34,12 @@ export function systemWrite<T>(root: string, paths: string[], fn: () => Promise<
     let finish!: () => void
     const change: SystemChange = { done: new Promise<void>(resolve => { finish = resolve }) }
     const scan = async () => {
-      const files = await listFiles(root, paths)
+      const files = await listFiles(root, paths, { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects', '.takt/repos', '.takt/quarantine'] })
       const hashes = new Map<string, string>()
       await Promise.all(files.map(async file => {
-        try { hashes.set(file, sha256(await readFile(join(root, file)))) } catch (error) { if (!isEnoent(error)) throw error }
+        try { hashes.set(file, file.startsWith('.takt/worktrees/')
+          ? await worktreeHash(root, file, worktreeCaches.get(live[0]!)!)
+          : sha256(await readFile(join(root, file)))) } catch (error) { if (!isEnoent(error)) throw error }
       }))
       return hashes
     }
@@ -63,12 +67,29 @@ function metadata(file: string, requirements: string): boolean {
     /^\.takt\/workspaces\/[^/]+\/(manifest\.json|requirement\.json|comments\.jsonl)(?:\.[\da-f]+\.tmp)?$/.test(file)
 }
 
-async function snapshot(root: string, requirements: string): Promise<Map<string, string>> {
+async function worktreeHash(root: string, file: string, cache: Map<string, CachedHash>): Promise<string> {
+  // ctime 也参与，避免回填 mtime 后漏报；系统窗口复用同一缓存，不重复读取未变内容。
+  const info = await stat(join(root, file), { bigint: true })
+  const stamp = `${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`
+  const previous = cache.get(file)
+  const hash = previous?.stamp === stamp ? previous.hash : sha256(await readFile(join(root, file)))
+  cache.set(file, { stamp, hash })
+  return hash
+}
+
+async function snapshot(root: string, requirements: string, cache: Map<string, CachedHash>): Promise<Map<string, string>> {
   const files = await listFiles(root, ['**'], { ignore: ['**/.git', '**/node_modules', '.takt/runs', '.takt/objects', '.takt/worktrees', '.takt/repos', '.takt/quarantine'] })
+  let worktrees: string[] = []
+  try { worktrees = await listFiles(join(root, '.takt/worktrees'), ['**'], { ignore: ['**/.git', '**/node_modules'] }) } catch (error) { if (!isEnoent(error)) throw error }
   const map = new Map<string, string>()
   await Promise.all(files.filter((file) => !metadata(file, requirements)).map(async (file) => {
     try { map.set(file, sha256(await readFile(join(root, file)))) } catch (error) { if (!isEnoent(error)) throw error }
   }))
+  for (const path of worktrees) {
+    const file = `.takt/worktrees/${path}`
+    try { map.set(file, await worktreeHash(root, file, cache)) } catch (error) { if (!isEnoent(error)) throw error }
+  }
+  for (const file of cache.keys()) if (!map.has(file)) cache.delete(file)
   return map
 }
 
@@ -86,10 +107,12 @@ async function humanVersions(root: string, requirements: string): Promise<Map<st
 }
 
 export class WriteGuard {
+  private readonly worktreeHashes = new Map<string, CachedHash>()
   private clock = 0
   private readonly windows: Window[] = []
   private readonly outputWindows: Array<{ workspace: string; outputs: string[]; start: number; end: number }> = []
   constructor(private readonly root: string, private readonly requirements = '.takt/workspaces') {
+    worktreeCaches.set(this, this.worktreeHashes)
     const key = resolve(root), ref = new WeakRef(this)
     const entries = guards.get(key) ?? new Set<WeakRef<WriteGuard>>()
     entries.add(ref)
@@ -146,18 +169,20 @@ export class WriteGuard {
     this.windows.push(window)
     let before: Map<string, string>
     let humans: Map<string, string>
-    try { [before, humans] = await Promise.all([snapshot(this.root, this.requirements), humanVersions(this.root, this.requirements)]) } catch (error) { this.close(window); throw error }
+    try { [before, humans] = await Promise.all([snapshot(this.root, this.requirements, this.worktreeHashes), humanVersions(this.root, this.requirements)]) } catch (error) { this.close(window); throw error }
     return async () => {
       try {
         await Promise.all(this.windows.filter(w => w.change && w.end === Infinity).map(w => w.change!.done))
-        const [after, latestHumans] = await Promise.all([snapshot(this.root, this.requirements), humanVersions(this.root, this.requirements)])
+        const [after, latestHumans] = await Promise.all([snapshot(this.root, this.requirements, this.worktreeHashes), humanVersions(this.root, this.requirements)])
         const peers = this.windows.filter((w) => w.end >= window.start)
         const controlled = peers.filter(peer => peer.change?.before && peer.change.after)
         const candidates = new Set([...before.keys(), ...after.keys(), ...controlled.flatMap(peer => [...peer.change!.before!.keys(), ...peer.change!.after!.keys()])])
         const paths = [...candidates].filter(file => {
           // 受控窗口也会记下元数据文件的前后哈希；快照不含它们，不能拿来比
           if (metadata(file, this.requirements)) return false
-          if (peers.some(peer => !peer.change && allowed(peer.scope, file))) return false
+          if (peers.some(peer => !peer.change && (file.startsWith('.takt/worktrees/') && !peer.system
+            ? peer.scope.worktrees?.some(path => file.startsWith(`${path}/`))
+            : allowed(peer.scope, file)))) return false
           let expected = before.get(file)
           for (const peer of controlled) {
             if (!allowed(peer.scope, file)) continue

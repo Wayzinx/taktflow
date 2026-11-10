@@ -32,6 +32,7 @@ async function readJson(store: WorkspaceStore, requirementId: string, path: stri
 export async function readArtifactData(store: WorkspaceStore, requirementId: string): Promise<ArtifactData> {
   const artifacts = await store.listArtifacts(requirementId)
   const acs = new Map<string, string>()
+  const defined = new Set<string>()
   const specPaths = new Set(['spec/spec.md', ...artifacts.filter((artifact) => artifact.kind === 'spec').map((artifact) => artifact.path)])
   const specs = await Promise.all([...specPaths].map(async (path) => {
     const content = await store.readArtifact({ workspace: requirementId, path })
@@ -43,8 +44,12 @@ export async function readArtifactData(store: WorkspaceStore, requirementId: str
     for (const line of spec.split(/\r?\n/)) {
       for (const match of line.matchAll(/\bAC-\d+(?:-\d+)?\b/g)) {
         const ac = match[0]
-        const title = line.slice(match.index + ac.length).replace(/^[\s:：|*`\]-]+/, '').replace(/[\s|*`]+$/, '')
-        if (!acs.has(ac) || acs.get(ac) === ac) acs.set(ac, title || ac)
+        const definition = /^[\s#*+\-\d.)|`]*$/.test(line.slice(0, match.index))
+        const remainder = line.slice(match.index + ac.length)
+        const title = (/^\s*\|/.test(line) && definition ? remainder.replace(/^[\s*`]*\|/, '').split('|')[0]! : remainder)
+          .replace(/^[\s:：|*`\]—–-]+/, '').replace(/[\s|*`]+$/, '')
+        if (definition && !defined.has(ac)) { acs.set(ac, title || ac); defined.add(ac) }
+        else if (!acs.has(ac) || (!defined.has(ac) && acs.get(ac) === ac)) acs.set(ac, title || ac)
       }
     }
   }

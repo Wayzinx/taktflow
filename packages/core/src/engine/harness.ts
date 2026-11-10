@@ -6,7 +6,7 @@ import { snapshotPrompt } from './snapshots.js'
 import { randomUUID } from 'node:crypto'
 import { writeFileAtomic } from '../store/fs-utils.js'
 import { mkdir } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import type { EngineDeps } from '../interfaces.js'
 import type { Actor, AgentNodeDef, ContextItem, EventPayloads, EventType, HarnessEvent, HarnessRequest, HarnessResult, NodeContext, NodeDef, NodeState, RunState, InvocationEnd, ModelConfig, Usage } from '../types.js'
 import { estimateTokens } from '../util/tokens.js'
@@ -104,7 +104,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     add('prompt', node.title, [task, completion, retryNote].filter(Boolean).join('\n'))
     const budgetTokens = stores.config.contextBudgetTokens ?? 200000
     // 输入按声明顺序内联，放不下的只给路径让 agent 自己读：全文硬塞会让整个提示超出 harness 的上下文窗口。
-    // 只用一半预算：另一半留给 harness 自带的系统提示与工具、运行中读的文件，以及「字符数 / 4」对 JSON、中文的低估
+    // 只用一半预算：另一半留给 harness 自带的系统提示与工具、运行中读的文件
     let room = Math.floor(budgetTokens / 2) - items.reduce((sum, item) => sum + item.tokens, 0)
     const artifacts: string[] = [], deferred: string[] = []
     for (const input of inputs) {
@@ -168,7 +168,8 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         let finishGuard: () => Promise<{ paths: string[]; action: 'flagged'; ambiguous: boolean }>
         try {
           const scope = repair ? { profile: [], node: [] } : { profile: profile.writeScope, node: node.writeScope }
-          const projectFinish = await host.guard.begin(scope)
+          const projectFinish = await host.guard.begin({ ...scope,
+            worktrees: [...(node.repo ? [cwd] : []), ...directories].map(path => relative(stores.projectDir, path)) })
           const finishes = [projectFinish]
           try {
             for (const directory of new Set([cwd, ...directories])) {

@@ -9,7 +9,7 @@
 ### util/
 - `hash.ts`：`sha256(buf|string)`、`canonicalJson(value)`（键排序、稳定输出，用于事件哈希）。
 - `glob.ts`：`matchGlob(pattern, path)`（支持 `**`、`*`、`?`，路径分隔符 `/`）和 `listFiles(dir, patterns, { ignore })`（递归，默认忽略 `.git node_modules .takt/objects .takt/runs dist`）。
-- `tokens.ts`：`estimateTokens(text|bytes)` = ceil(字符数 / 4)。
+- `tokens.ts`：`estimateTokens(text|bytes)`：中日韩字符及全角标点每个计 1 token，其余字符数除以 4 向上取整。
 - `ids.ts`：`newRunId(now)` → `run-YYYYMMDD-HHmmss-xxxx`；`nextRequirementId(existing)` → `REQ-001` 递增。
 - `trace-ids.ts`：从文本抽取追溯 ID：`REQ-\d+`、`AC-\d+(-\d+)?`、`TC-[A-Z0-9-]+`。
 - `frontmatter.ts`：解析 markdown frontmatter（用预装的 `yaml` 包），返回 `{ data, body }`。
@@ -22,6 +22,7 @@
 - `fs-workspace.ts`：实现 `WorkspaceStore`。
   - `requirement.json`、`manifest.json`（`{ artifacts: ArtifactRecord[] }`）、`comments.jsonl` 都在 `.takt/workspaces/<REQ>/` 下；产物最新内容同时写到 `.takt/workspaces/<REQ>/<path>`（人和 Agent 直接读这个），历史内容写 `.takt/objects/<sha256>`。
   - `writeArtifact`：同 sha 与最新版本相同则返回已有版本（不新增）；mediaType 按扩展名推断；traceIds 从文本内容抽取。
+  - `FsWorkspaceStore.withdrawArtifact`：沿用版本账本，以空 `sha256` 表示撤回（不对应对象，空文件仍有正常哈希），记作者、原因和 producedBy；默认读取及列表排除撤回，`listArtifacts(id, true)` 和指定旧版本保留历史，新写入可恢复；跨包暂用导出的 `withdrawArtifact` / `listArtifactHistory` 存储入口。
   - `detectUntracked`：遍历存放区目录（排除 manifest/requirement/comments），sha 与清单最新版不一致、或不在清单里的文件。
   - 写文件用"写临时文件再 rename"，避免半写。
 - `fs-events.ts`：实现 `EventStore`。`runs/<RUN>/events.jsonl` 只追加；`hash = sha256(prevHash + canonicalJson({seq,ts,runId,nodeId,type,actor,data}))`，首条 prevHash = `"0".repeat(64)`；同进程内串行化追加（Promise 队列）。`subscribe` 用轮询 tail（300ms，按字节偏移读新增行），这样 server 进程能看到 CLI 进程写的事件。`verify` 返回首个断链 seq。

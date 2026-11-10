@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
-import { markArtifactEdited, withLock, type ArtifactKind } from '@taktflow/core'
+import { listArtifactHistory, markArtifactEdited, withdrawArtifact, withLock, type ArtifactKind } from '@taktflow/core'
 import { createPrinter } from '../output.js'
 import { openStores } from '../project.js'
 
@@ -87,7 +87,7 @@ export async function runWsList(project: string | undefined, id: string, json: b
 
 export async function runWsLog(project: string | undefined, id: string, path: string, json: boolean): Promise<void> {
   const stores = await openStores(project)
-  const record = (await stores.workspaces.listArtifacts(id)).find((artifact) => artifact.path === path)
+  const record = (await listArtifactHistory(stores, id)).find((artifact) => artifact.path === path)
   if (!record) throw new Error(`产物不存在：${id}/${path}`)
   const printer = createPrinter(json)
   if (json) {
@@ -99,7 +99,30 @@ export async function runWsLog(project: string | undefined, id: string, path: st
       : version.author.type === 'agent' ? `agent:${version.author.role}` : version.author.id
     const producedBy = version.producedBy === undefined ? '' : ` ← ${version.producedBy.runId}/${version.producedBy.nodeId}`
     const reason = version.reason === undefined ? '' : `  ${version.reason}`
-    printer.text(`v${String(version.version).padStart(2)} ${version.createdAt} ${printer.colors.cyan(author)}${producedBy}${reason}`)
+    printer.text(`v${String(version.version).padStart(2)} ${version.createdAt} ${printer.colors.cyan(author)}${producedBy}${version.sha256 === '' ? '（已撤回）' : ''}${reason}`)
+  }
+}
+
+export async function runWsWithdraw(project: string | undefined, path: string, options: { req?: string; reason?: string; json: boolean }): Promise<void> {
+  if (!options.reason?.trim()) throw new Error('撤回产物需要 --reason <原因>')
+  const stores = await openStores(project)
+  const requirements = await stores.workspaces.listRequirements()
+  const id = options.req ?? (requirements.length === 1 ? requirements[0]!.id : undefined)
+  if (!id) throw new Error('无法唯一确定需求，请指定 --req <id>')
+  if (!requirements.some(requirement => requirement.id === id)) throw new Error(`需求不存在：${id}`)
+  const author = { type: 'human' as const, id: currentUser(stores.projectDir) }
+  const reason = options.reason
+  const result = await withLock(stores.projectDir, async () => {
+    const record = (await listArtifactHistory(stores, id)).find(item => item.path === path)
+    const ref = (await withdrawArtifact(stores, { ref: { workspace: id, path }, author, reason }))!
+    const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markArtifactEdited(stores, ref, author, reason)
+    return { ...ref, staleNodes }
+  })
+  const printer = createPrinter(options.json)
+  if (options.json) printer.data(result)
+  else {
+    printer.text(`${printer.colors.green('✔')} 已撤回 ${id}/${path} v${result.version}`)
+    for (const node of result.staleNodes) printer.text(`  stale ${node.runId}/${node.nodeId}`)
   }
 }
 

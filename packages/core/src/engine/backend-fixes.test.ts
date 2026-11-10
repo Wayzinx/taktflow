@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
@@ -11,7 +11,7 @@ import { AttentionAlreadyAnsweredError } from '../store/attention-rules.js'
 import type { AgentProfile, HarnessAdapter, NodeDef, WorkflowDefinition } from '../types.js'
 import { answerOrRead, recordAnswerOnce } from './answers.js'
 import { createEngine } from './index.js'
-import { WriteGuard } from './guard.js'
+import { systemWrite, WriteGuard } from './guard.js'
 import { parseResult } from './schema.js'
 
 const roots: string[] = []
@@ -26,6 +26,32 @@ async function fixture(run: HarnessAdapter['run'] = async () => ({ ok: true, fin
   const deps = { stores, profiles: { dev: profile }, knowledge: [], harnesses: { mock: { id: 'mock', displayName: '', capabilities: { usage: true }, available: async () => ({ ok: true }), run } } }
   return { root, stores, requirementId, deps }
 }
+
+it.each([['tests/**'], ['**']])('无 repo 节点修改其他 worktree 必须记录项目相对路径：%j', async writeScope => {
+  const path = '.takt/worktrees/run-x/integration/tests/a.mjs'
+  const f = await fixture(async () => { await writeFile(join(f.root, path), 'changed'); return { ok: true, finalText: '' } })
+  f.deps.profiles.dev = { ...profile, writeScope: [writeScope] }
+  await mkdir(join(f.root, '.takt/worktrees/run-x/integration/tests'), { recursive: true })
+  await writeFile(join(f.root, path), 'before')
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: workflow([agent({ id: 'a', title: '', role: 'dev', prompt: '' })]) })
+  expect((await f.stores.events.read(state.runId, { types: ['guard.violation'] }))[0]?.data).toMatchObject({ paths: [path] })
+})
+
+it('受控创建 worktree 不误报，之后的越界写仍报告', async () => {
+  const f = await fixture()
+  const guard = new WriteGuard(f.root)
+  const path = '.takt/worktrees/run-x/integration/a.txt'
+  const finish = await guard.begin({ profile: [] })
+  await systemWrite(f.root, ['.takt/worktrees/**'], async () => {
+    await mkdir(join(f.root, '.takt/worktrees/run-x/integration'), { recursive: true })
+    await writeFile(join(f.root, path), 'system')
+  })
+  expect((await finish()).paths).toEqual([])
+  const finishAgain = await guard.begin({ profile: [] })
+  await systemWrite(f.root, ['.takt/worktrees/**'], async () => { await writeFile(join(f.root, path), 'commit') })
+  await writeFile(join(f.root, path), 'agent')
+  expect((await finishAgain()).paths).toEqual([path])
+})
 
 it('prompt 审计先于调用，角色只进入 system，原生 structured 优先且流式消息不放大 save', async () => {
   const { stores, requirementId, deps } = await fixture(async (req, onEvent) => {

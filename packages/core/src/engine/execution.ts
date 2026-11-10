@@ -2,7 +2,7 @@ import { access, writeFile } from 'node:fs/promises'
 import { dirname, join, relative } from 'node:path'
 import type { AgentNodeDef, EventPayloads, NodeContext, NodeState, SandboxProvider, SandboxMount, TaktConfig, SnapshotManifest, Actor } from '../types.js'
 import { BlockedError, type HarnessHost } from './harness.js'
-import { WriteGuard } from './guard.js'
+import { systemWrite, WriteGuard } from './guard.js'
 import { sha256 } from '../util/hash.js'
 
 // 执行面由独立包提供；延迟加载避免 core 初始化时反向加载依赖 core 的适配器。
@@ -28,7 +28,7 @@ export async function workingDirectory(host: HarnessHost, node: AgentNodeDef, ct
     const events = await host.deps.stores.events.read(ctx.runId, { nodeId: node.id, types: ['worktree.created'] })
     const previous = host.state.nodes[node.id]?.worktree ?? events.map((event) => event.data as EventPayloads['worktree.created']).filter((tree) => tree.repo === node.repo).at(-1)
     if (previous?.repo === node.repo) { ns.worktree = previous; host.state.nodes[node.id]!.worktree = previous; await host.save(); return previous.path }
-    const tree = await host.guard.system(['.takt/worktrees/**'], async () => repos.createWorktree({ repoId: node.repo!, runId: ctx.runId, nodeId: node.id, ...await stackOn(host, node, ctx) }))
+    const tree = await systemWrite(host.deps.stores.projectDir, ['.takt/worktrees/**'], async () => repos.createWorktree({ repoId: node.repo!, runId: ctx.runId, nodeId: node.id, ...await stackOn(host, node, ctx) }))
       .catch((error: unknown) => { throw new BlockedError(`worktree 引导失败：${error instanceof Error ? error.message : String(error)}`) })
     if (tree.bootstrap) {
       await host.emit('worktree.bootstrapped', { ...tree.bootstrap, repo: node.repo, path: tree.path }, node.id)
@@ -86,7 +86,7 @@ export async function saveWorktreeDiff(host: HarnessHost, nodeId: string, ns: No
 export async function sandboxCall(host: HarnessHost, cwd: string, harness: string, ctx: NodeContext, env: Record<string, string>, timeoutMs?: number, directories: string[] = [], snapshot?: SnapshotManifest) {
   const { stores } = host.deps
   const adapters = await executionAdapters()
-  if (host.deps.skillsDir) await host.guard.system(['.agents/skills/**', '.claude/skills/**', '.takt/worktrees/**'],
+  if (host.deps.skillsDir) await systemWrite(stores.projectDir, ['.agents/skills/**', '.claude/skills/**', '.takt/worktrees/**'],
     () => adapters.syncSkills({ skillsDir: host.deps.skillsDir!, targetRoot: cwd, harness }))
   const provider = host.deps.sandbox ?? await adapters.selectSandboxProvider(stores.config.sandbox)
   const mounts: SandboxMount[] = [{ source: cwd, target: cwd, mode: 'rw' as const }, { source: ctx.workspaceDir, target: ctx.workspaceDir, mode: 'rw' as const }]

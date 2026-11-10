@@ -14,6 +14,23 @@ import { runCases } from '../../../../templates/workflows/taktflow-standard.hook
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
 const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+
+it('有 repo 节点只能改自己的工作树，其他工作树的写入按项目相对路径报告', async () => {
+  const other = '.takt/worktrees/run-other/integration/src/a.ts'
+  const f = await fixture(async req => {
+    await writeFile(join(req.cwd, 'src/a.ts'), 'own change')
+    await writeFile(join(f.root, other), 'other change')
+    return 'done'
+  })
+  await mkdir(join(f.root, '.takt/worktrees/run-other/integration/src'), { recursive: true })
+  await writeFile(join(f.root, other), 'before')
+  f.deps.profiles.dev!.writeScope = ['**']
+  const state = await createEngine(f.deps).start({ requirementId: f.req.id, workflow: f.workflow([
+    { id: 'code', kind: 'agent', title: '', role: 'dev', repo: 'app', prompt: '' },
+  ]) })
+  expect(state.nodes.code?.status).toBe('blocked')
+  expect((await f.stores.events.read(state.runId, { types: ['guard.violation'] }))[0]?.data).toMatchObject({ paths: [other] })
+})
 async function fixture(handler: (request: HarnessRequest) => Promise<unknown>) {
   const root = await mkdtemp(join(tmpdir(), 'takt-engine-integration-')); roots.push(root)
   const stores = await initProject(root)

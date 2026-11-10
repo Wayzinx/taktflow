@@ -6,7 +6,7 @@ import { qualityRoutes } from './quality-routes.js'
 import { runInsightRoutes } from './run-insight-routes.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isUtf8 } from 'node:buffer'
-import { runLiveness, nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type EventType, type ProjectStores } from '@taktflow/core'
+import { runLiveness, nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, listArtifactHistory, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type EventType, type ProjectStores } from '@taktflow/core'
 import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
 import { registerEvalRoutes } from './eval-routes.js'
 import { commandExecutor, m3Routes, type M3Callbacks } from './m3-routes.js'
@@ -69,7 +69,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     await requirement(stores, params.id!)
     const path = artifactPath(url.searchParams.get('path'))
     const requestedVersion = integer(url.searchParams.get('version'), 'version', 1)
-    const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+    const record = (await listArtifactHistory(stores, params.id!)).find((item) => item.path === path)
     const version = requestedVersion ?? record?.versions.at(-1)?.version
     if (!record || version === undefined || !record.versions.some((item) => item.version === version)) throw new HttpError(404, '产物或版本不存在')
     const content = await stores.workspaces.readArtifact({ workspace: params.id!, path, version })
@@ -85,7 +85,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     const reason = text(input.reason, 'reason')
     if (input.impact !== undefined && !['cosmetic', 'semantic'].includes(String(input.impact))) throw new HttpError(400, 'impact 不合法')
     return serialize(stores.projectDir, async () => {
-      const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+      const record = (await listArtifactHistory(stores, params.id!)).find((item) => item.path === path)
       const author = actor(request, stores)
       const ref = await stores.workspaces.writeArtifact({ ref: { workspace: params.id!, path }, content, reason, author, kind: record?.kind ?? 'other', title: record?.title, tags: record?.tags })
       const staleNodes = ref.version === record?.versions.at(-1)?.version ? [] : await markArtifactEdited(stores, ref, author, reason, input.impact as 'cosmetic' | 'semantic' | undefined)
@@ -104,7 +104,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     if (typeof input.version !== 'number' || !Number.isSafeInteger(input.version) || input.version < 1) throw new HttpError(400, 'version 必须是正整数')
     const version = input.version
     const content = text(input.body, 'body')
-    const record = (await stores.workspaces.listArtifacts(params.id!)).find((item) => item.path === path)
+    const record = (await listArtifactHistory(stores, params.id!)).find((item) => item.path === path)
     if (!record?.versions.some((item) => item.version === version)) throw new HttpError(404, '产物或版本不存在')
     return stores.workspaces.addComment(params.id!, { path, version, body: content, author: actor(request, stores) })
   })

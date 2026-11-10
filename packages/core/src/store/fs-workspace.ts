@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
-import type { ChatStore, WorkspaceStore } from '../interfaces.js'
+import type { ChatStore, ProjectStores, WorkspaceStore } from '../interfaces.js'
 import type { ArtifactComment, ArtifactRecord, ArtifactRef, ArtifactVersion, Requirement } from '../types.js'
 import { sha256 } from '../util/hash.js'
 import { listFiles } from '../util/glob.js'
@@ -20,6 +20,7 @@ import {
 } from './paths.js'
 
 type WriteArtifactInput = Parameters<WorkspaceStore['writeArtifact']>[0]
+type WithdrawArtifactInput = Pick<WriteArtifactInput, 'ref' | 'author' | 'producedBy' | 'derivedFrom'> & { reason: string; onlyIfMissing?: boolean }
 type AddCommentInput = Parameters<WorkspaceStore['addComment']>[1]
 type CreateRequirementInput = Parameters<WorkspaceStore['createRequirement']>[0] & Pick<Requirement, 'description' | 'members' | 'dueAt'>
 
@@ -163,9 +164,10 @@ export class FsWorkspaceStore implements WorkspaceStore {
     return path.resolve(this.root, assertRequirementId(id))
   }
 
-  async listArtifacts(id: string): Promise<ArtifactRecord[]> {
+  async listArtifacts(id: string, includeWithdrawn = false): Promise<ArtifactRecord[]> {
     const manifest = await this.readManifest(id)
-    return manifest.artifacts.sort((a, b) => a.path.localeCompare(b.path))
+    return manifest.artifacts.filter(record => includeWithdrawn || record.versions.at(-1)?.sha256 !== '')
+      .sort((a, b) => a.path.localeCompare(b.path))
   }
 
   async readArtifact(ref: ArtifactRef): Promise<Buffer | undefined> {
@@ -177,7 +179,7 @@ export class FsWorkspaceStore implements WorkspaceStore {
     if (record) {
       const version =
         ref.version === undefined ? record.versions.at(-1) : record.versions.find((v) => v.version === ref.version)
-      if (!version) return undefined
+      if (!version || version.sha256 === '') return undefined
       const objectFile = path.join(objectsDir(this.taktDir), version.sha256)
       await assertNoSymlinks(this.taktDir, objectFile)
       const object = await readFileIfExists(objectFile)
@@ -245,6 +247,30 @@ export class FsWorkspaceStore implements WorkspaceStore {
     })
   }
 
+  async withdrawArtifact(input: WithdrawArtifactInput): Promise<ArtifactRef & { version: number } | undefined> {
+    const id = assertRequirementId(input.ref.workspace)
+    const artifactPath = assertArtifactPath(input.ref.path)
+    if (!input.reason.trim()) throw new Error(`撤回产物必须写 reason：${artifactPath}`)
+    const dir = this.dir(id)
+    return withLock(dir, async () => {
+      const file = path.join(dir, artifactPath)
+      await assertNoSymlinks(this.root, file)
+      const manifest = await this.readManifest(id)
+      const record = manifest.artifacts.find(record => record.path === artifactPath)
+      if (!record) throw new Error(`产物不存在：${id}/${artifactPath}`)
+      if (input.onlyIfMissing && await fileExists(file)) return undefined
+      const latest = record.versions.at(-1)!
+      if (latest.sha256 === '') return { workspace: id, path: artifactPath, version: latest.version }
+      // 空哈希表示无当前内容的撤回版本，不指向对象；真正的空文件仍有 SHA-256。
+      const version: ArtifactVersion = { version: latest.version + 1, sha256: '', size: 0, createdAt: new Date().toISOString(),
+        author: input.author, reason: input.reason, producedBy: input.producedBy, derivedFrom: input.derivedFrom ?? [] }
+      record.versions.push(version)
+      await rm(file, { force: true })
+      await writeFileAtomic(this.metadata(id, 'manifest.json'), toJsonText(manifest))
+      return { workspace: id, path: artifactPath, version: version.version }
+    })
+  }
+
   async detectUntracked(id: string): Promise<Array<{ path: string; sha256: string }>> {
     const rid = assertRequirementId(id)
     const dir = this.dir(rid)
@@ -301,4 +327,12 @@ export class FsWorkspaceStore implements WorkspaceStore {
     if (!manifest || !Array.isArray(manifest.artifacts)) throw new Error(`manifest.json 结构不合法：${file}`)
     return manifest
   }
+}
+
+export function withdrawArtifact(stores: ProjectStores, input: WithdrawArtifactInput): Promise<ArtifactRef & { version: number } | undefined> {
+  return new FsWorkspaceStore(stores.taktDir, stores.paths.requirements, stores.chat).withdrawArtifact(input)
+}
+
+export function listArtifactHistory(stores: ProjectStores, id: string): Promise<ArtifactRecord[]> {
+  return new FsWorkspaceStore(stores.taktDir, stores.paths.requirements, stores.chat).listArtifacts(id, true)
 }

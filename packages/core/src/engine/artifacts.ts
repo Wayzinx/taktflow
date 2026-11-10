@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import type { ProjectStores } from '../interfaces.js'
 import type { Actor, ArtifactRef, NodeDef, NodeState, RunState } from '../types.js'
 import { assertArtifactPath } from '../store/paths.js'
+import { withdrawArtifact } from '../store/fs-workspace.js'
 import { assertNoSymlinks, isEnoent } from '../store/fs-utils.js'
 import { listFiles, matchGlob } from '../util/glob.js'
 import { sha256 } from '../util/hash.js'
@@ -57,6 +58,14 @@ export async function collectOutputs(stores: ProjectStores, state: RunState, nod
   if (!node.outputs?.length) return
   const available = await files(stores, state.requirementId)
   const collected = new Map<string, ArtifactRef>()
+  const records = await stores.workspaces.listArtifacts(state.requirementId)
+  for (const record of records) {
+    if (available.includes(record.path) || !node.outputs.some(output => matchGlob(output.path, record.path))) continue
+    const ref = await withdrawArtifact(stores, { ref: { workspace: state.requirementId, path: record.path }, author: actor,
+      reason: '产出节点重跑后文件已不存在', onlyIfMissing: true, derivedFrom: ns.inputs,
+      producedBy: { runId: state.runId, nodeId: node.id, invocationId: actor.type === 'agent' ? actor.invocationId : undefined } })
+    if (ref) await emit('artifact.written', { ref, kind: record.kind, sha256: '' }, node.id, actor)
+  }
   for (const output of node.outputs) {
     const matches = available.filter((path) => matchGlob(output.path, path))
     if (!matches.length && output.required !== false) throw new Error(`缺少必需产物：${output.path}`)

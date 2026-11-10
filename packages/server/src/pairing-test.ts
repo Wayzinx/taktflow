@@ -40,9 +40,10 @@ export async function testPairing(config: TaktConfig, request: RuntimeTestReques
     redact = createRedactor(collectSecrets(req, config.providers))
     billed = true
     const output = await Promise.race([selected.harness.run(req, () => {}), deadline])
-    const ok = output.ok && output.finalText.trim() === 'OK'
+    const ok = output.ok && output.finalText.replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, '').toUpperCase() === 'OK'
+    const received = [...redact(output.finalText)].slice(0, 80).join('')
     // 公共 RuntimeTestResult 暂无 pairing/usage 字段，使用 detail 承载摘要，不扩展协议。
-    return result(ok, ok ? '搭配最小任务成功' : output.error ?? '搭配未返回 OK', JSON.stringify({ pairing: selected.pairing, usage: output.usage ?? null }))
+    return result(ok, ok ? '搭配最小任务成功' : `${output.error ?? '搭配未返回 OK'}（收到：${received}）`, JSON.stringify({ pairing: selected.pairing, usage: output.usage ?? null }))
   } catch (error) { return result(false, error instanceof Error ? error.message : '搭配测试失败') }
   finally { clearTimeout(timer); controller.abort(); await route?.close(); if (directory) await rm(directory, { recursive: true, force: true }) }
 }

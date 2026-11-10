@@ -23,6 +23,34 @@ describe('FsWorkspaceStore', () => {
     await rm(root, { recursive: true, force: true })
   })
 
+  it('撤回版本持久化、重复撤回不增版，重新写入相同内容恢复为新版本', async () => {
+    await store.createRequirement({ id: 'REQ-001', title: '撤回' })
+    const ref = { workspace: 'REQ-001', path: 'evidence/a/result.json' }
+    await store.writeArtifact({ ref, content: '{}', kind: 'evidence', author: system })
+    await expect(store.withdrawArtifact({ ref, author: { type: 'human', id: 'tester' }, reason: ' ' })).rejects.toThrow('reason')
+    const input = { ref, author: { type: 'human' as const, id: 'tester' }, reason: '证据无效' }
+    expect(await store.withdrawArtifact(input)).toMatchObject({ version: 2 })
+    expect(await store.withdrawArtifact(input)).toMatchObject({ version: 2 })
+    const reopened = new FsWorkspaceStore(taktDir)
+    expect(await reopened.listArtifacts(ref.workspace)).toEqual([])
+    expect(await reopened.readArtifact(ref)).toBeUndefined()
+    expect(await reopened.readArtifact({ ...ref, version: 2 })).toBeUndefined()
+    expect((await reopened.readArtifact({ ...ref, version: 1 }))?.toString()).toBe('{}')
+    expect((await reopened.listArtifacts(ref.workspace, true))[0]?.versions.at(-1)).toMatchObject({ version: 2, sha256: '', reason: '证据无效', author: input.author })
+    expect(await reopened.detectUntracked(ref.workspace)).toEqual([])
+    expect(await reopened.writeArtifact({ ref, content: '{}', kind: 'evidence', author: system })).toMatchObject({ version: 3 })
+    expect((await reopened.readArtifact(ref))?.toString()).toBe('{}')
+    expect(await reopened.listArtifacts(ref.workspace)).toHaveLength(1)
+  })
+
+  it('自动撤回在锁内复查磁盘，保留已重新生成的文件', async () => {
+    await store.createRequirement({ id: 'REQ-001', title: '重建' })
+    const ref = { workspace: 'REQ-001', path: 'evidence/a.json' }
+    await store.writeArtifact({ ref, content: '{}', kind: 'evidence', author: system })
+    expect(await store.withdrawArtifact({ ref, author: system, reason: '已删除', onlyIfMissing: true })).toBeUndefined()
+    expect((await store.listArtifacts(ref.workspace))[0]?.versions).toHaveLength(1)
+  })
+
   it('创建需求自动编号，支持读取与更新', async () => {
     const first = await store.createRequirement({ title: '需求一' })
     expect(first.id).toBe('REQ-001')

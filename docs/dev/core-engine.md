@@ -25,11 +25,12 @@
 - **agent**：
   1. 解析 role → AgentProfile（不存在则报错）；harness 选择优先级：节点 harness > profile.harness > config.roles[role] > `{ harness: 'mock' }`；按 fallback 链依次 `available()`，可重试错误（结果 error 含 429/503/401/sign in/timeout）换下一个，每次切换记 log。
   2. 预取知识：`node.knowledge` 每条按 intent 选 `knowledge` 里 intents 包含它的源，命中写进上下文，记 `knowledge.query`。
-  3. 组装上下文账本（ContextSnapshot）：role 说明、inputs 解析到的存放区文件（按声明顺序内联全文，最多占预算的一半（余量留给 harness 自带提示、运行中读的文件和估算误差），放不下的只给路径并记 `included: false`）、知识命中摘要、prompt；预算 = config.contextBudgetTokens ?? 200000；记 `context.assembled` 并 `runs.saveContext`。
+  3. 组装上下文账本（ContextSnapshot）：role 说明、inputs 解析到的存放区文件（按声明顺序内联全文，最多占预算的一半（余量留给 harness 自带提示、运行中读的文件），放不下的只给路径并记 `included: false`）、知识命中摘要、prompt；预算 = config.contextBudgetTokens ?? 200000；记 `context.assembled` 并 `runs.saveContext`。
   4. 渲染最终 prompt：角色说明 + 任务 prompt + 「公共存放区：<绝对路径>，需要读的文件：…，需要产出的文件：…，写权限：…」+ 有 resultSchema 时要求最后输出一个 ```json 代码块。
      调用 harness 时 `req.env` 必须带 `TAKT_ROLE`、`TAKT_NODE`、`TAKT_WORKSPACE`、`TAKT_RUN_ID`、`TAKT_TRANSCRIPT`（= runs/<RUN>/transcripts/<nodeId>.jsonl），cwd = projectDir。
   5. 写权限守卫：执行前对 projectDir 做文件快照（listFiles + sha），执行后再快照，变化的文件不匹配 writeScope（节点 writeScope ∩ profile.writeScope；`.takt/workspaces/<REQ>/**` 下产物路径相对 projectDir 计算）→ 记 `guard.violation`。项目是 git 仓库时对越界的已跟踪文件 `git checkout -- <file>`、对新增文件删除（action=reverted），否则 action=flagged；有违规节点记 blocked。
      并发注意：多个节点同时运行时，变化的文件只要匹配**任一**同时在运行的节点的写权限就不算当前节点越界；引擎自己写的文件（`.takt/runs/**`、`.takt/objects/**`、存放区的 `manifest.json / requirement.json / comments.jsonl`、`.takt/attention.jsonl`）不参与守卫。
+     `.takt/worktrees/**` 单独按文件元数据缓存哈希：无 repo 节点不能写，有 repo 节点仅允许自己的工作树并由 cwd 守卫检查范围；`.git` 与受控系统写入排除，其他工作树的违规按项目相对路径报告。
   6. harness 事件实时转成 `harness.*` / `context.compacted` 事件；usage 写 NodeState.usage。
   7. resultSchema：从 finalText 最后一个 ```json 代码块解析，做最小校验（type / required / properties / items / enum，写在 `engine/schema.ts`）。
 - **gate**：依次执行 checks：command（退出码 0 = pass，message 为输出末尾）、function、rubric（用 role 的 harness 跑一次，要求输出 `{ score, pass, message }`，score ≥ threshold 才 pass）。检查本身抛错 = 不通过（fail-closed）。记 `gate.result`；全过 succeeded；否则 onFail=stop → failed，onFail=human → 创建 attention（ask 附上失败检查），waiting_human。

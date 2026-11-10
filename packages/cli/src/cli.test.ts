@@ -4,7 +4,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/pr
 import { tmpdir } from 'node:os'
 import { basename, join, relative } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createInsights, openProject, type AttentionItem, type RunState } from '@taktflow/core'
+import { createInsights, initProject, openProject, type AttentionItem, type RunState } from '@taktflow/core'
 import { repoRoot } from './project.js'
 
 const entry = join(repoRoot, 'packages/cli/src/index.ts')
@@ -17,6 +17,21 @@ async function temp(): Promise<string> {
   temporary.push(dir)
   return dir
 }
+
+it('ws withdraw 要求原因、记录人工版本并保留历史读取', async () => {
+  const dir = await temp()
+  const stores = await initProject(dir)
+  await stores.workspaces.createRequirement({ title: '撤回测试' })
+  await cli(dir, ['ws', 'put', 'REQ-001', 'evidence/x.json', '-', '--kind', 'evidence'], Buffer.from('{}'))
+  expect((await cli(dir, ['ws', 'withdraw', 'evidence/x.json', '--req', 'REQ-001'])).code).not.toBe(0)
+  const withdrawn = await json(dir, ['ws', 'withdraw', 'evidence/x.json', '--req', 'REQ-001', '--reason', '旧证据无效'])
+  expect(withdrawn).toMatchObject({ path: 'evidence/x.json', version: 2 })
+  expect(await json(dir, ['ws', 'ls', 'REQ-001'])).not.toEqual(expect.arrayContaining([expect.objectContaining({ path: 'evidence/x.json' })]))
+  expect((await cli(dir, ['ws', 'get', 'REQ-001', 'evidence/x.json'])).code).not.toBe(0)
+  expect((await cli(dir, ['ws', 'get', 'REQ-001', 'evidence/x.json', '--version', '1'])).stdout.toString()).toBe('{}')
+  expect((await json(dir, ['ws', 'log', 'REQ-001', 'evidence/x.json'])).at(-1)).toMatchObject({ version: 2, author: { type: 'human' }, reason: '旧证据无效' })
+  expect(await json(dir, ['ws', 'withdraw', 'evidence/x.json', '--reason', '再次撤回'])).toMatchObject({ version: 2 })
+}, 60_000)
 
 async function cli(project: string, args: string[], input?: Buffer, target = entry) {
   const child = spawn(process.execPath, ['--import', 'tsx', target, '--project', project, ...args], { cwd: repoRoot, stdio: 'pipe' })
