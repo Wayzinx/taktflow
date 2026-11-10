@@ -41,6 +41,11 @@ export const runtimeFile = (deps: EngineDeps, runId: string) => join(runDir(deps
 export class Runtime implements HarnessHost {
   readonly graph: Graph = new Map()
   readonly controller = new AbortController()
+  /**
+   * 宿主退出时暂停：中止在途执行但不取消运行。被打断的节点回到 pending、人工待办保持未答、
+   * 不写 run.finished；磁盘状态与崩溃一致，之后用 resume 从断点继续（已完成节点保留）。
+   */
+  suspended = false
   readonly semaphore: Semaphore
   readonly guard: WriteGuard
   readonly override?: string
@@ -63,6 +68,11 @@ export class Runtime implements HarnessHost {
     this.override = options.harnessOverride
   }
   get signal(): AbortSignal { return this.controller.signal }
+  suspend(reason = '宿主退出，运行暂停'): void {
+    if (this.signal.aborted) return
+    this.suspended = true
+    this.controller.abort(new Error(reason))
+  }
   timestamp = (): string => (this.options.now?.() ?? new Date()).toISOString()
   save(): Promise<void> {
     const snapshot = structuredClone(this.state)
@@ -305,10 +315,11 @@ export class Runtime implements HarnessHost {
       owner: entry.def.owner, assignees: entry.def.owner ? this.deps.stores.config.members?.filter((member) => member.duties?.includes(entry.def.owner!)).map((member) => member.id) : undefined,
     })
     this.requests[ns.id] = requestId
-    if (!this.signal.aborted) ns.status = kind === 'retry' ? 'blocked' : 'waiting_human'
+    if (!this.signal.aborted || this.suspended) ns.status = kind === 'retry' ? 'blocked' : 'waiting_human'
     await this.persistGraph()
     await this.emit('human.requested', { requestId, ask, form, choices }, ns.id)
-    if (this.signal.aborted) {
+    // 暂停时待办保持未答：恢复后照常等人或消费已有回答
+    if (this.signal.aborted && !this.suspended) {
       const answered = await answerOrRead(this.deps.stores, item, { decision: 'cancelled', by: system })
       await this.recordAnswer(answered)
       this.signal.throwIfAborted()
@@ -341,6 +352,12 @@ export class Runtime implements HarnessHost {
     await Promise.all(running.values())
   }
   private async fail(ns: NodeState, error: unknown): Promise<void> {
+    if (this.suspended) {
+      // 被宿主退出打断不是失败：回到 pending，恢复后重跑这一次尝试；等人 / stale 状态原样保留
+      if (ns.status === 'running' || ns.status === 'ready') ns.status = 'pending'
+      delete ns.endedAt
+      return
+    }
     if (ns.status === 'stale' && !this.signal.aborted) {
       await this.emit('log', { level: 'warn', message: `忽略过期执行的失败：${errorText(error)}` }, ns.id)
       return
@@ -394,7 +411,7 @@ export class Runtime implements HarnessHost {
     const ns = this.state.nodes[node.id]!
     for (let retry = 0; retry <= (node.retry?.max ?? 0); retry++) {
       if (ns.status === 'stale') return
-      if (this.signal.aborted) { ns.status = 'cancelled'; await this.save(); return }
+      if (this.signal.aborted) { ns.status = this.suspended ? 'pending' : 'cancelled'; await this.save(); return }
       if (retry > 0) {
         ns.status = 'ready'
         await this.emit('node.ready', {}, node.id)
@@ -583,6 +600,15 @@ export class Runtime implements HarnessHost {
     await this.persistGraph()
     await this.emit('rework.started', { from: origin, to: target, count, feedback, reset: [...reset] }, origin)
   }
+  /** 暂停收尾：运行保持 running（与崩溃后的磁盘状态一致），被打断的节点回到 pending，不发 run.finished。 */
+  private async suspendedState(): Promise<RunState> {
+    this.state.status = 'running'
+    delete this.state.endedAt
+    for (const ns of Object.values(this.state.nodes)) if (ns.status === 'running' || ns.status === 'ready') ns.status = 'pending'
+    await this.save()
+    await this.emit('log', { level: 'warn', message: `${errorText(this.signal.reason)}：已完成的节点保留，恢复后从中断处继续` })
+    return structuredClone(this.state)
+  }
   async run(): Promise<RunState> {
     if (!this.signal.aborted) {
       this.state.status = 'running'
@@ -601,15 +627,18 @@ export class Runtime implements HarnessHost {
         if (monitor) clearInterval(monitor)
         await this.flushLogs()
       }
+      if (this.suspended) return await this.suspendedState()
       if (this.signal.aborted) this.state.status = 'cancelled'
       else if (this.budget.paused || (await this.deps.stores.attention.list({ pending: true, requirementId: this.state.requirementId })).some((item) => item.runId === this.state.runId && this.requests[item.nodeId] === item.requestId && this.state.nodes[item.nodeId]?.status === 'blocked') || Object.values(this.state.nodes).some((node) => node.status === 'waiting_human')) this.state.status = 'waiting_human'
       else if (this.workflow.nodes.every((node) => done(this.state.nodes[node.id]!))) this.state.status = 'succeeded'
       else this.state.status = 'failed'
     } catch (error) {
+      if (this.suspended) return await this.suspendedState()
       this.state.status = this.signal.aborted ? 'cancelled' : 'failed'
       throw error
     } finally {
-      if (this.state.status !== 'waiting_human') await this.guard.system([], () => finalizeEnvironment(this.deps.stores, this.state), true)
+      // 暂停不回收环境：恢复后可能还要用；真正结束时再回收
+      if (this.state.status !== 'waiting_human' && !this.suspended) await this.guard.system([], () => finalizeEnvironment(this.deps.stores, this.state), true)
     }
     this.state.endedAt = this.timestamp()
     await this.emit('run.finished', { status: this.state.status })

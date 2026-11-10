@@ -249,6 +249,11 @@ export interface Engine {
   start(input: StartRunInput): Promise<RunState>
   resume(runId: RunId, workflow: WorkflowDefinition): Promise<RunState>
   cancel(runId: RunId): Promise<void>
+  /**
+   * 宿主退出时暂停在途运行：中止执行但不取消，被打断的节点回到 pending、人工待办保持未答。
+   * 返回本引擎是否在跑这个运行。之后用 resume 继续（已完成节点保留）。
+   */
+  suspend?(runId: RunId): Promise<boolean>
   /** 公共存放区产物被人改了：把读过它的节点及其下游标记为 stale。 */
   markStale(runId: RunId, cause: ArtifactRef): Promise<NodeId[]>
 }

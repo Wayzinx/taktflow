@@ -80,6 +80,12 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       validateWorkflowHarnesses(workflow, { config: deps.stores.config, profiles: deps.profiles, harnesses: deps.harnesses }, opts.harnessOverride)
       return execute(new Runtime(deps, state, workflow, opts, guard), true)
     },
+    async suspend(runId) {
+      const runtime = active.get(runId)
+      if (!runtime) return false
+      runtime.suspend()
+      return true
+    },
     async cancel(runId) {
       const runtime = active.get(runId)
       const state = runtime?.state ?? await deps.stores.runs.get(runId)
