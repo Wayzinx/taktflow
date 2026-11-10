@@ -64,7 +64,7 @@ export default defineWorkflow({
           author: { role: 'dev' }, reviewers: [{ role: 'reviewer', focus: '修复有效性、无弱化测试', checklist: ["修复覆盖判决指出的根因", "未弱化原有测试断言", "回归范围覆盖受影响分支"] }], maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'fix-code', maxReworks: 1 } }),
         script({ id: 'integrate-fix', title: '集成评审后的修复', needs: ['review-fix'], when: codeWasFixed, run: integrate, outputs: [{ path: 'tasks/integration.json', kind: 'code-change' }] }),
         agent({ id: 'fix-script', title: '修复脚本', role: 'automation', needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
-          prompt: repairPrompt('fix-script', '只修定位、等待与取值问题，禁止弱化断言。') }),
+          prompt: repairPrompt('fix-script', '只修定位、等待与取值问题，禁止弱化断言。改空间根目录 tests/ 下的正本：集成 worktree 里的 tests/ 是执行时拷过去的副本，改了下一轮会被覆盖。改完把 tests/run-cases.mjs 同步写到 scripts/run-cases.mjs，执行前会核对两者一致。') }),
         agent({ id: 'fix-case', title: '修正用例', role: 'test-designer', needs: ['judge'], inputs: [{ path: 'spec/prd.md' }, { path: 'reports/verdicts/**' }],
           prompt: repairPrompt('fix-case', '按需求依据修正用例，记录原因；语义修改须经人工确认。') }),
       ],

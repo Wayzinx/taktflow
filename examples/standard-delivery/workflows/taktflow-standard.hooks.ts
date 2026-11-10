@@ -48,7 +48,7 @@ export function expandTask(item: PlannedItem) {
 export async function runCases(ctx: NodeContext) {
   const script = String(ctx.args.testScript ?? 'tests/run-cases.mjs')
   const actual = await readFile(join(ctx.projectDir, script), 'utf8')
-  if (actual !== await ctx.readArtifact('scripts/run-cases.mjs')) return { status: 'blocked' as const, message: '实际执行脚本与评审产物不一致' }
+  if (actual !== await ctx.readArtifact('scripts/run-cases.mjs')) return { status: 'blocked' as const, message: `实际执行脚本 ${script} 与评审产物 scripts/run-cases.mjs 不一致` }
   await rm(join(ctx.workspaceDir, 'evidence/summary.json'), { force: true })
   // 上一轮或别人留下的单条证据不能混进这一轮：按冻结用例清掉各自的证据目录，证据根目录下的基线等文件保留
   for (const test of await cases(ctx)) {
