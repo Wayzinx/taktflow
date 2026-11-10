@@ -140,6 +140,16 @@ export function RunPage({ runId }: { runId: string }) {
       if (timer) clearTimeout(timer)
     }
   }, [ds, runId, live])
+  // 运行刚结束：订阅已关，补拉一次，接住收尾时晚于事件落盘的状态
+  const wasLive = useRef(live)
+  useEffect(() => {
+    if (wasLive.current && !live) {
+      const timer = setTimeout(() => { reload.current.run(); setLiveTick((t) => t + 1) }, 800)
+      wasLive.current = live
+      return () => clearTimeout(timer)
+    }
+    wasLive.current = live
+  }, [live])
 
   const d = q.data
   useCrumbs(

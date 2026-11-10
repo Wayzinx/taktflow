@@ -59,7 +59,8 @@ function useDrawerWidth(): [number, (e: ReactMouseEvent) => void] {
 
 export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions, liveTick, closing = false }: { runId: string; requirementId: string; nodeId: string; graphNode?: GraphNode; expansions: Expansion[]; liveTick: number; closing?: boolean }) {
   const { query } = useLocation()
-  const q = useAsync((ds) => ds.node(runId, nodeId), [runId, nodeId, liveTick])
+  // 画布上的状态 / 尝试次数变了也重拉：运行收尾时最后几条事件可能先于状态落盘到达，只靠 liveTick 会停在旧状态
+  const q = useAsync((ds) => ds.node(runId, nodeId), [runId, nodeId, liveTick, graphNode?.status, graphNode?.attempts])
   const [width, startResize] = useDrawerWidth()
   const lastData = useRef(q.data)
   if (q.data) lastData.current = q.data
