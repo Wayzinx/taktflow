@@ -4,6 +4,7 @@
  * 行为对齐 EventSource：断线 3 秒后重连；4xx（除 408 / 429）不再重连，避免无限重试一个打不开的流。
  */
 
+import { sharedStream } from '../lib/shared-stream'
 import { whileVisible } from '../lib/visible'
 
 /** 从缓冲里切出完整的事件（空行分隔），返回每个事件的 data（多行 data 用 \n 连接）与剩余缓冲。 */
@@ -21,9 +22,12 @@ export function parseSse(buffer: string): { data: string[]; rest: string } {
   return { data, rest: text.slice(start) }
 }
 
-/** 后台标签页隐藏够久会断开、回来再连（lib/visible）；这些流没有游标，消费方用 onTabReturn 补拉。 */
+/**
+ * 后台标签页隐藏够久会断开、回来再连（lib/visible）；这些流没有游标，消费方用 onTabReturn 补拉。
+ * 同一条流（同地址、同请求头）在所有标签页之间只连一条（lib/shared-stream），不占满浏览器的连接数。
+ */
 export function fetchStream<T>(url: string, on: (v: T) => void, headers: () => Record<string, string>, retryMs = 3000): () => void {
-  return whileVisible(() => openFetchStream(url, on, headers, retryMs))
+  return whileVisible(() => sharedStream<T>(`${url}|${JSON.stringify(headers())}`, (emit) => openFetchStream(url, emit, headers, retryMs), on))
 }
 
 function openFetchStream<T>(url: string, on: (v: T) => void, headers: () => Record<string, string>, retryMs: number): () => void {
