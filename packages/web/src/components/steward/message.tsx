@@ -99,8 +99,11 @@ function LiveStatus({ m }: { m: StewardMessage }) {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
+  // 正文最近 2 秒还在长才算「正在回答」；外部 harness 调工具前会先说一句过程说明，之后停下来想，不能一直显示在回答
+  const grew = useRef({ len: m.text.length, at: 0 })
+  if (m.text.length !== grew.current.len) grew.current = { len: m.text.length, at: Date.now() }
   const running = (m.tools ?? []).find((t) => t.ok === undefined)
-  const label = running ? `正在${stewardAction(running).full}` : m.text ? '正在回答' : '正在思考'
+  const label = running ? `正在${stewardAction(running).full}` : m.text && now - grew.current.at < 2000 ? '正在回答' : '正在思考'
   const secs = Math.max(0, Math.round((now - Date.parse(m.at)) / 1000))
   return (
     <div className="stw-live" role="status">

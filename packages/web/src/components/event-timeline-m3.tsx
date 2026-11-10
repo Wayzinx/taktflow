@@ -15,6 +15,7 @@ const LESSON_STATUS = { tentative: '试用', active: '启用', retired: '退役'
 const LESSON_SOURCE = { judge: '判决', review: '评审', human: '人工' } as const
 const DISPOSITION = { open: '重新打开', resolved: '已解决', dismissed: '驳回' } as const
 const ARBITER_VERDICT = { approve: '通过', request_changes: '要求修改', reject: '否决' } as const
+const CHECKPOINT_STATUS = { done: '检查完成', error: '检查出错', skipped: '检查跳过' } as const
 
 function budgetLine(b: RunBudget, used: { tokens: number; costUsd?: number; minutes: number }) {
   const parts: string[] = []
@@ -50,13 +51,23 @@ export function describeM3(e: EventEnvelope): Described | undefined {
       return {
         icon: Repeat2,
         tone: 'failed',
-        title: <>同样的失败第 {x.count} 次 · 已停止重试 <span className="mono">{x.code}</span></>,
+        title: <>同样的失败第 {x.count} 次 · 已停止重试</>,
         detail: (
           <>
-            {x.reason} <span className="mono faint">· 指纹 {x.fingerprint}</span>
+            {x.reason} <span className="mono faint">· {x.code} · 指纹 {x.fingerprint}</span>
           </>
         ),
       }
+    }
+    case 'checkpoint.scheduled': {
+      const x = d(e, 'checkpoint.scheduled')
+      return { icon: ListChecks, tone: 'neutral', title: <>开始检查 · {x.subject}</>, detail: x.duties?.length ? <span className="faint">{x.duties.join('；')}</span> : undefined }
+    }
+    case 'checkpoint.finished': {
+      const x = d(e, 'checkpoint.finished')
+      // id 末段是评审者角色或检查项 id
+      const subject = x.id.split(':').pop()
+      return { icon: ListChecks, tone: x.status === 'error' ? 'failed' : 'neutral', title: <>{CHECKPOINT_STATUS[x.status]} · {subject}</>, detail: x.error }
     }
     case 'budget.warning':
     case 'budget.exhausted': {
