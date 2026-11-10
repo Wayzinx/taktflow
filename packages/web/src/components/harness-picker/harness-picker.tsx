@@ -3,55 +3,13 @@ import { Check, ChevronDown, ChevronRight, Search, Settings2 } from 'lucide-reac
 import { BrandIcon } from '../brand/brand-icon'
 import { Link } from '../../lib/router'
 import { Popover } from '../ui'
+import { sameModel, type Effort, type PickerHarness, type PickerModel, type PickerValue } from './types'
 import './harness-picker.css'
 
-export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-
-export interface PickerModel {
-  /** 组内唯一 */
-  key: string
-  /** 模型别名或厂商模型 ID；空 = harness 自带的默认模型 */
-  model?: string
-  provider?: string
-  label: string
-  tags?: string[]
-  efforts?: Effort[]
-  defaultEffort?: Effort
-  available: boolean
-  reason?: string
-}
-
-export interface PickerGroup {
-  key: string
-  label: string
-  icon?: string
-  /** 组名旁的说明：自带 / 直连 / 经协议桥 */
-  note?: string
-  models: PickerModel[]
-}
-
-export interface PickerHarness {
-  id: string
-  name: string
-  icon?: string
-  /** 不选 provider 时用谁的额度，如「使用个人 Claude 订阅」 */
-  own?: string
-  available: boolean
-  reason?: string
-  /** 当前默认 / 推荐 */
-  badge?: string
-  groups: PickerGroup[]
-}
-
-export interface PickerValue {
-  harness: string
-  provider?: string
-  model?: string
-  effort?: Effort
-}
+export { sameModel, type Effort, type PickerGroup, type PickerHarness, type PickerModel, type PickerValue } from './types'
 
 const EFFORT_LABEL: Record<Effort, string> = { low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高' }
-const same = (h: string, m: PickerModel, v?: PickerValue | null) => !!v && v.harness === h && (v.model ?? '') === (m.model ?? '') && (!v.provider || !m.provider || v.provider === m.provider)
+const same = (h: string, m: PickerModel, v?: PickerValue | null) => !!v && v.harness === h && sameModel(m, v)
 
 /** 按钮上的短名：图标 + harness · 模型 · effort。 */
 function triggerText(harnesses: PickerHarness[], v?: PickerValue | null): { icon?: string; name: string; text: string } | undefined {
@@ -120,7 +78,7 @@ export function HarnessPicker({
     if (!activeH) return []
     const q = query.trim().toLowerCase()
     return activeH.groups
-      .map((g) => ({ ...g, models: q ? g.models.filter((m) => `${m.label} ${m.model ?? ''} ${g.label}`.toLowerCase().includes(q)) : g.models }))
+      .map((g) => ({ ...g, models: q ? g.models.filter((m) => `${m.label} ${m.model ?? ''} ${m.aliases?.join(' ') ?? ''} ${g.label}`.toLowerCase().includes(q)) : g.models }))
       .filter((g) => g.models.length)
   }, [activeH, query])
   const total = activeH?.groups.reduce((n, g) => n + g.models.length, 0) ?? 0
@@ -183,6 +141,7 @@ export function HarnessPicker({
               </button>
             )}
             <div className="hp-hlist" role="listbox" aria-label="harness">
+              {loading && up.length === 0 && <p className="hp-empty">正在检测本机的 harness…</p>}
               {shown.map((h) => {
                 const on = h.id === activeH?.id
                 const chosen = value?.harness === h.id
@@ -251,6 +210,7 @@ export function HarnessPicker({
                         <span className="truncate">{g.label}</span>
                         {g.note && <span className="hp-note">{g.note}</span>}
                       </div>
+                      {g.hint && <p className="hp-group-hint">{g.hint}</p>}
                       {g.models.map((m) => {
                         const chosen = same(activeH.id, m, value)
                         const isPending = pending?.harness === activeH.id && pending.model.key === m.key && pending.model.provider === m.provider
@@ -258,13 +218,14 @@ export function HarnessPicker({
                           <div key={m.key} className="hp-model-wrap">
                             <button
                               type="button"
-                              className={`hp-model${chosen ? ' is-on' : ''}${isPending ? ' is-pending' : ''}`}
-                              disabled={!m.available || !activeH.available}
+                              className={`hp-model${chosen ? ' is-on' : ''}${isPending ? ' is-pending' : ''}${m.info ? ' is-info' : ''}`}
+                              disabled={!m.available || !activeH.available || m.info}
                               title={m.available ? m.model : m.reason}
                               onClick={() => pick(activeH, m)}
                             >
                               <span className="hp-m-main">
                                 <span className="truncate">{m.label}</span>
+                                {m.detail && <span className="hp-sub mono truncate">{m.detail}</span>}
                                 {!m.available && m.reason && <span className="hp-sub truncate">{m.reason}</span>}
                               </span>
                               {m.tags?.map((t) => (
@@ -291,7 +252,7 @@ export function HarnessPicker({
                 </div>
               </>
             ) : (
-              <p className="hp-empty">没有可用的 harness</p>
+              <p className="hp-empty">{loading ? '正在检测…' : '没有可用的 harness'}</p>
             )}
           </div>
         </div>

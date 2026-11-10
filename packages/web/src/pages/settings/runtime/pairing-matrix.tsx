@@ -4,6 +4,8 @@ import type { HarnessInfo, ModelInfo, PairingInfo, ProviderProtocol, RuntimeTest
 import { useAsync } from '../../../api'
 import { EmptyState, ErrorState, Popover, Skeleton } from '../../../components/ui'
 import { PROTOCOL_SHORT, TestButton, TestOutcome, type RuntimeApi } from './shared'
+import { BrandIcon } from '../../../components/brand/brand-icon'
+import { harnessMeta } from '../../../lib/harness-meta'
 import './pairing.css'
 
 type Status = PairingInfo['status']
@@ -57,25 +59,25 @@ function Cell({ p, harness, models, keyMissing }: { p: PairingInfo; harness: Har
         className={`pm-cell is-${p.status}${keyMissing && usable ? ' no-key' : ''}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`${harness.displayName} × ${p.provider ?? '自带'}：${meta.label}`}
+        aria-label={`${harnessMeta(harness).name} × ${p.provider ?? '自带'}：${meta.label}`}
         onClick={() => setOpen(true)}
       >
         <Icon aria-hidden />
         <span>{meta.label}</span>
         {keyMissing && usable && <TriangleAlert className="pm-warn" aria-hidden />}
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchor={btn} placement="bottom-start" className="pm-pop" role="dialog" ariaLabel={`${harness.displayName} × ${p.provider ?? '自带'}`}>
+      <Popover open={open} onClose={() => setOpen(false)} anchor={btn} placement="bottom-start" className="pm-pop" role="dialog" ariaLabel={`${harnessMeta(harness).name} × ${p.provider ?? '自带'}`}>
         <div className="pm-pop-body">
           <div className="pm-pop-head">
             <b>
-              {harness.displayName} × {p.provider ?? '自带'}
+              {harnessMeta(harness).name} × {p.provider ?? '自带'}
             </b>
             <span className={`pm-tag is-${p.status}`}>
               <Icon aria-hidden />
               {meta.label}
             </span>
           </div>
-          <PairingPath p={p} harness={harness.displayName} />
+          <PairingPath p={p} harness={harnessMeta(harness).name} />
           <p className="pm-pop-note">{p.status === 'unavailable' ? p.reason : p.status === 'bridge' ? `${meta.hint}；${(p.reason ?? '').replace(/^经协议桥转换[；;]?/, '') || '托管工具不可用'}。` : meta.hint}</p>
           {keyMissing && usable && (
             <p className="pm-pop-warn">
@@ -194,7 +196,10 @@ export function PairingMatrix({ rt, harnesses, models }: { rt: RuntimeApi; harne
                 <th className="pm-corner">模型 API</th>
                 {cols.map((h) => (
                   <th key={h.id} className="pm-col" title={h.capabilities.providerProtocols?.length ? `能直接说：${h.capabilities.providerProtocols.map((x) => PROTOCOL_SHORT[x]).join(' / ')}` : '只能用自带模型'}>
-                    <span className="pm-col-name">{h.displayName}</span>
+                    <span className="pm-col-name">
+                      <BrandIcon k={harnessMeta(h).icon} label={harnessMeta(h).name} size={14} />
+                      {harnessMeta(h).name}
+                    </span>
                     <span className="pm-col-sub">{h.capabilities.customProvider ? (h.capabilities.providerProtocols ?? []).map((x) => PROTOCOL_SHORT[x]).join(' · ') : '只用自带'}</span>
                   </th>
                 ))}

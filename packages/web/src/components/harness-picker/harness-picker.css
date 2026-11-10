@@ -19,20 +19,23 @@
 .hp {
   display: grid;
   grid-template-columns: 264px 340px;
-  max-height: min(460px, 70vh);
   font-size: var(--text-ui);
 }
+/* 两栏都是「头 + 可滚动列表 + 脚」，可选行（跟随默认、搜索）不在时也不乱 */
 .hp-side {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
+  max-height: min(460px, 70vh);
   padding: var(--sp-1);
   border-right: 1px solid var(--divider);
 }
 .hp-main {
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 0;
+  max-height: min(460px, 70vh);
   padding: var(--sp-1);
 }
 .hp-head {
@@ -46,6 +49,7 @@
 .hp-hlist,
 .hp-models {
   display: grid;
+  flex: 1;
   align-content: start;
   gap: 1px;
   min-height: 0;
@@ -133,6 +137,8 @@
 }
 .hp-foot {
   display: flex;
+  flex: none;
+  margin-top: auto;
   justify-content: space-between;
   gap: var(--sp-2);
   padding: 6px 10px 4px;
@@ -198,6 +204,13 @@
   font-size: var(--text-meta);
   color: var(--text-3);
 }
+.hp-group-hint {
+  margin: -2px 0 4px;
+  padding: 0 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-3);
+}
 .hp-note {
   flex: none;
   margin-left: auto;
@@ -226,6 +239,10 @@
 .hp-model:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+.hp-model.is-info:disabled {
+  cursor: default;
+  opacity: 0.75;
 }
 .hp-model.is-on .hp-m-main > span:first-child {
   color: var(--accent);
@@ -296,10 +313,11 @@
     width: calc(100vw - 16px);
   }
   .hp-side {
+    max-height: 240px;
     border-right: 0;
     border-bottom: 1px solid var(--divider);
   }
-  .hp-hlist {
-    max-height: 180px;
+  .hp-main {
+    max-height: min(360px, 50vh);
   }
 }

@@ -79,7 +79,14 @@
   padding: 10px 10px !important;
   font-weight: 400;
 }
-.pm-col-name,
+.pm-col-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+}
 .pm-row-name {
   display: block;
   font-weight: 600;

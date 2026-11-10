@@ -1,6 +1,6 @@
 import type { StewardRuntimeChoice } from '@taktflow/core'
 import { providerIconKey } from '../brand/brand-icon'
-import type { PickerGroup, PickerHarness } from '../harness-picker/harness-picker'
+import type { PickerGroup, PickerHarness } from '../harness-picker/types'
 import { harnessMeta } from '../../lib/harness-meta'
 import { pairingText } from '../../lib/pairing'
 

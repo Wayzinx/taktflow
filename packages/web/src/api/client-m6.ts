@@ -18,6 +18,8 @@ export function createM6Http({ req, get }: Http): M6Source {
         throw e
       }),
     pairings: () => get('/pairings'),
+    runtimeCatalog: () => get('/space/runtime/catalog'),
+    refreshCatalog: (target) => req('POST', '/space/runtime/catalog/refresh', { target }),
     testRuntime: (body) => req('POST', '/space/runtime/test', body),
     putSecret: (name, value, reason) => req('PUT', `/secrets/${enc(name)}`, { value, reason }),
     deleteSecret: (name, reason) => req('DELETE', `/secrets/${enc(name)}`, { reason }),

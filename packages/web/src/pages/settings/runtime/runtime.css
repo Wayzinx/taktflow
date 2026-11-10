@@ -349,11 +349,116 @@
   font-size: var(--text-label);
 }
 
+/* provider 行下面：列出的模型 */
+.rt-pmodels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: -8px 0 10px;
+  font-size: var(--text-meta);
+}
+.rt-pm-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+.rt-pm-toggle:disabled {
+  cursor: default;
+}
+.rt-pm-toggle b {
+  color: var(--text);
+  font-weight: 550;
+}
+.rt-pm-toggle svg {
+  width: 12px;
+  height: 12px;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.rt-pm-toggle svg.is-open {
+  transform: rotate(180deg);
+}
+.rt-pm-err {
+  color: var(--st-waiting);
+}
+.rt-pm-refresh svg {
+  width: 13px;
+  height: 13px;
+}
+.rt-pm-refresh .spin {
+  animation: rt-spin 0.9s linear infinite;
+}
+@keyframes rt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.rt-pm-list {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.rt-pm-list li {
+  padding: 1px 7px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.rt-pm-list li.is-alias {
+  color: var(--accent);
+}
+.rt-pm-list li.is-gone {
+  color: var(--text-3);
+  text-decoration: line-through;
+}
+
 /* 选择器（harness / 模型 / effort）与备选 */
 .rt-sel {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.2fr) 108px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+}
+/* 选择器按钮做成和输入框一样的外观，撑满一行里剩下的宽度 */
+.rt-sel .hp-trigger.rt-sel-picker {
+  flex: 1 1 240px;
+  max-width: none;
+  height: 30px;
+  justify-content: flex-start;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text);
+}
+.rt-sel .hp-trigger.rt-sel-picker:hover {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.rt-sel .rt-sel-picker .hp-chev {
+  margin-left: auto;
+}
+.rt-sel > .rt-sel-typed {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.rt-sel > .select {
+  flex: none;
+  width: 108px;
+}
+.rt-sel-type {
+  flex: none;
 }
 .rt-fallbacks {
   display: grid;
@@ -480,9 +585,6 @@
   .rt-route .rt-selchips {
     grid-column: 1 / -1;
     order: 3;
-  }
-  .rt-sel {
-    grid-template-columns: minmax(0, 1fr);
   }
   .rt-acp-grid {
     grid-template-columns: minmax(0, 1fr);

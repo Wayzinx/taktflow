@@ -2,11 +2,15 @@ import { useMemo, useState } from 'react'
 import { useAsync } from '../../../api'
 import { Link } from '../../../lib/router'
 import { ArrowDown, Crown, GraduationCap, Pencil, Plus, Signpost, Trash2, X, type LucideIcon } from 'lucide-react'
-import type { HarnessInfo, HarnessSelector, ModelInfo, RuntimeSystemRole } from '@taktflow/core'
+import type { HarnessInfo, HarnessSelector, RuntimeSystemRole } from '@taktflow/core'
 import { EmptyState, ReasonDialog, Segmented, toast, useFlashRows, useStagger } from '../../../components/ui'
 import { EditorDrawer, EFFORTS, Field, selectorText, type RuntimeApi } from './shared'
 import { BeeGlyph } from '../../../components/identity'
-import { PAIRING_STATUS, PairingPath } from './pairing-matrix'
+import { PairingPath } from './pairing-matrix'
+import { HarnessPicker } from '../../../components/harness-picker/harness-picker'
+import { useRuntimeCatalog } from '../../../components/harness-picker/use-catalog'
+import { catalogPending, catalogToPicker, findPicked } from '../../../lib/catalog-picker'
+import { harnessMeta } from '../../../lib/harness-meta'
 
 const SYSTEM: Array<{ id: RuntimeSystemRole; label: string; hint: string; icon: LucideIcon }> = [
   { id: 'lead', label: 'Lead', hint: '需求群里接话、拆任务、派活', icon: Crown },
@@ -18,86 +22,63 @@ const SYSTEM: Array<{ id: RuntimeSystemRole; label: string; hint: string; icon: 
 type Target = { kind: 'role'; id: string; isNew?: boolean } | { kind: 'system'; id: RuntimeSystemRole }
 
 /**
- * harness + 模型 + effort 的一行选择器；备选、角色档案也用它（docs/design/31 §6）。
- * 模型按「自带」和各 provider 分组，组名标出与所选 harness 的搭配（直连 / 桥接）；搭不上的整组置灰，下面一行写原因。
+ * harness × 模型 × effort 选择器；备选、角色档案也用它（docs/design/31 §6、32 §6）。
+ * 模型来自模型目录：harness 自带的 + 各 provider 实时列出的；下面一行写这个组合怎么接（直连 / 桥接）或为什么搭不上。
+ * 目录里没有的模型 ID 可以手填。
  */
-export function SelectorFields({ value, onChange, harnesses, models, compact }: { value: HarnessSelector; onChange: (v: HarnessSelector) => void; harnesses: HarnessInfo[]; models: string[]; compact?: boolean }) {
+export function SelectorFields({ value, onChange, harnesses, compact }: { value: HarnessSelector; onChange: (v: HarnessSelector) => void; harnesses: HarnessInfo[]; models?: string[]; compact?: boolean }) {
   const h = harnesses.find((x) => x.id === value.harness)
-  const pq = useAsync((ds) => ds.pairings(), [])
-  const mq = useAsync((ds) => ds.models(), [])
-  const infos = (mq.data ?? []).filter((m) => m.kind !== 'embedding' && models.includes(m.alias))
-  const byProvider = new Map<string, ModelInfo[]>()
-  for (const m of infos) byProvider.set(m.provider, [...(byProvider.get(m.provider) ?? []), m])
-  const pairing = (provider: string | null) => pq.data?.find((p) => p.harness === value.harness && p.provider === provider)
-  const known = !value.model || models.includes(value.model)
-  const [typing, setTyping] = useState(!known)
-  const provider = value.provider ?? infos.find((m) => m.alias === value.model)?.provider ?? null
-  const cur = pq.data ? pairing(value.model && !known && !value.provider ? null : provider) : undefined
+  const cq = useRuntimeCatalog()
+  const picker = useMemo(() => (cq.data ? catalogToPicker(cq.data, { keep: [value.harness] }) : []), [cq.data, value.harness])
+  const picked = value.model ? findPicked(picker, value) : undefined
+  // 目录拉到了、当前模型又不在里面：直接显示手填框
+  const [typingState, setTyping] = useState<boolean>()
+  const typing = typingState ?? Boolean(cq.data && value.model && !picked)
+  const aliasProvider = cq.data?.providers.find((p) => p.models.models.some((m) => m.alias === value.model))?.id
+  const provider = value.provider ?? aliasProvider ?? null
+  const cur = cq.data?.pairings.find((p) => p.harness === value.harness && p.provider === (value.model && !picked && !value.provider ? null : provider))
+  const efforts = picked?.efforts ?? EFFORTS
   return (
     <div className={`rt-sel-wrap${compact ? ' compact' : ''}`}>
       <div className={`rt-sel${compact ? ' compact' : ''}`}>
-        <select className="select mono" aria-label="harness" value={value.harness} onChange={(e) => onChange({ ...value, harness: e.target.value })}>
-          {!h && <option value={value.harness}>{value.harness || '选 harness'}</option>}
-          {harnesses.map((x) => (
-            <option key={x.id} value={x.id} disabled={x.override?.disabled}>
-              {x.id}
-              {x.override?.disabled ? '（已停用）' : !x.available ? '（不可用）' : ''}
-            </option>
-          ))}
-        </select>
-        {typing ? (
+        <HarnessPicker
+          harnesses={picker}
+          value={{ harness: value.harness, model: value.model, provider: value.provider, effort: value.effort }}
+          onChange={(next) => {
+            if (!next) return
+            setTyping(false)
+            onChange({ ...value, harness: next.harness, model: next.model, provider: next.provider, effort: next.effort ?? value.effort })
+          }}
+          allowDefault={false}
+          placement="bottom-start"
+          loading={(cq.loading && !cq.data) || catalogPending(cq.data)}
+          className="rt-sel-picker"
+          ariaLabel="harness 与模型"
+        />
+        {typing && (
           <span className="rt-sel-typed">
-            <input className="input mono" aria-label="模型 ID" value={value.model ?? ''} placeholder="厂商模型 ID，留空用默认" autoFocus={!compact} onChange={(e) => onChange({ ...value, model: e.target.value.trim() || undefined, provider: undefined })} />
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setTyping(false); onChange({ ...value, model: undefined, provider: undefined }) }}>
-              选列表
-            </button>
+            <input className="input mono" aria-label="模型 ID" value={value.model ?? ''} placeholder="厂商模型 ID，留空用默认" autoFocus={!compact && typingState} onChange={(e) => onChange({ ...value, model: e.target.value.trim() || undefined, provider: undefined })} />
           </span>
-        ) : (
-          <select
-            className="select mono"
-            aria-label="模型"
-            value={value.model ?? ''}
-            onChange={(e) => {
-              if (e.target.value === '__other__') return setTyping(true)
-              onChange({ ...value, model: e.target.value || undefined, provider: undefined })
-            }}
-          >
-            <optgroup label={`自带${pairing(null)?.status === 'unavailable' ? ' · 不可用' : ''}`}>
-              <option value="" disabled={pairing(null)?.status === 'unavailable'}>
-                {h?.capabilities.requiresProvider ? '（要选一个模型）' : 'harness 默认模型'}
-              </option>
-            </optgroup>
-            {[...byProvider].map(([pid, list]) => {
-              const p = pairing(pid)
-              const off = p?.status === 'unavailable'
-              return (
-                <optgroup key={pid} label={`${pid}${p ? ` · ${PAIRING_STATUS[p.status].label}` : ''}`}>
-                  {list.map((m) => (
-                    <option key={m.alias} value={m.alias} disabled={off}>
-                      {m.alias}
-                    </option>
-                  ))}
-                </optgroup>
-              )
-            })}
-            <option value={'__other__'}>其他模型 ID…</option>
-          </select>
         )}
         <select className="select mono" aria-label="effort" value={value.effort ?? ''} onChange={(e) => onChange({ ...value, effort: (e.target.value || undefined) as HarnessSelector['effort'] })}>
           <option value="">effort 默认</option>
-          {EFFORTS.map((x) => (
+          {efforts.map((x) => (
             <option key={x} value={x}>
               {x}
             </option>
           ))}
         </select>
+        <button type="button" className="btn btn-sm btn-ghost rt-sel-type" onClick={() => setTyping(!typing)}>
+          {typing ? '收起' : '手填 ID'}
+        </button>
       </div>
+      {cq.error && <div className="rt-sel-pair is-unavailable">模型目录取不到：{cq.error.message}</div>}
       {cur && h && (
         <div className={`rt-sel-pair is-${cur.status}`}>
           {cur.status === 'unavailable' ? (
             <span>搭不上：{cur.reason}</span>
           ) : (
-            <PairingPath p={cur} harness={h.displayName} />
+            <PairingPath p={cur} harness={harnessMeta(h).name} />
           )}
         </div>
       )}

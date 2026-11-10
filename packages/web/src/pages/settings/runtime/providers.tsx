@@ -1,7 +1,9 @@
 import { useMemo, useRef, useState, type CSSProperties } from 'react'
-import { Cable, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
-import type { ProviderConfig, RuntimeTestResult } from '@taktflow/core'
+import { Cable, ChevronDown, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import type { CatalogList, ProviderConfig, RuntimeTestResult } from '@taktflow/core'
 import { invalidate, useSource } from '../../../api'
+import { useRuntimeCatalog } from '../../../components/harness-picker/use-catalog'
+import { fmtRelative } from '../../../lib/format'
 import { EmptyState, Menu, ReasonDialog, Segmented, toast, useFlashRows, useStagger } from '../../../components/ui'
 import { protocolColor } from '../../../lib/capabilities'
 import { EditorDrawer, Field, KeySource, SECRET, TestButton, TestOutcome, type RuntimeApi } from './shared'
@@ -124,6 +126,61 @@ function ProviderDrawer({ rt, editing, open, onClose }: { rt: RuntimeApi; editin
 }
 
 /** provider 表：地址、协议、密钥来源，每行能测（只列模型，不计费）、编辑、删除。 */
+const SOURCE: Record<CatalogList['source'], string> = { live: '刚从上游列出', cache: '缓存', preset: '预设清单' }
+
+/** provider 行下面的一行：上游列出了几个模型、什么时候列的，能刷新、能展开看全部（docs/design/32 §3）。 */
+function ProviderModels({ id, list, onRefreshed }: { id: string; list?: CatalogList; onRefreshed: () => void }) {
+  const ds = useSource()
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  if (!list) return null
+  const loading = list.error === '正在获取…'
+  const live = list.models.filter((m) => !m.deprecated)
+  const gone = list.models.length - live.length
+  const refresh = async () => {
+    setBusy(true)
+    try {
+      const r = await ds.refreshCatalog({ kind: 'provider', id })
+      onRefreshed()
+      toast(r.error ? `${id}：没列出来` : `${id}：列出 ${r.models.length} 个模型`, { body: r.error })
+    } catch (e) {
+      toast(`${id}：刷新失败`, { body: e instanceof Error ? e.message : undefined })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="rt-pmodels">
+      {loading ? (
+        <span className="faint">正在列模型…</span>
+      ) : (
+        <button type="button" className="rt-pm-toggle" aria-expanded={open} onClick={() => setOpen((x) => !x)} disabled={!list.models.length}>
+          <b className="num">{live.length}</b> 个模型
+          {gone > 0 && <span className="faint">（另有 {gone} 个已下架）</span>}
+          {list.models.length > 0 && <ChevronDown className={open ? 'is-open' : undefined} aria-hidden />}
+        </button>
+      )}
+      {!loading && (
+        <span className={`faint${list.error ? ' rt-pm-err' : ''}`} title={list.error}>
+          {list.error ? (list.source === 'preset' ? `没列出来，用的${SOURCE.preset}：${list.error}` : `刷新失败，显示上次结果：${list.error}`) : `${SOURCE[list.source]}${list.fetchedAt ? ` · ${fmtRelative(list.fetchedAt)}` : ''}`}
+        </span>
+      )}
+      <button type="button" className="btn btn-sm btn-ghost btn-icon rt-pm-refresh" aria-label={`重新列出 ${id} 的模型`} title="重新列出模型" disabled={busy || loading} onClick={refresh}>
+        <RefreshCw className={busy ? 'spin' : undefined} />
+      </button>
+      {open && (
+        <ul className="rt-pm-list" aria-label={`${id} 的模型`}>
+          {list.models.map((m) => (
+            <li key={m.id} className={`mono${m.deprecated ? ' is-gone' : ''}${m.alias ? ' is-alias' : ''}`} title={[m.label !== m.id ? m.label : '', m.alias ? `别名 ${m.alias}` : '', m.deprecated ? '上游已不再列出' : ''].filter(Boolean).join(' · ') || undefined}>
+              {m.id}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 export function ProvidersCard({ rt }: { rt: RuntimeApi }) {
   const ds = useSource()
   const cfg = rt.cfg!
@@ -138,6 +195,7 @@ export function ProvidersCard({ rt }: { rt: RuntimeApi }) {
   const flash = useFlashRows(rows.map(([id]) => id))
   const st = useStagger(rows.length)
   const presetName = (p: ProviderConfig) => cfg.presets.providers.find((x) => x.id === p.preset)?.displayName
+  const catalog = useRuntimeCatalog()
 
   return (
     <div className="card rt-card">
@@ -187,6 +245,7 @@ export function ProvidersCard({ rt }: { rt: RuntimeApi }) {
                     </button>
                   </span>
                 </div>
+                <ProviderModels id={id} list={catalog.data?.providers.find((x) => x.id === id)?.models} onRefreshed={catalog.reload} />
                 {r && <TestOutcome r={r} />}
               </li>
             )

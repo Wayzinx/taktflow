@@ -1,4 +1,4 @@
-import type { PairingInfo, RuntimeConfig, RuntimeConfigPatch, RuntimeTestRequest, RuntimeTestResult, SecretStatus } from '@taktflow/core'
+import type { CatalogList, PairingInfo, RuntimeCatalog, RuntimeConfig, RuntimeConfigPatch, RuntimeTestRequest, RuntimeTestResult, SecretStatus } from '@taktflow/core'
 
 /** 运行配置 PATCH 时 baseRevision 不一致（409）：别人刚改过，需要重新载入。 */
 export class RuntimeConflictError extends Error {
@@ -14,6 +14,10 @@ export interface M6Source {
   patchRuntime(patch: RuntimeConfigPatch): Promise<RuntimeConfig>
   /** 搭配矩阵：每个 harness × [自带, 各 provider] 能不能用、走直连还是协议桥（docs/design/31 §2）。 */
   pairings(): Promise<PairingInfo[]>
+  /** 模型目录：各 provider 实时列出的模型、各 harness 自带的模型与搭配（docs/design/32 §7）。没拉完的项带 error「正在获取…」。 */
+  runtimeCatalog(): Promise<RuntimeCatalog>
+  /** 强制重拉一项（owner）。 */
+  refreshCatalog(target: { kind: 'provider' | 'harness'; id: string }): Promise<CatalogList>
   /** provider 只列模型不计费；model / pairing 要 allowBilled；harness 跑可用性探测 / ACP 握手。 */
   testRuntime(body: RuntimeTestRequest): Promise<RuntimeTestResult>
   /** 存到本机密钥库；任何接口都不回传值。 */

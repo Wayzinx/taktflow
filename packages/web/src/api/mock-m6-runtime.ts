@@ -4,6 +4,7 @@
  */
 import type {
   AcpHarnessConfig,
+  CatalogModel,
   CliHarnessConfig,
   HarnessCapabilities,
   HarnessInfo,
@@ -12,6 +13,7 @@ import type {
   PairingInfo,
   ProviderConfig,
   ProviderProtocol,
+  RuntimeCatalog,
   RuntimeConfig,
   RuntimeConfigPatch,
   RuntimeSystemRole,
@@ -263,6 +265,25 @@ export function createMockRuntime(seeded: boolean): MockRuntime {
       .filter((h) => !h.override?.disabled)
       .flatMap((h) => [mockPairing(h.id, h.capabilities, null), ...Object.entries(s.providers).map(([id, p]) => mockPairing(h.id, h.capabilities, id, p))])
 
+  // 演示目录：provider 的模型取自已配置的别名，Claude / Codex 给几条自带模型
+  const OWN: Record<string, CatalogModel[]> = {
+    'claude-code': ['opus', 'sonnet', 'haiku'].map((id) => ({ id, label: `${id[0]!.toUpperCase()}${id.slice(1)}（订阅默认最新）`, origin: 'harness', reasoning: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'high' })),
+    codex: [{ id: 'gpt-6-astra', label: 'GPT-6 Astra', origin: 'harness', contextWindow: 400000, reasoning: true, efforts: ['low', 'medium', 'high', 'xhigh'], defaultEffort: 'medium' }],
+  }
+  const catalog = (): RuntimeCatalog => {
+    const hs = harnesses().filter((h) => h.id !== 'mock')
+    return {
+      harnesses: hs.map((h) => ({ ...h, accepts: h.capabilities.customProvider ? h.capabilities.providerProtocols ?? [] : [], ...(OWN[h.id] ? { own: { models: OWN[h.id]!, source: 'cache' as const, fetchedAt: new Date().toISOString() } } : {}) })),
+      providers: Object.entries(s.providers).map(([id, p]) => ({
+        id, displayName: id, protocols: [p.protocol], keyPresent: !p.apiKeyEnv || sourceOf(p.apiKeyEnv) !== 'missing',
+        models: { source: 'cache' as const, fetchedAt: new Date().toISOString(), models: Object.entries(s.models).filter(([, m]) => m.provider === id && m.kind !== 'embedding')
+          .map(([alias, m]): CatalogModel => ({ id: m.id, label: m.id, alias, origin: 'manual', ...(m.contextWindow ? { contextWindow: m.contextWindow } : {}) })) },
+      })),
+      pairings: pairings(),
+      enrichment: 'ok',
+    }
+  }
+
   /** 和服务端同一套校验口径：哪个字段错、下一步怎么办。 */
   function validate(next: ReturnType<typeof body>): string | undefined {
     for (const [alias, m] of Object.entries(next.models)) {
@@ -312,6 +333,12 @@ export function createMockRuntime(seeded: boolean): MockRuntime {
     harnesses,
     models,
     pairings,
+    runtimeCatalog: () => delay(catalog(), 220),
+    refreshCatalog: (target) => {
+      const c = catalog()
+      const list = target.kind === 'provider' ? c.providers.find((p) => p.id === target.id)?.models : c.harnesses.find((h) => h.id === target.id)?.own
+      return list ? delay({ ...list, source: 'live' as const, fetchedAt: new Date().toISOString() }, 600) : fail(`${target.id} 不存在`)
+    },
     runtimeConfig: () => delay(view(), 180),
     patchRuntime(patch: RuntimeConfigPatch) {
       if (!patch.reason?.trim()) return fail('需要写原因')
