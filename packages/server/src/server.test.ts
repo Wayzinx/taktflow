@@ -800,7 +800,7 @@ it('动态 prompt 经引擎和 HTTP 读回实际文本', async () => {
     && (event.data as { text: string }).text === '收到，开始修复')).toBe(true)
 })
 
-it('loop 多轮用量在列表、运行图、需求详情和 metrics 一致，历史删除节点仍计入总量', async () => {
+it('loop 多轮用量按每次调用累计，在列表、运行图、需求详情和 metrics 一致，历史删除节点仍计入总量', async () => {
   const { root, stores, requirementId, runId } = await makeFixture()
   const actor: Actor = { type: 'system', id: 'usage-test' }
   const state = (await stores.runs.get(runId))!
@@ -809,9 +809,11 @@ it('loop 多轮用量在列表、运行图、需求详情和 metrics 一致，�
   await stores.runs.save(state)
   const before = await readFile(join(stores.taktDir, 'runs', runId, 'state.json'), 'utf8')
   for (const iteration of [1, 2]) {
+    const usage = { inputTokens: 10 * iteration, outputTokens: 2 * iteration, cachedTokens: iteration, costUsd: 0.25 * iteration }
     await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'node.started', data: { attempt: 1, iteration } })
-    await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'harness.usage', data: { inputTokens: 10000, outputTokens: 10000 } })
-    await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'node.finished', data: { status: 'succeeded', outputs: [], usage: { inputTokens: 10 * iteration, outputTokens: 2 * iteration, cachedTokens: iteration, costUsd: 0.25 * iteration } } })
+    // 引擎每次调用记一条 harness.usage；结束事件里是同一份量，不能重复算
+    await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'harness.usage', data: usage })
+    await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'node.finished', data: { status: 'succeeded', outputs: [], usage } })
   }
   const server = await startServer({ projectDir: root })
   const total = { inputTokens: 130, outputTokens: 26, cachedTokens: 3, costUsd: 0.75 }
@@ -842,6 +844,7 @@ it('loop 多轮用量在列表、运行图、需求详情和 metrics 一致，�
     { id: 'test', title: '测试', status: 'done', done: 3, total: 3 },
   ])
   expect(detail.body.run).toEqual(state)
+  await stores.events.append(runId, { actor, nodeId: 'loop/removed', type: 'harness.usage', data: { inputTokens: 7, outputTokens: 1 } })
   await stores.events.append(runId, { actor, nodeId: 'loop/removed', type: 'node.finished', data: { status: 'succeeded', outputs: [], usage: { inputTokens: 7, outputTokens: 1 } } })
   await assertTotals({ ...total, inputTokens: 137, outputTokens: 27 })
   const reloaded = await getJson<RunDetail>(`${server.url}/api/runs/${runId}`)
