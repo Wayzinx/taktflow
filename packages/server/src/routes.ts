@@ -20,7 +20,7 @@ import { workflowRoutes } from './workflow-routes.js'
 import { registerKnowledgeRoutes } from './knowledge-routes.js'
 import { createSecretResolver } from '@taktflow/knowledge'
 import { crudRoutes } from './crud-routes.js'
-import { workflowStore } from './space.js'
+import { workflowSource } from './space.js'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 
 export interface RequestContext {
@@ -51,7 +51,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   registerEvalRoutes(add, catalog.resolveRuntime ?? (() => { throw new HttpError(501, '未接入评测运行时') }), catalog)
   workflowRoutes(add, connections, (stores) => {
     let store = workflows.get(stores.paths.workflows)
-    if (!store) { store = workflowStore(stores); workflows.set(stores.paths.workflows, store) }
+    if (!store) { store = workflowSource(stores); workflows.set(stores.paths.workflows, store) }
     return store
   })
   add('GET', '/api/project', ({ stores }) => overview(stores))

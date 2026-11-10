@@ -3,14 +3,14 @@ import { promisify } from 'node:util'
 import { access, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { bindCrudServices, type CommandHandlers, type EngineDeps, type TaktConfig as Config } from '@taktflow/core'
+import { bindCrudServices, systemWrite, type CommandHandlers, type EngineDeps, type TaktConfig as Config } from '@taktflow/core'
 import { projectCommands as baseProjectCommands } from './commands.js'
 import { convertWorkflow } from './workflow-routes.js'
 import { spaceLock } from './space-lock.js'
 import { randomUUID } from 'node:crypto'
 import { FsEventStore, listSkills, loadProfiles, openProject, type Actor, type ProjectStores, type RepoBinding, type SpaceDetail, type SpaceFile, type SpaceMember, type SpaceSummary, type TaktConfig } from '@taktflow/core'
 import { createRepoManager } from '@taktflow/sandbox'
-import { createWorkflowStore } from '@taktflow/workflow-source'
+import { createWorkflowStore, type WorkflowStore } from '@taktflow/workflow-source'
 import { HttpError, safeId, text } from './http.js'
 
 const execute = promisify(execFile)
@@ -36,8 +36,24 @@ export async function discoverSpaces(dir: string): Promise<ProjectStores[]> {
   return spaces
 }
 export const spaceId = (stores: ProjectStores): string => safeId(stores.config.space?.id ?? basename(stores.projectDir))
-export function workflowStore(stores: ProjectStores) {
-  return createWorkflowStore({ dir: stores.paths.workflows, historyDir: join(stores.taktDir, 'workflow-revisions'), gitCommit: false })
+export const workflowWritePaths = (stores: ProjectStores) => [`${relative(stores.projectDir, stores.paths.workflows)}/**`, '.takt/workflow-revisions/**', '.takt/space-events.jsonl*']
+const workflowWrite = (stores: ProjectStores) => <T>(fn: () => Promise<T>) => systemWrite(stores.projectDir, workflowWritePaths(stores), fn)
+/** 编辑器路由用：调用方自己包 systemWrite，只有订阅轮询由 store 内部受控。 */
+export function workflowSource(stores: ProjectStores) {
+  return createWorkflowStore({ dir: stores.paths.workflows, historyDir: join(stores.taktDir, 'workflow-revisions'), gitCommit: false, guard: workflowWrite(stores) })
+}
+// 管家、Lead、空间概览随时会读写 workflow：读默认不补记修订，写一律走受控写入，否则运行中节点的守卫会把这些修订算成它越界。
+export function workflowStore(stores: ProjectStores): WorkflowStore {
+  const store = workflowSource(stores), guard = workflowWrite(stores)
+  return {
+    ...store,
+    get: (id, options = {}) => options.record ? guard(() => store.get(id, options)) : store.get(id, { record: false }),
+    list: (options = {}) => options.record ? guard(() => store.list(options)) : store.list({ record: false }),
+    edit: (id, request) => guard(() => store.edit(id, request)),
+    replaceSource: (id, request) => guard(() => store.replaceSource(id, request)),
+    rollback: (id, rev, author, reason) => guard(() => store.rollback(id, rev, author, reason)),
+    setLayout: (id, layout) => guard(() => store.setLayout(id, layout)),
+  }
 }
 export const repoManager = (stores: ProjectStores) => createRepoManager({ projectDir: stores.projectDir, taktDir: stores.taktDir, repos: stores.config.repos ?? [] })
 export async function spaceSummary(stores: ProjectStores): Promise<SpaceSummary> {

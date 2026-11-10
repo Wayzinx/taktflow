@@ -11,7 +11,11 @@ import { pruneWorkflowLayout, readWorkflowLayout, writeWorkflowLayout } from './
 import { parseWorkflowSource } from './parse.js'
 import { validateWorkflowSource } from './validate.js'
 
-export interface WorkflowStoreOptions { dir: string; historyDir: string; gitCommit?: boolean }
+export interface WorkflowStoreOptions {
+  dir: string; historyDir: string; gitCommit?: boolean
+  /** 包住订阅轮询的写入（修订记录、布局清理）；服务端传受控写入，避免把外部修改记到正在运行的 agent 头上。 */
+  guard?: <T>(fn: () => Promise<T>) => Promise<T>
+}
 export type WorkflowWriteResult = WorkflowDocument | WorkflowConflict | { error: 'validation'; diagnostics: WorkflowDiagnostic[] }
 type FileState = { file: string; source: string; id: string; rev: string; mtime: number; stamp?: string }
 const external: Actor = { type: 'agent', role: 'unknown', harness: 'external' }
@@ -19,6 +23,7 @@ const external: Actor = { type: 'agent', role: 'unknown', harness: 'external' }
 export function createWorkflowStore(options: WorkflowStoreOptions) {
   const dir = resolve(options.dir)
   const historyDir = resolve(options.historyDir)
+  const guard = options.guard ?? (<T>(fn: () => Promise<T>) => fn())
   const expected = new Map<string, Actor>()
   const listeners = new Set<(event: WorkflowChangedEvent) => void>()
   const errorListeners = new Set<(error: unknown) => void>()
@@ -209,36 +214,40 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') reportError(error)
       }
-      void withLock(dir, async () => {
+      void guard(() => withLock(dir, async () => {
         for (const file of baseline) { await observe(file, false); watched.set(file.file, file) }
-      }).catch(reportError)
+      })).catch(reportError)
       timer = setInterval(() => {
         if (polling) return
         polling = true
-        void withLock(dir, async () => {
-          for (const file of await files(watched)) {
-            if (watched.get(file.file) === file) continue
-            const previous = (await revisions(file.id)).at(-1)
-            if (previous?.rev === file.rev) {
-              const before = watched.get(file.file)
+        void (async () => {
+          // 先不加锁比对；有变化才进受控写入，agent 运行时不必每秒扫一遍修订目录
+          if ((await files(watched)).every((file) => watched.get(file.file) === file)) return
+          await guard(() => withLock(dir, async () => {
+            for (const file of await files(watched)) {
+              if (watched.get(file.file) === file) continue
+              const previous = (await revisions(file.id)).at(-1)
+              if (previous?.rev === file.rev) {
+                const before = watched.get(file.file)
+                watched.set(file.file, file)
+                // 修订已由同目录的另一个 store 实例记下（管家执行提案、CLI、另一个服务进程）：本实例的订阅者同样要收到
+                if (previous && before && before.rev !== file.rev && announced.get(file.id) !== file.rev) emit({ workflowId: file.id, revision: previous })
+                continue
+              }
+              const parsed = parseWorkflowSource(file.source, file.file)
+              await validateWorkflowSource(file.file)
+              if (parsed.model.editable) {
+                const layout = await readWorkflowLayout(dir, file.id)
+                const cleaned = pruneWorkflowLayout(layout, parsed.spans.byId.keys())
+                if (JSON.stringify(layout) !== JSON.stringify(cleaned)) await writeWorkflowLayout(dir, file.id, cleaned)
+              }
+              const author = expected.get(file.id) ?? external
+              await record(file, author, '外部修改', '外部修改源码')
+              expected.delete(file.id)
               watched.set(file.file, file)
-              // 修订已由同目录的另一个 store 实例记下（管家执行提案、CLI、另一个服务进程）：本实例的订阅者同样要收到
-              if (previous && before && before.rev !== file.rev && announced.get(file.id) !== file.rev) emit({ workflowId: file.id, revision: previous })
-              continue
             }
-            const parsed = parseWorkflowSource(file.source, file.file)
-            await validateWorkflowSource(file.file)
-            if (parsed.model.editable) {
-              const layout = await readWorkflowLayout(dir, file.id)
-              const cleaned = pruneWorkflowLayout(layout, parsed.spans.byId.keys())
-              if (JSON.stringify(layout) !== JSON.stringify(cleaned)) await writeWorkflowLayout(dir, file.id, cleaned)
-            }
-            const author = expected.get(file.id) ?? external
-            await record(file, author, '外部修改', '外部修改源码')
-            expected.delete(file.id)
-            watched.set(file.file, file)
-          }
-        }).catch(reportError).finally(() => { polling = false })
+          }))
+        })().catch(reportError).finally(() => { polling = false })
       }, 1000)
       timer.unref()
     }

@@ -2,8 +2,9 @@ import { mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:f
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { createEngine, initProject, openProject, WriteGuard, type LeadPresence, type Lesson, type AgentProfile } from '@taktflow/core'
+import { createEngine, initProject, openProject, systemWrite, WriteGuard, type LeadPresence, type Lesson, type AgentProfile } from '@taktflow/core'
 import { attachLessons, createServer, type RunningServer } from './index.js'
+import { workflowSource, workflowStore } from './space.js'
 
 const roots: string[] = []; const servers: RunningServer[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map((server) => server.close())); await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))) })
@@ -272,5 +273,32 @@ it('运行中的节点期间在编辑器里读取和保存 workflow，不算 Age
 
   const agent = await guard.begin({ profile: [] })
   await writeFile(file, source.replace('确认继续', 'Agent 改的'))
+  expect((await agent()).paths).toEqual(['workflows/quick.workflow.ts'])
+})
+
+it('运行中节点期间空间概览、管家读写和编辑器订阅碰到外部改过的 workflow，补记的修订不算 Agent 越界', async () => {
+  const { root, stores, file } = await setup()
+  const server = await start({ projectDir: root })
+  expect((await request(server, '/api/workflows/quick')).status).toBe(200)
+  const source = (await readFile(file, 'utf8')).replace("title: '确认'", "title: '外部改的'")
+  await writeFile(file, source)
+  const guard = new WriteGuard(root)
+  const finish = await guard.begin({ profile: [] })
+  expect((await request(server, '/api/space')).status).toBe(200)
+  const store = workflowStore(stores)
+  const doc = await store.get('quick')
+  expect((await store.list()).map((item) => item.id)).toContain('quick')
+  expect(await store.replaceSource('quick', { baseRev: doc.rev, source: source.replace('外部改的', '管家改的'), author: { type: 'human', id: 'alice' }, reason: '管家提案' })).toHaveProperty('rev')
+  expect((await finish()).paths).toEqual([])
+
+  const watcher = workflowSource(stores)
+  let unwatch!: () => Promise<void>
+  const seen = new Promise<void>((resolve) => { unwatch = watcher.watch(() => resolve()) })
+  // 等订阅基线记完再开 Agent 窗口：受控窗口期间的写入本来就不归因给 Agent
+  await systemWrite(root, [], async () => {})
+  const agent = await guard.begin({ profile: [] })
+  await writeFile(file, source.replace('外部改的', 'Agent 改的'))
+  await seen
+  await unwatch()
   expect((await agent()).paths).toEqual(['workflows/quick.workflow.ts'])
 })

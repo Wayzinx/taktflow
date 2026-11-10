@@ -1,10 +1,9 @@
 import type { WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from '@taktflow/core'
 import { convertWorkflowSource, sourceDiff } from '@taktflow/workflow-source'
-import { relative } from 'node:path'
 import { requireRole, systemWrite, type Actor, type ProjectStores, type WorkflowConvertResult } from '@taktflow/core'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 import { actor, body, HttpError, json, safeId, text } from './http.js'
-import { auditSpace, workflowStore } from './space.js'
+import { auditSpace, workflowStore, workflowWritePaths } from './space.js'
 import { STREAMING, type Handler } from './routes.js'
 import { liveStream } from './live-stream.js'
 
@@ -19,8 +18,7 @@ export function workflowRoutes(register: (method: string, path: string, handler:
     }
   })
   // 编辑器写源码、修订记录和布局（读取也会补记初始修订）都是 serve 自己的写入：运行中节点的写权限守卫不能把它们算到 Agent 头上。
-  const guarded = <T>(stores: ProjectStores, fn: () => Promise<T>) =>
-    systemWrite(stores.projectDir, [`${relative(stores.projectDir, stores.paths.workflows)}/**`, '.takt/workflow-revisions/**', '.takt/space-events.jsonl*'], fn)
+  const guarded = <T>(stores: ProjectStores, fn: () => Promise<T>) => systemWrite(stores.projectDir, workflowWritePaths(stores), fn)
   add('POST', '/api/workflows/:id/convert', async ({ stores, params, request }) => {
     const input = await body(request)
     if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') throw new HttpError(400, 'dryRun 必须是布尔值')
@@ -75,7 +73,7 @@ export function workflowRoutes(register: (method: string, path: string, handler:
   })
   add('GET', '/api/workflows/:id/stream', async ({ stores, params, response }) => {
     const store = getStore(stores)
-    await store.get(safeId(params.id!))
+    await guarded(stores, () => store.get(safeId(params.id!)))
     liveStream(response, connections, (send, fail) => {
       const unwatch = store.watch((event) => { if (event.workflowId === params.id) send(event) }, fail)
       return () => { void unwatch().catch(fail) }
