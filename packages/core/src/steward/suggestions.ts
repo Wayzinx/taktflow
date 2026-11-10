@@ -7,9 +7,8 @@ export async function stewardSuggestions(
 ): Promise<string[]> {
   const space = spaceId ? await deps.open(spaceId) : undefined
   const name = space?.name ?? '当前空间'
-  // 没配模型时管家走规则降级，只认"新建空间 <名称>"这类句式；建议点开后预填在输入框，用户改名后发送。
-  const online = Boolean(deps.chat)
-  if (page === 'spaces') return [online ? '新建项目空间' : '新建空间 我的项目', '看进度和风险']
+  // 建议都用人话；没配模型时规则降级也认"新建一个需求 / 新建项目空间"，会追问名字。
+  if (page === 'spaces') return ['新建项目空间', '看进度和风险']
   if (page === 'workflows') return ['流水线适合什么需求？', '新建一条流水线']
   if (page === 'workflow')
     return [
@@ -50,6 +49,6 @@ export async function stewardSuggestions(
       '验收还差什么？',
     ]
   }
-  if (page === 'requirements') return ['进度怎么样？', online ? '新建一个需求' : '新建需求 新需求']
+  if (page === 'requirements') return ['进度怎么样？', '新建一个需求']
   return ['进度怎么样？', '有什么风险？', '我有哪些待办？']
 }

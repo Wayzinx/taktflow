@@ -737,6 +737,12 @@ describe('问答与工具', () => {
       expect(answer.proposalIds).toHaveLength(1)
       expect((await f.agent.store.proposal(answer.proposalIds![0]!)).status).toBe('pending')
     }
+    // 建议里的说法没带名字：追问，不建提案
+    for (const [text, ask] of [['新建一个需求', '新需求叫什么'], ['新建项目空间', '新空间叫什么']]) {
+      const answer = await f.agent.ask({ text: text!, context })
+      expect(answer.text).toContain(ask)
+      expect(answer.proposalIds ?? []).toHaveLength(0)
+    }
     expect((await f.agent.ask({ text: '帮我优化量子计算', context })).text).toContain(
       '需要先配置管家模型',
     )

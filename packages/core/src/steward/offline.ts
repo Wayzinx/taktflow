@@ -31,11 +31,12 @@ export async function offlineAnswer(
   const suffix = (result: StewardToolResult & { numbers?: number[] }) =>
     (result.numbers ?? []).map((n) => `[${n}]`).join('')
   const createReq = text.match(
-    /(?:新建|建个|创建)\s*需求\s*[:：]?\s*(.+)|(?:create|new)\s+(?:a\s+)?requirement\s*[:：]?\s*(.+)/i,
+    /(?:新建|建个|创建)\s*(?:一个)?\s*需求\s*[:：]?\s*(.*)|(?:create|new)\s+(?:a\s+)?requirement\s*[:：]?\s*(.*)/i,
   )
   if (createReq) {
     if (!current) return '要把需求建在哪个空间？'
-    const title = (createReq[1] ?? createReq[2])!.trim()
+    const title = (createReq[1] ?? createReq[2] ?? '').trim()
+    if (!title) return '新需求叫什么？发「新建需求 标题」，比如「新建需求 订单导出支持按部门筛选」。'
     const result = await call('propose', {
       title: `新建需求 ${title}`,
       summary: '按用户要求新建草稿需求',
@@ -52,8 +53,9 @@ export async function offlineAnswer(
     return `${status === 'applied' ? '需求已创建，可撤销' : status === 'failed' ? '需求创建失败，请查看提案执行结果' : '已生成新建需求提案，请预览后批准'}${suffix(result)}。`
   }
   const createSpace = text.match(
-    /(?:新建|建个|创建)\s*空间\s*[:：]?\s*(.+)|(?:create|new)\s+(?:a\s+)?space\s*[:：]?\s*(.+)/i,
+    /(?:新建|建个|创建)\s*(?:一个)?\s*(?:项目)?\s*空间\s*[:：]?\s*(.*)|(?:create|new)\s+(?:a\s+)?space\s*[:：]?\s*(.*)/i,
   )
+  if (createSpace && !(createSpace[1] ?? createSpace[2] ?? '').trim()) return '新空间叫什么？发「新建空间 名字」，比如「新建空间 商城后台」。'
   if (createSpace) {
     const name = (createSpace[1] ?? createSpace[2])!.trim(),
       id =
