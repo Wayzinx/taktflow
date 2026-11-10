@@ -8,6 +8,8 @@ const execute = promisify(execFile)
 const acId = /\bAC-\d+(?:-\d+)?\b/g
 interface CaseFile { id: string; covers: string[] }
 interface Summary { cases: Array<{ id: string; status: string; evidence?: string }> }
+// 等人工执行或等裁决的用例修不了：不进研发测试循环，留给质量报告和准出（manual_pending 视同 manual）
+const awaitingHuman = (status: string) => ['manual', 'manual_pending', 'blocked'].includes(status)
 async function put(ctx: NodeContext, path: string, text: string) {
   await mkdir(dirname(join(ctx.workspaceDir, path)), { recursive: true })
   await writeFile(join(ctx.workspaceDir, path), text)
@@ -75,7 +77,9 @@ export async function runCases(ctx: NodeContext) {
     || expected.some((test) => !result.cases.some((row) => row.id === test.id))) {
     return { status: 'blocked' as const, message: '用例汇总缺失、重复或未覆盖冻结用例' }
   }
-  return { data: { total: result.cases.length, failures: result.cases.filter((test) => test.status !== 'passed').map((test) => ({ subject: test.id, status: test.status, evidence: test.evidence })) } }
+  const failures = result.cases.filter((test) => test.status !== 'passed' && !awaitingHuman(test.status))
+  const pending = result.cases.filter((test) => awaitingHuman(test.status))
+  return { data: { total: result.cases.length, failures: failures.map((test) => ({ subject: test.id, status: test.status, evidence: test.evidence })), pending: pending.map((test) => ({ subject: test.id, status: test.status })) } }
 }
 /** 修复代码从集成分支开 worktree：任务代码只在集成分支里会合 */
 export function integratedBranch(ctx: NodeContext): string | undefined {
@@ -105,5 +109,7 @@ export async function qualityReport(ctx: NodeContext) {
     const passed = related.filter((test) => result.cases.some((row) => row.id === test.id && row.status === 'passed')).length
     return `| ${ac} | ${related.length} | ${passed} | ${related.length - passed} |`
   })
-  await put(ctx, 'reports/quality.md', ['# 质量报告', '', `用例 ${tests.length} 条，通过 ${result.cases.filter((test) => test.status === 'passed').length} 条。`, '', '| AC | 用例 | 通过 | 未通过 |', '|---|---|---|---|', ...rows].join('\n'))
+  const pending = result.cases.filter((test) => awaitingHuman(test.status))
+  const waiting = pending.length ? [`待人工 ${pending.length} 条（人工执行或等裁决，准出时逐条确认）：${pending.map((test) => `${test.id}（${test.status}）`).join('、')}`, ''] : []
+  await put(ctx, 'reports/quality.md', ['# 质量报告', '', `用例 ${tests.length} 条，通过 ${result.cases.filter((test) => test.status === 'passed').length} 条。`, '', ...waiting, '| AC | 用例 | 通过 | 未通过 |', '|---|---|---|---|', ...rows].join('\n'))
 }

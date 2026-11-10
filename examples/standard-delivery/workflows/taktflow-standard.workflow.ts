@@ -46,7 +46,7 @@ export default defineWorkflow({
     planner({ id: 'implement', title: '拆任务、实现与代码评审', stage: 'develop', needs: ['freeze'], role: 'architect', maxItems: 12, allowedRoles: ['dev'],
       inputs: [{ path: 'spec/prd.md' }, { path: 'design/**' }], prompt: '将实现拆为有边界的任务，给出 key、title、dependsOn、role=dev、params.repo（默认 app）、params.paths（本条目要新增或修改的文件，相对仓库根目录；会先和 dev 的写权限核对）。', expand: expandTask }),
     agent({ id: 'automate', goal: '将评审过的用例转为可执行测试', owner: 'qa', completion: ["执行脚本与公共存放区评审副本字节一致", "脚本逐条验证业务结果并生成用例证据及执行汇总"], title: '实现自动化脚本', stage: 'automate', needs: ['freeze'], role: 'automation', inputs: [{ path: 'cases/*.json' }, { path: 'design/contracts.json' }],
-      prompt: '实现 tests/run-cases.mjs，逐条运行用例，验证业务结果；将每条证据和 evidence/summary.json 写入公共存放区。将待评审脚本副本写到 scripts/run-cases.mjs。',
+      prompt: '实现 tests/run-cases.mjs，逐条运行用例，验证业务结果；将每条证据和 evidence/summary.json 写入公共存放区；summary 里 cases[].status 只用 passed / failed / error / manual（需人工执行）/ blocked（等裁决，写明原因）。将待评审脚本副本写到 scripts/run-cases.mjs。',
       outputs: [{ path: 'scripts/run-cases.mjs', kind: 'script' }] }),
     review({ id: 'review-scripts', title: '脚本评审', stage: 'automate', needs: ['automate'], target: ['scripts/**'],
       author: { role: 'automation', prompt: '同时更新公共存放区 scripts/ 副本与项目 tests/ 下实际执行的脚本，保持一致。' },
