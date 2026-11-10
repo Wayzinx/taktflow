@@ -1,3 +1,4 @@
+import { readFile, access } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HarnessEvent, HarnessRequest } from '@taktflow/core'
@@ -256,13 +257,32 @@ describe('DSH launch and fallback', () => {
     vi.resetModules()
   })
 
-  it('使用 headless/json/session-id/stdin，systemAppend 作为用户前缀，不虚构 model/effort flags', async () => {
+  it('使用 headless/json/session-id/stdin，model 和 effort 通过临时 patch 覆盖', async () => {
     mockOutput(fixture)
-    const request = { ...req, model: 'ignored', effort: 'high' as const, sessionId: 'old', systemAppend: 'role',
-      timeoutMs: 123, env: { DSH_BIN: '/env/dsh' }, signal: new AbortController().signal }
+    const request = { ...req, model: 'chosen', effort: 'high' as const, sessionId: 'old', systemAppend: 'role' }
+    let path = ''
+    vi.mocked(runProcess).mockImplementationOnce(async (_bin, args, _req, options) => {
+      path = args[args.indexOf('--patch') + 1]!
+      expect(JSON.parse(await readFile(path, 'utf8'))[0].config).toEqual({ provider: 'deepseek-account', model: 'chosen', reasoningEffort: 'high' })
+      expect(args).toEqual(['--profile', 'headless', '--patch', path, '--json', '--session-id', 'old', '-'])
+      expect(options?.stdin).toBe(`role\n\n${req.prompt}`)
+      fixture.split('\n').forEach(line => options?.onLine?.(line))
+      return success
+    })
     expect((await createDshHarness({ bin: '/custom/dsh' }).run(request, () => {})).ok).toBe(true)
-    expect(runProcess).toHaveBeenCalledWith('/custom/dsh', ['--profile', 'headless', '--json', '--session-id', 'old', '-'],
-      request, { stdin: `role\n\n${req.prompt}`, onLine: expect.any(Function) })
+    await expect(access(path)).rejects.toThrow()
+  })
+
+  it('provider 子进程超时后清理临时 patch，不泄露密钥', async () => {
+    let path = ''
+    vi.mocked(runProcess).mockImplementationOnce(async (_bin, args) => {
+      path = args[args.indexOf('--patch') + 1]!
+      expect(await readFile(path, 'utf8')).not.toContain('synthetic-timeout-key')
+      return { ...success, ok: false, error: 'timeout' }
+    })
+    const result = await createDshHarness().run({ ...req, model: 'm', provider: { id: 'p', protocol: 'openai-chat', baseURL: 'https://provider.example/v1', apiKeyEnv: 'TEST_KEY' }, env: { TEST_KEY: 'synthetic-timeout-key' } }, () => {})
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining('timeout') })
+    await expect(access(path)).rejects.toThrow()
   })
 
   it('req.env.DSH_BIN 覆盖 process.env，仅在 macOS 按 PATH、app 顺序回退', async () => {
@@ -332,36 +352,32 @@ describe('DSH launch and fallback', () => {
 })
 
 describe('DSH availability', () => {
-  it('短任务探测及 10 分钟缓存（含同时间请求），过期再探测', async () => {
+  it('版本探测和独立账号就绪状态缓存 10 分钟，并发只运行一次', async () => {
     vi.useFakeTimers()
     mockOutput(fixture)
     const adapter = createDshHarness({ probeTimeoutMs: 37 })
-    expect(await Promise.all([adapter.available(), adapter.available()])).toEqual([{ ok: true }, { ok: true }])
-    expect(runProcess).toHaveBeenCalledTimes(1)
-    expect(runProcess).toHaveBeenCalledWith('dsh', ['--profile', 'headless', '--json', '-'],
-      expect.objectContaining({ prompt: 'Reply only OK.', timeoutMs: 37 }), expect.objectContaining({ stdin: 'Reply only OK.' }))
+    expect(await Promise.all([adapter.available(), adapter.available()])).toEqual([{ ok: true, ownReady: true }, { ok: true, ownReady: true }])
+    expect(runProcess).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(runProcess).mock.calls[0]?.[1]).toEqual(['--version'])
     vi.advanceTimersByTime(10 * 60_000 - 1)
-    expect(await adapter.available()).toEqual({ ok: true })
-    expect(runProcess).toHaveBeenCalledTimes(1)
+    await adapter.available()
+    expect(runProcess).toHaveBeenCalledTimes(2)
     vi.advanceTimersByTime(1)
     await adapter.available()
+    expect(runProcess).toHaveBeenCalledTimes(4)
+  })
+
+  it.each(['event', 'stderr', 'timeout'])('账号 %s 失败不挡住外部 API，可执行文件仍可用', async kind => {
+    mockOutput(kind === 'event' ? loginError : '', kind === 'event' ? {} : { ok: false, error: kind === 'stderr' ? 'ACCOUNT_SIGN_IN_REQUIRED' : 'timeout' })
+    vi.mocked(runProcess).mockResolvedValueOnce(success)
+    const adapter = createDshHarness()
+    const expected = { ok: true, ownReady: false, ownReason: kind === 'timeout' ? 'timeout' : '需要先登录 DeepSeek 账号' }
+    expect(await adapter.available()).toEqual(expected)
+    expect(await adapter.available()).toEqual(expected)
     expect(runProcess).toHaveBeenCalledTimes(2)
   })
 
-  it('登录失败返回中文 reason 并缓存，final 不能改成可用', async () => {
-    mockOutput(`${loginError}\n{"type":"final","text":"done"}`)
-    const adapter = createDshHarness()
-    expect(await adapter.available()).toEqual({ ok: false, reason: '需要先登录 DeepSeek 账号' })
-    expect(await adapter.available()).toEqual({ ok: false, reason: '需要先登录 DeepSeek 账号' })
-    expect(runProcess).toHaveBeenCalledTimes(1)
-  })
-
-  it('stderr 的登录错误也映射成中文 reason', async () => {
-    mockOutput('', { ok: false, stderr: 'ACCOUNT_SIGN_IN_REQUIRED', error: 'exit 1\nACCOUNT_SIGN_IN_REQUIRED' })
-    expect(await createDshHarness().available()).toEqual({ ok: false, reason: '需要先登录 DeepSeek 账号' })
-  })
-
-  it('探测复用 ENOENT 回退，其他失败保留原始原因', async () => {
+  it('探测复用 ENOENT 回退，版本失败保留原因', async () => {
     if (process.platform !== 'darwin') vi.stubEnv('DSH_BIN', '/configured/dsh')
     mockOutput('', { ok: false, error: 'timeout after 10ms' })
     vi.mocked(runProcess).mockResolvedValueOnce(missing)
@@ -377,6 +393,6 @@ describe('DSH availability', () => {
     await adapter.available()
     vi.stubEnv('DSH_BIN', '/changed/dsh')
     await adapter.available()
-    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(['dsh', '/changed/dsh'])
+    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(['dsh', 'dsh', '/changed/dsh', '/changed/dsh'])
   })
 })

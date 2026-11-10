@@ -2,7 +2,7 @@ import { providerProtocols, resolveSecret, selectHarness } from '@taktflow/core'
 import { createHarnesses, harnessCommand, harnessCatalogInfo, collectSecrets, createRedactor } from '@taktflow/harness'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { HarnessInfo, ModelInfo, ProjectStores } from '@taktflow/core'
+import type { HarnessAdapter, HarnessInfo, ModelInfo, ProjectStores } from '@taktflow/core'
 import { loadRuntime, type ProjectContext } from './project.js'
 import { redactConfigError } from './runtime-config.js'
 import { validateRuntime } from './runtime-validation.js'
@@ -29,7 +29,7 @@ export async function runtimeHarnesses(context: ProjectContext, onProbeError?: (
   for (const role of Object.keys(context.profiles)) roles[role] = selectHarness(role, undefined, { ...context, config })
   const registry = catalogHarnesses(context)
   const harnesses = await Promise.all(Object.entries(registry).map(async ([id, harness]): Promise<HarnessInfo> => {
-    let availability: { ok: boolean; reason?: string }
+    let availability: Awaited<ReturnType<HarnessAdapter['available']>>
     try { availability = config.harnessOverrides?.[id]?.disabled ? { ok: false, reason: '本空间已停用' } : await harness.available() }
     catch (error) { onProbeError?.(); availability = { ok: false, reason: error instanceof Error ? error.message : String(error) } }
     const custom = config.harnesses?.find(item => item.id === id)
@@ -40,6 +40,8 @@ export async function runtimeHarnesses(context: ProjectContext, onProbeError?: (
       id, displayName: redact(harness.displayName),
       source: Object.hasOwn(context.plugins.harnesses, id) ? 'plugin' : id === 'native' ? 'native' : custom?.kind ?? 'builtin',
       available: availability.ok,
+      ownReady: availability.ownReady,
+      ...(availability.ownReason ? { ownReason: redact(redactRuntime(context, availability.ownReason)) } : {}),
       custom: !!custom,
       ...(command ? { command: command.map(redact) } : {}),
       ...(override ? { override: { ...override, ...(override.command ? { command: redact(override.command) } : {}),

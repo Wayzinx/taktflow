@@ -68,7 +68,7 @@ export function createRuntimeModelCatalog(options: Options) {
           if (row.hidden) return
           try {
             const result = await adapters[row.id]!.available()
-            Object.assign(row, { available: result.ok, reason: result.reason })
+            Object.assign(row, { available: result.ok, reason: result.reason, ownReady: result.ownReady, ownReason: result.ownReason })
           } catch (error) { row.reason = redact(error instanceof Error ? error.message : 'Harness 探测失败') }
         }))
         return infos

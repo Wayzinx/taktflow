@@ -1,3 +1,4 @@
+import { qwenProvider } from '../provider-injection.js'
 import type { HarnessAdapter } from '@taktflow/core'
 import { createClaudeCodeParser } from '../claude-code.js'
 import { promptWithInstructions } from '../parse.js'
@@ -14,10 +15,10 @@ export function createQwenCodeParser(onEvent: EventSink = () => {}): StreamParse
 
 export function createQwenCodeHarness(options: QwenCodeOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
-    env: options.env,
+    env: options.env, provider: qwenProvider,
     id: 'qwen-code', displayName: 'Qwen Code', bin: options.bin ?? 'qwen',
     parser: createQwenCodeParser, capabilities: { cost: true },
     command: req => ({ args: ['-p', promptWithInstructions(req), '--output-format', 'stream-json',
-      ...(req.model ? ['--model', req.model] : [])] }),
+      ...(!req.provider && req.model ? ['--model', req.model] : [])] }),
   })
 }

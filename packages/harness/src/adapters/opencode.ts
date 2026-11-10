@@ -1,3 +1,4 @@
+import { openCodeProvider } from '../provider-injection.js'
 import type { HarnessAdapter } from '@taktflow/core'
 import { number, object, promptWithInstructions, string } from '../parse.js'
 import type { EventSink, StreamParser } from '../parse.js'
@@ -63,10 +64,10 @@ export function createOpenCodeParser(onEvent: EventSink = () => {}): StreamParse
 
 export function createOpenCodeHarness(options: OpenCodeOptions = {}): HarnessAdapter {
   return createStreamCliHarness({
-    env: options.env,
+    env: options.env, provider: openCodeProvider,
     id: 'opencode', displayName: 'OpenCode', bin: options.bin ?? 'opencode',
     parser: createOpenCodeParser, capabilities: { cost: true, toolPhases: false },
     command: req => ({ args: ['run', '--format', 'json', promptWithInstructions(req),
-      ...(req.model ? ['--model', req.model] : [])] }),
+      ...(!req.provider && req.model ? ['--model', req.model] : [])] }),
   })
 }

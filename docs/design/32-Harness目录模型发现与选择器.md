@@ -100,15 +100,15 @@
 
 | harness | 自带 | 能接的协议 | 注入方式 | 本次 |
 |---|---|---|---|---|
-| Claude Code（CLI / ACP） | Claude 登录 | anthropic-messages（openai-chat 经桥） | 环境变量 | 已有 |
-| Codex | ChatGPT 登录 | openai-responses（chat / anthropic 经桥） | `-c model_providers.*` | 已有 |
-| TRAE CLI | TRAE 额度 | openai-responses | 同 Codex | 已有 |
-| Pi | Pi 已配的 provider | chat / anthropic / responses / gemini | 临时扩展文件 | 已有 |
-| DeepSeek Harness（dsh） | DeepSeek 账号 | openai-chat、openai-responses、anthropic-messages | 临时 `--patch` 叠加层：`llm-pi-ai.providers.<id>`，加 `agent-default-model` | 新 |
-| OpenCode | OpenCode 已配 | openai-chat、anthropic-messages | 运行时注入 provider 配置（核实后定） | 新 |
-| Qwen Code | Qwen 登录 | openai-chat | `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL`（核实后定） | 新 |
-| Hermes | Hermes 已配 | openai-chat | 自定义 provider（核实后定） | 新适配器 |
-| OpenClaw | OpenClaw 已配 | openai-chat、anthropic、responses | 临时 `models.providers` 配置（核实后定） | 新适配器 |
+| Claude Code（CLI / ACP） | Claude 登录 | anthropic-messages（其他协议按协议桥能力） | 环境变量；`transport=acp` 保留同一 ID | CLI 环回真跑、ACP 安装源码核实；接法切换已实现 |
+| Codex | ChatGPT 登录 | openai-responses（chat / anthropic 经桥） | `-c model_providers.*`，env_key 引用密钥 | 已有；环回真跑通过 |
+| TRAE CLI | TRAE 额度 | openai-responses | 同 Codex | 已有；环回真跑通过 |
+| Pi | Pi 已配的 provider | chat / anthropic / responses / gemini | 临时扩展文件，`${ENV_NAME}` 密钥引用 | 官方源码核实；修正当前版本的密钥引用 |
+| DeepSeek Harness（dsh） | DeepSeek 账号；独立 ownReady | openai-chat、openai-responses、anthropic-messages | 临时 `--patch`：`llm-pi-ai` 加 provider，`agent-default-model` 指定模型/effort，`apiKeyEnv` | 已实现；三协议 dump-config 和环回真跑通过 |
+| OpenCode（CLI） | OpenCode 已配 | openai-chat、anthropic-messages | `OPENCODE_CONFIG_CONTENT` + `{env:TAKT_OPENCODE_API_KEY}` + `--model provider/model` | 已实现；官方源码核实，待安装后真跑 |
+| Qwen Code（CLI / ACP） | Qwen 登录 | openai-chat、openai-responses、anthropic-messages | `OPENAI_*` / `ANTHROPIC_*`，`--auth-type`、`--bare` 和临时 `QWEN_HOME` | 已实现；0.27.1 源码核实，待真跑 |
+| Hermes（ACP 预设） | Hermes 已配 | openai-chat | `hermes-acp`；临时 `HERMES_HOME/config.yaml`，provider 用 `key_env` | 已实现；官方源码核实，待安装后真跑 |
+| OpenClaw（ACP 预设） | 已配置并运行的 Gateway | 本次不登记外部协议 | `openclaw acp` 连接 Gateway；子进程配置无法覆盖 Gateway | 预设已实现，customProvider=false；缺独立 Gateway 注入与回收验证 |
 | Gemini CLI | Google 登录 | 只有 Gemini | — | 只能自带 |
 | Cursor Agent / GitHub Copilot / Kimi CLI | 各自账号 | — | — | 只能自带 |
 | 直连 API（native） | — | chat / anthropic | 进程内 | 已有 |
@@ -117,13 +117,15 @@
   - 单测：断言实际生成的参数和环境变量。
   - 本机装了这个 CLI 时，再真跑一次最小任务。
 - **核实不了的保持「只能自带」**，在输出里写明缺什么。
-- **注入不改用户的全局配置**，与 31 一致：用临时文件或环境变量，跑完删掉。
+- **注入不改用户的全局配置**，与 31 一致：用临时文件或环境变量，跑完删掉。Qwen / Hermes 外部 API 模式使用临时用户目录，不保留可续接会话，传入 sessionId 时明确拒绝。
+- **证据分级**：本次环回真跑使用本地模拟协议端点，只证明 CLI 注入/解析链路；真实厂商 API 仍需手动验收。源码版本、行号和命令见 [开发简报](../dev/m8-pairing-verify.md)。
 
 ## 5. Harness 目录
 
 - **`HarnessInfo` 加字段**：
   - `icon`：图标键。
   - `ownLabel`：自带来源说明，如「使用个人 Claude 订阅」。
+  - `ownReady` / `ownReason`：自带账号的独立就绪状态。`available` 只表示执行器可启动；自带未就绪不阻止外部 API 搭配。适配器 available() 同步返回这些字段，未知时不伪造已登录。
   - `install`：未安装时的安装提示。
   - `hidden`：已隐藏。
   - `testOnly`：mock 用。
@@ -189,3 +191,5 @@
 - 跨 provider 的同名模型合并。
 - 按模型自动挑 harness（OpenClaw 的 auto 模式）。
 - 不能运行时注入配置的 harness。比如需要改全局配置文件才能换 provider 的，第一版不接。
+
+本次管家运行配置沿用 HarnessSelector：`provider?: string`、`effort?: Effort`；model 支持别名或厂商 ID。线程创建与 PATCH 使用同一校验，旧 runtime-choices 保持返回模型别名。

@@ -15,13 +15,13 @@ const brands: Record<string, [string, string?]> = {
 
 export function harnessCatalogInfo(info: HarnessInfo, config: TaktConfig): HarnessInfo {
   const custom = config.harnesses?.find(h => h.id === info.id)
-  const preset = custom?.kind === 'acp' ? custom.preset : undefined
+  const preset = info.id === 'claude-code' && config.harnessOverrides?.['claude-code']?.transport === 'acp' ? 'claude' : custom?.kind === 'acp' ? custom.preset : undefined
   const brand = custom?.kind === 'cli' || info.source === 'cli' ? undefined : brands[preset ?? info.id]
   const hidden = config.harnessOverrides?.[info.id]?.disabled === true
   const available = info.available && !hidden
   const install = ACP_PRESETS.find(p => p.id === preset)?.install
     ?? (brand && info.id !== 'native' ? `请安装 ${info.displayName}，将可执行文件加入 PATH 并完成登录` : undefined)
-  return { ...info, available, ...(hidden ? { reason: '本空间已停用' } : {}), ...(info.id === 'native' ? { displayName: '直连 API（内置）' } : {}),
+  return { ...info, available, ...(info.id === 'claude-code' ? { transports: ['cli', 'acp'] as Array<'cli' | 'acp'> } : {}), ...(hidden ? { reason: '本空间已停用' } : {}), ...(info.id === 'native' ? { displayName: '直连 API（内置）' } : {}),
     ...(brand ? { icon: brand[0], ...(brand[1] ? { ownLabel: brand[1] } : {}) } : {}),
     ...(!available && install ? { install } : {}),
     hidden, testOnly: info.id === 'mock' || info.testOnly === true }

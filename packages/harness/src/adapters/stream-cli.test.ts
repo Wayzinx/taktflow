@@ -170,10 +170,10 @@ describe.each(cases)('$name 离线解析与真实本地子进程', adapter => {
     const controller = new AbortController()
     controller.abort()
     expect(await harness.run({ cwd: dir, prompt: '', signal: controller.signal }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('cancelled before spawn') })
-    expect(await harness.run({ cwd: dir, prompt: '', provider: { id: 'test', protocol: 'openai-chat' } }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('customProvider') })
+    expect(await harness.run({ cwd: dir, prompt: '', provider: { id: 'test', protocol: 'openai-chat' } }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining(['opencode', 'qwen-code'].includes(adapter.name) ? '需要 model' : 'customProvider') })
     expect(await harness.run({ cwd: dir, prompt: '', sessionId: 'old' }, () => {})).toMatchObject({ ok: false, error: expect.stringContaining('resume') })
     await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' })
-    expect(harness.capabilities).toMatchObject({ toolEvents: true, usage: true, resume: false, customProvider: false, structuredOutput: false,
+    expect(harness.capabilities).toMatchObject({ toolEvents: true, usage: true, resume: false, customProvider: ['opencode', 'qwen-code'].includes(adapter.name), structuredOutput: false,
       sandbox: false, mcp: false, compactionEvents: false, cost: ['cursor-agent', 'qwen-code', 'opencode'].includes(adapter.name) })
   })
 })

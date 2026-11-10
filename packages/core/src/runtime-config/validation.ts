@@ -111,7 +111,8 @@ export function validateRuntimeConfig(config: TaktConfig, options: RuntimeValida
     const path = `harnessOverrides.${id}`
     if (!options.builtinHarnesses.includes(id)) invalid(path, '只能覆盖内置 harness')
     if (!object(override)) invalid(path, '必须是对象')
-    fields(override, ['command', 'env', 'disabled'], path)
+    fields(override, ['command', 'env', 'disabled', 'transport'], path)
+    if (override.transport !== undefined && (id !== 'claude-code' || (override.transport !== 'cli' && override.transport !== 'acp'))) invalid(`${path}.transport`, '只有 claude-code 支持 cli / acp 接法')
     if (override.disabled !== undefined && typeof override.disabled !== 'boolean') invalid(`${path}.disabled`, '必须是 boolean')
     if (override.command !== undefined && !string(override.command)) invalid(`${path}.command`, '需要可执行文件路径')
     if (override.env !== undefined) map(override.env, `${path}.env`)

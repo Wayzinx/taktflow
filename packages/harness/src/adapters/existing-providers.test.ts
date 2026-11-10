@@ -152,8 +152,8 @@ describe('existing adapter provider configuration', () => {
     expect(event).not.toHaveBeenCalled()
   })
 
-  it('未实现 customProvider 的 DSH 和 mock 不静默忽略 provider', async () => {
-    for (const harness of [createDshHarness(), createMockHarness({ steps: [] })]) {
+  it('未实现 customProvider 的 mock 不静默忽略 provider', async () => {
+    for (const harness of [createMockHarness({ steps: [] })]) {
       expect(await harness.run({ ...req, provider: { id: 'test', protocol: 'openai-chat' } }, ignore))
         .toMatchObject({ ok: false, error: expect.stringContaining('does not support custom providers') })
     }
@@ -165,10 +165,10 @@ describe('existing adapter capabilities', () => {
   it.each([
     [createClaudeCodeHarness(), { providerProtocols: ['anthropic-messages'], resume: true, structuredOutput: true, toolEvents: true, usage: true, cost: true, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
     [createCodexHarness(), { providerProtocols: ['openai-responses'], resume: true, structuredOutput: true, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: true, sandbox: false, mcp: true }],
-    [createDshHarness(), { resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false }],
+    [createDshHarness(), { providerProtocols: ['openai-chat', 'openai-responses', 'anthropic-messages'], resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: true, sandbox: false, mcp: false }],
     [createMockHarness({ steps: [] }), { resume: false, structuredOutput: false, toolEvents: true, usage: true, cost: true, compactionEvents: true, customProvider: false, sandbox: false, mcp: false }],
   ])('$id 只声明当前实现支持的能力', (harness, capabilities) => {
-    expect(harness.capabilities).toEqual({ ...capabilities, toolPhases: harness.id !== 'mock', readOnly: false, modelOverride: ['claude-code', 'codex'].includes(harness.id), effortOverride: harness.id === 'codex' })
+    expect(harness.capabilities).toEqual({ ...capabilities, toolPhases: harness.id !== 'mock', readOnly: false, modelOverride: ['claude-code', 'codex', 'dsh'].includes(harness.id), effortOverride: ['codex', 'dsh'].includes(harness.id) })
   })
 })
 

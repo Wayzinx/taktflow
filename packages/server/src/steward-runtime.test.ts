@@ -169,3 +169,30 @@ it('新会话第一轮直接使用请求指定的 mock harness，覆盖默认选
     expect(vi.mocked(f.adapters.codex.run).mock.calls[0]![0].model).toBe('g')
   } finally { await agent.drain(); agent.close() }
 })
+
+it('管家透传显式 provider、原始模型 ID 和 effort，别名仍沿用 HarnessSelector 语义', async () => {
+  const f = await fixture()
+  for (const selection of [
+    { harness: 'codex', provider: 'chat', model: 'vendor/raw', effort: 'high' as const },
+    { harness: 'codex', provider: 'chat', model: 'good', effort: 'max' as const },
+  ]) {
+    const runtime = await f.runtime.resolveRuntime!(prefs, selection)
+    await runtime.run!({ threadId: 't', messages: [{ role: 'user', content: 'OK' }], specs: [], call: async () => '', onEvent: () => {} })
+    expect(f.adapters.codex.run).toHaveBeenLastCalledWith(expect.objectContaining({
+      model: selection.model === 'good' ? f.stores.config.models!.good!.id : 'vendor/raw',
+      effort: selection.effort, provider: expect.objectContaining({ id: 'chat' }),
+    }), expect.any(Function))
+  }
+  await expect(f.runtime.resolveRuntime!(prefs, { harness: 'codex', provider: 'missing-provider', model: 'raw' })).rejects.toMatchObject({ status: 400 })
+})
+
+it('原始 native 模型与自带模型可解析，账号未就绪仅拒绝自带', async () => {
+  const f = await fixture()
+  expect((await f.runtime.resolveRuntime!(prefs, { provider: 'chat', model: 'raw' })).chat).toBeTypeOf('function')
+  f.adapters.codex.available = async () => ({ ok: true, ownReady: false, ownReason: '请登录' })
+  await expect(f.runtime.resolveRuntime!(prefs, { harness: 'codex', model: 'own-raw' })).rejects.toMatchObject({ status: 400, message: '请登录' })
+  expect((await f.runtime.resolveRuntime!(prefs, { harness: 'codex', provider: 'chat', model: 'raw' })).run).toBeTypeOf('function')
+  const choices = await f.runtime.runtimeChoices!(prefs)
+  expect(choices.find(c => c.harness === 'codex' && !c.model)).toMatchObject({ available: false, reason: '请登录' })
+  expect(choices.find(c => c.harness === 'codex' && c.model === 'good')?.available).toBe(true)
+})

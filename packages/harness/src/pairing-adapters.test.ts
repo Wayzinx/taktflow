@@ -60,7 +60,7 @@ it.each([
   const registerProvider = (await import(`data:text/javascript,${encodeURIComponent(captured.extension)}`)).default
   let entry: unknown
   registerProvider({ registerProvider: (name: string, value: unknown) => { entry = { name, value } } })
-  expect(entry).toEqual({ name: 'takt-custom', value: { baseUrl: 'http://127.0.0.1:1/v1', api, apiKey: 'FAKE_KEY', headers: { 'x-test': 'test' }, models: [{ id: 'model', contextWindow: 9999 }] } })
+  expect(entry).toEqual({ name: 'takt-custom', value: { baseUrl: 'http://127.0.0.1:1/v1', api, apiKey: '${FAKE_KEY}', headers: { 'x-test': 'test' }, models: [{ id: 'model', contextWindow: 9999 }] } })
   await expect(access(captured.args[captured.args.indexOf('-e') + 1])).rejects.toThrow()
 })
 it('Codex Chat 协议明确拒绝，不产生 wire_api=chat', async () => {

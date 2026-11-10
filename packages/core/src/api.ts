@@ -955,6 +955,10 @@ export interface HarnessInfo {
   /** 本空间自己加的（cli / acp），可以在设置页编辑和删除。 */
   custom?: boolean
   icon?: string
+  /** 自带账号独立于执行器可用性；false 不影响外部 API 搭配，缺省表示未报告。 */
+  ownReady?: boolean
+  ownReason?: string
+  transports?: Array<'cli' | 'acp'>
   ownLabel?: string
   install?: string
   hidden?: boolean
@@ -1350,6 +1354,8 @@ export interface StewardThread {
 export interface StewardRuntime {
   harness?: string
   model?: string
+  provider?: string
+  effort?: Effort
 }
 
 export interface StewardThreadPatch {

@@ -44,7 +44,7 @@ describe('harness exports', () => {
     await harnesses.codex!.available()
     await harnesses.dsh!.available()
     for (const id of ['gemini-cli', 'cursor-agent', 'qwen-code', 'kimi-cli', 'opencode']) await harnesses[id]!.available()
-    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(['/configured/claude', '/configured/codex', '/configured/dsh', '/configured/gemini', '/configured/cursor', '/configured/qwen', '/configured/kimi', '/configured/opencode'])
+    expect(vi.mocked(runProcess).mock.calls.map(call => call[0])).toEqual(['/configured/claude', '/configured/codex', '/configured/dsh', '/configured/dsh', '/configured/gemini', '/configured/cursor', '/configured/qwen', '/configured/kimi', '/configured/opencode'])
     expect(vi.mocked(runProcess).mock.calls[2]?.[2].timeoutMs).toBe(123)
   })
 

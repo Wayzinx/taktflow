@@ -112,6 +112,14 @@ export function createHarnesses(options: HarnessesOptions = {}): Record<string, 
   for (const [id, bin, fallback] of builtins) {
     commands.set(harnesses[id]!, [localCommand(options.config?.harnessOverrides?.[id]?.command ?? bin ?? fallback)])
   }
+  if (options.config?.harnessOverrides?.['claude-code']?.transport === 'acp') {
+    const override = options.config.harnessOverrides['claude-code']!
+    const command = acpCommand({ id: 'claude-code', kind: 'acp', preset: 'claude' })
+    if (override.command) command[0] = localCommand(override.command)
+    harnesses['claude-code'] = createAcpHarness({ id: 'claude-code', displayName: 'Claude Code', kind: 'acp', preset: 'claude',
+      command, env: { ...options.claudeCode?.env, ...override.env } }, { projectDir: options.projectDir })
+    commands.set(harnesses['claude-code'], command)
+  }
   for (const config of options.config?.harnesses ?? []) {
     if (Object.hasOwn(harnesses, config.id)) throw new Error(`重复的 harness ID: ${config.id}`)
     const command = (config.kind === 'acp' ? acpCommand(config) : config.command).map((part, i) => i === 0 ? localCommand(part) : part)

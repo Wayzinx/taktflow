@@ -1,6 +1,7 @@
 import type { HarnessAdapter, HarnessCapabilities, HarnessRequest, Usage } from '@taktflow/core'
 import { addUsage, ParseState } from '../parse.js'
 import type { EventSink, StreamParser } from '../parse.js'
+import type { ProviderInjection, ProviderInjector } from '../provider-injection.js'
 import { finalizeResult, runProcess } from '../process.js'
 
 export interface StreamCliOptions { bin?: string; env?: Record<string, string> }
@@ -41,6 +42,7 @@ interface StreamCliConfig {
   bin: string
   env?: Record<string, string>
   capabilities?: HarnessCapabilities
+  provider?: ProviderInjector
   parser: (sink: EventSink) => StreamParser
   command: (req: HarnessRequest) => { args: string[]; stdin?: string }
 }
@@ -54,6 +56,7 @@ export function createStreamCliHarness(config: StreamCliConfig): HarnessAdapter 
       resume: false, structuredOutput: false, toolEvents: true, usage: true,
       cost: false, compactionEvents: false, customProvider: false, sandbox: false, mcp: false,
       ...config.capabilities,
+      ...(config.provider ? { customProvider: true, providerProtocols: config.provider.protocols } : {}),
     },
     async available() {
       const proc = await runProcess(config.bin, ['--version'], { prompt: '', cwd: process.cwd(), env: config.env, timeoutMs: 5_000 })
@@ -61,12 +64,19 @@ export function createStreamCliHarness(config: StreamCliConfig): HarnessAdapter 
     },
     async run(req, onEvent) {
       if (config.env && Object.keys(config.env).length) req = { ...req, env: { ...config.env, ...req.env } }
-      if (req.provider) return { ok: false, finalText: '', error: `${config.displayName} does not support customProvider` }
+      if (req.provider && !config.provider) return { ok: false, finalText: '', error: `${config.displayName} does not support customProvider` }
       if (req.sessionId) return { ok: false, finalText: '', error: `${config.displayName} does not support resume` }
-      const parser = config.parser(onEvent)
-      const { args, stdin } = config.command(req)
-      const proc = await runProcess(config.bin, args, req, { stdin, onLine: parser.onLine })
-      return finalizeResult(req, parser.result(), proc)
+      let injection: ProviderInjection | undefined
+      try {
+        injection = req.provider ? await config.provider!.prepare(req) : undefined
+        if (injection) req = { ...req, env: { ...req.env, ...injection.env } }
+        const parser = config.parser(onEvent)
+        const { args, stdin } = config.command(req)
+        const proc = await runProcess(config.bin, [...args, ...injection?.args ?? []], req, { stdin, onLine: parser.onLine })
+        return finalizeResult(req, parser.result(), proc)
+      } catch (error) {
+        return finalizeResult(req, { ok: false, finalText: '', error: (error as Error).message }, { ok: true, stdout: '', stderr: '' })
+      } finally { await injection?.cleanup?.() }
     },
   }
 }

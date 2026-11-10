@@ -181,8 +181,8 @@ it('越界权限与只读写请求被拒绝，每次权限留痕', async () => {
 })
 
 it('预设命令可覆盖；缺失命令与未知预设明确报错', () => {
-  expect(ACP_PRESETS.map(preset => preset.id)).toEqual(['gemini', 'claude', 'codex', 'opencode', 'qwen', 'kimi', 'goose', 'copilot'])
-  expect(acpCommand({ id: 'x', kind: 'acp', preset: 'gemini' })).toEqual(ACP_PRESETS[0]!.command)
+  expect(ACP_PRESETS.map(preset => preset.id)).toEqual(['hermes', 'openclaw', 'gemini', 'claude', 'codex', 'opencode', 'qwen', 'kimi', 'goose', 'copilot'])
+  expect(acpCommand({ id: 'x', kind: 'acp', preset: 'gemini' })).toEqual(ACP_PRESETS.find(p => p.id === 'gemini')!.command)
   expect(acpCommand({ id: 'x', kind: 'acp', preset: 'unknown', command: ['local'] })).toEqual(['local'])
   expect(() => acpCommand({ id: 'x', kind: 'acp', preset: 'unknown' })).toThrow('command')
 })

@@ -50,3 +50,14 @@ it('未授权、停用、探测失败不运行；错误文本脱敏且不把错�
   h.available = async () => ({ ok: true })
   expect(await testRuntime(config, { target, allowBilled: true }, async () => ({ h }))).toMatchObject({ ok: false, billed: true })
 })
+
+it('账号未登录只关闭自带格，API 三种直连仍可用', async () => {
+  const { pairingMatrix } = await import('./pairings.js')
+  const config: TaktConfig = { project: { name: '' }, workflows: [], providers: {
+    chat: { protocol: 'openai-chat' }, responses: { protocol: 'openai-responses' }, anthropic: { protocol: 'anthropic-messages' },
+  } }
+  const matrix = pairingMatrix(config, [{ id: 'dsh', displayName: 'DSH', source: 'builtin', available: true,
+    ownReady: false, ownReason: '请登录', roles: [], capabilities: { customProvider: true, providerProtocols: ['openai-chat', 'openai-responses', 'anthropic-messages'] } }])
+  expect(matrix[0]).toMatchObject({ provider: null, status: 'unavailable', reason: '请登录' })
+  expect(matrix.slice(1).map(row => row.status)).toEqual(['direct', 'direct', 'direct'])
+})

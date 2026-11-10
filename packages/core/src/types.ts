@@ -1029,7 +1029,7 @@ export interface HarnessAdapter {
   displayName: string
   capabilities?: HarnessCapabilities
   /** detail：版本、ACP 协议版本与 agent 能力等，给设置页的"测试"显示。 */
-  available(): Promise<{ ok: boolean; reason?: string; detail?: string }>
+  available(): Promise<{ ok: boolean; reason?: string; detail?: string; ownReady?: boolean; ownReason?: string }>
   listModels?(): Promise<CatalogModel[]>
   run(req: HarnessRequest, onEvent: (e: HarnessEvent) => void): Promise<HarnessResult>
 }
@@ -1078,6 +1078,8 @@ export interface AcpHarnessConfig {
 
 /** 内置 harness 的本机覆盖：可执行文件不在 PATH 里、要加环境变量、或在本空间停用。 */
 export interface HarnessOverride {
+  /** Claude Code 默认 cli；acp 使用同一 ID 的 ACP 预设。 */
+  transport?: 'cli' | 'acp'
   /** 可执行文件路径（替换内置命令的第一个参数）。 */
   command?: string
   env?: Record<string, string>

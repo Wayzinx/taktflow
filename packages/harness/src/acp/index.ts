@@ -3,6 +3,7 @@ import type { AcpHarnessConfig, HarnessAdapter, HarnessCapabilities, HarnessRequ
 import { promptWithInstructions, readProviderApiKey } from '../parse.js'
 import { extractJsonBlock } from '../process.js'
 import { collectSecrets, createRedactor, redactValue } from '../redact.js'
+import type { ProviderInjection } from '../provider-injection.js'
 import { AcpClient } from './client.js'
 import { AcpEvents } from './events.js'
 import { AcpFiles } from './files.js'
@@ -60,7 +61,8 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
       const local = input.sandbox?.provider === 'local'
       const base: HarnessRequest = { ...input, ...(local ? { sandbox: undefined } : {}), env: { ...config.env, ...(local ? input.sandbox!.spec.env : {}), ...input.env } }
       const key = base.provider ? readProviderApiKey(base) : {}
-      const req: HarnessRequest = base.provider && providerEnv ? { ...base, env: { ...base.env, ...providerEnv.env(base, key.value) } } : base
+      let req: HarnessRequest = base
+      let injection: ProviderInjection | undefined
       const redact = createRedactor(collectSecrets(req))
       const events = new AcpEvents(event => onEvent(redactValue(event, redact)), capabilities)
       let sessionId = req.sessionId
@@ -84,11 +86,17 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
       try {
         if (req.signal?.aborted) throw new Error('ACP 启动前已取消（cancelled）')
         if (req.provider && !providerEnv) throw new Error('这个 ACP agent 不支持改接模型 API，请在 agent 自身配置中设置')
+        if (req.provider && providerEnv && !providerEnv.protocols.includes(req.provider.protocol)) throw new Error('这个 ACP agent 不支持此 provider 协议')
         if (key.name && !key.value) throw new Error(`缺少模型 API 密钥：环境变量 ${key.name} 未设置`)
         if (req.sandbox) throw new Error(`ACP 暂不支持 ${req.sandbox.provider} 沙箱，请改用本机运行或其他 harness`)
+        if (req.provider && req.sessionId && ['qwen', 'hermes'].includes(config.preset ?? '')) throw new Error('临时 provider 配置不保留会话，请创建新会话')
+        if (req.provider && providerEnv) {
+          injection = await providerEnv.prepare(req)
+          req = { ...req, env: { ...req.env, ...injection.env } }
+        }
         const operationRequest = { ...req, signal: operations.signal }
         const files = await AcpFiles.create(operationRequest)
-        client = new AcpClient(command, req, redact, (method, params) => {
+        client = new AcpClient([...command, ...injection?.args ?? []], req, redact, (method, params) => {
           if (method !== 'session/update') return
           const update = object(params.update)
           if (params.sessionId !== sessionId) {
@@ -152,7 +160,7 @@ export function createAcpHarness(config: AcpHarnessConfig, options: AcpOptions =
         operations.abort()
         clearTimeout(timer); clearTimeout(cancellationTimer)
         req.signal?.removeEventListener('abort', abort)
-        await client?.close()
+        try { await client?.close() } finally { await injection?.cleanup?.() }
       }
       function result(ok: boolean, error?: string): HarnessResult {
         const finalText = redact(events.finalText)

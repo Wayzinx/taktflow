@@ -1,6 +1,5 @@
-import { providerFor, providerProtocols, resolvePairing, resolveSecret, StewardError, type BridgeRoute, type HarnessAdapter, type Pairing, type ProviderBridge, type ProviderConfig, type StewardDeps, type StewardPrefs, type StewardRuntime, type StewardRuntimeChoice } from '@taktflow/core'
+import { providerFor, providerProtocols, resolvePairing, resolveHarnessSelector, resolveSecret, StewardError, type BridgeRoute, type HarnessAdapter, type ProviderBridge, type StewardDeps, type StewardPrefs, type StewardRuntimeChoice } from '@taktflow/core'
 import { createHarnesses, createProvider, providerConfig, createRedactor } from '@taktflow/harness'
-import { configuredChat } from './knowledge-runtime.js'
 import type { StewardMcp } from './steward-mcp.js'
 
 export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMcp, url: () => string,
@@ -19,11 +18,10 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
     const adapters = harnesses({ config, projectDir: stores?.projectDir })
     const selection = prefs.harness ?? config?.steward?.harness ?? { harness: 'native' }
     const choices: StewardRuntimeChoice[] = []
-    const providers = new Map<string, { target?: ProviderConfig; pairing?: Pairing }>()
     for (const [id, adapter] of Object.entries(adapters)) {
       // 管家靠 MCP 调 takt 的工具：外部 harness 只列能接 MCP 的
       if (id !== 'native' && !adapter.capabilities?.mcp) continue
-      const availability = id === 'native' ? { ok: true } : await adapter.available().catch(() => ({ ok: false }))
+      const availability: Awaited<ReturnType<HarnessAdapter['available']>> = id === 'native' ? { ok: true } : await adapter.available().catch(() => ({ ok: false }))
       // 外部 harness 总能用自己的登录跑（自带模型）；能换 provider 的再列出空间里配的每个模型
       const own = [[undefined, undefined] as const]
       const models = id === 'native' ? Object.entries(config?.models ?? {}) : adapter.capabilities?.customProvider ? [...own, ...Object.entries(config?.models ?? {})] : own
@@ -35,6 +33,7 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
         const provider = resolved.target
         let reason: string | undefined
         if (!availability.ok) reason = `${adapter.displayName} 未安装或不可用，请安装后重新选择`
+        else if (!model && availability.ownReady === false) reason = availability.ownReason ?? '自带账号未就绪'
         else if (model && !configured) reason = '模型的 provider 未配置，请在空间设置中补全'
         else if (model?.kind === 'embedding') reason = '嵌入模型不能用于对话，请选择对话模型'
         else if (configured && !provider) reason = `协议不匹配：${providerProtocols(configured).join(' / ')}，请换一个模型或 harness`
@@ -45,55 +44,57 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
         const choice: StewardRuntimeChoice = { harness: id, harnessLabel: id === 'native' ? '内置（直连模型 API）' : adapter.displayName,
           model: alias, modelLabel: model?.id ?? `${adapter.displayName} 自带模型`, provider: model?.provider,
           spaceId: preferred?.id, available: !reason, reason,
-          isDefault: id === (selection.harness ?? 'native') && alias === selection.model, ...(pairing ? { pairing } : {}) }
+          isDefault: id === (selection.harness ?? 'native') && alias === selection.model && (!selection.provider || selection.provider === model?.provider), ...(pairing ? { pairing } : {}) }
         choices.push(choice)
-        providers.set(JSON.stringify([id, alias]), { target: provider, pairing })
       }
     }
-    return { stores, adapters, selection, choices, providers }
-  }
-  const pick = (choices: StewardRuntimeChoice[], runtime: StewardRuntime) => {
-    const choice = choices.find(choice => choice.harness === (runtime.harness ?? 'native') && choice.model === runtime.model)
-    if (!choice) throw new StewardError(400, '这个 harness 与模型组合不存在，请重新选择')
-    if (!choice.available) throw new StewardError(400, choice.reason!)
-    return choice
+    return { stores, adapters, selection, choices }
   }
   return {
     runtimeChoices: async prefs => (await catalog(prefs)).choices,
     resolveRuntime: async (prefs, runtime) => {
-      const { stores, adapters, selection, choices, providers } = await catalog(prefs)
+      const { stores, adapters, selection } = await catalog(prefs)
       const selected = runtime ?? selection
-      if (!runtime && (selected.harness ?? 'native') === 'native' && !selected.model) return {}
-      const choice = pick(choices, selected)
-      const { target: provider, pairing } = providers.get(JSON.stringify([choice.harness, choice.model])) ?? {}
-      const model = choice.model ? stores!.config.models![choice.model]! : undefined
-      if (choice.harness === 'native') {
-        // 仍使用 configuredChat；有多协议入口时传入本次匹配的入口。
-        const nativeStores = { ...stores!, config: { ...stores!.config, providers: { ...stores!.config.providers, [model!.provider]: provider! } } }
-        const chat = provider!.protocol === 'openai-chat' ? configuredChat(nativeStores, choice.model).chat : async (request: Parameters<NonNullable<StewardDeps['chat']>>[0], onToken?: (text: string) => void) => {
-          const result = await createProvider(model!.provider, provider!).chat({ ...request, model: model!.id })
+      if (!runtime && (selected.harness ?? 'native') === 'native' && !selected.model && !selected.provider) return {}
+      if (!stores) throw new StewardError(400, '请先创建空间并配置运行时')
+      const config = { ...stores.config, providers: Object.fromEntries(Object.entries(stores.config.providers ?? {}).map(([id, value]) => [id, providerConfig(id, value)])) }
+      let resolved: ReturnType<typeof resolveHarnessSelector>
+      try { resolved = resolveHarnessSelector({ ...selected, harness: selected.harness ?? 'native' }, config, adapters, bridge) }
+      catch (error) { throw new StewardError(400, (error as Error).message) }
+      const { harness: adapter, model: modelId, modelConfig, provider, pairing } = resolved
+      if (adapter.id !== 'native' && !adapter.capabilities?.mcp) throw new StewardError(400, '这个 harness 不支持管家的 MCP 工具')
+      const availability = adapter.id === 'native' ? { ok: true } : await adapter.available()
+      if (!availability.ok) throw new StewardError(400, `${adapter.displayName} 未安装或不可用，请安装后重新选择`)
+      if (!provider && 'ownReady' in availability && availability.ownReady === false) throw new StewardError(400, availability.ownReason ?? '自带账号未就绪')
+      if (modelConfig?.kind === 'embedding') throw new StewardError(400, '嵌入模型不能用于对话')
+      if (provider?.apiKeyEnv && !resolveSecret(provider.apiKeyEnv)) throw new StewardError(400, `缺少密钥环境变量 ${provider.apiKeyEnv}`)
+      if (provider && (!provider.baseURL || !modelId?.trim())) throw new StewardError(400, '模型地址或模型未配置')
+      if (adapter.id === 'native') {
+        if (!provider || !modelId) throw new StewardError(400, '直连 API 需要 provider 与模型')
+        const target = providerFor(provider, adapter.capabilities?.providerProtocols)
+        if (!target) throw new StewardError(400, '直连 API 不支持此协议')
+        const chat: NonNullable<StewardDeps['chat']> = async (request, onToken) => {
+          const result = await createProvider(provider.id, target, { resolveSecret }).chat({ ...request, model: modelId })
           if (result.message.content) onToken?.(result.message.content)
           return result
         }
-        if (!chat) throw new StewardError(400, '模型无法用于管家对话，请检查模型设置')
-        return { chat, model: choice.model }
+        return { chat, model: selected.model }
       }
-      const adapter: HarnessAdapter = adapters[choice.harness]!
       return { run: async turn => {
         const grant = mcp.issue({ userId, threadId: turn.threadId, specs: turn.specs, call: turn.call })
         let route: BridgeRoute | undefined
         try {
           const history = turn.messages.filter(message => message.role !== 'system').slice(-40)
             .map(message => `${message.role}: ${message.content}`).join('\n\n').slice(-100000)
-          let connection = provider && model ? { ...provider, id: model.provider } : undefined
+          let connection = provider
           // 协议对不上：每轮开一条本机协议桥路由，harness 连桥、拿一次性令牌，本轮结束就关
           if (pairing?.mode === 'bridge') {
             if (!bridge) throw new Error('协议桥没有启动')
-            route = await bridge.open(connection!, pairing.protocol!, { model: model?.id })
+            route = await bridge.open(connection!, pairing.protocol!, { model: modelId })
             connection = route.provider
           }
           const result = await adapter.run({ prompt: history, systemAppend: turn.messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n'),
-            cwd: stores!.projectDir, model: model?.id, provider: connection, ...(route ? { env: route.env } : {}),
+            cwd: stores.projectDir, model: modelId, modelConfig, effort: selected.effort, provider: connection, ...(route ? { env: route.env } : {}),
             readOnly: true, timeoutMs: 300000,
             mcpServers: [{ name: 'takt', url: url(), headers: { Authorization: `Bearer ${grant.token}` } }],
           }, turn.onEvent)

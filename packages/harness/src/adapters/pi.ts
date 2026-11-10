@@ -233,7 +233,8 @@ export function createPiHarness(options: PiOptions = {}): HarnessAdapter {
           if (key.name && !key.value) return { ok: false, finalText: '', error: `Pi 缺少密钥 ${key.name}` }
           directory = await mkdtemp(join(tmpdir(), 'takt-pi-'))
           const file = join(directory, 'provider.mjs'), name = `takt-${req.provider.id}`
-          const config = { baseUrl: req.provider.baseURL, api, apiKey: key.name ?? 'takt-no-api-key', headers: req.provider.headers,
+          // Pi 官方 resolve-config-value.ts:139-150 使用 ${ENV} 引用；裸变量名会被当作密钥字面量。
+          const config = { baseUrl: req.provider.baseURL, api, apiKey: key.name ? '${' + key.name + '}' : 'takt-no-api-key', headers: req.provider.headers,
             models: [{ id: req.model, ...(req.modelConfig?.contextWindow === undefined ? {} : { contextWindow: req.modelConfig.contextWindow }) }] }
           await writeFile(file, `export default function(pi) { pi.registerProvider(${JSON.stringify(name)}, ${JSON.stringify(config)}); }\n`, { mode: 0o600 })
           args.push('-e', file, '--provider', name)

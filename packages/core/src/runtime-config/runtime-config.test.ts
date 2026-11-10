@@ -93,3 +93,14 @@ it('运行时预构建失败不落盘也不写审计', async () => {
   expect(await readFile(join(dir, 'takt.config.json'), 'utf8')).toBe(before)
   await expect(readFile(join(dir, '.takt/space-events.jsonl'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
+
+it('Claude 接法支持 cli/acp，拒绝未知值及其他内置 harness 的 transport', () => {
+  const opts = { ...options, builtinHarnesses: [...options.builtinHarnesses, 'claude-code'] }
+  for (const transport of ['cli', 'acp']) {
+    const result = applyRuntimePatch(config, patch({ harnessOverrides: { 'claude-code': { transport } } }), opts)
+    expect(result.config.harnessOverrides?.['claude-code']?.transport).toBe(transport)
+  }
+  for (const harnessOverrides of [{ 'claude-code': { transport: 'http' } }, { codex: { transport: 'acp' } }, { 'claude-code': { transport: null } }]) {
+    expect(() => applyRuntimePatch(config, patch({ harnessOverrides }), opts)).toThrow(/transport/)
+  }
+})

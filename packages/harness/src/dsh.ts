@@ -1,6 +1,7 @@
 import type { HarnessAdapter, HarnessRequest, HarnessResult, Usage } from '@taktflow/core'
 import { ParseState, object, string, number, readUsage, addUsage, promptWithInstructions } from './parse.js'
 import type { EventSink, StreamParser } from './parse.js'
+import { dshProvider, type ProviderInjection } from './provider-injection.js'
 import { finalizeResult, runProcess } from './process.js'
 
 export interface DshOptions { bin?: string; env?: Record<string, string>; probeTimeoutMs?: number }
@@ -114,36 +115,50 @@ export function createDshHarness(options: DshOptions = {}): HarnessAdapter {
 
   async function run(req: HarnessRequest, onEvent: EventSink): Promise<HarnessResult> {
     if (options.env && Object.keys(options.env).length) req = { ...req, env: { ...options.env, ...req.env } }
-    if (req.provider) {
-      return finalizeResult(req, { ok: false, finalText: '', error: 'DeepSeek Harness does not support custom providers' }, { ok: true, stdout: '', stderr: '' })
-    }
-    const args = ['--profile', 'headless', '--json']
-    if (req.sessionId) args.push('--session-id', req.sessionId)
-    args.push('-')
-    const bins = candidates(req)
-    for (const [index, bin] of bins.entries()) {
-      const parser = createDshParser(onEvent)
-      const proc = await runProcess(bin, args, req, { stdin: promptWithInstructions(req), onLine: parser.onLine })
-      if (proc.spawnErrorCode === 'ENOENT' && index < bins.length - 1) continue
-      return finalizeResult(req, parser.result(), proc)
-    }
-    throw new Error('DSH 可执行文件候选列表为空')
+    let injection: ProviderInjection | undefined
+    try {
+      if (req.provider || req.model || req.effort) {
+        injection = await dshProvider.prepare(req)
+        req = { ...req, env: { ...req.env, ...injection.env } }
+      }
+      const args = ['--profile', 'headless', ...injection?.args ?? [], '--json']
+      if (req.sessionId) args.push('--session-id', req.sessionId)
+      args.push('-')
+      const bins = candidates(req)
+      for (const [index, bin] of bins.entries()) {
+        const parser = createDshParser(onEvent)
+        const proc = await runProcess(bin, args, req, { stdin: promptWithInstructions(req), onLine: parser.onLine })
+        if (proc.spawnErrorCode === 'ENOENT' && index < bins.length - 1) continue
+        return finalizeResult(req, parser.result(), proc)
+      }
+      throw new Error('DSH 可执行文件候选列表为空')
+    } catch (error) {
+      return finalizeResult(req, { ok: false, finalText: '', error: (error as Error).message }, { ok: true, stdout: '', stderr: '' })
+    } finally { await injection?.cleanup?.() }
   }
 
   async function probe(): Promise<Availability> {
-    const result = await run({ prompt: 'Reply only OK.', cwd: process.cwd(), env: options.env, timeoutMs: options.probeTimeoutMs ?? 10_000 }, () => {})
-    if (result.ok) return { ok: true }
-    const reason = result.error || 'DeepSeek Harness 不可用'
-    return { ok: false, reason: reason.includes('ACCOUNT_SIGN_IN_REQUIRED') ? '需要先登录 DeepSeek 账号' : reason }
+    const req = { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: options.probeTimeoutMs ?? 10_000 }
+    const bins = candidates(req)
+    for (const [index, bin] of bins.entries()) {
+      const version = await runProcess(bin, ['--version'], req)
+      if (version.spawnErrorCode === 'ENOENT' && index < bins.length - 1) continue
+      if (!version.ok) return { ok: false, reason: version.error || version.stderr || 'DeepSeek Harness 不可用' }
+      const result = await run({ ...req, prompt: 'Reply only OK.' }, () => {})
+      if (result.ok) return { ok: true, ownReady: true }
+      const reason = result.error || 'DeepSeek 账号就绪状态未确认'
+      return { ok: true, ownReady: false, ownReason: reason.includes('ACCOUNT_SIGN_IN_REQUIRED') ? '需要先登录 DeepSeek 账号' : reason }
+    }
+    return { ok: false, reason: '找不到 DeepSeek Harness' }
   }
 
   return {
     id: 'dsh',
     displayName: 'DeepSeek Harness',
     capabilities: {
-      toolPhases: true, readOnly: false, modelOverride: false, effortOverride: false,
+      toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
       resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false,
-      compactionEvents: false, customProvider: false, sandbox: false, mcp: false,
+      compactionEvents: false, customProvider: true, providerProtocols: dshProvider.protocols, sandbox: false, mcp: false,
     },
     async available() {
       const key = JSON.stringify([options.bin, process.env.DSH_BIN, process.env.PATH])
