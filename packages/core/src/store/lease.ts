@@ -23,6 +23,11 @@ export interface LeaseOptions {
   ttlMs?: number
   /** 只有确认旧租约已失效时才允许接管。 */
   takeover?: boolean
+  /**
+   * 接管时，同机原持有者进程已不存在（锁内用 pid 再确认）就不等心跳过期：App 崩溃后马上重开时，
+   * 旧心跳还在有效期内，但写它的进程已经没了。跨机器仍按心跳判断。
+   */
+  allowDeadLocalHolder?: boolean
   now?: () => Date
 }
 
@@ -103,6 +108,7 @@ export async function acquireLease(taktDir: string, owner: string, opts: LeaseOp
         return { ok: true, lease: renewed }
       }
       const stale = isStale(current, now)
+        || (opts.allowDeadLocalHolder === true && current.host === hostname() && !processAlive(current.pid))
       if (!stale || opts.takeover !== true) return { ok: false, held: current, stale }
     }
     const lease: Lease = {

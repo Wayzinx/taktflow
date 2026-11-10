@@ -186,3 +186,15 @@ it('readLease 等待同一个跨进程文件锁，不读到租约更新的中间
   } finally { release(); await writing }
   expect((await reading)?.owner).toBe('cli:updated')
 })
+
+it('allowDeadLocalHolder：同机原持有者进程已退出时，心跳还在有效期内也能接管；进程还活着或跨机器不行', async () => {
+  const pid = await deadPid()
+  const fresh = new Date().toISOString()
+  await writeLease({ owner: 'cli:crashed', pid, heartbeatAt: fresh, ttlMs: 60_000 })
+  expect(await acquireLease(taktDir, 'cli:2', { takeover: true })).toMatchObject({ ok: false, stale: false })
+  expect(await acquireLease(taktDir, 'cli:2', { takeover: true, allowDeadLocalHolder: true })).toMatchObject({ ok: true, lease: { owner: 'cli:2' } })
+  await writeLease({ owner: 'cli:live', pid: process.pid, heartbeatAt: fresh, ttlMs: 60_000 })
+  expect(await acquireLease(taktDir, 'cli:3', { takeover: true, allowDeadLocalHolder: true })).toMatchObject({ ok: false, stale: false })
+  await writeLease({ owner: 'cli:remote', pid, host: `${hostname()}-other`, heartbeatAt: fresh, ttlMs: 60_000 })
+  expect(await acquireLease(taktDir, 'cli:3', { takeover: true, allowDeadLocalHolder: true })).toMatchObject({ ok: false, stale: false })
+})
