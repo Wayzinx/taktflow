@@ -62,6 +62,10 @@ function ownGroup(h: CatalogHarness, label: string, pairingOk: boolean, pairingR
   return { key: 'own', label, note: '自带', hint: ready ? listSource(h.own) : reason, models }
 }
 
+/** 网关列出的模型常常不带推理元数据：harness 能传推理强度时，给出常用三档和「默认」，由人决定要不要指定（设置里的路由抽屉同样如此）。 */
+const guessEfforts = (h: CatalogHarness, m: CatalogModel, x: PickerModel): PickerModel =>
+  h.capabilities.effortOverride && !x.efforts && m.reasoning !== false ? { ...x, efforts: ['low', 'medium', 'high'], effortGuess: true } : x
+
 function providerGroup(h: CatalogHarness, p: CatalogProvider, mode: 'direct' | 'bridge', protocol?: string, upstream?: string): PickerGroup {
   const bridge = mode === 'bridge'
   return {
@@ -71,7 +75,7 @@ function providerGroup(h: CatalogHarness, p: CatalogProvider, mode: 'direct' | '
     note: bridge ? '经协议桥' : '直连',
     hint: [bridge && protocol && upstream ? `${h.displayName} 说 ${protocol}，这家给 ${upstream}，中间自动转换` : undefined, p.keyPresent ? undefined : '缺少密钥', listSource(p.models)].filter(Boolean).join(' · ') || undefined,
     models: markDuplicates(sortModels(p.models.models).map((m) => {
-      const x = toModel(m, `p:${p.id}`, p.id, bridge ? '桥接' : undefined)
+      const x = guessEfforts(h, m, toModel(m, `p:${p.id}`, p.id, bridge ? '桥接' : undefined))
       return p.keyPresent ? x : { ...x, available: false, reason: '缺少密钥：去 Provider 里填上' }
     })),
   }

@@ -17,6 +17,8 @@ export interface PickerModel {
   tags?: string[]
   efforts?: Effort[]
   defaultEffort?: Effort
+  /** 模型没声明支持哪些档，efforts 是 harness 的常用档：多给一个「默认」（不指定） */
+  effortGuess?: boolean
   available: boolean
   reason?: string
 }

@@ -60,6 +60,7 @@ export function HarnessPicker({
   const [query, setQuery] = useState('')
   const [pending, setPending] = useState<{ harness: string; model: PickerModel }>()
   const list = useRef<HTMLDivElement>(null)
+  const models = useRef<HTMLDivElement>(null)
 
   const up = harnesses.filter((h) => h.available)
   const down = harnesses.filter((h) => !h.available)
@@ -78,6 +79,13 @@ export function HarnessPicker({
     setPending(h && m?.efforts?.length ? { harness: h.id, model: m } : undefined)
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 网关常列几十个模型：已选 / 正在选档的那个连同档位行滚进视野
+  useEffect(() => {
+    if (!open) return
+    const id = requestAnimationFrame(() => models.current?.querySelector('.hp-model.is-pending, .hp-model.is-on')?.closest('.hp-model-wrap')?.scrollIntoView({ block: 'nearest' }))
+    return () => cancelAnimationFrame(id)
+  }, [open, pending])
+
   const groups = useMemo(() => {
     if (!activeH) return []
     const q = query.trim().toLowerCase()
@@ -87,6 +95,10 @@ export function HarnessPicker({
   }, [activeH, query])
   const total = activeH?.groups.reduce((n, g) => n + g.models.length, 0) ?? 0
 
+  const commit = (h: PickerHarness, m: PickerModel, effort?: Effort) => {
+    onChange({ harness: h.id, provider: m.provider, model: m.model, effort })
+    setOpen(false)
+  }
   const pick = (h: PickerHarness, m: PickerModel, effort?: Effort) => {
     if (!m.available || !h.available) return
     // 支持 effort 的先停在面板上选档；不支持的直接选中
@@ -94,8 +106,7 @@ export function HarnessPicker({
       setPending({ harness: h.id, model: m })
       return
     }
-    onChange({ harness: h.id, provider: m.provider, model: m.model, effort })
-    setOpen(false)
+    commit(h, m, effort)
   }
 
   const onListKey = (e: KeyboardEvent<HTMLDivElement>) => {
@@ -204,7 +215,7 @@ export function HarnessPicker({
                     <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索模型" aria-label="搜索模型" />
                   </label>
                 )}
-                <div className="hp-models">
+                <div className="hp-models" ref={models}>
                   {!activeH.available && <p className="hp-empty">{activeH.reason ?? '这个 harness 现在不可用'}</p>}
                   {activeH.available && groups.length === 0 && <p className="hp-empty">{query ? '没有匹配的模型' : '没有能搭配的模型：去设置里接入一个 LLM API'}</p>}
                   {groups.map((g) => (
@@ -240,12 +251,18 @@ export function HarnessPicker({
                             {isPending && m.efforts && (
                               <div className="hp-efforts" role="group" aria-label="推理强度" title="强度越高想得越久，回复越慢；日常问答用低或中就够">
                                 <span className="hp-sub">推理强度</span>
+                                {m.effortGuess && (
+                                  <button type="button" className={`hp-effort${effortFor ? '' : ' is-on'}`} onClick={() => commit(activeH, m)}>
+                                    默认
+                                  </button>
+                                )}
                                 {m.efforts.map((e) => (
                                   <button key={e} type="button" className={`hp-effort${(effortFor ?? m.defaultEffort) === e ? ' is-on' : ''}`} onClick={() => pick(activeH, m, e)}>
                                     {EFFORT_LABEL[e]}
                                     <span className="mono">{e}</span>
                                   </button>
                                 ))}
+                                {m.effortGuess && <p className="hp-effort-note">这个模型没写明支持哪些档。不确定就选默认；模型不支持时指定的档可能被忽略或报错</p>}
                               </div>
                             )}
                           </div>

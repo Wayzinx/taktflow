@@ -288,6 +288,13 @@
   line-height: 24px;
   cursor: pointer;
 }
+.hp-effort-note {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 16px;
+}
 .hp-effort .mono {
   font-size: 10.5px;
   color: var(--text-3);

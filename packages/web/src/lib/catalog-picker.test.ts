@@ -58,6 +58,18 @@ describe('catalogToPicker', () => {
     expect(nokey.hint).toContain('缺少密钥')
   })
 
+  it('网关模型没写推理档时，能传强度的 harness 给常用三档（标成猜的），写明不支持推理的不给', () => {
+    const c = catalog()
+    c.harnesses = c.harnesses.map((h) => (h.id === 'dsh' ? { ...h, capabilities: { effortOverride: true } } : h))
+    c.providers[0]!.models.models.push(m('plain', { reasoning: false }))
+    const gw = catalogToPicker(c).find((h) => h.id === 'dsh')!.groups.find((g) => g.key === 'p:gw')!
+    expect(gw.models.find((x) => x.model === 'glm-5')).toMatchObject({ efforts: ['low', 'medium', 'high'], effortGuess: true })
+    expect(gw.models.find((x) => x.model === 'plain')!.efforts).toBeUndefined()
+    // 不能传强度的 harness 不猜
+    const claude = catalogToPicker(c).find((h) => h.id === 'claude-code')!.groups.find((g) => g.key === 'p:gw')!
+    expect(claude.models.find((x) => x.model === 'glm-5')!.efforts).toBeUndefined()
+  })
+
   it('搭不上的 provider 收进最后一组，只说明不能选', () => {
     const trae = catalogToPicker(catalog()).find((h) => h.id === 'trae')!
     const off = trae.groups.at(-1)!
