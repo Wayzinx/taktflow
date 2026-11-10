@@ -96,16 +96,30 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
           }
           const result = await adapter.run({ prompt: history, systemAppend: turn.messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n'),
             cwd: stores.projectDir, model: modelId, modelConfig, effort: selected.effort, provider: connection, ...(route ? { env: route.env } : {}),
-            readOnly: true, timeoutMs: 300000,
+            readOnly: true, timeoutMs: STEWARD_TIMEOUT_MS,
             mcpServers: [{ name: 'takt', url: url(), headers: { Authorization: `Bearer ${grant.token}` } }],
           }, turn.onEvent)
-          if (!result.ok) throw new Error(result.error ?? '未完成回复')
-          return result.finalText
+          if (result.ok) return result.finalText
+          // 回复已经写出来、进程却没按时退出（CLI 收尾卡住）：把写好的内容交给人，说明可能不完整，不整条判失败
+          if (isTimeout(result.error) && result.finalText.trim()) return `${result.finalText}\n\n（${adapter.displayName} 在 ${STEWARD_TIMEOUT_MS / 60_000} 分钟内没有正常结束，以上是停止前写出的内容，可能不完整。）`
+          throw new Error(result.error ?? '未完成回复')
         } catch (error) {
           const reason = createRedactor([grant.token, ...Object.values(route?.env ?? {})])(error instanceof Error ? error.message : String(error))
-          throw new StewardError(502, `${adapter.displayName} 回复失败：${reason}；请检查配置后重试`)
+          throw new StewardError(502, failureText(adapter.displayName, reason))
         } finally { grant.revoke(); await route?.close().catch(() => undefined) }
       } }
     },
   }
+}
+
+/** 管家一轮可能连调多次工具、推理模型想得久：给 10 分钟。 */
+export const STEWARD_TIMEOUT_MS = 600_000
+const isTimeout = (error?: string) => !!error && /Process timeout after/.test(error)
+
+/** CLI 报错给人看：超时就说超时和怎么办；其余去掉 CLI 的日志行、进程信号，只留第一句。 */
+export function failureText(name: string, reason: string): string {
+  if (isTimeout(reason)) return `${name} ${STEWARD_TIMEOUT_MS / 60_000} 分钟内没有写完回复，已停止。可以调低推理强度、换个更快的模型，或把问题问得具体一些再试`
+  const lines = reason.split('\n').map((line) => line.trim()).filter(Boolean)
+  const line = lines.find((l) => !/^\d{4}-\d\d-\d\dT\S+\s+(ERROR|WARN|INFO|DEBUG)\b/.test(l) && !/^Process (terminated|exited)/.test(l)) ?? lines[0] ?? reason
+  return `${name} 回复失败：${line.length > 200 ? `${line.slice(0, 200)}…` : line}；请检查配置后重试`
 }

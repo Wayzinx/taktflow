@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { initProject, StewardAgent, type HarnessAdapter, type HarnessRequest, type ProviderBridge, type StewardPrefs } from '@taktflow/core'
 import { createStewardDeps } from './steward-routes.js'
-import { stewardRuntime } from './steward-runtime.js'
+import { failureText, stewardRuntime } from './steward-runtime.js'
 import { clearHarnessAvailability } from './harness-availability.js'
 import { StewardMcp } from './steward-mcp.js'
 import { fail, json } from './http.js'
@@ -202,4 +202,27 @@ it('原始 native 模型与自带模型可解析，账号未就绪仅拒绝自�
   const choices = await f.runtime.runtimeChoices!(prefs)
   expect(choices.find(c => c.harness === 'codex' && !c.model)).toMatchObject({ available: false, reason: '请登录' })
   expect(choices.find(c => c.harness === 'codex' && c.model === 'good')?.available).toBe(true)
+})
+
+it('CLI 报错给人看：超时说清楚和怎么办，其余去掉日志行和进程信号', () => {
+  expect(failureText('TRAE CLI', 'Incomplete Codex stream: missing terminal turn.completed event\nProcess timeout after 600000ms\nProcess terminated by SIGTERM'))
+    .toBe('TRAE CLI 10 分钟内没有写完回复，已停止。可以调低推理强度、换个更快的模型，或把问题问得具体一些再试')
+  expect(failureText('Codex', '2026-11-10T15:38:24.574545Z ERROR codex_memories_write::phase2: Phase 2 no changes\nunexpected status 401 Unauthorized\nProcess exited with code 1'))
+    .toBe('Codex 回复失败：unexpected status 401 Unauthorized；请检查配置后重试')
+})
+
+it('回复已写出、进程超时没退出：交回写好的内容并注明可能不完整，不判失败', async () => {
+  const f = await fixture()
+  f.adapters.codex.run = vi.fn(async (_request, emit) => {
+    emit({ type: 'message', role: 'assistant', text: '游戏在 games/tank/index.html' })
+    return { ok: false, finalText: '游戏在 games/tank/index.html', error: 'Process timeout after 600000ms\nProcess terminated by SIGTERM' }
+  })
+  const agent = new StewardAgent({ ...f.deps, ...f.runtime }, 'alice')
+  try {
+    const posted = await agent.post({ text: '成品呢', runtime: { harness: 'codex', model: 'good' } })
+    const done = await posted.done
+    expect(done.status).toBe('done')
+    expect(done.text).toContain('游戏在 games/tank/index.html')
+    expect(done.text).toContain('可能不完整')
+  } finally { agent.close() }
 })
