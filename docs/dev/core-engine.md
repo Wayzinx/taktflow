@@ -33,7 +33,7 @@
      `.takt/worktrees/**` 单独按文件元数据缓存哈希：无 repo 节点不能写，有 repo 节点仅允许自己的工作树并由 cwd 守卫检查范围；`.git` 与受控系统写入排除，其他工作树的违规按项目相对路径报告。
   6. harness 事件实时转成 `harness.*` / `context.compacted` 事件；usage 写 NodeState.usage。
   7. resultSchema：从 finalText 最后一个 ```json 代码块解析，做最小校验（type / required / properties / items / enum，写在 `engine/schema.ts`）。
-- **gate**：依次执行 checks：command（退出码 0 = pass，message 为输出末尾）、function、rubric（用 role 的 harness 跑一次，要求输出 `{ score, pass, message }`，score ≥ threshold 才 pass）。检查本身抛错 = 不通过（fail-closed）。记 `gate.result`；全过 succeeded；否则 onFail=stop → failed，onFail=human → 创建 attention（ask 附上失败检查），waiting_human。
+- **gate**：依次执行 checks：command（退出码 0 = pass，message 为输出末尾）、function、rubric（用 role 的 harness 跑一次，要求输出 `{ score, pass, message }`，score ≥ threshold 才 pass）。检查本身抛错 = 不通过（fail-closed）。记 `gate.result`；全过 succeeded；否则 onFail=stop → failed，onFail=human → 直接创建一条 approve attention，waiting_human，不经过「同样的失败出现 N 次」的重试裁决；ask 由 `gateAsk` 生成要点：第几次检查、每项失败检查的说明、未通过的 AC 编号与没过的用例按状态计数，以及「通过 = 放行，打回 = 本步失败、运行结束」，完整明细留在 `gate.result` 事件里。
 - **human**：创建 attention（requestId = `${runId}:${nodeId}`），记 `human.requested`，节点 waiting_human。
 - **judge**：读 target 结果 `failures`；为空直接成功（result `{ verdicts: [], routed: {} }`）。否则用 role 的 harness 判决，要求输出 `{ verdicts: JudgeVerdict[] }`；把判决按 routes 分组 → routed: Record<目标节点, subject[]>，路由到 'human' 的创建 attention；记 `judge.verdict`；判决写到存放区 `reports/verdicts/<runId>-<nodeId>-<iteration>.json`（kind verdict）。路由目标节点：没有分到 subject 的标 skipped。
 - **loop**：body 是子 DAG，节点 id 为 `<loopId>/<childId>`（needs 在 body 内解析）。每轮：重置 body 节点为 pending（iteration+1），跑完 body，然后 `until(ctx)`；true → succeeded；达到 maxIterations → onExhausted（human → attention + waiting_human；fail → failed）。
