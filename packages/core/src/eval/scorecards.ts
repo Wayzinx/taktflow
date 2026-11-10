@@ -18,6 +18,22 @@ interface Sample {
   downstream: NodeScorecard['downstream']; escapes: Set<string>; missed: Set<string>; caught: Set<string>; detector: boolean
 }
 const emptyIssues = () => ({ blocker: 0, major: 0, minor: 0, nit: 0 })
+/** 产物关系索引：路径 → 产物（同路径取第一条）、父路径 → 派生自它的产物、AC → 关联它的产物。 */
+function artifactGraph(artifacts: ArtifactRecord[], req: string) {
+  const byPath = new Map<string, ArtifactRecord>(), children = new Map<string, ArtifactRecord[]>(), byAc = new Map<string, ArtifactRecord[]>()
+  const push = (map: Map<string, ArtifactRecord[]>, key: string, artifact: ArtifactRecord) => {
+    const list = map.get(key) ?? []
+    if (!list.includes(artifact)) list.push(artifact)
+    map.set(key, list)
+  }
+  for (const artifact of artifacts) {
+    if (!byPath.has(artifact.path)) byPath.set(artifact.path, artifact)
+    for (const ref of artifact.versions.at(-1)?.derivedFrom ?? []) if (ref.workspace === req) push(children, ref.path, artifact)
+    for (const id of artifact.traceIds) if (/^AC-/.test(id)) push(byAc, id, artifact)
+  }
+  return { byPath, children, byAc }
+}
+
 function producer(artifacts: ArtifactRecord[], path: string, version?: number, excluded = new Set<string>()) {
   const artifact = artifacts.find((item) => item.path === path)
   return artifact?.versions.filter((item) => version === undefined || item.version <= version).filter((item) => item.producedBy && !excluded.has(`${item.producedBy.runId}:${item.producedBy.nodeId}`)).at(-1)?.producedBy
@@ -98,6 +114,7 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
         && (!source.runId || sample.run.runId === source.runId))) sample.escapes.add(identity)
     }
     const seenEdits = new Set<string>()
+    const graph = artifactGraph(artifacts, req)
     for (const run of runs.filter((item) => item.requirementId === req)) for (const event of await runEventsOf(stores, run, SCORECARD_EVENT_TYPES)) {
       if (event.type === 'artifact.edited' && event.actor.type === 'human') {
         const edit = event.data as EventPayloads['artifact.edited'], identity = canonicalJson(edit.ref)
@@ -120,13 +137,11 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
             const source = producer(artifacts, artifact.path, undefined, reviewProducers)
             if (source) sources.set(`${source.runId}:${source.nodeId}`, source)
           }
-          for (const child of artifacts) {
-            const related = child.versions.at(-1)?.derivedFrom.some((ref) => ref.workspace === req && ref.path === artifact.path)
-            const sharedAc = artifact.traceIds.some((id) => /^AC-/.test(id) && child.traceIds.includes(id))
-            if (related || sharedAc) visit(child)
-          }
+          // 派生自它的、与它共享 AC 的、它派生自的：走索引，不再每一步都扫一遍全部产物
+          for (const child of graph.children.get(artifact.path) ?? []) visit(child)
+          for (const id of artifact.traceIds) if (/^AC-/.test(id)) for (const child of graph.byAc.get(id) ?? []) visit(child)
           for (const ref of artifact.versions.at(-1)?.derivedFrom ?? []) {
-            const parent = artifacts.find((item) => ref.workspace === req && item.path === ref.path)
+            const parent = ref.workspace === req ? graph.byPath.get(ref.path) : undefined
             if (parent) visit(parent)
           }
         }
