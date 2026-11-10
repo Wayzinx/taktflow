@@ -17,3 +17,8 @@ it('tidyText 把旧消息里的原始 JSON 换成要点，运行状态码换成�
   // 不是 JSON、或很短的括号：原样
   expect(tidyText('结论见 [1]，另见 {附录}')).toBe('结论见 [1]，另见 {附录}')
 })
+
+it('旧事件里贴进提问的门禁结果 JSON 换成一句话', () => {
+  const checks = [{ id: 'acceptance', pass: false, details: [{ ac: 'AC-11', pass: true, cases: [] }, { ac: 'AC-13', pass: false, cases: [{ id: 'TC-1', status: 'failed' }] }] }, { id: 'lint', pass: true }]
+  expect(tidyText(`门禁未通过，请裁决：${JSON.stringify(checks)}`)).toBe('门禁未通过，请裁决：1 项检查未通过：acceptance（未通过的 AC：AC-13）')
+})

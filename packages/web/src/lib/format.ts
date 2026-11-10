@@ -97,6 +97,13 @@ function jsonGist(raw: string): string | undefined {
     const head = list.slice(0, 3).map((v) => `${v.subject}（${VERDICT_WORD[v.category ?? ''] ?? v.category ?? '待定'}）`).join('、')
     return `${list.length} 条判决：${head}${list.length > 3 ? ' 等' : ''}`
   }
+  // 门禁检查结果 [{ id, pass, details: [{ ac, pass }] }]（旧版引擎直接把它贴进了提问）
+  if (Array.isArray(value) && value.length && value.every((v) => v && typeof v === 'object' && 'id' in v && 'pass' in v)) {
+    const failed = (value as Array<{ id: unknown; pass: unknown; details?: unknown }>).filter((v) => v.pass !== true)
+    const acs = failed.flatMap((v) => (Array.isArray(v.details) ? (v.details as Array<{ ac?: unknown; pass?: unknown }>).filter((d) => d && d.pass === false && typeof d.ac === 'string').map((d) => d.ac as string) : []))
+    if (!failed.length) return `${value.length} 项检查全部通过`
+    return `${failed.length} 项检查未通过：${failed.map((v) => String(v.id)).join('、')}${acs.length ? `（未通过的 AC：${acs.slice(0, 6).join('、')}${acs.length > 6 ? ` 等 ${acs.length} 条` : ''}）` : ''}`
+  }
   if (!value || typeof value !== 'object') return undefined
   const o = value as Record<string, unknown>
   if (Array.isArray(o.records)) {
