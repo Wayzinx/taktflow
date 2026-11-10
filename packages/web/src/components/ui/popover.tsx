@@ -34,13 +34,17 @@ function place(a: DOMRect, el: HTMLElement | null, placement: Placement, offset:
   const vw = window.innerWidth
   const vh = window.innerHeight
   let top = placement.startsWith('top')
-  // 放不下就翻到另一侧
-  if (!top && a.bottom + offset + h > vh - 8 && a.top - offset - h > 8) top = true
-  else if (top && a.top - offset - h < 8 && a.bottom + offset + h < vh - 8) top = false
+  const above = a.top - offset - 8
+  const below = vh - 8 - a.bottom - offset
+  // 放不下就翻到另一侧；两侧都放不下时放到空间大的一侧
+  if (!top && h > below && (h <= above || above > below)) top = true
+  else if (top && h > above && (h <= below || below > above)) top = false
   const end = placement.endsWith('end')
   let left = end ? a.right - w : a.left
   left = Math.max(8, Math.min(left, vw - w - 8))
-  return { top: top ? a.top - offset - h : a.bottom + offset, left, minWidth: matchWidth ? a.width : undefined, flip: top }
+  // 还是放不下（比视口还高）时贴着视口边，不超出屏幕
+  const y = Math.max(8, Math.min(top ? a.top - offset - h : a.bottom + offset, vh - h - 8))
+  return { top: y, left, minWidth: matchWidth ? a.width : undefined, flip: top }
 }
 
 /**
@@ -63,9 +67,13 @@ export function Popover({ open, onClose, anchor, placement = 'bottom-start', off
     if (!open) return
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
+    // 内容在打开后才加载出来（列表、模型目录），面板变高了要重新定位，否则会顶出屏幕
+    const ro = typeof ResizeObserver !== 'undefined' && ref.current ? new ResizeObserver(update) : undefined
+    if (ro && ref.current) ro.observe(ref.current)
     return () => {
       window.removeEventListener('resize', update)
       window.removeEventListener('scroll', update, true)
+      ro?.disconnect()
     }
   }, [p.mounted, open, anchor, placement, offset, matchWidth])
 

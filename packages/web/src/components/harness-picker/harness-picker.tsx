@@ -18,7 +18,9 @@ function triggerText(harnesses: PickerHarness[], v?: PickerValue | null): { icon
   const m = h?.groups.flatMap((g) => g.models).find((x) => same(v.harness, x, v))
   const name = h?.name ?? v.harness
   const model = m ? (m.model ? m.label : undefined) : v.model
-  return { icon: h?.icon, name, text: [name, model, v.effort && EFFORT_LABEL[v.effort]].filter(Boolean).join(' · ') }
+  // 没单独选档时写这个模型的默认档，让人知道强度可以选、现在是哪一档
+  const effort = v.effort ?? (m?.efforts?.length ? m.defaultEffort : undefined)
+  return { icon: h?.icon, name, text: [name, model, effort && EFFORT_LABEL[effort]].filter(Boolean).join(' · ') }
 }
 
 /**
@@ -66,12 +68,14 @@ export function HarnessPicker({
   const fallback = value ? undefined : triggerText(harnesses, defaultValue)
   const activeH = harnesses.find((h) => h.id === active) ?? harnesses.find((h) => h.id === value?.harness) ?? up[0]
 
-  // 打开时停在当前选中的 harness 上
+  // 打开时停在当前选中的 harness 上；选中的模型能调推理强度时直接展开档位，不用再点一次模型
   useEffect(() => {
     if (!open) return
     setActive(value?.harness ?? up[0]?.id)
     setQuery('')
-    setPending(undefined)
+    const h = harnesses.find((x) => x.id === value?.harness)
+    const m = h?.groups.flatMap((g) => g.models).find((x) => same(h.id, x, value))
+    setPending(h && m?.efforts?.length ? { harness: h.id, model: m } : undefined)
   }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups = useMemo(() => {
@@ -234,7 +238,7 @@ export function HarnessPicker({
                               {chosen && <Check className="hp-check" aria-hidden />}
                             </button>
                             {isPending && m.efforts && (
-                              <div className="hp-efforts" role="group" aria-label="推理强度">
+                              <div className="hp-efforts" role="group" aria-label="推理强度" title="强度越高想得越久，回复越慢；日常问答用低或中就够">
                                 <span className="hp-sub">推理强度</span>
                                 {m.efforts.map((e) => (
                                   <button key={e} type="button" className={`hp-effort${(effortFor ?? m.defaultEffort) === e ? ' is-on' : ''}`} onClick={() => pick(activeH, m, e)}>
