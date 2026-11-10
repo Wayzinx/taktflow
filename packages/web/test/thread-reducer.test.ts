@@ -31,6 +31,13 @@ describe('thread reducer', () => {
     list = applyStreamEvent(list, { type: 'done', messageId: 's2' })
     expect(list[0]).toMatchObject({ text: '好', status: 'done', tools: [{ id: 'k1', status: 'done' }] })
   })
+  it('delta reset clears the streamed narration before the answer', () => {
+    let list = applyStreamEvent([], { type: 'message', message: msg('s4', 'steward', '', { status: 'streaming' }) })
+    list = applyStreamEvent(list, { type: 'delta', messageId: 's4', text: '我先查一下。' })
+    list = applyStreamEvent(list, { type: 'delta', messageId: 's4', text: '', reset: true })
+    list = applyStreamEvent(list, { type: 'delta', messageId: 's4', text: '答案' })
+    expect(list[0]!.text).toBe('答案')
+  })
   it('upserts delegations by chat message id', () => {
     const d = { spaceId: 'shop', requirementId: 'REQ-1', messageId: 'c1', status: 'sent' as const, at: 'x' }
     let list = [msg('s3', 'steward', '已转达')]

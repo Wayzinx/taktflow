@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, PanelRightOpen } from 'lucide-react'
 import type { StewardEntitySnapshot, StewardTone } from '@taktflow/core'
 import { useSource } from '../../../api'
-import { useEntityFocus, type FocusTarget } from '../../../components/steward/focus'
+import { sameFocus, useEntityFocus, type FocusTarget } from '../../../components/steward/focus'
 import { LaneTrack } from '../../../components/viz'
 import { refPath } from '../../../components/viz/ref'
 import { fmtRelative } from '../../../lib/format'
@@ -82,10 +82,17 @@ export function EntityFoot({ target, live, at, inPanel, children }: { target: Fo
       {children}
       <span className="ent-foot-gap" />
       {!inPanel && focus ? (
-        <button type="button" className="btn btn-ghost btn-sm ent-expand" onClick={() => focus.open(target)}>
-          <PanelRightOpen />
-          在右侧展开
-        </button>
+        sameFocus(focus.current, target) ? (
+          <span className="ent-shown">
+            <PanelRightOpen />
+            已在右侧
+          </span>
+        ) : (
+          <button type="button" className="btn btn-ghost btn-sm ent-expand" onClick={() => focus.open(target)}>
+            <PanelRightOpen />
+            在右侧展开
+          </button>
+        )
       ) : (
         path && (
           <Link to={path} className="btn btn-ghost btn-sm ent-expand">

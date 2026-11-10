@@ -198,6 +198,19 @@
 }
 
 /* 思考 */
+/* 回复进行中的状态行（扫光 + 已用时） */
+.stw-live {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.stw-live .shimmer-text {
+  --shimmer-base: var(--text-2);
+  min-width: 0;
+}
 .stw-thinking {
   display: inline-flex;
   align-items: center;

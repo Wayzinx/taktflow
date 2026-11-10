@@ -6,6 +6,7 @@ import { Bee } from '../mascot'
 import { normReceipt, ReceiptRail, ResendButton } from '../receipt'
 import { Link } from '../../lib/router'
 import { spacePath } from '../../lib/space'
+import { stewardAction } from '../../lib/actions'
 import { Menu, toast } from '../ui'
 import { hm } from './fmt'
 import { StewardBlocks } from './blocks'
@@ -84,6 +85,27 @@ function Thinking({ text, live }: { text?: string; live: boolean }) {
           <p className="stw-thinking-body">{text}</p>
         </div>
       </div>
+    </div>
+  )
+}
+
+/**
+ * 回复进行中的状态行：扫光文字 + 已用时，放在这条回复最下面，回复完才消失。
+ * 正文流出来之后光标不显眼，没有这一行容易以为已经答完了。
+ */
+function LiveStatus({ m }: { m: StewardMessage }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const running = (m.tools ?? []).find((t) => t.ok === undefined)
+  const label = running ? `正在${stewardAction(running).full}` : m.text ? '正在回答' : '正在思考'
+  const secs = Math.max(0, Math.round((now - Date.parse(m.at)) / 1000))
+  return (
+    <div className="stw-live" role="status">
+      <span className="shimmer-text truncate">{label}</span>
+      <span className="num">{secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`}</span>
     </div>
   )
 }
@@ -167,7 +189,8 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
           <span className="faint num">{hm(m.at)}</span>
           {m.offline && <span className="stw-tag">规则回复</span>}
         </div>
-        <Thinking text={m.thinking} live={live && !m.text} />
+        {/* 有了工具、正文或思考摘要之后，进行中的状态交给底部那一行，这里不再扫光 */}
+        <Thinking text={m.thinking} live={live && !m.text && !m.thinking && !(m.tools ?? []).length} />
         {(m.tools ?? []).length > 0 && (
           <ToolList tools={m.tools!} animate={live} />
         )}
@@ -183,6 +206,7 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
           <Delegation key={d.messageId} d={d} />
         ))}
         {(m.proposalIds ?? []).map((id) => (proposals[id] ? <ProposalCard key={id} proposal={proposals[id]!} onChange={onProposal} animate={live || animate} /> : null))}
+        {live && ((m.tools ?? []).length > 0 || !!m.text || !!m.thinking) && <LiveStatus m={m} />}
         {!live && m.status !== 'error' && (
           <div className="stw-msg-foot">
             <Feedback m={m} onPatch={onPatch} />

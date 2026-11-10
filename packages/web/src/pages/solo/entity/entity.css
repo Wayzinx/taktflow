@@ -85,6 +85,10 @@
 .ent-lanes .lane-track {
   width: 100%;
 }
+/* 格子铺满整行、和下面的阶段名同列同宽，名字才对得上格子 */
+.ent-lanes .lane-cell {
+  max-width: none;
+}
 .ent-lane-labels {
   display: grid;
   grid-auto-columns: minmax(0, 1fr);
@@ -162,6 +166,17 @@
 }
 .ent-expand {
   color: var(--accent-text);
+}
+.ent-shown {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: var(--text-3);
+}
+.ent-shown svg {
+  width: 14px;
+  height: 14px;
 }
 
 /* 只读运行图 */

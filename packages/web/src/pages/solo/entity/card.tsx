@@ -52,6 +52,7 @@ function NowRow({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
 /** card：标题、状态、阶段泳道、当前节点（蜂 + 在做什么）、等你决定的事（直接在卡里处理）。 */
 export function RequirementCard({ id, target, snapshot, inPanel }: { id: string; target: FocusTarget; snapshot?: StewardEntitySnapshot; inPanel?: boolean }) {
   const { r, run, pending, live, error, loading } = useRequirementLive(id)
+  const focus = useEntityFocus()
   if (error && !r) return snapshot ? <SnapshotCard snapshot={snapshot} reason="拿不到实时数据" /> : null
   if (loading || !r) return <CardSkeleton />
   const look = requirementLook(r)
@@ -79,10 +80,13 @@ export function RequirementCard({ id, target, snapshot, inPanel }: { id: string;
         </div>
       )}
       <NowRow r={r} run={run} />
-      {pending.slice(0, 2).map((a) => (
-        <AttentionCard key={a.requestId} item={a} reqTitle={r.title} compact={!inPanel || pending.length > 1} />
-      ))}
-      {pending.length > 2 && <p className="ent-note">还有 {pending.length - 2} 件，在右侧或需求页处理。</p>}
+      {/* 有焦点面板时，会话里只列一行一件，表单只在右侧出现一次，不在会话和面板里各摆一份 */}
+      {!inPanel && focus ? (
+        pending.length > 0 && <AttentionRows items={pending.slice(0, 3)} target={target} />
+      ) : (
+        pending.slice(0, 2).map((a) => <AttentionCard key={a.requestId} item={a} reqTitle={r.title} compact={!inPanel || pending.length > 1} />)
+      )}
+      {pending.length > (!inPanel && focus ? 3 : 2) && <p className="ent-note">还有 {pending.length - (!inPanel && focus ? 3 : 2)} 件，在右侧或需求页处理。</p>}
       <EntityFoot target={target} live={live} at={r.updatedAt} inPanel={inPanel} />
     </div>
   )
@@ -145,6 +149,7 @@ function AttentionRows({ items, target }: { items: AttentionItem[]; target: Focu
 }
 
 export function AttentionView({ requirementId, target, inPanel }: { requirementId?: string; target: FocusTarget; inPanel?: boolean }) {
+  const focus = useEntityFocus()
   const q = useAsync((ds) => ds.attention(true), [requirementId])
   const items = (q.data ?? []).filter((a) => !a.answeredAt && (!requirementId || a.requirementId === requirementId))
   if (q.loading && !q.data) return <CardSkeleton rows={2} />
@@ -158,7 +163,7 @@ export function AttentionView({ requirementId, target, inPanel }: { requirementI
       </div>
       {items.length === 0 ? (
         <p className="ent-note">都处理完了。</p>
-      ) : !inPanel && items.length > 1 ? (
+      ) : !inPanel && (focus || items.length > 1) ? (
         <AttentionRows items={items.slice(0, 4)} target={target} />
       ) : (
         items.slice(0, 4).map((a) => <AttentionCard key={a.requestId} item={a} compact={items.length > 1} />)
