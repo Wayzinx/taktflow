@@ -11,6 +11,13 @@ import { system } from '../actor.js'
 import { assertResponses, REVIEW_SCHEMA, RESPONSES_SCHEMA, reviewPassed } from './review-schema.js'
 import { reviewTargets, targetFingerprint } from './review-target.js'
 import { noReviewProgress, reviewContinuity } from './review-continuity.js'
+
+/** 评审结论规则：只有会导致实现或验收出错的问题才要求修改，小问题随通过一起给出。 */
+const REVIEW_VERDICT_RULE = '结论规则：只有存在 blocker 或 major（会导致实现、验收出错或无法交付）的问题才给 request_changes；只有 minor / nit 时给 approve，问题照样写进 issues。'
+/** 复审：先核对上一轮，再只提阻断问题，避免每轮挑新的小问题导致永不收敛。 */
+const REVIEW_RECHECK_RULE = '这是复审：先逐条核对上一轮问题是否已解决；新问题只提 blocker / major，不再提新的 minor / nit。剩下的都是 minor / nit 时本轮按通过处理。'
+/** 作者修改：只改被指出的地方，不把修订历史写进产物本身。 */
+const REVISION_RULE = '修改规则：只改问题指出的地方，保持文档精炼；不要在产物正文里追加修订记录、版本增量、问题对照表或旧编号映射（这些已经在评审记录里），不要扩写与问题无关的章节。declined / deferred 要在 note 里写清理由。'
 import { normalizeRounds } from '../../review/records.js'
 
 export interface ReviewProgress {
@@ -95,14 +102,16 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
         const prompt = [`评审第 ${round.round} 轮。只读产物，不修改文件。`,
           `被评审对象：${JSON.stringify(node.target)}；路径与版本：${JSON.stringify(artifacts)}`,
           `focus：${reviewer.focus ?? ''}`, `checklist：${JSON.stringify(reviewer.checklist ?? [])}`, `rubric：${node.rubric ?? ''}`,
+          REVIEW_VERDICT_RULE,
           prior ? `上一轮该评审者的问题与作者回应：${JSON.stringify({ issues: prior.records.find((record) => record.reviewer === reviewer.role)?.issues ?? [], responses: prior.responses.filter((response) => response.reviewer === reviewer.role) })}` : '',
+          round.round > 1 ? REVIEW_RECHECK_RULE : '',
         ].filter(Boolean).join('\n')
         const value = await invoke(host, node, ctx, reviewer.role, reviewer.harness, prompt, REVIEW_SCHEMA, []) as Pick<ReviewRecord, 'verdict' | 'score' | 'summary' | 'issues'>
         if (value.score !== undefined && !Number.isFinite(value.score)) throw new Error('评审分数必须是有限数值')
         if (value.issues.some((issue) => !issue.id.trim()) || new Set(value.issues.map((issue) => issue.id)).size !== value.issues.length) throw new Error('评审问题 ID 必须非空且唯一')
         round.records.push({ ...value, round: round.round, reviewer: reviewer.role, artifacts, at: host.timestamp() })
       }
-      round.passed = reviewPassed(round.records, node.pass)
+      round.passed = reviewPassed(round.records, node.pass, round.round)
       const conflict = round.records.some((record) => record.verdict === 'approve')
         && round.records.some((record) => record.verdict !== 'approve' && record.issues.some((issue) => issue.severity === 'blocker'))
       if (node.arbiter && conflict) {
@@ -125,7 +134,7 @@ export async function run(host: Runtime, entry: Entry, ctx: NodeContext): Promis
     } else if (progress.phase === 'revise') {
       const round = progress.rounds.at(-1)!
       const extra = typeof node.author.prompt === 'function' ? await node.author.prompt(ctx) : node.author.prompt
-      const prompt = `按第 ${round.round} 轮意见修改产物，每个问题恰好一条 responses，保留 reviewer、issueId、round。\n${JSON.stringify(round.records)}\n${extra ?? ''}\n人工意见：${progress.humanFeedback ?? ''}`
+      const prompt = `按第 ${round.round} 轮意见修改产物，每个问题恰好一条 responses，保留 reviewer、issueId、round。\n${REVISION_RULE}\n${JSON.stringify(round.records)}\n${extra ?? ''}\n人工意见：${progress.humanFeedback ?? ''}`
       const value = await invoke(host, node, ctx, node.author.role, node.author.harness, prompt, RESPONSES_SCHEMA) as { responses: ReviewResponse[] }
       assertResponses(round.records, value.responses, round.round)
       round.responses = value.responses

@@ -44,6 +44,37 @@ it.each(['all', 'majority', 'score'] as const)('通过规则 %s', (mode) => {
   expect(reviewPassed(records.slice(1), 'majority')).toBe(false)
 })
 
+it('复审轮次只有 blocker / major 阻止通过；首轮和 reject 不放宽', () => {
+  const minorOnly = { verdict: 'request_changes', issues: [{ id: 'm', severity: 'minor', description: '措辞' }, { id: 'n', severity: 'nit', description: '标点' }] } as ReviewRecord
+  const major = { verdict: 'request_changes', issues: [{ id: 'M', severity: 'major', description: '缺 AC' }] } as ReviewRecord
+  expect(reviewPassed([minorOnly], 'all', 1)).toBe(false)
+  expect(reviewPassed([minorOnly], 'all', 2)).toBe(true)
+  expect(reviewPassed([major], 'all', 2)).toBe(false)
+  expect(reviewPassed([{ verdict: 'reject', issues: [] } as unknown as ReviewRecord], 'all', 3)).toBe(false)
+  expect(reviewPassed([minorOnly, { verdict: 'approve', issues: [] } as unknown as ReviewRecord], 'all', 2)).toBe(true)
+})
+
+it('评审提示带结论规则，复审只提阻断问题；作者修改不往产物里追加修订记录；复审只剩小问题就收敛', async () => {
+  const prompts: Record<string, string[]> = { r1: [], author: [] }
+  const f = await fixture(async (req) => {
+    const role = req.env!.TAKT_ROLE!
+    prompts[role]!.push(req.prompt)
+    if (role === 'author') {
+      await writeFile(join(req.env!.TAKT_WORKSPACE!, 'spec.md'), '修订后的版本')
+      return { responses: [{ round: 1, reviewer: 'r1', issueId: 'I1', action: 'fixed', note: '已补充' }] }
+    }
+    // 第 2 轮：上一轮的 major 已修，又挑出两个小问题但仍给 request_changes
+    return prompts.r1!.length === 1 ? changes : { verdict: 'request_changes', summary: '小问题', issues: [{ id: 'I2', severity: 'minor', description: '措辞' }] }
+  })
+  const state = await createEngine(f.deps, { concurrency: 1 }).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode({ maxRounds: 3 })]) })
+  expect(state.status).toBe('succeeded')
+  expect(state.nodes.review?.result).toEqual({ passed: true, rounds: 2 })
+  expect(prompts.r1![0]).toContain('只有存在 blocker 或 major')
+  expect(prompts.r1![0]).not.toContain('这是复审')
+  expect(prompts.r1![1]).toContain('这是复审')
+  expect(prompts.author![0]).toContain('不要在产物正文里追加修订记录')
+})
+
 it('独立会话评审 → 作者逐条回应 → 新版本复审；读模型和消息、审计可回读', async () => {
   let count = 0
   const f = await fixture(async (req) => {
