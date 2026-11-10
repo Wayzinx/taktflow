@@ -6,14 +6,16 @@ import type { Handler } from './routes.js'
 import type { M3Callbacks } from './m3-routes.js'
 import { testRuntime } from './runtime-test.js'
 import { auditSpace } from './space.js'
+import { createRuntimeModelCatalog } from './runtime-catalog.js'
+import { providerBrands, type CatalogCallbacks } from './catalog.js'
 
 export interface RuntimeCallbacks {
   bridge?: ProviderBridge
+  catalogFetch?: typeof fetch
   prepareRuntime?(stores: ProjectStores, config: TaktConfig): Promise<() => void>
 }
-const brands: Record<string, string> = { openai: 'OpenAI', anthropic: 'Anthropic', deepseek: 'DeepSeek', moonshot: 'Moonshot', zhipu: '智谱', dashscope: '阿里百炼', ark: '火山方舟', minimax: 'MiniMax 国际', 'minimax-cn': 'MiniMax 国内', 'ark-coding': '方舟 Coding Plan', siliconflow: '硅基流动', openrouter: 'OpenRouter', 'azure-openai': 'Azure OpenAI', ollama: 'Ollama', vllm: 'vLLM', lmstudio: 'LM Studio', litellm: 'LiteLLM' }
 const presets: RuntimeConfig['presets'] = {
-  providers: Object.entries(PROVIDER_PRESETS).map(([id, config]) => ({ id, displayName: brands[id]!, protocol: config.protocol, baseURL: config.baseURL, ...('apiKeyEnv' in config ? { apiKeyEnv: config.apiKeyEnv } : {}), ...('endpoints' in config ? { endpoints: config.endpoints } : {}) })),
+  providers: Object.entries(PROVIDER_PRESETS).map(([id, config]) => ({ id, displayName: providerBrands[id]!, protocol: config.protocol, baseURL: config.baseURL, ...('apiKeyEnv' in config ? { apiKeyEnv: config.apiKeyEnv } : {}), ...('endpoints' in config ? { endpoints: config.endpoints } : {}) })),
   acp: ACP_PRESETS,
 }
 
@@ -28,7 +30,14 @@ function view(config: TaktConfig): RuntimeConfig {
   return safe
 }
 
-export function runtimeRoutes(add: (method: string, path: string, handler: Handler) => void, options: RuntimeCallbacks & M3Callbacks) {
+export function runtimeRoutes(add: (method: string, path: string, handler: Handler) => void, options: RuntimeCallbacks & M3Callbacks & CatalogCallbacks) {
+  const catalog = createRuntimeModelCatalog(options)
+  add('GET', '/api/space/runtime/catalog', ({ stores, url }) => catalog.get(stores, url.searchParams.get('includeTest') === '1'))
+  add('POST', '/api/space/runtime/catalog/refresh', async ({ stores, request }) => {
+    authorize(request, stores, 'owner')
+    const input = await body(request)
+    return catalog.refresh(stores, input.target)
+  })
   add('GET', '/api/space/runtime', ({ stores }) => view(stores.config))
   add('PATCH', '/api/space/runtime', async ({ stores, request }) => {
     authorize(request, stores, 'owner')
@@ -64,7 +73,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
     authorize(request, stores, 'owner')
     const input = await body(request)
     return testRuntime(stores.config, input as unknown as RuntimeTestRequest,
-      async () => (await options.resolveRuntime?.(stores))?.harnesses ?? createHarnesses({ config: stores.config, projectDir: stores.projectDir }), options.bridge)
+      async () => (await options.resolveRuntime?.(stores))?.harnesses ?? createHarnesses({ config: stores.config, projectDir: stores.projectDir }), options.bridge, options.catalogFetch)
   })
   for (const method of ['PUT', 'DELETE']) add(method, '/api/secrets/:name', async ({ stores, request, params }) => {
     authorize(request, stores, 'owner')

@@ -104,10 +104,11 @@ it('无 CLI、无 provider 时 doctor 成功且完整展示不可用原因和能
   vi.stubEnv('DSH_BIN', '/missing-dsh')
   const result = await cli(dir, ['doctor'])
   expect(result.code).toBe(0)
-  expect(result.data.harnesses).toHaveLength(Object.keys(createHarnesses()).length)
+  expect(result.data.harnesses).toHaveLength(Object.keys(createHarnesses()).length - 1)
+  expect(result.data.harnesses.some((row: { id: string }) => row.id === 'mock')).toBe(false)
   expect(result.data.harnesses.find((row: { id: string }) => row.id === 'native')).toMatchObject({ source: 'native', available: false, reason: expect.any(String), capabilities: { customProvider: true, requiresProvider: true }, roles: [] })
   expect(result.data.harnesses.find((row: { id: string }) => row.id === 'codex')).toMatchObject({ available: false, reason: expect.any(String) })
-  expect((await cli(dir, ["harness", "ls"])).data).toHaveLength(Object.keys(createHarnesses()).length)
+  expect((await cli(dir, ["harness", "ls"])).data).toHaveLength(Object.keys(createHarnesses()).length - 1)
   expect((await cli(dir, ['models', 'ls'])).data).toEqual([])
 })
 

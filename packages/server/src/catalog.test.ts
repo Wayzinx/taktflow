@@ -39,7 +39,8 @@ it('注入 runtime catalog 返回实际能力、插件来源、默认角色，�
   }))
   const { root, configure, get } = await fixture({ getCatalog })
   await configure({ plugins: ['./plugin.ts'], models: { fast: { provider: 'demo', id: 'first' } }, providers: { demo: { protocol: 'openai-chat', apiKeyEnv: 'TAKT_CATALOG_TEST_KEY' } } })
-  expect(await get<HarnessInfo[]>('/api/harnesses')).toEqual(runtimeHarnesses)
+  expect(await get<HarnessInfo[]>('/api/harnesses')).toEqual(runtimeHarnesses.map(row => expect.objectContaining({ ...row,
+    ...(row.id === 'native' ? { displayName: '直连 API（内置）' } : {}) })))
   const models = await get<ModelInfo[]>('/api/models')
   expect(models).toEqual([{ alias: 'fast', provider: 'demo', protocol: 'openai-chat', id: 'first', keyPresent: true }])
   expect(JSON.stringify(models)).not.toContain('synthetic-catalog-secret')

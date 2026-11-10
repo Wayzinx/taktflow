@@ -22,6 +22,8 @@
  * | GET  | /api/attention?pending=1                       | AttentionItem[] |
  * | POST | /api/attention/:requestId                      | 请求体 { decision?, answer? } → AttentionItem |
  * | GET  | /api/harnesses                                 | HarnessInfo[]（设置页：可用性与能力矩阵） |
+ * | GET  | /api/space/runtime/catalog                     | RuntimeCatalog（provider 与 harness 模型目录） |
+ * | POST | /api/space/runtime/catalog/refresh             | CatalogList（owner 强制刷新 target） |
  * | GET  | /api/models                                    | ModelInfo[] |
  * | GET  | /api/pairings                                  | PairingInfo[]（每个 harness × [自带, 各 provider]，docs/design/31） |
  * | --- 模型与 Harness 配置（docs/design/27 §4） | | |
@@ -266,6 +268,7 @@ import type {
   SpaceMember,
   WorkflowSnapshot,
   HarnessCapabilities,
+  Effort,
   ProviderProtocol,
   ArtifactRecord,
   CompactionRecord,
@@ -951,6 +954,41 @@ export interface HarnessInfo {
   override?: HarnessOverride
   /** 本空间自己加的（cli / acp），可以在设置页编辑和删除。 */
   custom?: boolean
+  icon?: string
+  ownLabel?: string
+  install?: string
+  hidden?: boolean
+  testOnly?: boolean
+}
+
+export interface CatalogModel {
+  id: string
+  label: string
+  contextWindow?: number
+  maxOutput?: number
+  reasoning?: boolean
+  efforts?: Effort[]
+  defaultEffort?: Effort
+  input?: string[]
+  toolCall?: boolean
+  price?: ModelConfig['price']
+  origin: 'discovered' | 'preset' | 'manual' | 'harness'
+  alias?: string
+  deprecated?: boolean
+}
+
+export interface CatalogList {
+  models: CatalogModel[]
+  fetchedAt?: string
+  source: 'live' | 'cache' | 'preset'
+  error?: string
+}
+
+export interface RuntimeCatalog {
+  harnesses: Array<HarnessInfo & { own?: CatalogList; accepts: ProviderProtocol[] }>
+  providers: Array<{ id: string; displayName: string; protocols: ProviderProtocol[]; keyPresent: boolean; models: CatalogList; embeddings?: CatalogModel[] }>
+  pairings: PairingInfo[]
+  enrichment: 'ok' | 'unavailable'
 }
 
 /** 搭配矩阵的一格（docs/design/31 §2、§6）：GET /api/pairings。 */

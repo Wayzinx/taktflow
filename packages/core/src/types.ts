@@ -5,7 +5,11 @@
  * 改这里等于改协议：先改 docs/design 里对应的设计文档，再改类型。
  */
 
+import type { CatalogModel } from './api.js'
+
 // ============================================================ 通用
+
+export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 /** ISO 8601 时间字符串。 */
 export type Timestamp = string
@@ -161,7 +165,7 @@ export interface HarnessSelector {
   model?: string
   /** 把模型指到另一家 LLM API（TaktConfig.providers 的 id）；harness 必须声明 customProvider。 */
   provider?: string
-  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  effort?: Effort
   fallback?: HarnessSelector[]
 }
 
@@ -1026,6 +1030,7 @@ export interface HarnessAdapter {
   capabilities?: HarnessCapabilities
   /** detail：版本、ACP 协议版本与 agent 能力等，给设置页的"测试"显示。 */
   available(): Promise<{ ok: boolean; reason?: string; detail?: string }>
+  listModels?(): Promise<CatalogModel[]>
   run(req: HarnessRequest, onEvent: (e: HarnessEvent) => void): Promise<HarnessResult>
 }
 
@@ -1104,6 +1109,13 @@ export interface ModelConfig {
   /** embedding 模型的向量维度。 */
   dimensions?: number
   contextWindow?: number
+  label?: string
+  maxOutput?: number
+  reasoning?: boolean
+  efforts?: Effort[]
+  defaultEffort?: Effort
+  input?: string[]
+  toolCall?: boolean
   /** 每百万 token 的价格（美元），用于成本统计。 */
   price?: { input: number; output: number; cachedInput?: number }
 }

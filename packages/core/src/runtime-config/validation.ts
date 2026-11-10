@@ -54,11 +54,17 @@ export function validateRuntimeConfig(config: TaktConfig, options: RuntimeValida
   for (const [id, m] of Object.entries(config.models ?? {})) {
     const path = `models.${id}`
     if (!object(m)) invalid(path, '必须是对象')
-    fields(m, ['provider', 'id', 'kind', 'dimensions', 'contextWindow', 'price'], path)
+    fields(m, ['provider', 'id', 'kind', 'dimensions', 'contextWindow', 'price', 'label', 'maxOutput', 'reasoning', 'efforts', 'defaultEffort', 'input', 'toolCall'], path)
     if (!string(m.provider) || !Object.hasOwn(config.providers ?? {}, m.provider)) invalid(`${path}.provider`, '指向不存在的 provider，请先登记 provider')
     if (!string(m.id)) invalid(`${path}.id`, '缺少厂商模型 ID')
     if (m.kind !== undefined && !['chat', 'embedding'].includes(m.kind)) invalid(`${path}.kind`, '只支持 chat 或 embedding')
-    for (const key of ['dimensions', 'contextWindow'] as const) if (m[key] !== undefined && (!Number.isSafeInteger(m[key]) || m[key]! <= 0)) invalid(`${path}.${key}`, '必须是正整数')
+    for (const key of ['dimensions', 'contextWindow', 'maxOutput'] as const) if (m[key] !== undefined && (!Number.isSafeInteger(m[key]) || m[key]! <= 0)) invalid(`${path}.${key}`, '必须是正整数')
+    if (m.label !== undefined && !string(m.label)) invalid(`${path}.label`, '必须是非空字符串')
+    for (const key of ['reasoning', 'toolCall'] as const) if (m[key] !== undefined && typeof m[key] !== 'boolean') invalid(`${path}.${key}`, '必须是布尔值')
+    const efforts = ['low', 'medium', 'high', 'xhigh', 'max']
+    if (m.efforts !== undefined && (!Array.isArray(m.efforts) || m.efforts.some(e => !efforts.includes(e)))) invalid(`${path}.efforts`, '推理档必须是 low/medium/high/xhigh/max 数组')
+    if (m.defaultEffort !== undefined && (!efforts.includes(m.defaultEffort) || (m.efforts !== undefined && !m.efforts.includes(m.defaultEffort)))) invalid(`${path}.defaultEffort`, '默认推理档必须属于可用档位')
+    if (m.input !== undefined && (!Array.isArray(m.input) || m.input.some(v => !string(v)))) invalid(`${path}.input`, '必须是输入模态字符串数组')
     if (m.kind === 'embedding' && m.dimensions === undefined) invalid(`${path}.dimensions`, '向量模型需要维度')
     if (m.price !== undefined && (!object(m.price) || [m.price.input, m.price.output, m.price.cachedInput ?? 0].some(v => typeof v !== 'number' || !Number.isFinite(v) || v < 0))) invalid(`${path}.price`, '价格必须是非负有限数值，并包含 input/output')
   }

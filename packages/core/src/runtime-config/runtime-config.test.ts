@@ -54,6 +54,14 @@ it('provider 可以登记同一把密钥的其他协议入口', () => {
   const ds = { protocol: 'openai-chat', baseURL: 'https://ds.invalid', endpoints: { 'anthropic-messages': 'https://ds.invalid/anthropic' } }
   expect(applyRuntimePatch(config, patch({ providers: { ds } }), options).config.providers).toEqual({ ds })
 })
+it('手填模型元数据可保存，默认推理档必须属于声明的档位', () => {
+  const model = { provider: 'p', id: 'gpt-5.2', label: 'GPT', maxOutput: 1024, reasoning: true, efforts: ['high', 'max'], defaultEffort: 'high', input: ['text', 'image'], toolCall: false }
+  const input = { providers: { p: { protocol: 'openai-chat' } }, models: { chosen: model } }
+  expect(applyRuntimePatch(config, patch(input), options).config.models?.chosen).toEqual(model)
+  for (const extra of [{ defaultEffort: 'medium' }, { efforts: ['none'] }, { maxOutput: 0 }, { reasoning: 'true' }, { input: [1] }]) {
+    expect(() => applyRuntimePatch(config, patch({ ...input, models: { chosen: { ...model, ...extra } } }), options)).toThrow('models.chosen')
+  }
+})
 it('遮盖值回填沿用旧配置且不将明文写入调用者请求', () => {
   const source = { ...config, harnessOverrides: { codex: { env: { NORMAL: 'old-value' } } } }
   const input = patch({ harnessOverrides: { codex: { env: { NORMAL: '[REDACTED]' } } } }, source)

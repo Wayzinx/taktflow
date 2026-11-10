@@ -1,4 +1,6 @@
 import { createProviderBridge } from '@taktflow/harness'
+export { ModelCatalog } from './model-catalog.js'
+export { createRuntimeModelCatalog } from './runtime-catalog.js'
 import { AutomationRuntime } from './automation-runtime.js'
 import type { RuntimeCallbacks } from './runtime-routes.js'
 import { startMaintenance } from './maintenance.js'

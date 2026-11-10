@@ -7,6 +7,7 @@ import type { HarnessAdapter } from '@taktflow/core'
 import { ParseState, object, string, text, readUsage, promptWithInstructions, readProviderApiKey } from './parse.js'
 import type { EventSink, StreamParser } from './parse.js'
 import { finalizeResult, runProcess } from './process.js'
+import { listCliModels, parseCodexModels, parseTraeModels } from './model-list.js'
 
 export interface CodexOptions { bin?: string; env?: Record<string, string> }
 
@@ -74,6 +75,10 @@ function createCodexFamilyHarness(id: string, displayName: string, command: stri
   return {
     id, displayName,
     capabilities,
+    async listModels() {
+      const output = await listCliModels(bin, id === 'codex' ? ['debug', 'models'] : ['models'], options.env)
+      return id === 'codex' ? parseCodexModels(output) : parseTraeModels(output)
+    },
     async available() {
       const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })
       return proc.ok ? { ok: true } : { ok: false, reason: proc.error || proc.stderr || 'Codex 不可用' }

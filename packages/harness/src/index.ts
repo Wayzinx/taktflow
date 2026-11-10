@@ -37,6 +37,8 @@ export { createClaudeCodeHarness, createClaudeCodeParser } from './claude-code.j
 export type { ClaudeCodeOptions } from './claude-code.js'
 export { createCodexHarness, createCodexParser, createTraeHarness } from './codex.js'
 export type { CodexOptions } from './codex.js'
+export { parseCodexModels, parseTraeModels } from './model-list.js'
+export { harnessCatalogInfo } from './catalog-info.js'
 export { createDshHarness, createDshParser } from './dsh.js'
 export type { DshOptions } from './dsh.js'
 export { createMockHarness, loadMockScript } from './mock.js'

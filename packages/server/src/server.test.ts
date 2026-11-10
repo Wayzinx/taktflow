@@ -330,7 +330,7 @@ it('GET /api/harnesses 与 /api/models 透传注入的能力矩阵与模型别�
   const harnessRows: HarnessInfo[] = [{ id: 'test', displayName: 'Test', source: 'plugin', available: true, capabilities: { usage: true }, roles: ['dev'] }]
   const modelRows: ModelInfo[] = [{ alias: 'fast', provider: 'demo', protocol: 'openai-chat', id: 'demo-fast', contextWindow: 128000, keyPresent: false }]
   const server = await startServer({ projectDir: fixture.root, getHarnesses: async () => harnessRows, getModels: async () => modelRows })
-  expect(await getJson<HarnessInfo[]>(`${server.url}/api/harnesses`)).toEqual({ status: 200, body: harnessRows })
+  expect(await getJson<HarnessInfo[]>(`${server.url}/api/harnesses`)).toEqual({ status: 200, body: harnessRows.map(row => ({ ...row, hidden: false, testOnly: false })) })
   expect(await getJson<ModelInfo[]>(`${server.url}/api/models`)).toEqual({ status: 200, body: modelRows })
 })
 

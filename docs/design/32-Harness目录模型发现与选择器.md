@@ -67,7 +67,7 @@
   - 6 小时过期。过期后先返回旧的，后台再刷新。
   - 「刷新」按钮强制重新拉。
 - **合并，不覆盖**：
-  - 优先级：手填 > 发现 > 预设。
+  - 优先级：手填 > 发现。上游列成功时预设不再混入（预设里的名字多半已过期），列不出来才用预设兜底。
   - 手填条目覆盖同 ID 的元数据，但不限制发现范围。
   - 上游不再列出的模型标「上游已下架」。已被角色引用的仍然可以选，也仍然能运行。
 
@@ -89,10 +89,12 @@
 |---|---|---|
 | Codex | `codex debug models`（JSON：slug、display_name、context_window、supported_reasoning_levels、default_reasoning_level；跳过 `visibility` 为隐藏的） | 有 |
 | TRAE CLI | `traecli models` | 视输出 |
-| Claude Code | 固定别名 opus / sonnet / haiku，加上环境里配置的模型 | 固定档 |
+| Claude Code | 固定别名 opus / sonnet / haiku | 本机 help 存在 --effort 时提供五档，默认 high |
 | Pi / OpenCode / dsh | 各自的列模型命令或配置；能核实的才接 | 视输出 |
 
 列不出来时，界面显示「使用 harness 默认模型」。额度、负载只在 harness 或 provider 真给数据时才显示，第一版不做，也不显示估算值。
+
+本次接入 Codex、TRAE CLI、Claude Code；其余适配器不实现 listModels。TRAE 已核实为逐行模型 ID 文本，解析时保留大小写。
 
 ## 4. 搭配：逐个 harness 核实
 
@@ -158,14 +160,25 @@
 
 ## 7. 接口
 
+本节的目录、发现与缓存已实现；§4 的新增协议注入及 §6 的前端选择器不在本次范围。
+
 - `GET /api/space/runtime/catalog` 返回 `RuntimeCatalog`：
   - `harnesses[]`：HarnessInfo 的新字段，加上 `own`（自带模型列表）和 `accepts`（能接的协议）。
-  - `providers[]`：`{ id, displayName, icon, protocols, keyPresent, models }`。
+  - `providers[]`：`{ id, displayName, protocols, keyPresent, models, embeddings? }`，embeddings 单独保存向量模型。
   - `pairings[]`：沿用 31 的 PairingInfo。
+  - `enrichment: 'ok' | 'unavailable'`：models.dev 元数据是否可用。
+  - 同样支持 `/api/s/<space>/space/runtime/catalog`；并行发现，最多等待 2.8 秒，未完成项返回预设及 `error: '正在获取…'`。
 - **模型列表 `CatalogList`**：
   - 外层：`{ models, fetchedAt?, source: 'live' | 'cache' | 'preset', error? }`。
-  - 每个模型 `CatalogModel`：`{ id, label, contextWindow?, maxOutput?, reasoning?, efforts?, defaultEffort?, input?, toolCall?, price?, origin: 'discovered' | 'preset' | 'manual', alias?, deprecated? }`。
+  - 每个模型 `CatalogModel`：`{ id, label, contextWindow?, maxOutput?, reasoning?, efforts?, defaultEffort?, input?, toolCall?, price?, origin: 'discovered' | 'preset' | 'manual' | 'harness', alias?, deprecated? }`。
+  - `Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'`；price 为每百万 token 的美元价格，沿用 ModelConfig 的 input/output/cachedInput。
+  - ModelConfig 允许手填 label、maxOutput、reasoning、efforts、defaultEffort、input、toolCall；按厂商 id 合并，保留 alias。
 - **刷新**：`POST /api/space/runtime/catalog/refresh`，`target` 为 `{ kind: 'provider' | 'harness', id }`，强制刷新一项。
+  - 仅 owner 可调用，返回该项 CatalogList；多空间路径与 GET 相同。
+  - provider、models.dev、自带模型缓存均为 6 小时；过期返回旧值并去重后台刷新。provider 地址/协议变化使缓存失效；缺少密钥时不请求上游。
+  - provider 列表超时 10 秒，harness 命令超时 20 秒；失败返回预设与错误，不把失败当下架证据。
+  - `HarnessAdapter.listModels?(): Promise<CatalogModel[]>` 是可选能力；Codex 解析 JSON，TRAE 解析逐行模型 ID，Claude 固定三个别名并通过本机 help 检测 effort。
+  - `HarnessInfo` 增加可选 icon/ownLabel/install/hidden/testOnly；声明式 CLI 无品牌图标，native 无 ownLabel，mock 为 testOnly。`GET /api/harnesses` 默认过滤测试替身，`includeTest=1` 可查看；不改变执行注册表。
 - **选择结果沿用 `HarnessSelector`**：
   - 格式：`{ harness, provider?, model, effort? }`，`model` 填厂商模型 ID。
   - 不必先建模型别名。已有别名照常可用。

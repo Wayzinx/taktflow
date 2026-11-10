@@ -1,5 +1,5 @@
 import { providerProtocols, resolveSecret, selectHarness } from '@taktflow/core'
-import { createHarnesses, harnessCommand, collectSecrets, createRedactor } from '@taktflow/harness'
+import { createHarnesses, harnessCommand, harnessCatalogInfo, collectSecrets, createRedactor } from '@taktflow/harness'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { HarnessInfo, ModelInfo, ProjectStores } from '@taktflow/core'
@@ -23,7 +23,7 @@ function catalogHarnesses(context: ProjectContext) {
   return registry
 }
 
-export async function runtimeHarnesses(context: ProjectContext, onProbeError?: () => void): Promise<HarnessInfo[]> {
+export async function runtimeHarnesses(context: ProjectContext, onProbeError?: () => void, includeTest = false): Promise<HarnessInfo[]> {
   const { config } = context.stores
   const roles = { ...config.roles }
   for (const role of Object.keys(context.profiles)) roles[role] = selectHarness(role, undefined, { ...context, config })
@@ -36,7 +36,7 @@ export async function runtimeHarnesses(context: ProjectContext, onProbeError?: (
     const override = config.harnessOverrides?.[id]
     const redact = createRedactor(collectSecrets({ prompt: '', cwd: context.stores.projectDir, env: { ...custom?.env, ...override?.env } }))
     const command = harnessCommand(harness)
-    return {
+    return harnessCatalogInfo({
       id, displayName: redact(harness.displayName),
       source: Object.hasOwn(context.plugins.harnesses, id) ? 'plugin' : id === 'native' ? 'native' : custom?.kind ?? 'builtin',
       available: availability.ok,
@@ -47,9 +47,9 @@ export async function runtimeHarnesses(context: ProjectContext, onProbeError?: (
       ...(availability.reason ? { reason: redact(redactRuntime(context, availability.reason)) } : {}),
       capabilities: harness.capabilities ?? {},
       roles: Object.entries(roles).filter(([, selector]) => selector.harness === id).map(([role]) => role).sort(),
-    }
+    }, config)
   }))
-  return harnesses
+  return harnesses.filter(harness => includeTest || !harness.testOnly)
 }
 
 export function runtimeModels(context: ProjectContext): ModelInfo[] {
@@ -108,14 +108,14 @@ export function createRuntimeCatalog(options: {
     return entry.promise
   }
 
-  async function getHarnesses(stores: ProjectStores): Promise<HarnessInfo[]> {
+  async function getHarnesses(stores: ProjectStores, includeTest = false): Promise<HarnessInfo[]> {
     const context = await runtime(stores)
     const cached = probes.get(context)
-    if (cached && now() < cached.expires) return cached.promise
+    if (cached && now() < cached.expires) return (await cached.promise).filter(h => includeTest || !h.testOnly)
     let failed = false
     const entry: CacheEntry<HarnessInfo[]> = {
       expires: Infinity,
-      promise: runtimeHarnesses(context, () => { failed = true }).then((rows) => {
+      promise: runtimeHarnesses(context, () => { failed = true }, true).then((rows) => {
         // 不可用是合法探测结果；探测抛错则保留本次原因，下次请求立即重试。
         entry.expires = failed ? 0 : now() + ttl
         return rows
@@ -125,15 +125,15 @@ export function createRuntimeCatalog(options: {
       }),
     }
     probes.set(context, entry)
-    return entry.promise
+    return (await entry.promise).filter(h => includeTest || !h.testOnly)
   }
 
   async function getModels(stores: ProjectStores): Promise<ModelInfo[]> {
     return runtimeModels(await runtime(stores))
   }
 
-  async function getCatalog(stores: ProjectStores): Promise<RuntimeCatalog> {
-    const [harnesses, models] = await Promise.all([getHarnesses(stores), getModels(stores)])
+  async function getCatalog(stores: ProjectStores, includeTest = false): Promise<RuntimeCatalog> {
+    const [harnesses, models] = await Promise.all([getHarnesses(stores, includeTest), getModels(stores)])
     return { harnesses, models }
   }
 

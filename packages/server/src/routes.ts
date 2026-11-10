@@ -1,4 +1,5 @@
 import { pairingMatrix } from './pairings.js'
+import { harnessCatalogInfo } from '@taktflow/harness'
 import { automationRoutes, type AutomationCallbacks } from './automation-routes.js'
 import { agentRoutes } from './agent-routes.js'
 import { runtimeRoutes, type RuntimeCallbacks } from './runtime-routes.js'
@@ -170,10 +171,11 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
     if (!rows) throw new HttpError(501, '未接入运行时 harnesses 目录')
     return pairingMatrix(stores.config, rows, catalog.bridge)
   })
-  add('GET', '/api/harnesses', ({ stores }) => {
-    if (catalog.getHarnesses) return catalog.getHarnesses(stores)
-    if (catalog.getCatalog) return catalog.getCatalog(stores).then((value) => value.harnesses)
-    throw new HttpError(501, '未接入运行时 harnesses 目录')
+  add('GET', '/api/harnesses', async ({ stores, url }) => {
+    const includeTest = url.searchParams.get('includeTest') === '1'
+    const rows = catalog.getHarnesses ? await catalog.getHarnesses(stores, includeTest) : catalog.getCatalog ? (await catalog.getCatalog(stores, includeTest)).harnesses : undefined
+    if (!rows) throw new HttpError(501, '未接入运行时 harnesses 目录')
+    return rows.map(row => harnessCatalogInfo(row, stores.config)).filter(row => includeTest || !row.testOnly)
   })
   add('GET', '/api/models', ({ stores }) => {
     if (catalog.getModels) return catalog.getModels(stores)

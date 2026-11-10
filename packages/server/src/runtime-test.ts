@@ -1,10 +1,11 @@
+import { providerRequest, listProviderModels } from './provider-request.js'
 import { testPairing } from './pairing-test.js'
-import { resolveSecret, type ProviderBridge, type HarnessAdapter, type RuntimeTestRequest, type RuntimeTestResult, type TaktConfig } from '@taktflow/core'
+import { type ProviderBridge, type HarnessAdapter, type RuntimeTestRequest, type RuntimeTestResult, type TaktConfig } from '@taktflow/core'
 import { providerConfig, collectSecrets, createRedactor } from '@taktflow/harness'
 import { HttpError } from './http.js'
 
 export async function testRuntime(config: TaktConfig, request: RuntimeTestRequest,
-  harnesses: () => Promise<Record<string, HarnessAdapter>>, bridge?: ProviderBridge): Promise<RuntimeTestResult> {
+  harnesses: () => Promise<Record<string, HarnessAdapter>>, bridge?: ProviderBridge, fetcher: typeof fetch = fetch): Promise<RuntimeTestResult> {
   if (!request.target || !['provider', 'model', 'harness', 'pairing'].includes(request.target.kind)) throw new HttpError(400, 'target.kind 必须是 provider、model、harness 或 pairing')
   const target = request.target
   if (target.kind === 'pairing') return testPairing(config, request, harnesses, bridge)
@@ -33,23 +34,14 @@ export async function testRuntime(config: TaktConfig, request: RuntimeTestReques
   if (!raw) throw new HttpError(400, 'provider 不存在；请先登记 provider')
   const provider = providerConfig(providerId, raw)
   try {
-    if (!provider.baseURL) return result(false, '未配置 baseURL；请填写服务地址')
-    const url = new URL(provider.baseURL)
-    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return result(false, '服务地址不合法；请使用无凭据的 HTTP(S) 地址')
-    const headers = new Headers({ 'content-type': 'application/json', ...provider.headers })
-    const key = provider.apiKeyEnv ? resolveSecret(provider.apiKeyEnv) : undefined
-    if (provider.apiKeyEnv && !key) return result(false, '密钥缺失；请设置环境变量或本机密钥库')
-    if (provider.protocol === 'anthropic-messages') headers.set('anthropic-version', '2023-06-01')
-    if (key) {
-      const header = provider.preset === 'azure-openai' ? 'api-key' : provider.protocol === 'anthropic-messages' ? 'x-api-key' : provider.protocol === 'gemini' ? 'x-goog-api-key' : 'authorization'
-      headers.set(header, header === 'authorization' ? `Bearer ${key}` : key)
-    }
-    const path = url.pathname.replace(/\/+$/, '').replace(/\/(chat\/completions|responses|messages|embeddings)$/, '')
-    const base = provider.protocol === 'anthropic-messages' && !path.endsWith('/v1') ? `${path}/v1` : path
-    let payload: unknown
     if (target.kind === 'provider') {
-      url.pathname = `${base}/models`
-    } else if (model!.kind === 'embedding') {
+      const models = await listProviderModels(provider, fetcher)
+      return result(true, 'Provider 连通正常', `返回 ${models.length} 个模型`)
+    }
+    const { url, headers } = providerRequest(provider)
+    const base = url.pathname.replace(/\/+$/, '')
+    let payload: unknown
+    if (model!.kind === 'embedding') {
       if (provider.protocol !== 'openai-chat') return result(false, '此协议尚不支持向量测试；请使用 openai-chat 兼容接口')
       url.pathname = `${base}/embeddings`
       payload = { model: model!.id, input: 'a' }
@@ -65,19 +57,14 @@ export async function testRuntime(config: TaktConfig, request: RuntimeTestReques
     } else return result(false, '此协议尚不支持连通测试；请使用对应厂商工具验证')
     // 仅发送一次，不重试、不跟随跳转；请求发出后即标为可能计费，失败也不宣称免费。
     billed = target.kind === 'model'
-    const response = await fetch(url, { method: billed ? 'POST' : 'GET', headers,
+    const response = await fetcher(url, { method: billed ? 'POST' : 'GET', headers,
       ...(payload ? { body: JSON.stringify(payload) } : {}), signal: AbortSignal.timeout(10_000), redirect: 'manual' })
     if (!response.ok) { await response.body?.cancel(); return result(false, `服务返回 HTTP ${response.status}；请检查地址、密钥和模型权限`) }
     const value = await response.json() as Record<string, unknown>
-    if (target.kind === 'provider') {
-      const models = value.data ?? value.models
-      if (!Array.isArray(models)) return result(false, '列模型响应格式不正确；请检查服务地址和协议')
-      return result(true, 'Provider 连通正常', `返回 ${models.length} 个模型`)
-    }
     const valid = model!.kind === 'embedding' ? Array.isArray(value.data) && value.data.length > 0
       : provider.protocol === 'openai-chat' ? Array.isArray(value.choices) && value.choices.length > 0
       : provider.protocol === 'anthropic-messages' ? Array.isArray(value.content)
       : provider.protocol === 'openai-responses' ? Array.isArray(value.output) : Array.isArray(value.candidates)
     return result(valid, valid ? '模型最小请求成功' : '模型响应格式不正确；请核对协议')
-  } catch { return result(false, '连通测试失败或超过 10 秒；请检查服务地址、密钥和网络') }
+  } catch (error) { return result(false, error instanceof Error ? error.message : '连通测试失败；请检查服务地址、密钥和网络') }
 }

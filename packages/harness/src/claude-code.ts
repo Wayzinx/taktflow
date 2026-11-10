@@ -1,4 +1,5 @@
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { listClaudeModels } from './model-list.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { HarnessCapabilities } from '@taktflow/core'
@@ -89,6 +90,7 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
     id: 'claude-code',
     displayName: 'Claude Code',
     capabilities,
+    listModels: () => listClaudeModels(bin, options.env),
     async available() {
       const proc = await runProcess(bin, ['--version'], { prompt: '', cwd: process.cwd(), env: options.env, timeoutMs: 5_000 })
       return proc.ok ? { ok: true } : { ok: false, reason: proc.error || proc.stderr || 'Claude Code 不可用' }
