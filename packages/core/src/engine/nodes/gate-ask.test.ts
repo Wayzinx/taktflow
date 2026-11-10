@@ -20,6 +20,8 @@ it('门禁裁决的提问写要点：第几次、AC 编号、没过的用例按�
       { id: `TC-AC${i + 1}-002`, status: i < 5 ? 'manual_pending' : 'blocked', pass: i === 6, evidence: [] },
     ],
   }))
+  // 同一条用例覆盖两条 AC，只算一次
+  details[1]!.cases.push({ ...details[0]!.cases[1]!, pass: false })
   const ask = gateAsk(node, [{ id: 'acceptance', pass: false, status: 'fail', message: '交付校验未通过：存在无用例、未通过或缺少证据的 AC', details }], 3)
   expect(ask.split('\n')).toEqual([
     '交付校验第 3 次检查仍未通过：',

@@ -26,10 +26,13 @@ export function gateAsk(node: GateNodeDef, failed: GateCheckResult[], attempt = 
     const acs = Array.isArray(result.details) ? result.details.filter(isObject).filter((item) => typeof item.ac === 'string' && item.pass === false) : []
     if (acs.length) {
       parts.push(`未通过的 AC：${listIds(acs.map((item) => item.ac as string))}`)
-      const counts = new Map<string, number>()
+      // 一条用例可能覆盖多条 AC，按用例 ID 去重再计数
+      const failing = new Map<string, string>()
       for (const item of acs) for (const c of Array.isArray(item.cases) ? item.cases.filter(isObject) : []) {
-        if (c.pass !== true) counts.set(String(c.status ?? 'not_run'), (counts.get(String(c.status ?? 'not_run')) ?? 0) + 1)
+        if (c.pass !== true) failing.set(String(c.id), String(c.status ?? 'not_run'))
       }
+      const counts = new Map<string, number>()
+      for (const status of failing.values()) counts.set(status, (counts.get(status) ?? 0) + 1)
       if (counts.size) parts.push(`没过的用例：${[...counts].map(([status, n]) => `${status} ${n} 条`).join('、')}`)
     }
     return `· ${name}${score}：${parts.join('；')}`
