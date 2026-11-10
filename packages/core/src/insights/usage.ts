@@ -13,23 +13,27 @@ export function orderedEvents(events: EventEnvelope[]): EventEnvelope[] {
   return [...events].sort((a, b) => a.runId.localeCompare(b.runId) || a.seq - b.seq)
 }
 
+/**
+ * 一次运行里每次调用 harness 都记一条 harness.usage（增量）：评审的每位评审每一轮、裁决、失败重试都在里面，和预算条同一口径。
+ * node.finished.usage 只是节点最后一次调用的量；没有 harness.usage 的旧运行才退回用它。
+ */
+function usageEvents(events: EventEnvelope[]): Array<{ nodeId?: string; usage: Usage }> {
+  const metered = new Set(events.filter((event) => event.type === 'harness.usage').map((event) => event.runId))
+  return events.flatMap((event) => {
+    if (metered.has(event.runId) ? event.type !== 'harness.usage' : event.type !== 'node.finished') return []
+    const usage = event.type === 'harness.usage' ? event.data as EventPayloads['harness.usage'] : (event.data as EventPayloads['node.finished']).usage
+    return usage ? [{ nodeId: event.nodeId, usage }] : []
+  })
+}
+
 export function summarizeUsage(events: EventEnvelope[]): Usage {
-  let total: Usage = { inputTokens: 0, outputTokens: 0 }
-  // 结束事件是最终用量；流式事件可能是增量或累计值，不能与它混算。
-  for (const event of events) {
-    if (event.type !== 'node.finished') continue
-    const usage = (event.data as EventPayloads['node.finished']).usage
-    if (usage) total = addUsage(total, usage)
-  }
-  return total
+  return usageEvents(events).reduce((total, { usage }) => addUsage(total, usage), { inputTokens: 0, outputTokens: 0 })
 }
 
 export function nodeUsage(events: EventEnvelope[], runId: string): Map<string, Usage> {
   const result = new Map<string, Usage>()
-  for (const event of events) {
-    if (event.runId !== runId || event.nodeId === undefined || event.type !== 'node.finished') continue
-    const usage = (event.data as EventPayloads['node.finished']).usage
-    if (usage) result.set(event.nodeId, addUsage(result.get(event.nodeId) ?? { inputTokens: 0, outputTokens: 0 }, usage))
+  for (const { nodeId, usage } of usageEvents(events.filter((event) => event.runId === runId))) {
+    if (nodeId !== undefined) result.set(nodeId, addUsage(result.get(nodeId) ?? { inputTokens: 0, outputTokens: 0 }, usage))
   }
   return result
 }

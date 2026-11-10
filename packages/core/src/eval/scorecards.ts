@@ -9,7 +9,7 @@ import { listDefects } from '../defects/index.js'
 import { runEventsOf } from '../insights/run-digest.js'
 
 /** 成绩单用到的事件类型：按类型取缓存的子集，不再每次整份解析每个运行的事件日志。 */
-const SCORECARD_EVENT_TYPES = ['node.started', 'node.recipe', 'node.finished', 'node.failed', 'node.checks', 'invocation.started', 'retry.suppressed', 'artifact.edited', 'judge.verdict'] as const
+const SCORECARD_EVENT_TYPES = ['node.started', 'node.recipe', 'node.finished', 'node.failed', 'node.checks', 'invocation.started', 'retry.suppressed', 'artifact.edited', 'judge.verdict', 'harness.usage'] as const
 
 export interface ScorecardOptions { by: 'node' | 'recipe' | 'skill'; workflowId?: string }
 interface Sample {

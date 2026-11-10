@@ -115,7 +115,7 @@ describe('buildRunGraph / stageProgress', () => {
 })
 
 describe('summarizeUsage / summarizeRun', () => {
-  it('只累计完成事件的权威用量，忽略失败尝试和未完成节点的流式记录', () => {
+  it('按每次调用的 harness.usage 累计：重试、多轮、还在跑的调用都算，和预算同一口径', () => {
     const events = [
       start(1, 'a'), event(2, 'harness.usage', { inputTokens: 10, outputTokens: 2 }, 'a'),
       event(3, 'harness.usage', { inputTokens: 5, outputTokens: 3 }, 'a'),
@@ -127,17 +127,17 @@ describe('summarizeUsage / summarizeRun', () => {
       event(12, 'harness.usage', { inputTokens: 7, outputTokens: 1 }),
     ]
     const before = JSON.stringify(events)
-    expect(summarizeUsage([...events].reverse())).toEqual({ inputTokens: 85, outputTokens: 19, cachedTokens: 4, costUsd: expect.closeTo(0.4) })
+    expect(summarizeUsage([...events].reverse())).toEqual({ inputTokens: 42, outputTokens: 10, costUsd: expect.closeTo(0.2) })
     expect(JSON.stringify(events)).toBe(before)
   })
 
-  it('跨运行累计完成事件，实时流式用量不提前计入', () => {
+  it('按运行分别判断：没有 harness.usage 的旧运行退回结束事件', () => {
     const events = [
       event(1, 'harness.usage', { inputTokens: 10, outputTokens: 1 }, 'a', 'run-1'),
       event(1, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 20, outputTokens: 2 } }, 'a', 'run-2'),
       event(2, 'harness.usage', { inputTokens: 30, outputTokens: 3 }, 'b', 'run-1'),
     ]
-    expect(summarizeUsage(events)).toEqual({ inputTokens: 20, outputTokens: 2 })
+    expect(summarizeUsage(events)).toEqual({ inputTokens: 60, outputTokens: 6 })
     expect(summarizeUsage([])).toEqual({ inputTokens: 0, outputTokens: 0 })
   })
 
@@ -364,12 +364,11 @@ it('Expansion.nodes 优先于旧 records，展开节点全限定 ID 与相对 lo
   expect(graph.edges).not.toContainEqual({ from: 'plan/a/source', to: 'plan/a/loop/fix', kind: 'dep' })
 })
 
-it('运行与图按所有完成事件累计 loop/retry，已删除节点仍计入运行总量，空日志不使用 state', () => {
+it('旧运行（没有 harness.usage）按所有完成事件累计 loop/retry，已删除节点仍计入运行总量，空日志不使用 state', () => {
   const snapshot = workflow([node('loop', { kind: 'loop', body: [node('dev')] })])
   const state = run({ nodes: { 'loop/dev': runtime('loop/dev', { usage: { inputTokens: 999, outputTokens: 999 } }) } })
   const events = [
     event(1, 'node.finished', { status: 'failed', outputs: [], usage: { inputTokens: 10, outputTokens: 2, cachedTokens: 1, costUsd: 0.1 } }, 'loop/dev'),
-    event(2, 'harness.usage', { inputTokens: 1000, outputTokens: 1000 }, 'loop/dev'),
     event(3, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 20, outputTokens: 3, cachedTokens: 2, costUsd: 0.2 } }, 'loop/dev'),
     event(4, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 7, outputTokens: 1 } }, 'loop/removed'),
     event(1, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 888, outputTokens: 888 } }, 'loop/dev', 'other'),
@@ -382,4 +381,17 @@ it('运行与图按所有完成事件累计 loop/retry，已删除节点仍计�
   expect(buildRunGraph(snapshot, state, [], []).nodes.find((item) => item.id === 'loop/dev')?.usage).toEqual({ inputTokens: 0, outputTokens: 0 })
   expect(buildRunGraph(snapshot, state).nodes.find((item) => item.id === 'loop/dev')?.usage).toEqual(state.nodes['loop/dev']!.usage)
   expect(JSON.stringify(state)).toBe(before)
+})
+
+it('有 harness.usage 时节点用量是每次调用之和：评审多位评审、多轮都算，不只最后一次', () => {
+  const snapshot = workflow([node('review')])
+  const state = run({ nodes: { review: runtime('review') } })
+  const events = [
+    event(1, 'harness.usage', { inputTokens: 100, outputTokens: 10 }, 'review'),
+    event(2, 'harness.usage', { inputTokens: 200, outputTokens: 20 }, 'review'),
+    event(3, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 200, outputTokens: 20 } }, 'review'),
+    event(4, 'harness.usage', { inputTokens: 5, outputTokens: 1 }),
+  ]
+  expect(buildRunGraph(snapshot, state, [], events).nodes.find((item) => item.id === 'review')?.usage).toEqual({ inputTokens: 300, outputTokens: 30 })
+  expect(summarizeRun(state, events).usage).toEqual({ inputTokens: 305, outputTokens: 31 })
 })
