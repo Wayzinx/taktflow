@@ -1,7 +1,7 @@
 import type { CatalogList, CatalogModel, RuntimeCatalog } from '@taktflow/core'
 import { providerIconKey } from '../components/brand/brand-icon'
 import { sameModel, type PickerGroup, type PickerHarness, type PickerModel, type PickerValue } from '../components/harness-picker/types'
-import { harnessMeta, isTestOnly } from './harness-meta'
+import { harnessMeta, isTestOnly, readableReason } from './harness-meta'
 import { PROTOCOL_SHORT } from './pairing'
 
 type CatalogHarness = RuntimeCatalog['harnesses'][number]
@@ -107,9 +107,9 @@ export function catalogToPicker(catalog: RuntimeCatalog, opts: { defaultHarness?
         id: h.id,
         name: meta.name,
         icon: meta.icon,
-        own: h.id === 'native' || h.capabilities.requiresProvider ? '直接调接入的 LLM API' : meta.own,
+        own: h.id === 'native' || h.capabilities.requiresProvider ? '直接调接入的 LLM API' : h.ownReady === false ? '自带账号未登录 · 可接 API' : meta.own,
         available,
-        reason: h.hidden ? '本空间已隐藏' : h.reason,
+        reason: h.hidden ? '本空间已隐藏' : h.available ? undefined : h.reason === '正在检测…' ? h.reason : readableReason(h.reason),
         badge: h.id === opts.defaultHarness ? '默认' : undefined,
         groups: groups.length ? groups : off.length ? [{ key: 'off', label: '搭不上的 API', models: off }] : [],
       }

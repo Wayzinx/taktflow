@@ -4,17 +4,10 @@ import type { HarnessInfo } from '@taktflow/core'
 import { CAPABILITIES, HARNESS_SOURCE } from '../../lib/capabilities'
 import { PROTOCOL_SHORT } from './runtime/shared'
 import { BrandIcon } from '../../components/brand/brand-icon'
-import { harnessMeta } from '../../lib/harness-meta'
+import { harnessMeta, readableReason } from '../../lib/harness-meta'
 import './harness-list.css'
 
 /** server 透传的是原始进程错误（"Process error: spawn gemini ENOENT\nProcess exited…"），换成人话，原文放 title。 */
-export function readableReason(reason: string | undefined): string {
-  if (!reason) return '可用性检查未通过'
-  const missing = /spawn (\S+) ENOENT/.exec(reason)
-  if (missing) return `未找到命令 ${missing[1]}：未安装或不在 PATH 中`
-  return reason.split('\n')[0]!
-}
-
 /** 能接哪些模型 API：自定义 provider 时能直接说的协议；不支持就只用自带。 */
 function ModelApis({ h }: { h: HarnessInfo }) {
   const protocols = h.capabilities.customProvider ? (h.capabilities.providerProtocols ?? []) : []

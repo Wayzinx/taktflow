@@ -40,3 +40,11 @@ export function harnessMeta(h: Meta): { name: string; own?: string; icon?: strin
   const name = acp && h.source === 'acp' && !h.displayName.includes('ACP') ? `${acp.name} · ACP 接法` : acp?.preset === 'claude' ? 'Claude Code · ACP 接法' : h.displayName
   return { name, icon, own: h.ownLabel ?? OWN[h.id] ?? (acp ? OWN[acp.preset] : undefined) }
 }
+
+/** 探测失败的原始报错换成一句人话：没装就说没装，其余只留第一行。 */
+export function readableReason(reason: string | undefined): string {
+  if (!reason) return '可用性检查未通过'
+  const missing = /spawn (\S+) ENOENT/.exec(reason)
+  if (missing) return `未找到命令 ${missing[1]}：未安装或不在 PATH 中`
+  return reason.split('\n')[0]!
+}

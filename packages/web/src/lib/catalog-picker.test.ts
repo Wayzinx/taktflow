@@ -71,6 +71,7 @@ describe('catalogToPicker', () => {
   it('自带账号没登录时只有「自带」那组不可用，API 组照常', () => {
     const dsh = catalogToPicker(catalog()).find((h) => h.id === 'dsh')!
     expect(dsh.available).toBe(true)
+    expect(dsh.own).toBe('自带账号未登录 · 可接 API')
     expect(dsh.groups[0]).toMatchObject({ key: 'own', hint: '没登录 DeepSeek 账号' })
     expect(dsh.groups[0]!.models.every((x) => !x.available)).toBe(true)
     expect(dsh.groups[1]!.models[0]!.available).toBe(true)
