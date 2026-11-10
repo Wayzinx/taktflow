@@ -3,14 +3,9 @@ import { Check, ChevronRight, CircleAlert, CircleCheck, Minus, PowerOff } from '
 import type { HarnessInfo } from '@taktflow/core'
 import { CAPABILITIES, HARNESS_SOURCE } from '../../lib/capabilities'
 import { PROTOCOL_SHORT } from './runtime/shared'
+import { BrandIcon } from '../../components/brand/brand-icon'
+import { harnessMeta } from '../../lib/harness-meta'
 import './harness-list.css'
-
-/** "Claude Code" → CC，"Codex" → Co。 */
-function monogram(name: string): string {
-  const words = name.split(/[\s-]+/).filter(Boolean)
-  if (words.length >= 2) return (words[0]![0]! + words[1]![0]!).toUpperCase()
-  return name.slice(0, 1).toUpperCase() + name.slice(1, 2)
-}
 
 /** server 透传的是原始进程错误（"Process error: spawn gemini ENOENT\nProcess exited…"），换成人话，原文放 title。 */
 export function readableReason(reason: string | undefined): string {
@@ -41,7 +36,7 @@ function Status({ h }: { h: HarnessInfo }) {
   return (
     <span className={`hx-status${disabled ? ' is-off' : h.available ? ' ok' : ''}`}>
       {disabled ? <PowerOff aria-hidden /> : h.available ? <CircleCheck aria-hidden /> : <CircleAlert aria-hidden />}
-      {disabled ? '已停用' : h.available ? '可用' : '不可用'}
+      {disabled ? '已隐藏' : h.available ? '可用' : '不可用'}
     </span>
   )
 }
@@ -76,17 +71,18 @@ export function HarnessRow({ h, actions, below }: { h: HarnessInfo; actions?: Re
   const supported = CAPABILITIES.filter((c) => h.capabilities[c.key]).length
   const disabled = Boolean(h.override?.disabled)
   const command = h.command?.join(' ')
+  const meta = harnessMeta(h)
   return (
     <li className={`hx-row${open ? ' open' : ''}${h.available ? '' : ' down'}${disabled ? ' is-disabled' : ''}`} style={{ '--src': src.color } as CSSProperties}>
       <div className="hx-main">
         <button type="button" className="hx-who" aria-expanded={open} onClick={() => setOpen((x) => !x)} title={open ? '收起能力详情' : '展开能力详情'}>
           <ChevronRight aria-hidden className="hx-caret" />
           <span className="hx-mono" aria-hidden>
-            {monogram(h.displayName)}
+            <BrandIcon k={meta.icon} label={meta.name} size={18} />
           </span>
           <span className="hx-name">
             <span className="hx-title">
-              <b className="truncate">{h.displayName}</b>
+              <b className="truncate" title={h.id}>{meta.name}</b>
               <span className="hx-src" title={src.hint}>
                 {src.label}
               </span>
@@ -96,8 +92,8 @@ export function HarnessRow({ h, actions, below }: { h: HarnessInfo; actions?: Re
                 {readableReason(h.reason)}
               </span>
             ) : (
-              <span className="hx-sub mono truncate" title={command ?? h.id}>
-                {command ?? h.id}
+              <span className="hx-sub truncate" title={command ? `启动命令：${command}` : h.id}>
+                {meta.own ?? meta.note ?? <span className="mono">{command ?? h.id}</span>}
                 {(h.override?.command || h.override?.env) && <span className="hx-tag">已覆盖</span>}
               </span>
             )}
@@ -156,14 +152,14 @@ export function HarnessListHead() {
 }
 
 /** 不可用的一组折起来：没装的 agent 一排卡片只是噪音，需要时再展开。 */
-export function DownGroup({ count, names, open, onToggle, children }: { count: number; names: string[]; open: boolean; onToggle: () => void; children: ReactNode }) {
+export function DownGroup({ count, names, open, onToggle, children, label, hint = '未安装或没登录；内置的不能删除，可以隐藏' }: { count: number; names: string[]; open: boolean; onToggle: () => void; children: ReactNode; label?: string; hint?: string }) {
   return (
     <li className={`hx-group${open ? ' open' : ''}`}>
       <button type="button" className="hx-group-head" aria-expanded={open} onClick={onToggle}>
         <ChevronRight aria-hidden className="hx-caret" />
-        <b>{count} 个不可用</b>
+        <b>{label ?? `${count} 个不可用`}</b>
         <span className="faint truncate">{names.join(' · ')}</span>
-        <span className="hx-group-hint faint">未安装、没登录或已停用</span>
+        <span className="hx-group-hint faint">{hint}</span>
       </button>
       {open && <ul className="hx-sublist">{children}</ul>}
     </li>

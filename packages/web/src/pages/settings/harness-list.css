@@ -9,7 +9,7 @@
 .hx-head,
 .hx-main {
   display: grid;
-  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.4fr) 92px minmax(0, 1.2fr) 74px 104px;
+  grid-template-columns: minmax(0, 2.2fr) minmax(0, 1.4fr) 92px minmax(0, 1.2fr) 74px 132px;
   align-items: center;
   gap: var(--sp-3);
   padding: 0 var(--sp-4) 0 var(--sp-2);
@@ -79,12 +79,9 @@
   height: 30px;
   flex: none;
   border-radius: 8px;
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 650;
   color: var(--text);
-  background: color-mix(in srgb, var(--src) 12%, var(--surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--src) 28%, transparent);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 .hx-name {
   display: grid;

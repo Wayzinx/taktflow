@@ -1,11 +1,12 @@
 import { useRef, useState } from 'react'
-import { Boxes, Cpu, KeyRound, MoreHorizontal, Pencil, Plus, Power, Route, ServerOff, Settings2, Trash2 } from 'lucide-react'
+import { Boxes, Cpu, Eye, EyeOff, KeyRound, MoreHorizontal, Pencil, Plus, Route, ServerOff, Settings2, Trash2 } from 'lucide-react'
 import type { HarnessInfo, ModelInfo, RuntimeConfig, RuntimeTestResult } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { StatCard, StatStrip } from '../../components/stat-card'
 import { CountUp, EmptyState, ErrorState, Menu, ReasonDialog, Segmented, Skeleton, toast, useFlashRows, useStagger } from '../../components/ui'
 import { StewardEditNote } from './ask-steward'
 import { DownGroup, HarnessListHead, HarnessRow } from './harness-list'
+import { harnessMeta, isTestOnly } from '../../lib/harness-meta'
 import { CustomHarnessDrawer, OverrideDrawer } from './runtime/harness-edit'
 import { ModelsCard } from './runtime/models'
 import { PairingMatrix } from './runtime/pairing-matrix'
@@ -94,7 +95,7 @@ function HarnessSkeleton() {
   )
 }
 
-/** 行上的操作：测试（探测 / ACP 握手）+ 菜单（内置：设置、停用；自加的：编辑、删除）。 */
+/** 行上的操作：测试（探测 / ACP 握手）+ 菜单（内置：设置、隐藏；自加的：编辑、删除）。不可用的内置 harness 直接给「隐藏」，已隐藏的给「取消隐藏」。 */
 function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: HarnessInfo; rt: RuntimeApi; onResult: (r: RuntimeTestResult | undefined) => void; onSettings: () => void; onEdit: () => void; onRemove: () => void }) {
   const btn = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -104,6 +105,11 @@ function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: 
   return (
     <>
       {!disabled && <TestButton target={{ kind: 'harness', id: h.id }} onResult={onResult} ghost />}
+      {rt.cfg && builtin && (disabled || !h.available) && (
+        <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label={disabled ? `取消隐藏 ${h.displayName}` : `隐藏 ${h.displayName}`} title={disabled ? '取消隐藏' : '隐藏：内置的不能删除，隐藏后不进路由和选择器'} onClick={() => setToggling(true)}>
+          {disabled ? <Eye aria-hidden /> : <EyeOff aria-hidden />}
+        </button>
+      )}
       {rt.cfg && (h.custom || builtin) && (
         <>
           <button ref={btn} type="button" className="btn btn-sm btn-ghost btn-icon" aria-label={`${h.displayName} 的更多操作`} onClick={() => setOpen(true)}>
@@ -122,7 +128,7 @@ function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: 
                   ]
                 : [
                     { id: 'set', label: '可执行文件与环境变量', icon: Settings2, onSelect: onSettings },
-                    { id: 'toggle', label: disabled ? '在本空间重新启用' : '在本空间停用', icon: Power, separator: true, danger: !disabled, onSelect: () => setToggling(true) },
+                    { id: 'toggle', label: disabled ? '在本空间取消隐藏' : '在本空间隐藏', icon: disabled ? Eye : EyeOff, separator: true, danger: !disabled, onSelect: () => setToggling(true) },
                   ]
             }
           />
@@ -130,21 +136,21 @@ function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: 
             open={toggling}
             onClose={() => setToggling(false)}
             risk={disabled ? 'write' : 'dangerous'}
-            title={disabled ? `重新启用 ${h.displayName}` : `在本空间停用 ${h.displayName}`}
+            title={disabled ? `取消隐藏 ${h.displayName}` : `在本空间隐藏 ${h.displayName}`}
             description={
               disabled
-                ? '启用后路由和探测都能看到它。'
+                ? '取消隐藏后路由和探测都能看到它。'
                 : h.roles.length
                   ? `还有角色在用它：${h.roles.join('、')}。先把这些角色改到别的 harness，否则保存会被拒绝。`
-                  : '停用后路由和探测都看不到它；正在跑的节点不受影响。'
+                  : '隐藏后路由、选择器和探测都看不到它，内置的 harness 不能删除，隐藏就是移出列表；正在跑的节点不受影响。'
             }
-            confirmLabel={disabled ? '启用' : '停用'}
+            confirmLabel={disabled ? '取消隐藏' : '隐藏'}
             onSubmit={async (reason) => {
               const o = { ...rt.cfg!.harnessOverrides[h.id] }
               if (disabled) delete o.disabled
               else o.disabled = true
               await rt.patch({ harnessOverrides: { [h.id]: Object.keys(o).length ? o : null } }, reason)
-              toast(disabled ? `${h.displayName} 已重新启用` : `${h.displayName} 已在本空间停用`)
+              toast(disabled ? `${h.displayName} 已取消隐藏` : `${h.displayName} 已在本空间隐藏`)
             }}
           />
         </>
@@ -164,14 +170,17 @@ export function RuntimeTab() {
   const [removing, setRemoving] = useState<HarnessInfo>()
   const [downOpen, setDownOpen] = useState(false)
 
-  const hs = hq.data
+  // 测试替身不进列表；真有角色指到它时才露出来，免得配置看不见
+  const hs = hq.data?.filter((h) => !isTestOnly(h) || h.roles.length > 0)
   const shown = hs?.filter((h) => filter === 'all' || (filter === 'available' ? h.available : !h.available)) ?? []
-  const downCount = hs?.filter((h) => !h.available).length ?? 0
+  const downCount = hs?.filter((h) => !h.available && !h.override?.disabled).length ?? 0
+  const [hiddenOpen, setHiddenOpen] = useState(false)
   const st = useStagger(shown.length)
   const flash = useFlashRows(shown.map((h) => h.id))
   // 「全部」里不可用的折成一组；只看不可用时直接平铺
   const up = filter === 'unavailable' ? [] : shown.filter((h) => h.available && !h.override?.disabled)
-  const down = filter === 'unavailable' ? shown : shown.filter((h) => !h.available || h.override?.disabled)
+  const down = shown.filter((h) => !h.available && !h.override?.disabled)
+  const hidden = shown.filter((h) => h.override?.disabled)
   const row = (h: HarnessInfo, i: number) => {
     const sx = st(i)
     return (
@@ -241,10 +250,15 @@ export function RuntimeTab() {
             {filter === 'unavailable'
               ? down.map((h, i) => row(h, i))
               : down.length > 0 && (
-                  <DownGroup count={down.length} names={down.map((h) => h.id)} open={downOpen} onToggle={() => setDownOpen((x) => !x)}>
+                  <DownGroup count={down.length} names={down.map((h) => harnessMeta(h).name)} open={downOpen} onToggle={() => setDownOpen((x) => !x)}>
                     {down.map((h, i) => row(h, up.length + i))}
                   </DownGroup>
                 )}
+            {hidden.length > 0 && (
+              <DownGroup label={`已隐藏 ${hidden.length} 个`} hint="不进路由和选择器，可以取消隐藏" count={hidden.length} names={hidden.map((h) => harnessMeta(h).name)} open={hiddenOpen} onToggle={() => setHiddenOpen((x) => !x)}>
+                {hidden.map((h, i) => row(h, up.length + down.length + i))}
+              </DownGroup>
+            )}
           </ul>
         )}
       </section>
