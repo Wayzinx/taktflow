@@ -6,7 +6,10 @@ import { durationBetween, fmtCost, fmtDate, fmtDuration, fmtRelative, fmtTokens,
 import { Link, navigate } from '../../lib/router'
 import { runStatusMeta } from '../../lib/status'
 
-export function RunsTab({ runs, reqId }: { runs?: RunSummary[]; reqId?: string }) {
+/** 运行列表：新的在前（运行 ID 带开始时间）；全都没有成本数据时（订阅制 harness）不留一整列"—"。 */
+export function RunsTab({ runs: given, reqId }: { runs?: RunSummary[]; reqId?: string }) {
+  const runs = given && [...given].sort((a, b) => (b.startedAt ?? b.runId).localeCompare(a.startedAt ?? a.runId))
+  const priced = runs?.some((r) => r.usage.costUsd) ?? false
   const st = useStagger(runs?.length ?? 0)
   const flash = useFlashRows((runs ?? []).map((r) => r.runId))
   if (!runs) return <div className="card"><SkeletonRows rows={3} /></div>
@@ -34,7 +37,7 @@ export function RunsTab({ runs, reqId }: { runs?: RunSummary[]; reqId?: string }
             <th>开始</th>
             <th className="r">耗时</th>
             <th className="r">Token</th>
-            <th className="r">成本</th>
+            {priced && <th className="r">成本</th>}
           </tr>
         </thead>
         <tbody>
@@ -68,7 +71,7 @@ export function RunsTab({ runs, reqId }: { runs?: RunSummary[]; reqId?: string }
                 <td title={fmtDate(r.startedAt)}>{fmtRelative(r.startedAt)}</td>
                 <td className="r mono">{fmtDuration(durationBetween(r.startedAt, r.endedAt) ?? 0)}</td>
                 <td className="r mono">{fmtTokens(totalTokens(r.usage))}</td>
-                <td className="r mono">{fmtCost(r.usage.costUsd)}</td>
+                {priced && <td className="r mono">{fmtCost(r.usage.costUsd)}</td>}
               </tr>
             )
           })}

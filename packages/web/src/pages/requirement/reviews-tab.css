@@ -8,6 +8,13 @@
 .rvs > .card:has(> .rvs-table) {
   overflow-x: auto;
 }
+.rvs-scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: var(--text-meta);
+}
 .rvs-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));

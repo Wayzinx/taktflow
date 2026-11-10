@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { ClipboardCheck, Undo2 } from 'lucide-react'
 import type { ReviewSummary } from '@taktflow/core'
 import { useAsync } from '../../api'
@@ -13,16 +13,23 @@ const openOf = (r: ReviewSummary) => (r.facets ? r.facets.open.blocker + r.facet
 
 const nodeHref = (r: ReviewSummary) => `/run/${r.runId}?node=${encodeURIComponent(r.nodeId)}&dtab=review`
 
-/** 需求页 · 评审：所有评审节点的汇总，点开跳到运行页对应节点的评审 Tab。 */
+/**
+ * 需求页 · 评审：评审节点的汇总，点开跳到运行页对应节点的评审 Tab。
+ * 默认只看最近一次真正走到评审的运行（重试多次的需求，早先失败的运行里都是"未开始"的评审，混在一起看不出现在的状态）；
+ * 可以展开看全部运行，按运行从新到旧排。
+ */
 export function ReviewsTab({ id }: { id: string }) {
   const q = useAsync((ds) => ds.requirementReviews(id), [id])
+  const [allRuns, setAllRuns] = useState(false)
   if (q.error) return <div className="card"><ErrorState error={q.error} onRetry={q.reload} /></div>
   if (!q.data) return <div className="card"><SkeletonRows rows={4} /></div>
-  const list = q.data
+  const runs = [...new Set(q.data.map((r) => r.runId))].sort().reverse()
+  const current = runs.find((runId) => q.data!.some((r) => r.runId === runId && r.status !== 'pending')) ?? runs[0]
+  const list = allRuns ? [...q.data].sort((a, b) => b.runId.localeCompare(a.runId)) : q.data.filter((r) => r.runId === current)
   if (!list.length)
     return (
       <div className="card">
-        <EmptyState icon={ClipboardCheck} title="还没有评审" body="workflow 里的 review 节点开始评审后，每个节点的轮次、结论和未解决问题会汇总在这里。" />
+        <EmptyState icon={ClipboardCheck} title="还没有评审" body="流水线里的评审节点开始评审后，每个节点的轮次、结论和未解决问题会汇总在这里。" />
       </div>
     )
   const open = list.reduce((n, r) => n + openOf(r), 0)
@@ -32,6 +39,22 @@ export function ReviewsTab({ id }: { id: string }) {
   const active = list.filter((r) => r.status === 'in_review' || r.status === 'revising').length
   return (
     <div className="rvs">
+      {runs.length > 1 && (
+        <div className="rvs-scope">
+          <span className="faint">
+            {allRuns ? (
+              <>全部 {runs.length} 次运行的 {q.data.length} 个评审节点，新的在前</>
+            ) : (
+              <>
+                最近一次走到评审的运行 <Link to={`/run/${current}`} className="mono">{current}</Link>
+              </>
+            )}
+          </span>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllRuns((x) => !x)}>
+            {allRuns ? '只看最近一次' : `看全部 ${runs.length} 次运行`}
+          </button>
+        </div>
+      )}
       <div className="rvs-stats" role="list">
         <Stat label="评审节点" value={list.length} />
         <Stat label="已结束" value={passed} tone="success" />
@@ -62,6 +85,7 @@ export function ReviewsTab({ id }: { id: string }) {
                       {r.title}
                     </Link>
                     <div className="rvs-sub mono faint truncate" title={`${r.runId} · ${r.nodeId}\n${targetText(r.target)}`}>
+                      {allRuns && `${r.runId.slice(-11)} · `}
                       {r.nodeId} · {targetText(r.target)}
                     </div>
                   </td>
@@ -69,7 +93,7 @@ export function ReviewsTab({ id }: { id: string }) {
                     <StatusBadge meta={REVIEW_STATUS[r.status]} />
                   </td>
                   <td>
-                    {r.facets ? <FacetTags facets={r.facets} compact /> : <span className="faint">—</span>}
+                    {r.facets && r.status !== 'pending' ? <FacetTags facets={r.facets} compact /> : <span className="faint">—</span>}
                   </td>
                   <td>
                     <RoundMeter revision={r.revision ?? r.reworks + 1} round={r.round} max={r.maxRounds} />
