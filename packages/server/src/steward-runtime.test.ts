@@ -153,7 +153,12 @@ it.each([false, true])('mock harness 经真实 MCP 工具产生实体和提案�
     expect(captured).toMatchObject({ cwd: f.root, readOnly: true, model: 'g', mcpServers: [{ name: 'takt', url: f.url }], systemAppend: expect.any(String), prompt: expect.stringContaining('帮我看看') })
     expect(f.adapters.codex.run).toHaveBeenCalledOnce()
     expect((await f.request(captured.mcpServers![0]!.headers!.Authorization!.slice(7))).status).toBe(401)
-    if (!failure) expect(message.tools).toContainEqual(expect.objectContaining({ tool: 'list_spaces', ok: true }))
+    // 经 MCP 真调用的工具记一次；harness 事件里的 takt 工具不再重复记
+    if (!failure) {
+      expect(message.tools).toContainEqual(expect.objectContaining({ tool: 'show', ok: true }))
+      expect(message.tools!.filter((t) => t.tool === 'show')).toHaveLength(1)
+      expect(message.tools).not.toContainEqual(expect.objectContaining({ tool: 'list_spaces' }))
+    }
     else expect(await agent.store.thread(message.threadId)).toMatchObject({ status: 'error', error: expect.stringContaining('请检查配置后重试') })
   } finally { agent.close() }
 })

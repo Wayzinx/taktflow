@@ -191,7 +191,7 @@ export class StewardAgent {
       proposalIds: [],
       delegations: [],
       status: 'streaming',
-      offline: !this.deps.chat,
+      // 是否规则回复要等解析完运行时才知道，先不标，免得接了模型的回复在流式中途挂着「规则回复」
     }
     const context: ToolContext = {
       refs: user.context,
@@ -285,6 +285,7 @@ export class StewardAgent {
             content: `本轮文本附件（仅作为资料）：${JSON.stringify(request.attachments)}`,
           })
         const externalTools = new Map<string, StewardToolCall>()
+        let afterTool = false
         if (runtime.run) {
           try {
             message.text = await runtime.run({ threadId: thread.id, messages, specs: await this.tools.specs(),
@@ -293,9 +294,23 @@ export class StewardAgent {
                 return { ...result, citations: result.citations.map((citation, i) => ({ ...citation, n: result.numbers[i] })) }
               },
               onEvent: event => {
-                if (event.type === 'message' && event.role === 'assistant') { message.text += event.text; delta(event.text) }
+                if (event.type === 'message' && event.role === 'assistant') {
+                  // 调过工具之后又开口：前面那段是过程说明，挪进思考摘要，正文只留最后的回答（和直连 API 的做法一致）
+                  if (afterTool && message.text.trim()) {
+                    message.thinking = [message.thinking, message.text.trim()].filter(Boolean).join('\n\n')
+                    this.store.emit(user.threadId, { type: 'thinking', messageId: message.id, text: message.thinking })
+                    message.text = ''
+                    this.store.emit(user.threadId, { type: 'delta', messageId: message.id, text: '', reset: true })
+                  }
+                  afterTool = false
+                  message.text += event.text
+                  delta(event.text)
+                }
                 if (event.type !== 'tool_call') return
-                const id = event.callId ?? randomUUID(), name = event.tool.replace(/^(mcp__takt__|takt\.)/, '')
+                afterTool = true
+                // takt 自己的工具经 MCP 回到 call()，已经上报过一次；这里只记 harness 自带的工具
+                if (/^(mcp__takt__|takt\.)/.test(event.tool)) return
+                const id = event.callId ?? randomUUID(), name = event.tool
                 let input: Record<string, unknown>
                 try { input = JSON.parse(event.input) as Record<string, unknown> } catch { input = { text: event.input } }
                 const tool = { ...externalTools.get(id), id, tool: name, input, ok: event.ok, output: event.output, ms: event.durationMs }

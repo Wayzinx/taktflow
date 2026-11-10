@@ -1525,7 +1525,8 @@ export interface StewardPostRequest {
 
 export type StewardStreamEvent =
   | { type: 'message'; message: StewardMessage }
-  | { type: 'delta'; messageId: string; text: string }
+  /** reset：先清空已流出的正文再接上 text（过程说明挪进思考摘要时用）。 */
+  | { type: 'delta'; messageId: string; text: string; reset?: boolean }
   | { type: 'thinking'; messageId: string; text: string }
   | { type: 'tool'; messageId: string; tool: StewardToolCall }
   /** 本条消息的全部可视化块（每次给全量，前端直接替换）。 */

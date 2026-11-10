@@ -3,6 +3,7 @@ import { DEFAULT_RECEIPT_TIMEOUT_MINUTES } from '../lead/receipts.js'
 import type { StewardBlock, StewardCitation, StewardContextRef, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
 import type { ToolSpec, RoomMessage, NodeKind, SnapshotNode, RunState, Usage, EventEnvelope } from '../types.js'
 import { stageProgress } from '../insights/graph.js'
+import { isObject, readArtifactData } from '../insights/artifacts.js'
 import { createInsights } from '../insights/fs-insights.js'
 import { budgetStatus } from '../insights/budget.js'
 import { addUsage, summarizeUsage } from '../insights/usage.js'
@@ -77,6 +78,39 @@ function timelineItem(event: EventEnvelope, titles: Map<string, string>): { titl
       return { title: `${node ?? '人工节点'} 已确认`, tone: 'success' }
     default:
       return undefined
+  }
+}
+/**
+ * 节点结果给模型看的摘要：门禁检查按用例状态分组列出没通过的用例（带标题和覆盖的 AC），不带证据路径；
+ * 原样给出时一次交付校验就有两万多字，模型抓不到「多少条、卡在哪种情况」。
+ */
+export function nodeResultDigest(result: unknown, caseTitles: Map<string, string>): unknown {
+  if (!isObject(result) || !Array.isArray(result.checks)) {
+    const raw = JSON.stringify(result) ?? ''
+    return raw.length > 2000 ? `${raw.slice(0, 2000)}…` : result
+  }
+  return {
+    pass: result.pass,
+    checks: result.checks.map((check) => {
+      if (!isObject(check) || !Array.isArray(check.details)) return check
+      const details = check.details.filter(isObject)
+      if (!details.length || !details.every((d) => Array.isArray(d.cases))) return { ...check, details: undefined }
+      const cases = new Map<string, { id: string; title?: string; status: string; covers: string[] }>()
+      for (const d of details)
+        for (const c of (d.cases as unknown[]).filter(isObject)) {
+          const id = String(c.id), seen = cases.get(id)
+          if (seen) { if (d.ac && !seen.covers.includes(String(d.ac))) seen.covers.push(String(d.ac)); continue }
+          cases.set(id, { id, title: caseTitles.get(id), status: String(c.status ?? 'not_run'), covers: d.ac ? [String(d.ac)] : [] })
+        }
+      const caseCounts: Record<string, number> = {}
+      const notPassed: Record<string, Array<{ id: string; title?: string; covers: string[] }>> = {}
+      for (const c of cases.values()) {
+        caseCounts[c.status] = (caseCounts[c.status] ?? 0) + 1
+        if (c.status !== 'passed') (notPassed[c.status] ??= []).push({ id: c.id, title: c.title, covers: c.covers })
+      }
+      const { details: _details, ...rest } = check
+      return { ...rest, acs: details.length, acsNotPassed: details.filter((d) => d.pass === false).map((d) => String(d.ac)), caseCounts, notPassed }
+    }),
   }
 }
 export function delegationStatus(status: StewardDelegation['status']): import('../types.js').DelegationStatus {
@@ -423,16 +457,23 @@ export class StewardTools {
         if (!req) throw new StewardError(404, '需求不存在，请检查引用')
         const run = (await requirementState(space!, reqId!)).runs[0]
         const snapshot = run ? await space!.stores.runs.getWorkflow(run.runId) : undefined
+        const nodeTitles = new Map((snapshot?.nodes ?? []).map((n) => [n.id, n.title ?? n.id]))
+        const caseTitles = new Map<string, string>()
+        try {
+          for (const c of (await readArtifactData(space!.stores.workspaces, reqId!)).cases) if (c.title) caseTitles.set(c.id, c.title)
+        } catch { /* 用例读不出来时只少了标题 */ }
         data = {
           requirement: req,
           stages: run && snapshot ? stageProgress(snapshot, run) : [],
+          // 只给状态、次数、错误和结果摘要：完整节点状态（输入输出版本、证据路径）对回答没用，还会把要点淹没
           currentNodes: run
-            ? Object.values(run.nodes).filter((n) =>
-                ['running', 'waiting_human', 'blocked'].includes(n.status),
-              )
+            ? Object.values(run.nodes)
+                .filter((n) => ['running', 'waiting_human', 'blocked', 'failed'].includes(n.status))
+                .map((n) => ({ id: n.id, title: nodeTitles.get(n.id), status: n.status, attempts: n.attempts, startedAt: n.startedAt, error: n.error, summary: n.summary,
+                  result: n.result === undefined ? undefined : nodeResultDigest(n.result, caseTitles) }))
             : [],
           attention: await space!.stores.attention.list({ requirementId: reqId, pending: true }),
-          latestRun: run,
+          latestRun: run && { runId: run.runId, workflowId: run.workflowId, status: run.status, startedAt: run.startedAt, endedAt: run.endedAt },
           tier: run?.route?.tier,
           budget: run
             ? budgetStatus(

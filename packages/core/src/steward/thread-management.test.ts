@@ -81,15 +81,25 @@ it('重启中断、回复失败、重试清理状态，按会话选择运行配�
     deps.resolveRuntime = async () => ({ run: async turn => {
       const current = await store.thread(thread.id)
       expect(current.status).toBe('replying'); expect(current.error).toBeUndefined()
-      turn.onEvent({ type: 'message', role: 'assistant', text: '完成' })
+      // takt 自己的工具经 MCP 回到 turn.call，harness 事件里同一次调用不能再记一遍；harness 自带的工具照记
+      turn.onEvent({ type: 'message', role: 'assistant', text: '先查一下空间。' })
+      await turn.call('list_spaces', {})
       turn.onEvent({ type: 'tool_call', callId: 'c', tool: 'mcp__takt__list_spaces', input: '{}', ok: true })
+      turn.onEvent({ type: 'tool_call', callId: 'r', tool: 'Read', input: '{"path":"README.md"}', ok: true })
+      turn.onEvent({ type: 'message', role: 'assistant', text: '完成' })
       return '完成'
     } })
     const events: StewardStreamEvent[] = [], off = store.onThread(thread.id, event => events.push(event))
     const reply = await agent.ask({ text: '重试' }, thread.id)
     off()
-    expect(reply).toMatchObject({ status: 'done', text: '完成', offline: false, tools: [{ tool: 'list_spaces' }] })
+    expect(reply).toMatchObject({ status: 'done', text: '完成', thinking: '先查一下空间。', offline: false, tools: [{ tool: 'list_spaces' }, { tool: 'Read' }] })
+    expect(reply.tools).toHaveLength(2)
+    // 调过工具后再开口：前面的过程说明挪进思考摘要，正文先清空再接上回答
+    expect(events).toContainEqual(expect.objectContaining({ type: 'thinking', text: '先查一下空间。' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'delta', text: '', reset: true }))
     expect(events).toContainEqual(expect.objectContaining({ type: 'delta', text: '完成' }))
+    // 流式开始时还不知道是不是规则回复，不能先挂上「规则回复」
+    expect(events.find((e) => e.type === 'message' && e.message.role === 'steward')).not.toMatchObject({ message: { offline: true } })
     expect((await store.thread(thread.id)).status).toBeUndefined()
     await store.patchThread(thread.id, { runtime: null })
     expect((await store.thread(thread.id)).runtime).toBeUndefined()
