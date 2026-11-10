@@ -1,7 +1,8 @@
 /* /spaces 页（B 组） */
 .sp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  /* auto-fit：卡片少时撑满一行，不在右边留空列 */
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: var(--sp-4);
 }
 .sp-card {

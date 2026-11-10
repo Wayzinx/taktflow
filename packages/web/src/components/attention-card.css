@@ -120,6 +120,8 @@
 .att-choices {
   display: grid;
   gap: 6px;
+  /* 页面铺满后选项不跟着拉到整行宽 */
+  max-width: 560px;
 }
 .att-choice {
   display: flex;

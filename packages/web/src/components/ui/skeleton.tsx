@@ -57,7 +57,7 @@ export function SkeletonCard({ height }: { height?: number }) {
 /** 卡片网格（空间卡片、知识库卡片）。 */
 export function SkeletonGrid({ count = 6, min = 260 }: { count?: number; min?: number }) {
   return (
-    <div className="sk-grid" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))` }}>
+    <div className="sk-grid" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(${min}px, 1fr))` }}>
       {Array.from({ length: count }, (_, i) => (
         <SkeletonCard key={i} />
       ))}

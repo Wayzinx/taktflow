@@ -60,9 +60,6 @@
   color: var(--text);
   transform: translateX(2px);
 }
-.wf-list-page {
-  max-width: 1120px;
-}
 .wf-page-foot {
   margin: var(--sp-3) 0 0;
   font-size: var(--text-meta);
