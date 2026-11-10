@@ -210,6 +210,10 @@
   overflow: hidden;
 }
 .d-ask {
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.6;
   padding: 10px 12px;

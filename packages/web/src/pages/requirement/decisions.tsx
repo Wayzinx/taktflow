@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react'
 import { ArrowRight, CircleHelp, Gauge, GitFork, History, Lightbulb, ListChecks, Repeat2, ShieldCheck, type LucideIcon } from 'lucide-react'
 import type { AttentionItem, BudgetStatus, RequirementDetail, RunDetail } from '@taktflow/core'
 import { useAsync } from '../../api'
-import { fmtRelative } from '../../lib/format'
+import { fmtRelative, summaryLine } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { toneSoftVar, toneVar, type Tone } from '../../lib/status'
 
@@ -45,7 +45,7 @@ function staleDetail(a: AttentionItem, detail?: RequirementDetail): string | und
 }
 
 function fromAttention(a: AttentionItem, detail: RequirementDetail | undefined, titleOf: (id: string) => string | undefined): Decision {
-  const base = { key: a.requestId, at: a.createdAt, title: a.ask, nodeLabel: titleOf(a.nodeId) ?? a.nodeId, assignees: a.assignees, to: nodeHref(a) }
+  const base = { key: a.requestId, at: a.createdAt, title: summaryLine(a.ask, 200), nodeLabel: titleOf(a.nodeId) ?? a.nodeId, assignees: a.assignees, to: nodeHref(a) }
   if (a.kind === 'budget') return { ...base, urgency: 0, tone: 'failed', icon: Gauge, kind: '预算用尽', action: '去处理' }
   if (a.kind === 'retry') return { ...base, urgency: 1, tone: 'failed', icon: Repeat2, kind: '重复失败', action: '去裁决' }
   if (a.stale) return { ...base, urgency: 2, tone: 'stale', icon: History, kind: '审批已过期', detail: staleDetail(a, detail), action: '重新审批' }

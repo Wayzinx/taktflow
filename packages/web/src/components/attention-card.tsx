@@ -158,6 +158,8 @@ function AssumptionOrigin({ item }: { item: AttentionItem }) {
   )
 }
 
+const LONG_ASK = 360
+
 /** 一条待办：审批 / 回答 / 选择，可以直接在卡片里处理。 */
 export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem; reqTitle?: string; compact?: boolean }) {
   const ds = useSource()
@@ -166,6 +168,9 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
   const [choice, setChoice] = useState<string | undefined>()
   const [busy, setBusy] = useState(false)
   const [open, setOpen] = useState(!compact)
+  const [full, setFull] = useState(false)
+  // 长提问（例如门禁明细）先收成几行，要看再展开，免得一张卡片占满整屏
+  const long = !compact && (item.ask.length > LONG_ASK || item.ask.split('\n').length > 6)
   const meta = attentionMeta(item)
   const Icon = meta.icon
   const answered = Boolean(item.answeredAt)
@@ -210,7 +215,18 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
           {fmtRelative(item.createdAt)}
         </span>
       </div>
-      {item.kind === 'assumption' ? <AssumptionOrigin item={item} /> : <p className="att-ask">{item.ask}</p>}
+      {item.kind === 'assumption' ? (
+        <AssumptionOrigin item={item} />
+      ) : (
+        <>
+          <p className={`att-ask${long ? (full ? ' full' : ' clamped') : ''}`}>{long && !full ? item.ask.slice(0, LONG_ASK * 3) : item.ask}</p>
+          {long && (
+            <button type="button" className="att-more" aria-expanded={full} onClick={() => setFull((x) => !x)}>
+              {full ? '收起' : '展开全文'}
+            </button>
+          )}
+        </>
+      )}
       <div className="att-node">
         <Link to={`/run/${item.runId}?node=${encodeURIComponent(item.nodeId)}`} className="att-node-link">
           <span className="mono">{item.nodeId}</span>

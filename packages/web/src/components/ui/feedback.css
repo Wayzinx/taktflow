@@ -65,7 +65,17 @@
   font-size: var(--text-ui);
   line-height: 1.45;
 }
+/* 再长的文案也只占几行：关闭按钮永远在视口里，悬停暂停计时也不会把整屏盖住 */
+.toast-title,
 .toast-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.toast-body {
+  -webkit-line-clamp: 3;
   margin-top: 2px;
   font-size: var(--text-meta);
   color: var(--text-2);

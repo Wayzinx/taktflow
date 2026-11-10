@@ -31,7 +31,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { EventEnvelope, EventPayloads, ReviewResponse, ReviewVerdict } from '@taktflow/core'
-import { actorName, fmtDate, fmtTime, fmtTokens, totalTokens } from '../lib/format'
+import { actorName, fmtDate, fmtTime, fmtTokens, summaryLine, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
 import { NODE_STATUS, VERDICT, toneVar, type Tone } from '../lib/status'
 import { toolAction } from '../lib/actions'
@@ -134,7 +134,7 @@ export function describe(e: EventEnvelope): Described {
       }
     }
     case 'human.requested':
-      return { icon: UserRound, tone: 'waiting', title: <>等待人工：{d(e, 'human.requested').ask}</> }
+      return { icon: UserRound, tone: 'waiting', title: <>等待人工：{summaryLine(d(e, 'human.requested').ask, 160)}</> }
     case 'human.answered': {
       const x = d(e, 'human.answered')
       return { icon: CheckCheck, tone: 'success', title: <>人工处理：{x.decision === 'approve' ? '通过' : x.decision === 'reject' ? '打回' : x.decision ?? '已回答'}</>, detail: x.answer }

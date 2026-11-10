@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { ArrowRight, CircleCheck, CirclePlus, CircleX, Inbox, OctagonPause, Play, TrendingDown, TrendingUp, type LucideIcon } from 'lucide-react'
 import type { Digest, Risk, StewardContextRef } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
-import { fmtRelative } from '../../lib/format'
+import { fmtRelative, summaryLine } from '../../lib/format'
 import { hm, since } from './fmt'
 import { jumpTo } from './jump'
 import { RiskCard } from './risk-card'
@@ -63,7 +63,7 @@ export function DigestCard({ digest, onRisk, onAsk, className }: { digest: Diges
                 <a href={a.href} className="stw-digest-row pressable" onClick={(e) => (e.preventDefault(), go(a.href, a.requirementId))}>
                   <Inbox className="stw-digest-icon" data-tone="waiting" aria-hidden />
                   <span className="stw-digest-main">
-                    <span className="stw-digest-title">{a.ask}</span>
+                    <span className="stw-digest-title">{summaryLine(a.ask, 160)}</span>
                     <span className="faint truncate">
                       {tag(a.spaceId)}
                       <span className="mono">{a.requirementId}</span> {a.requirementTitle}

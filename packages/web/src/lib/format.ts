@@ -82,6 +82,12 @@ export function initials(name: string): string {
   return /[一-龥]/.test(clean) ? clean.slice(-2) : clean.slice(0, 2).toUpperCase()
 }
 
+/** 长文本的一行摘要：换行并成空格，超长截断。待办提问、通知正文、悬停提示这类只看要点的地方用。 */
+export function summaryLine(text: string, max = 140): string {
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length > max ? `${line.slice(0, max)}…` : line
+}
+
 export function plural(n: number, unit: string): string {
   return `${n} ${unit}`
 }

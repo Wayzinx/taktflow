@@ -8,7 +8,7 @@ import { useEntityFocus, type FocusTarget } from '../../../components/steward/fo
 import { cellsOf, LaneTrack } from '../../../components/viz'
 import { Skeleton } from '../../../components/ui'
 import { requirementLook } from '../../../lib/entity-look'
-import { fmtRelative } from '../../../lib/format'
+import { fmtRelative, summaryLine } from '../../../lib/format'
 import { Link } from '../../../lib/router'
 import { NODE_STATUS } from '../../../lib/status'
 import { EntityFoot, SnapshotCard, TonePill, useKept, useRunEvents, useTick } from './shared'
@@ -126,7 +126,7 @@ function AttentionRows({ items, target }: { items: AttentionItem[]; target: Focu
               {m.label}
             </span>
             <span className="ent-id mono">{a.requirementId}</span>
-            <span className="ent-att-ask truncate">{a.ask}</span>
+            <span className="ent-att-ask truncate">{summaryLine(a.ask, 160)}</span>
             <time className="num">{fmtRelative(a.createdAt)}</time>
           </>
         )

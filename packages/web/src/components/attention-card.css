@@ -65,6 +65,31 @@
   font-size: var(--text-body);
   line-height: 1.6;
   color: var(--text);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.att-ask.clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 6;
+  overflow: hidden;
+}
+.att-ask.full {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+.att-more {
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-meta);
+  cursor: pointer;
+}
+.att-more:hover {
+  color: var(--text);
+  text-decoration: underline;
 }
 .att-node {
   display: flex;

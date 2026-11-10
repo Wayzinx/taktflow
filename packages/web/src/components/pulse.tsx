@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { invalidate, useSource } from '../api'
 import { diffPulse, pulseIcon, pulseSnap, pulseTitle, type PulseEvent, type PulseSnap } from '../lib/pulse'
+import { summaryLine } from '../lib/format'
 import { navigate, useLocation } from '../lib/router'
 import { toast } from './ui'
 
@@ -15,7 +16,7 @@ function card(e: PulseEvent): { title: string; body: string; tone: 'success' | '
     const o = OUTCOME[e.outcome]
     return { title: `${e.requirementId} 运行${o.text}`, body: e.title, tone: o.tone, go: `/run/${e.runId}`, actions: [{ label: '看运行', to: `/run/${e.runId}` }, { label: '回到需求', to: `/req/${e.requirementId}` }] }
   }
-  return { title: `${e.requirementId} 等你决定`, body: e.ask, tone: 'waiting', go: '/attention', actions: [{ label: '去处理', to: '/attention' }] }
+  return { title: `${e.requirementId} 等你决定`, body: summaryLine(e.ask, 120), tone: 'waiting', go: '/attention', actions: [{ label: '去处理', to: '/attention' }] }
 }
 
 function setIcon(href: string) {

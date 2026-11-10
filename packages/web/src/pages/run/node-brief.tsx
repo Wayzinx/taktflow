@@ -3,6 +3,7 @@ import { CheckCheck, LoaderCircle, MessageSquareText, ScrollText, TriangleAlert 
 import type { GraphNode, NodeDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { toast } from '../../components/ui'
+import { summaryLine } from '../../lib/format'
 import { navigate, setQuery } from '../../lib/router'
 
 /**
@@ -75,7 +76,7 @@ export function NodeBrief({ d, graphNode, runId, requirementId, title, liveTick 
                 审批对象已更新
               </span>
             )}
-            <button type="button" className="btn btn-sm btn-primary" onClick={approve} disabled={busy} aria-busy={busy} title={pending.ask}>
+            <button type="button" className="btn btn-sm btn-primary" onClick={approve} disabled={busy} aria-busy={busy} title={summaryLine(pending.ask, 200)}>
               {busy ? <LoaderCircle className="spin" aria-hidden /> : <CheckCheck />}
               确认通过
             </button>
