@@ -1,11 +1,12 @@
-import { nodeQuality } from './node-quality.js'
+import { NODE_QUALITY_TYPES, nodeQuality } from './node-quality.js'
+import { runEventsOf } from './run-digest.js'
 import { join } from 'node:path'
 import { readJsonFile } from '../store/fs-utils.js'
 import { runDir } from '../store/paths.js'
 import type { RuntimeRecord } from '../engine/runtime.js'
 import type { NodeDetail, ReviewFacets, ReviewStatus, ReviewSummary } from '../api.js'
 import type { ProjectStores } from '../interfaces.js'
-import type { ArtifactRef, ReviewDisposition, ReviewIssue, ReviewRound, RunState, SnapshotNode } from '../types.js'
+import type { ArtifactRef, EventEnvelope, EventType, ReviewDisposition, ReviewIssue, ReviewRound, RunState, SnapshotNode } from '../types.js'
 import { buildRunGraph } from './graph.js'
 import { readReviewRounds } from '../review/records.js'
 import { listReviewDispositions } from '../review/dispositions.js'
@@ -71,18 +72,26 @@ async function targetState(stores: ProjectStores, state: RunState, config: NonNu
   return { readable, freshness: before === now ? 'current' : 'stale' }
 }
 
-export async function reviewDetail(stores: ProjectStores, runId: string, nodeId: string, diffs = new Map<string, Promise<string>>()): Promise<(NonNullable<NodeDetail['review']> & { revision: number }) | undefined> {
+const REVIEW_TYPES: EventType[] = ['review.round', 'review.response', 'review.exhausted', 'rework.started', 'node.started']
+const REVIEW_LIST_TYPES: EventType[] = [...new Set([...REVIEW_TYPES, ...NODE_QUALITY_TYPES])]
+
+/**
+ * pre：列表页一次读好的整次运行数据——events 是按 REVIEW_LIST_TYPES 读出、按节点分组后的本节点事件，journal 是 engine.json；
+ * 不传时自己读。
+ */
+export async function reviewDetail(stores: ProjectStores, runId: string, nodeId: string, diffs = new Map<string, Promise<string>>(), pre?: { events: EventEnvelope[]; journal: RuntimeRecord | undefined }): Promise<(NonNullable<NodeDetail['review']> & { revision: number }) | undefined> {
+  const nodeEvents = pre?.events
   const [state, snapshot] = await Promise.all([stores.runs.get(runId), stores.runs.getWorkflow(runId)])
   if (!state || !snapshot) return undefined
   const definition = [...definitions(snapshot.nodes), ...state.expansions.flatMap((expansion) => definitions(expansion.nodes ?? []))].find((node) => node.id === nodeId)
   if (!definition?.review) return undefined
   const stored = await readReviewRounds(stores, runId, nodeId)
-  const journal = await readJsonFile<RuntimeRecord>(join(runDir(stores.taktDir, runId), 'engine.json'))
+  const journal = pre ? pre.journal : await readJsonFile<RuntimeRecord>(join(runDir(stores.taktDir, runId), 'engine.json'))
   const progress = journal?.reviews?.[nodeId]
   const rounds = stored
   const ns = state.nodes[nodeId]
   const latest = rounds.at(-1)
-  const events = await stores.events.read(runId, { nodeId, types: ['review.round', 'review.response', 'review.exhausted', 'rework.started', 'node.started'] })
+  const events = nodeEvents ? nodeEvents.filter((event) => REVIEW_TYPES.includes(event.type)) : await stores.events.read(runId, { nodeId, types: REVIEW_TYPES })
   const last = events.at(-1)?.type
   let status: ReviewStatus = (ns?.status === 'succeeded' && (ns.result as { passed?: boolean } | undefined)?.passed)
     || (ns?.status === 'skipped' && latest?.passed) ? 'passed'
@@ -96,7 +105,7 @@ export async function reviewDetail(stores: ProjectStores, runId: string, nodeId:
         : status === 'revising' ? 'revising' : status === 'pending' ? 'pending' : 'reviewing'
   const dispositions = await listReviewDispositions(stores, runId, nodeId)
   const open: ReviewFacets['open'] = { blocker: 0, major: 0, minor: 0, nit: 0 }
-  const quality = await nodeQuality(stores, runId, nodeId)
+  const quality = await nodeQuality(stores, runId, nodeId, nodeEvents)
   if (quality.issues?.length) {
     for (const issue of quality.issues) if (issue.status === 'open' || issue.status === 'claimed_fixed') open[issue.severity]++
   } else for (const issue of latestIssues(rounds).values()) if (isOpen(issue, dispositions)) open[issue.severity]++
@@ -116,18 +125,64 @@ export async function reviewDetail(stores: ProjectStores, runId: string, nodeId:
   return { config: definition.review, rounds, status, revision: ns?.revision ?? latest?.revision ?? 1, facets, dispositions }
 }
 
+async function mapLimit<T, R>(items: T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length)
+  let next = 0
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++
+      out[i] = await work(items[i]!)
+    }
+  }))
+  return out
+}
+
+/** 一次列表请求内：同一产物同一版本只读一次、产物清单只列一次（几十个评审节点常常评同一份 PRD / 方案）。只读，不跨请求缓存。 */
+function memoWorkspaces(workspaces: ProjectStores['workspaces']): ProjectStores['workspaces'] {
+  const reads = new Map<string, ReturnType<ProjectStores['workspaces']['readArtifact']>>()
+  const lists = new Map<string, ReturnType<ProjectStores['workspaces']['listArtifacts']>>()
+  const memo = Object.create(workspaces) as ProjectStores['workspaces']
+  memo.readArtifact = (ref) => {
+    const key = JSON.stringify([ref.workspace, ref.path, ref.version])
+    if (!reads.has(key)) reads.set(key, workspaces.readArtifact(ref))
+    return reads.get(key)!
+  }
+  memo.listArtifacts = (workspace) => {
+    if (!lists.has(workspace)) lists.set(workspace, workspaces.listArtifacts(workspace))
+    return lists.get(workspace)!
+  }
+  return memo
+}
+
 export async function listReviews(stores: ProjectStores, requirementId: string): Promise<ReviewSummary[]> {
+  stores = { ...stores, workspaces: memoWorkspaces(stores.workspaces) }
   const summaries: ReviewSummary[] = []
   const diffs = new Map<string, Promise<string>>()
   for (const state of await stores.runs.list({ requirementId })) {
     const snapshot = await stores.runs.getWorkflow(state.runId)
     if (!snapshot) continue
-    for (const node of buildRunGraph(snapshot, state).nodes.filter((node) => node.kind === 'review')) {
-      const detail = await reviewDetail(stores, state.runId, node.id, diffs)
-      if (!detail) continue
+    const reviews = buildRunGraph(snapshot, state).nodes.filter((node) => node.kind === 'review')
+    if (!reviews.length) continue
+    // 一次运行只按类型读一遍（结果按事件文件缓存），再按节点分组：原来每个评审节点各读四遍，几百 MB 的日志要几分钟
+    const byNode = new Map<string, EventEnvelope[]>()
+    for (const event of await runEventsOf(stores, state, REVIEW_LIST_TYPES)) {
+      if (event.nodeId === undefined) continue
+      const list = byNode.get(event.nodeId)
+      if (list) list.push(event)
+      else byNode.set(event.nodeId, [event])
+    }
+    const journal = await readJsonFile<RuntimeRecord>(join(runDir(stores.taktDir, state.runId), 'engine.json'))
+    // 评代码的节点要现算 worktree diff（起 git 子进程）：节点之间并行，最多 6 个同时跑，结果仍按图里的顺序
+    const rows = await mapLimit(reviews, 6, async (node) => {
+      const nodeEvents = byNode.get(node.id) ?? []
+      const detail = await reviewDetail(stores, state.runId, node.id, diffs, { events: nodeEvents, journal })
+      return detail && { node, nodeEvents, detail, issues: (await nodeQuality(stores, state.runId, node.id, nodeEvents)).issues ?? [] }
+    })
+    for (const row of rows) {
+      if (!row) continue
+      const { node, nodeEvents, detail, issues } = row
       const latest = detail.rounds.at(-1)
-      const issues = (await nodeQuality(stores, state.runId, node.id)).issues ?? []
-      const events = await stores.events.read(state.runId, { nodeId: node.id, types: ['rework.started'] })
+      const events = nodeEvents.filter((event) => event.type === 'rework.started')
       summaries.push({ runId: state.runId, nodeId: node.id, title: node.title, target: detail.config.target,
         status: detail.status, round: state.nodes[node.id]?.round ?? latest?.round ?? 0, maxRounds: detail.config.maxRounds, reworks: events.length,
         revision: detail.revision, facets: detail.facets,

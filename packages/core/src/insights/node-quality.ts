@@ -1,13 +1,16 @@
 import type { CheckpointDetail } from '../api.js'
 import type { ProjectStores } from '../interfaces.js'
-import type { Checkpoint, EventPayloads, Invocation, InvocationEnd, InvocationStart, ReviewIssueEntry, SnapshotManifest } from '../types.js'
+import type { Checkpoint, EventEnvelope, EventPayloads, EventType, Invocation, InvocationEnd, InvocationStart, ReviewIssueEntry, SnapshotManifest } from '../types.js'
 import { replayIssues } from '../engine/issues.js'
 import { mergeInvocation } from '../engine/invocations.js'
 import { assertNodeId, assertRunId } from '../store/paths.js'
 
-export async function nodeQuality(stores: ProjectStores, runId: string, nodeId: string): Promise<{ checkpoints: CheckpointDetail[]; invocations: Invocation[]; issues?: ReviewIssueEntry[] }> {
+/** nodeQuality 用到的事件类型：调用方已按类型读过整次运行时传进来，省得每个节点各读一遍日志。 */
+export const NODE_QUALITY_TYPES: EventType[] = ['checkpoint.scheduled', 'checkpoint.finished', 'snapshot.created', 'invocation.started', 'invocation.finished', 'review.result', 'gate.result', 'review.issue']
+
+export async function nodeQuality(stores: ProjectStores, runId: string, nodeId: string, nodeEvents?: EventEnvelope[]): Promise<{ checkpoints: CheckpointDetail[]; invocations: Invocation[]; issues?: ReviewIssueEntry[] }> {
   assertRunId(runId); assertNodeId(nodeId)
-  const events = await stores.events.read(runId, { nodeId })
+  const events = nodeEvents ?? await stores.events.read(runId, { nodeId })
   const checkpoints = new Map<string, CheckpointDetail>()
   const invocations = new Map<string, Invocation>()
   for (const event of events) {
