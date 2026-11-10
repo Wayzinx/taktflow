@@ -24,6 +24,7 @@ import { leadContext } from './context.js'
 import { LEAD_TURN_SCHEMA, validateAction } from './schema.js'
 import { taskWorkflow } from './task.js'
 import { errorText, type LeadRuntimeOptions, type LeadTurnResult, type TaskRunState } from './contracts.js'
+import { briefError } from '../util/brief.js'
 
 export type { LeadRuntimeOptions, LeadTurnResult, TaskRunState, LeadWorkflowAccess } from './contracts.js'
 export { taskWorkflow } from './task.js'
@@ -313,7 +314,7 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     const state = await engine.start({ workflow, requirementId }) as TaskRunState
     engines.delete(state.runId)
     if (state.status !== 'succeeded') {
-      await post(requirementId, { author: system, kind: 'system', replyTo: message.id, refs: { runId: state.runId }, text: `Lead 回合失败：${state.nodes.lead?.error ?? state.status}` })
+      await post(requirementId, { author: system, kind: 'system', replyTo: message.id, refs: { runId: state.runId }, text: `Lead 回合失败：${briefError(state.nodes.lead?.error ?? state.status)}` })
       throw new Error(`Lead 回合失败：${state.nodes.lead?.error ?? state.status}`)
     }
     const result = state.nodes.lead!.result as LeadTurn

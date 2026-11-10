@@ -3,6 +3,9 @@ import { withFileLock } from '../store/file-lock.js'
 import type { ProjectStores } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, RoomMessage, RunState, WorkflowSnapshot } from '../types.js'
 import { stageProgress } from '../insights/graph.js'
+import { briefReviewFeedback } from '../util/brief.js'
+
+const RUN_END: Record<string, string> = { succeeded: '成功', failed: '失败', cancelled: '已取消', waiting_human: '等人处理' }
 
 /** 引擎只在这里把关键事件投影为房间消息，refs 保留回到运行/待办的入口。 */
 export async function postEventMessage(stores: ProjectStores, state: RunState, event: EventEnvelope, snapshot?: WorkflowSnapshot): Promise<void> {
@@ -11,7 +14,7 @@ export async function postEventMessage(stores: ProjectStores, state: RunState, e
   const refs: NonNullable<RoomMessage['refs']> = { runId: state.runId, nodeId: event.nodeId }
   switch (event.type) {
     case 'run.started': text = '运行开始'; break
-    case 'run.finished': text = `运行结束：${(event.data as EventPayloads['run.finished']).status}`; break
+    case 'run.finished': { const status = (event.data as EventPayloads['run.finished']).status; text = `运行结束：${RUN_END[status] ?? status}`; break }
     case 'human.requested': {
       const data = event.data as EventPayloads['human.requested']
       text = data.ask; kind = 'attention'; refs.requestId = data.requestId; break
@@ -23,7 +26,7 @@ export async function postEventMessage(stores: ProjectStores, state: RunState, e
     }
     case 'rework.started': {
       const data = event.data as EventPayloads['rework.started']
-      text = `打回重做：${data.from} → ${data.to}，第 ${data.count} 次。${data.feedback}`; break
+      text = `打回重做：${data.from} → ${data.to}，第 ${data.count} 次。${briefReviewFeedback(data.feedback)}`; break
     }
     case 'node.finished': {
       if (!snapshot) break

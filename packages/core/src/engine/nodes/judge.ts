@@ -6,6 +6,7 @@ import type { JudgeVerdict } from '../../types.js'
 import { sha256 } from '../../util/hash.js'
 import { system } from '../actor.js'
 import { JUDGE_SCHEMA, assertVerdictsCover } from './schemas.js'
+import { judgeAsk } from '../../util/brief.js'
 
 export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promise<void> {
   const node = entry.def
@@ -65,6 +66,6 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
     const source = repair ? await host.failureSource(repair) : ns
     if (await host.noteFailure(entry, `judge:${verdict.category}`, verdict.subject, verdict.rationale, source)) return
   }
-  if (needsHuman) await host.request(entry, `失败判决需要人工裁决：${JSON.stringify(verdicts.filter((v) => (node.routes[v.category] ?? 'human') === 'human'))}`, 'approve')
+  if (needsHuman) await host.request(entry, judgeAsk(node.title ?? '失败判决', verdicts.filter((v) => (node.routes[v.category] ?? 'human') === 'human')), 'approve')
 
 }
