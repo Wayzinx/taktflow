@@ -73,7 +73,8 @@ export default defineWorkflow({
       inputs: [{ path: 'tasks/**' }, { path: 'evidence/**' }], outputs: [{ path: 'reports/impact.md', kind: 'report' }], prompt: '评估改动影响，列回归范围与未覆盖风险。' }),
     script({ id: 'quality-report', title: '质量报告', stage: 'report', needs: ['impact'], run: qualityReport, outputs: [{ path: 'reports/quality.md', kind: 'report' }] }),
     gate({ id: 'delivery-check', title: '交付校验', stage: 'report', goal: '逐条核验验收标准、执行结果与证据', owner: 'qa', needs: ['quality-report'],
-      checks: [{ id: 'acceptance', kind: 'acceptance', role: 'verifier' }] }),
+      // 人工用例、等裁决的用例要人执行或裁决后才有证据：校验不过交人裁决，不直接停掉整个运行
+      checks: [{ id: 'acceptance', kind: 'acceptance', role: 'verifier' }], onFail: 'human' }),
     human({ id: 'acceptance', owner: 'qa', title: '人工准出', stage: 'report', needs: ['delivery-check'], inputs: [{ path: 'reports/**' }, { path: 'spec/prd.md' }], form: 'approve', ask: '审阅质量报告、影响面与评审记录，是否准出？' }),
     agent({ id: 'knowledge-writeback', goal: '提炼可复用的业务规则和教训', owner: 'pm', completion: ["每条知识建议附来源产物或决策记录", "每条建议明确适用范围和需要人工采纳的改动"], title: '知识回流', stage: 'report', needs: ['acceptance'], role: 'pm',
       inputs: [{ path: 'reports/**' }, { path: 'decisions/**' }], outputs: [{ path: 'reports/knowledge-diff.md', kind: 'knowledge' }], prompt: '整理业务规则、决策与问题教训，写成知识库修改建议供人合入。' }),
