@@ -26,7 +26,7 @@ function TriggerList({ trigger }: { trigger: Lesson['trigger'] }) {
           <dt>{k}</dt>
           <dd>
             {v.map((x) => (
-              <span key={x} className={`chip chip-sm${mono ? ' mono' : ''}`}>
+              <span key={x} className={`chip chip-sm${mono ? ' mono' : ''}`} title={x.length > 80 ? x : undefined}>
                 {x}
               </span>
             ))}

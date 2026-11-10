@@ -210,11 +210,29 @@
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr);
   gap: var(--sp-2);
-  align-items: baseline;
+  align-items: start;
 }
 .lesson-trigger dt {
+  padding-top: 2px;
   font-size: var(--text-meta);
   color: var(--text-3);
+}
+/* 路径、错误签名可能很长：标签换行而不是撑出卡片；签名最多 3 行，悬停看全文 */
+.lesson-trigger dd .chip {
+  height: auto;
+  min-height: 20px;
+  max-width: 100%;
+  padding-block: 1px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.lesson-trigger dd .chip.mono {
+  display: -webkit-inline-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  border-radius: var(--r-sm);
 }
 .lesson-trigger dd {
   display: flex;
