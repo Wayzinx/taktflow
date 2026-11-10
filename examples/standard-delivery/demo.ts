@@ -82,7 +82,7 @@ console.log('M3 校验：评审修订 2 / 第 1 轮、自检、独立交付校�
 const messages = await reopened.chat.list(req.id)
 assert(messages.some((message) => message.kind === 'system' && message.text === '需求已创建'))
 assert(messages.some((message) => message.kind === 'system' && message.text === '运行开始'))
-assert(messages.some((message) => message.kind === 'system' && message.text === '运行结束：succeeded'))
+assert(messages.some((message) => message.kind === 'system' && message.text === '运行结束：成功'))
 assert.equal(messages.filter((message) => message.kind === 'progress').length, ofType('review.round').length)
 assert(messages.some((message) => message.text.startsWith('打回重做：')))
 for (const event of ofType('human.requested')) assert(messages.some((message) => message.kind === 'attention' && message.refs?.requestId === event.data.requestId))

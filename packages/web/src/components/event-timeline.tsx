@@ -33,7 +33,7 @@ import {
 import type { EventEnvelope, EventPayloads, ReviewResponse, ReviewVerdict } from '@taktflow/core'
 import { actorName, fmtDate, fmtTime, fmtTokens, summaryLine, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
-import { NODE_STATUS, VERDICT, toneVar, type Tone } from '../lib/status'
+import { NODE_STATUS, RUN_STATUS, VERDICT, toneVar, type Tone } from '../lib/status'
 import { toolAction } from '../lib/actions'
 import { prefersReducedMotion } from '../lib/motion'
 import { ActionText, actionIcon } from './action-row'
@@ -64,7 +64,7 @@ export function describe(e: EventEnvelope): Described {
       return { icon: Play, tone: 'accent', title: <>运行开始 · <span className="mono">{d(e, 'run.started').workflowId}@{d(e, 'run.started').workflowVersion}</span></> }
     case 'run.finished': {
       const s = d(e, 'run.finished').status
-      return { icon: Flag, tone: s === 'succeeded' ? 'success' : s === 'failed' ? 'failed' : 'skipped', title: `运行结束：${s}` }
+      return { icon: Flag, tone: s === 'succeeded' ? 'success' : s === 'failed' ? 'failed' : 'skipped', title: `运行结束：${RUN_STATUS[s]?.label ?? s}` }
     }
     case 'node.ready':
       return { icon: CircleDot, tone: 'neutral', title: '就绪' }
