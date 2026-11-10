@@ -32,6 +32,12 @@ describe('确定性风险规则', () => {
     expect(risks.map((r) => r.kind).sort()).toEqual(['repeat-failure', 'review-stuck', 'gate-failed', 'deadline', 'defect-escape', 'regression'].sort())
     expect(risks.every((r) => r.key.startsWith(`${r.kind}:shop/`))).toBe(true)
   })
+  it('几十万条事件的长运行不爆栈', () => {
+    const snapshot = base()
+    const many = Array.from({ length: 300_000 }, () => event('harness.message', { role: 'system', text: '' }))
+    snapshot.runs.push({ run: { ...run, status: 'waiting_human' }, events: many })
+    expect(() => computeRiskSnapshot(snapshot, 'shop', now)).not.toThrow()
+  })
   it('完成的节点不继续报历史失败，已交付需求不报截止', () => {
     const snapshot = base(); snapshot.runs.push({ run: { ...run, status: 'succeeded' }, events: [event('gate.result', { pass: false, checks: [] })] })
     snapshot.requirements.push({ id: 'REQ-001', title: '完成', status: 'delivered', links: [], createdAt: '2026-01-01', updatedAt: '2026-01-01', dueAt: '2026-01-02' })

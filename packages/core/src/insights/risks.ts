@@ -36,7 +36,9 @@ export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now
       const ratio = budgetUsage(run.budget, used).ratio
       if (ratio >= (thresholds.budgetMedium ?? .8)) add('budget', ratio >= (thresholds.budgetHigh ?? 1) ? 'high' : 'medium', run.requirementId, run.runId, '运行预算预警', `用量达到 ${(ratio * 100).toFixed(1)}%`, run.runId)
     }
-    const last = Math.max(Date.parse(run.startedAt), ...events.map((event) => Date.parse(event.ts)))
+    // 不展开成参数：长运行的事件能有几十万条，Math.max(...events) 会爆栈
+    let last = Date.parse(run.startedAt)
+    for (const event of events) last = Math.max(last, Date.parse(event.ts))
     if (run.status === 'running' && time - last > (thresholds.stalledMs ?? 15 * 60000)) add('stalled', 'high', run.requirementId, run.runId, '运行长时间无新事件', '请检查运行中的节点', run.runId)
     const relevant = new Map<string, EventEnvelope>()
     for (const event of [...events].sort((a, b) => a.seq - b.seq)) {
