@@ -171,8 +171,9 @@ it('角色 allowBash 保留 boolean，错误类型拒绝；本地覆盖同名插
 
 it('直接文件 workflow 的能力错误在创建 run 前失败；mock override 使用生效的选择', async () => {
   const dir = await fixture({ providers: { remote: { protocol: 'openai-responses' } } })
-  await writeFile(join(dir, '.takt/agents/dev.md'), '---\nharness: dsh\n---\nDev')
-  const definition = { ...workflow, nodes: [{ ...workflow.nodes[0], role: 'dev', harness: { harness: 'dsh', provider: 'remote', model: 'raw' } }] }
+  // dsh 已能接别家 API（f7bd730）；这里换成仍不支持 customProvider 的 gemini-cli
+  await writeFile(join(dir, '.takt/agents/dev.md'), '---\nharness: gemini-cli\n---\nDev')
+  const definition = { ...workflow, nodes: [{ ...workflow.nodes[0], role: 'dev', harness: { harness: 'gemini-cli', provider: 'remote', model: 'raw' } }] }
   await writeFile(join(dir, 'direct.ts'), `export default ${JSON.stringify(definition)}`)
   const stores = await openProject(dir)
   await stores.workspaces.createRequirement({ title: 'early failure' })
@@ -180,7 +181,7 @@ it('直接文件 workflow 的能力错误在创建 run 前失败；mock override
   expect(result.code).toBe(1)
   expect(result.data.error).toContain('customProvider')
   expect(await stores.runs.list()).toEqual([])
-  // override 的语义由共享 selection 定义，普通无 provider 流程不能被原 dsh 可用性阻断。
+  // override 的语义由共享 selection 定义，普通无 provider 流程不能被原 harness 可用性阻断。
   await writeFile(join(dir, 'mock-direct.ts'), `export default ${JSON.stringify({ ...definition, nodes: [{ ...definition.nodes[0], harness: undefined }] })}`)
   expect((await cli(dir, ['run', './mock-direct.ts', '--req', 'REQ-001', '--harness', 'mock'])).code).toBe(0)
 })
