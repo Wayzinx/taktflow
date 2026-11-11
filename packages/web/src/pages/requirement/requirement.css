@@ -985,6 +985,68 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 重点产物置顶、带标识；其余分组默认收起 */
+.art-key-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent-text);
+}
+.art-key-label svg {
+  width: 13px;
+  height: 13px;
+}
+.art-key-hint,
+.art-rest-hint {
+  margin: 0;
+  padding: 0 8px 6px;
+  font-size: var(--text-label);
+  color: var(--text-3);
+}
+.art-rest-hint {
+  padding: 10px 8px 0;
+}
+.art-item.key {
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.art-item.key.active {
+  box-shadow: inset 2px 0 0 var(--accent), inset 0 0 0 1px var(--border);
+}
+.art-group-toggle {
+  width: 100%;
+  border: none;
+  background: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.art-group-toggle:hover {
+  background: var(--surface-hover);
+}
+.art-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.art-group-chev {
+  width: 13px;
+  height: 13px;
+  transition: transform var(--dur) var(--ease);
+}
+.art-group-chev.open {
+  transform: rotate(90deg);
+}
+.art-key-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+.art-key-chip svg {
+  width: 12px;
+  height: 12px;
+}
 .run-sub {
   display: flex;
   align-items: center;

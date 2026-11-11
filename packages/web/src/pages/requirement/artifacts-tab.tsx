@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, Copy, FileCode2, FileJson, FileText, FolderOpen, GitCommitHorizontal, Image as ImageIcon, MessageSquare, Pencil, Send, TriangleAlert, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Copy, FileCode2, FileJson, FileText, FolderOpen, GitCommitHorizontal, Image as ImageIcon, MessageSquare, Pencil, Send, Star, TriangleAlert, X } from 'lucide-react'
 import type { ArtifactEditResponse, ArtifactKind, ArtifactRecord, ArtifactVersion, RequirementDetail, RunDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { Avatar, EmptyState, ErrorState, Segmented, Skeleton, SkeletonRows, toast } from '../../components/ui'
@@ -9,6 +9,7 @@ import { actorName, fmtDate, fmtRelative } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
 import { ARTIFACT_KIND, ARTIFACT_KIND_ORDER } from '../../lib/status'
 import { isEmbedded } from '../../lib/embed'
+import { keyArtifacts } from '../../lib/key-artifacts'
 
 function fileIcon(r: ArtifactRecord) {
   if (r.mediaType.startsWith('image/')) return ImageIcon
@@ -55,11 +56,18 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
   const stagePaths = useMemo(() => (detail ? currentStagePaths(detail, run) : undefined), [detail, run])
   const stageTitle = detail?.stages.find((s) => s.id === detail.stage)?.title
   const records = onlyCurrent && all && stagePaths ? all.filter((r) => stagePaths.has(r.path)) : all
-  const selectedPath = query.get('path') ?? records?.find((r) => r.kind === 'spec')?.path ?? records?.[0]?.path
+  // 重点产物置顶；其余（过程记录、旧轮次）按类型分组，默认收起
+  const key = useMemo(() => keyArtifacts(records ?? []), [records])
+  const keyItems = useMemo(() => (records ?? []).filter((r) => key.paths.has(r.path)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)), [records, key])
+  const selectedPath = query.get('path') ?? keyItems[0]?.path ?? records?.find((r) => r.kind === 'spec')?.path ?? records?.[0]?.path
   const groups = useMemo(() => {
     if (!records) return []
-    return SPEC_GROUPS.map((g) => ({ ...g, items: records.filter((r) => inGroup(g, r.kind)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)) })).filter((g) => g.items.length)
-  }, [records])
+    const rest = records.filter((r) => !key.paths.has(r.path))
+    return SPEC_GROUPS.map((g) => ({ ...g, items: rest.filter((r) => inGroup(g, r.kind)).sort((a, b) => kindRank(a.kind) - kindRank(b.kind)) })).filter((g) => g.items.length)
+  }, [records, key])
+  const [toggled, setToggled] = useState<Record<string, boolean>>({})
+  // 没点过的分组：当前阶段视图、没有重点产物时、或正打开的产物在组里时展开，其余收起
+  const expanded = (g: (typeof groups)[number]) => toggled[g.id] ?? (onlyCurrent || keyItems.length === 0 || g.items.some((r) => r.path === selectedPath))
   const scopeSwitch = stagePaths && (
     <div className="art-scope">
       <Segmented<'all' | 'stage'>
@@ -119,37 +127,59 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
       </div>
     )
   const selected = records.find((r) => r.path === selectedPath) ?? records[0]!
+  const item = (r: ArtifactRecord) => {
+    const Icon = fileIcon(r)
+    const v = latest(r)
+    return (
+      <button key={r.path} className={`art-item${key.paths.has(r.path) ? ' key' : ''}${r.path === selected.path ? ' active' : ''}`} onClick={() => setQuery({ path: r.path, v: undefined })}>
+        <Icon className="art-item-icon" />
+        <span className="art-item-text">
+          <span className="art-item-title truncate">{r.title ?? r.path.split('/').pop()}</span>
+          <span className="art-item-path truncate">
+            {r.title !== ARTIFACT_KIND[r.kind] && <span className="art-item-kind">{ARTIFACT_KIND[r.kind]}</span>}
+            <span className="mono">{r.path}</span>
+          </span>
+        </span>
+        <span className={`art-ver mono${r.versions.length > 1 ? ' multi' : ''}`}>v{v.version}</span>
+      </button>
+    )
+  }
+  const restCount = records.length - keyItems.length
   return (
     <div className="art-layout">
       <nav className="card art-list" aria-label="产物列表">
         {scopeSwitch}
-        {groups.map((g) => (
-          <div key={g.id} className="art-group">
-            <div className="art-group-head">
-              <span>{g.label}</span>
-              <span className="num">{g.items.length}</span>
+        {keyItems.length > 0 && (
+          <div className="art-group art-key">
+            <div className="art-group-head" title={key.runId ? `来自运行 ${key.runId}` : undefined}>
+              <span className="art-key-label">
+                <Star aria-hidden />
+                重点看
+              </span>
+              <span className="num">{keyItems.length}</span>
             </div>
-            {g.items.map((r) => {
-              const Icon = fileIcon(r)
-              const v = latest(r)
-              return (
-                <button key={r.path} className={`art-item${r.path === selected.path ? ' active' : ''}`} onClick={() => setQuery({ path: r.path, v: undefined })}>
-                  <Icon className="art-item-icon" />
-                  <span className="art-item-text">
-                    <span className="art-item-title truncate">{r.title ?? r.path.split('/').pop()}</span>
-                    <span className="art-item-path truncate">
-                      {r.title !== ARTIFACT_KIND[r.kind] && <span className="art-item-kind">{ARTIFACT_KIND[r.kind]}</span>}
-                      <span className="mono">{r.path}</span>
-                    </span>
-                  </span>
-                  <span className={`art-ver mono${r.versions.length > 1 ? ' multi' : ''}`}>v{v.version}</span>
-                </button>
-              )
-            })}
+            <p className="art-key-hint">{key.runId ? '最近一轮运行的需求、方案、改动和结论' : '需求、方案和结论'}</p>
+            {keyItems.map(item)}
           </div>
-        ))}
+        )}
+        {keyItems.length > 0 && restCount > 0 && <p className="art-rest-hint">其余 {restCount} 个是过程记录和之前轮次的产物，需要细节时展开</p>}
+        {groups.map((g) => {
+          const open = expanded(g)
+          return (
+            <div key={g.id} className="art-group">
+              <button type="button" className="art-group-head art-group-toggle" aria-expanded={open} onClick={() => setToggled((t) => ({ ...t, [g.id]: !open }))}>
+                <span className="art-group-title">
+                  <ChevronRight className={`art-group-chev${open ? ' open' : ''}`} aria-hidden />
+                  {g.label}
+                </span>
+                <span className="num">{g.items.length}</span>
+              </button>
+              {open && g.items.map(item)}
+            </div>
+          )
+        })}
       </nav>
-      <ArtifactPreview key={selected.path} reqId={id} record={selected} />
+      <ArtifactPreview key={selected.path} reqId={id} record={selected} isKey={key.paths.has(selected.path)} />
     </div>
   )
 }
@@ -195,7 +225,7 @@ function VersionMenu({ record, version, onPick }: { record: ArtifactRecord; vers
   )
 }
 
-function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRecord }) {
+function ArtifactPreview({ reqId, record, isKey }: { reqId: string; record: ArtifactRecord; isKey: boolean }) {
   const ds = useSource()
   const { query } = useLocation()
   const version = Number(query.get('v')) || latest(record).version
@@ -239,6 +269,12 @@ function ArtifactPreview({ reqId, record }: { reqId: string; record: ArtifactRec
           <div className="art-head-title">
             <span className="truncate">{record.title ?? record.path}</span>
             <span className="chip">{ARTIFACT_KIND[record.kind]}</span>
+            {isKey && (
+              <span className="chip art-key-chip" title="最近一轮运行的结论 / 交付物，建议重点看">
+                <Star aria-hidden />
+                重点
+              </span>
+            )}
             {record.tags.map((t) => (
               <span key={t} className="chip art-tag">
                 {t}
