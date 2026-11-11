@@ -5,7 +5,7 @@ import { RequirementCreateDialog } from './components/requirement-create'
 import { SpaceCreateDialog } from './components/space-create'
 import { TaktLoader } from './components/takt'
 import { Skeleton, SkeletonGrid, Toaster } from './components/ui'
-import { matchPath, navigate, useLocation } from './lib/router'
+import { matchPath, useLocation } from './lib/router'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import './lib/theme'
 import { openCreateRequirement, openCreateSpace, openSteward, useStewardDock } from './lib/ui-store'
@@ -64,8 +64,6 @@ function SpaceRoutes({ path }: { path: string }) {
   if (path === '/' || path === '') return <OverviewPage />
   // 全局路由：带不带 /s/:space 前缀都能访问
   if (path === '/solo') return <SoloPage />
-  // 原管家整页并入 Solo（docs/design/28）：旧地址带着查询参数跳过去
-  if (path === '/steward') return <Redirect to={`/solo${location.search}`} />
   if (path === '/spaces') return <SpacesPage />
   if (path === '/requirements') return <RequirementsPage />
   if (path === '/attention') return <AttentionPage />
@@ -76,9 +74,6 @@ function SpaceRoutes({ path }: { path: string }) {
   if (path === '/automations') return <AutomationsPage />
   // 组件陈列（docs/design/30 §1）：不进导航，⌘K 搜"组件"可达
   if (path === '/ui') return <UiGalleryPage />
-  // /settings/:tab 是 /settings?tab= 的别名（members / repos / skills / agents / workflows / knowledge / runtime）
-  const st = matchPath('/settings/:tab', path)
-  if (st) return <Redirect to={`/settings?tab=${encodeURIComponent(st.tab!)}`} />
   const kb = matchPath('/knowledge/:id', path)
   if (kb) return <KnowledgeDetailPage key={kb.id} id={kb.id!} />
   const req = matchPath('/req/:id', path)
@@ -88,11 +83,6 @@ function SpaceRoutes({ path }: { path: string }) {
   const run = matchPath('/run/:runId', path)
   if (run) return <RunPage key={run.runId} runId={run.runId!} />
   return <NotFoundPage />
-}
-
-function Redirect({ to }: { to: string }) {
-  useEffect(() => navigate(to, { replace: true }), [to])
-  return null
 }
 
 /** 按需加载的页面还没到：页头 + 卡片网格的骨架（120ms 后才显示）。 */

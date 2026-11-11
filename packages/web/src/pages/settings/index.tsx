@@ -3,8 +3,7 @@ import { useAsync } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { ErrorState, PageHeader, Skeleton, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
 import { StewardEditButton } from './ask-steward'
-import { navigate, setQuery, useLocation } from '../../lib/router'
-import { useEffect } from 'react'
+import { setQuery, useLocation } from '../../lib/router'
 import { FilesTab } from './files-tab'
 import { KnowledgeTab } from './knowledge-tab'
 import { LessonsTab } from './lessons-tab'
@@ -41,10 +40,6 @@ export function SettingsPage() {
   const { query } = useLocation()
   const raw = query.get('tab')
   const tab: Tab = TABS.includes(raw as Tab) ? (raw as Tab) : 'members'
-  // 管家的离线回复会链到 settings?tab=steward：管家设置是全局的，在 Solo 的设置抽屉里
-  useEffect(() => {
-    if (raw === 'steward') navigate('/solo?drawer=settings', { replace: true })
-  }, [raw])
   const q = useAsync((ds) => ds.space(), [])
   const sp = q.data
   const bindings = useAsync((ds) => ds.knowledgeBindings().catch(() => undefined), [tab === 'knowledge'])

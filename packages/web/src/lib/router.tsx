@@ -18,6 +18,28 @@ type StartVT = (cb: () => void) => unknown
 export function viewTransitionsEnabled(): boolean {
   return typeof document !== 'undefined' && typeof (document as unknown as { startViewTransition?: StartVT }).startViewTransition === 'function'
 }
+/**
+ * 旧地址 → 现在的地址：管家整页并入 Solo（docs/design/28），管家设置在 Solo 的设置抽屉里，/settings/:tab 是 ?tab= 的别名。
+ * 跳转前和打开页面时就换掉：旧地址不进历史，侧栏也不会把它记成空间里最后去过的页面（再点「空间」又被弹回 Solo）。
+ */
+function canonical(url: URL): URL {
+  const { spaceId, rest } = splitSpace(url.pathname)
+  const to = (path: string, search = url.search) => {
+    url.pathname = spaceId ? spacePath(spaceId, path) : path
+    url.search = search
+  }
+  const tab = /^\/settings\/([^/]+)$/.exec(rest)?.[1]
+  if (rest === '/steward') to('/solo')
+  else if (rest === '/settings' && url.searchParams.get('tab') === 'steward') to('/solo', '?drawer=settings')
+  else if (tab) to('/settings', `?tab=${tab}`)
+  return url
+}
+function canonicalLocation() {
+  const url = canonical(new URL(location.href))
+  if (url.href !== location.href) history.replaceState(history.state, '', url.pathname + url.search + url.hash)
+}
+canonicalLocation()
+
 let lastPath = location.pathname
 function notifyRoute() {
   const changed = location.pathname !== lastPath
@@ -30,12 +52,15 @@ function notifyRoute() {
   notify()
 }
 // reduced-motion 下仍然走 View Transitions：motion.css 把它改成纯淡入淡出
-window.addEventListener('popstate', notifyRoute)
+window.addEventListener('popstate', () => {
+  canonicalLocation()
+  notifyRoute()
+})
 
 const STICKY = ['mock', 'theme']
 
 function withSticky(to: string): string {
-  const url = new URL(to, location.origin)
+  const url = canonical(new URL(to, location.origin))
   const { spaceId } = splitSpace(location.pathname)
   if (spaceId && !url.pathname.startsWith('/s/')) url.pathname = spacePath(spaceId, url.pathname)
   const current = new URLSearchParams(location.search)

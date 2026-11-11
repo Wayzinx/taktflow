@@ -104,7 +104,7 @@ export async function offlineAnswer(
     }
     return answers.join('\n')
   }
-  return `需要先配置管家模型。请打开[管家设置](${current ? `/s/${encodeURIComponent(current)}/settings?tab=steward` : '/solo?drawer=settings'})。`
+  return '需要先配置管家模型。请打开[管家设置](/solo?drawer=settings)。'
 }
 
 async function offlineEntity(

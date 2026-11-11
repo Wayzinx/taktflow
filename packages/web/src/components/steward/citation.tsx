@@ -4,7 +4,7 @@ import type { StewardCitation } from '@taktflow/core'
 import { Popover } from '../ui'
 import { jumpTo } from './jump'
 import { filePagePath, fileFocusOf, useEntityFocus } from './focus'
-import { useLocation } from '../../lib/router'
+import { href as routeHref, useLocation } from '../../lib/router'
 import { spacePath } from '../../lib/space'
 
 type LinkOpener = (href: string, label?: string) => { href: string; go: () => void }
@@ -19,7 +19,7 @@ function useLinkOpener(): LinkOpener {
   return useCallback((href: string, label?: string) => {
     if (isServerHref(href)) return { href, go: () => void window.open(href, '_blank', 'noopener') }
     const file = fileFocusOf(href, spaceId)
-    if (!file) return { href, go: () => jumpTo(href, label) }
+    if (!file) return { href: routeHref(href), go: () => jumpTo(href, label) }
     const page = spacePath(file.ref.spaceId!, filePagePath(file))
     return { href: page, go: () => (focus ? focus.open(file) : jumpTo(page, label)) }
   }, [focus, spaceId])

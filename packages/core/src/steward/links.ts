@@ -1,6 +1,6 @@
 const e = encodeURIComponent
 export const stewardLinks = {
-  home: '/steward',
+  home: '/solo',
   spaces: '/spaces',
   overview: (space: string) => `/s/${e(space)}`,
   requirement: (space: string, id: string, tab?: string) =>
