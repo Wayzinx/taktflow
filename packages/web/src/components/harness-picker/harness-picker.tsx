@@ -11,16 +11,18 @@ export { sameModel, type Effort, type PickerGroup, type PickerHarness, type Pick
 const EFFORT_LABEL: Record<Effort, string> = { low: '低', medium: '中', high: '高', xhigh: '超高', max: '最高' }
 const same = (h: string, m: PickerModel, v?: PickerValue | null) => !!v && v.harness === h && sameModel(m, v)
 
-/** 按钮上的短名：图标 + harness · 模型 · effort。 */
-function triggerText(harnesses: PickerHarness[], v?: PickerValue | null): { icon?: string; name: string; text: string } | undefined {
+/** 按钮上的短名：图标 + harness · 模型，推理强度单独一段（名字长了只截名字，强度总看得见）。 */
+function triggerText(harnesses: PickerHarness[], v?: PickerValue | null): { icon?: string; name: string; label: string; effort?: string; text: string } | undefined {
   if (!v) return undefined
   const h = harnesses.find((x) => x.id === v.harness)
   const m = h?.groups.flatMap((g) => g.models).find((x) => same(v.harness, x, v))
   const name = h?.name ?? v.harness
   const model = m ? (m.model ? m.label : undefined) : v.model
-  // 没单独选档时写这个模型的默认档，让人知道强度可以选、现在是哪一档
-  const effort = v.effort ?? (m?.efforts?.length ? m.defaultEffort : undefined)
-  return { icon: h?.icon, name, text: [name, model, effort && EFFORT_LABEL[effort]].filter(Boolean).join(' · ') }
+  // 没单独选档时写这个模型的默认档；模型也没说默认档就写「默认」，让人知道强度可以选
+  const level = v.effort ?? (m?.efforts?.length ? m.defaultEffort : undefined)
+  const effort = level ? EFFORT_LABEL[level] : m?.efforts?.length ? '默认' : undefined
+  const label = [name, model].filter(Boolean).join(' · ')
+  return { icon: h?.icon, name, label, effort, text: [label, effort && `思考 ${effort}`].filter(Boolean).join(' · ') }
 }
 
 /**
@@ -39,6 +41,7 @@ export function HarnessPicker({
   loading,
   className,
   ariaLabel = 'harness 与模型',
+  hideEffort,
 }: {
   harnesses: PickerHarness[]
   value?: PickerValue | null
@@ -52,6 +55,8 @@ export function HarnessPicker({
   loading?: boolean
   className?: string
   ariaLabel?: string
+  /** 旁边另有强度下拉（设置里的路由）时，按钮上不再重复写强度 */
+  hideEffort?: boolean
 }) {
   const btn = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -139,7 +144,12 @@ export function HarnessPicker({
         onClick={() => setOpen(true)}
       >
         <BrandIcon k={(current ?? fallback)?.icon} label={(current ?? fallback)?.name ?? defaultLabel ?? '默认'} size={14} />
-        <span className="truncate">{current?.text ?? defaultLabel ?? '默认'}</span>
+        <span className="truncate">{current?.label ?? defaultLabel ?? '默认'}</span>
+        {current?.effort && !hideEffort && (
+          <span className="hp-trigger-effort" title="推理强度">
+            思考 {current.effort}
+          </span>
+        )}
         <ChevronDown className="hp-chev" aria-hidden />
       </button>
       <Popover open={open} onClose={() => setOpen(false)} anchor={btn} placement={placement} className="hp-pop" role="dialog" ariaLabel={`选择${ariaLabel}`}>

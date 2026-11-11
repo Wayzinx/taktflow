@@ -54,6 +54,7 @@ export function SelectorFields({ value, onChange, harnesses, compact }: { value:
           loading={(cq.loading && !cq.data) || catalogPending(cq.data)}
           className="rt-sel-picker"
           ariaLabel="harness 与模型"
+          hideEffort
         />
         {typing && (
           <span className="rt-sel-typed">

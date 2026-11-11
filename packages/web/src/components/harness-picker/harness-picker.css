@@ -1,10 +1,15 @@
 /* Harness × 模型两级选择器（docs/design/32 §6） */
 .hp-trigger {
-  max-width: 260px;
+  max-width: 340px;
   min-width: 0;
   gap: 6px;
   color: var(--text-2);
   font-weight: 450;
+}
+.hp-trigger-effort {
+  flex: none;
+  color: var(--text-3);
+  font-weight: 400;
 }
 .hp-chev {
   width: 12px;
