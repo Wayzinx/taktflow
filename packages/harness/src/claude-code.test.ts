@@ -140,11 +140,11 @@ describe('Claude stream parser', () => {
 describe('Claude adapter', () => {
   it('使用原生 system 参数并把 prompt 原样送到 stdin', async () => {
     mockOutput(fixture)
-    const request = { ...req, model: 'opus', sessionId: 'old', systemAppend: 'system', env: { TEST: '1' }, timeoutMs: 1000 }
+    const request = { ...req, model: 'opus', effort: 'high' as const, sessionId: 'old', systemAppend: 'system', env: { TEST: '1' }, timeoutMs: 1000 }
     const events: HarnessEvent[] = []
     const result = await createClaudeCodeHarness({ bin: '/custom/claude' }).run(request, event => events.push(event))
     expect(runProcess).toHaveBeenCalledWith('/custom/claude', ['-p', '--output-format', 'stream-json', '--verbose',
-      '--model', 'opus', '--resume', 'old', '--append-system-prompt', 'system', '--permission-mode', 'bypassPermissions', '--setting-sources', 'project,local'],
+      '--model', 'opus', '--effort', 'high', '--resume', 'old', '--append-system-prompt', 'system', '--permission-mode', 'bypassPermissions', '--setting-sources', 'project,local'],
     { ...request, env: { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1', TEST: '1' } }, { stdin: req.prompt, onLine: expect.any(Function) })
     expect(result.ok).toBe(true)
     expect(events.some(event => event.type === 'usage')).toBe(true)

@@ -91,7 +91,7 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
           // 协议对不上：每轮开一条本机协议桥路由，harness 连桥、拿一次性令牌，本轮结束就关
           if (pairing?.mode === 'bridge') {
             if (!bridge) throw new Error('协议桥没有启动')
-            route = await bridge.open(connection!, pairing.protocol!, { model: modelId })
+            route = await bridge.open(connection!, pairing.protocol!, { model: modelId, effort: selected.effort })
             connection = route.provider
           }
           const result = await adapter.run({ prompt: history, systemAppend: turn.messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n'),

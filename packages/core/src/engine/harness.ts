@@ -245,7 +245,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           await host.emit('harness.message', { role: 'user', text: redactBridge(requestPrompt) }, node.id, actor)
           request = { ...request, sandbox, env }
           if (pairing?.mode === 'bridge') {
-            route = await host.deps.bridge!.open(provider!, pairing.protocol!, { model, signal: request.signal })
+            route = await host.deps.bridge!.open(provider!, pairing.protocol!, { model, effort: selector.effort, signal: request.signal })
             request.provider = route.provider
             Object.assign(env, route.env)
           }

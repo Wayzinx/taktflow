@@ -168,7 +168,7 @@ describe('existing adapter capabilities', () => {
     [createDshHarness(), { providerProtocols: ['openai-chat', 'openai-responses', 'anthropic-messages'], resume: true, structuredOutput: false, toolEvents: true, usage: true, cost: false, compactionEvents: false, customProvider: true, sandbox: false, mcp: false }],
     [createMockHarness({ steps: [] }), { resume: false, structuredOutput: false, toolEvents: true, usage: true, cost: true, compactionEvents: true, customProvider: false, sandbox: false, mcp: false }],
   ])('$id 只声明当前实现支持的能力', (harness, capabilities) => {
-    expect(harness.capabilities).toEqual({ ...capabilities, toolPhases: harness.id !== 'mock', readOnly: false, modelOverride: ['claude-code', 'codex', 'dsh'].includes(harness.id), effortOverride: ['codex', 'dsh'].includes(harness.id) })
+    expect(harness.capabilities).toEqual({ ...capabilities, toolPhases: harness.id !== 'mock', readOnly: false, modelOverride: ['claude-code', 'codex', 'dsh'].includes(harness.id), effortOverride: ['claude-code', 'codex', 'dsh'].includes(harness.id) })
   })
 })
 

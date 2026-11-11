@@ -1178,8 +1178,11 @@ export interface Pairing {
 export interface ProviderBridge {
   /** 能否把 harness 说的 accept 协议转成 provider 提供的 upstream 协议。 */
   supports(accept: ProviderProtocol, upstream: ProviderProtocol): boolean
-  /** 为一次调用开路由。target 是 provider 提供 upstream 协议的那个入口（protocol / baseURL 已按入口选好）。 */
-  open(target: { id: string } & ProviderConfig, accept: ProviderProtocol, opts?: { model?: string; signal?: AbortSignal }): Promise<BridgeRoute>
+  /**
+   * 为一次调用开路由。target 是 provider 提供 upstream 协议的那个入口（protocol / baseURL 已按入口选好）。
+   * effort 是这次调用明确选的推理强度：桥按上游协议写进请求（harness 自己发的强度在转换时丢掉，不确定上游认不认）。
+   */
+  open(target: { id: string } & ProviderConfig, accept: ProviderProtocol, opts?: { model?: string; effort?: Effort; signal?: AbortSignal }): Promise<BridgeRoute>
   /** 关掉所有路由与监听（进程退出、测试收尾）。 */
   close(): Promise<void>
 }

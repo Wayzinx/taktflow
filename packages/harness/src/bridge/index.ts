@@ -1,13 +1,13 @@
 import { createServer, type Server, type ServerResponse } from 'node:http'
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
-import { estimateTokens, resolveSecret as defaultResolveSecret, type ProviderBridge, type ProviderConfig, type ProviderProtocol } from '@taktflow/core'
+import { estimateTokens, resolveSecret as defaultResolveSecret, type Effort, type ProviderBridge, type ProviderConfig, type ProviderProtocol } from '@taktflow/core'
 import { endpoint, headers } from '../providers/http.js'
 import { mapRequest, upstreamBody } from './request.js'
 import { upstreamEvents, upstreamMessage } from './upstream.js'
 import { downstream } from './downstream.js'
 import type { Wire } from './wire.js'
 
-interface Route { target: ProviderConfig; accept: ProviderProtocol; token: string; model?: string; controller: AbortController; dispose(): void }
+interface Route { target: ProviderConfig; accept: ProviderProtocol; token: string; model?: string; effort?: Effort; controller: AbortController; dispose(): void }
 export function createProviderBridge(options: { resolveSecret?: (name: string) => string | undefined; fetch?: typeof fetch; keepAliveMs?: number } = {}): ProviderBridge {
   const routes = new Map<string, Route>()
   let server: Server | undefined, starting: Promise<number> | undefined, closing: Promise<void> | undefined
@@ -56,7 +56,7 @@ export function createProviderBridge(options: { resolveSecret?: (name: string) =
         if (route.target.apiKeyEnv && !key?.trim()) { error(401, `缺少密钥 ${route.target.apiKeyEnv}`, streaming); return }
         const mapped = mapRequest(body, anthropic), model = route.model ?? body.model
         const upstreamAnthropic = route.target.protocol === 'anthropic-messages'
-        const payload = upstreamBody(mapped, model, upstreamAnthropic)
+        const payload = upstreamBody(mapped, model, upstreamAnthropic, route.effort)
         const upstream = await (options.fetch ?? fetch)(endpoint(route.target, upstreamAnthropic ? 'anthropic-messages' : 'openai-chat'), {
           method: 'POST', headers: headers(route.target, route.target.protocol, () => key), body: JSON.stringify(payload), signal, redirect: 'manual',
         })
@@ -99,7 +99,7 @@ export function createProviderBridge(options: { resolveSecret?: (name: string) =
       const id = randomUUID(), token = randomBytes(32).toString('hex'), controller = new AbortController()
       const dispose = () => { routes.delete(id); controller.abort(); opts.signal?.removeEventListener('abort', dispose) }
       opts.signal?.addEventListener('abort', dispose, { once: true })
-      routes.set(id, { target, accept, token, model: opts.model, controller, dispose })
+      routes.set(id, { target, accept, token, model: opts.model, effort: opts.effort, controller, dispose })
       if (opts.signal?.aborted) { dispose(); opts.signal.throwIfAborted() }
       return { provider: { id: target.id, protocol: accept, baseURL: `http://127.0.0.1:${port}/r/${id}${accept === 'openai-responses' ? '/v1' : ''}`, apiKeyEnv: 'TAKT_BRIDGE_TOKEN' },
         env: { ...(target.apiKeyEnv && target.apiKeyEnv !== 'TAKT_BRIDGE_TOKEN' ? { [target.apiKeyEnv]: '' } : {}), TAKT_BRIDGE_TOKEN: token, NO_PROXY: [process.env.NO_PROXY, '127.0.0.1,localhost'].filter(Boolean).join(','), no_proxy: [process.env.no_proxy, '127.0.0.1,localhost'].filter(Boolean).join(',') }, close: async () => { dispose() } }

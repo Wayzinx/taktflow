@@ -81,7 +81,7 @@ function withoutCost(onEvent: EventSink): EventSink {
 export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): HarnessAdapter {
   const bin = options.bin ?? 'claude'
   const capabilities: HarnessCapabilities = {
-    toolPhases: true, readOnly: false, modelOverride: true, effortOverride: false,
+    toolPhases: true, readOnly: false, modelOverride: true, effortOverride: true,
     resume: true, structuredOutput: true, toolEvents: true, usage: true, cost: true,
     compactionEvents: false, customProvider: true, sandbox: false, mcp: true,
     providerProtocols: ['anthropic-messages'],
@@ -113,6 +113,7 @@ export function createClaudeCodeHarness(options: ClaudeCodeOptions = {}): Harnes
       // 只读调用（快照评审、修正追问）仍要能读冻结材料：只留读类工具；接 MCP 时下面整体换成 MCP 工具
       if (req.readOnly && !req.mcpServers?.length) args.push('--tools', 'Read,Grep,Glob')
       if (req.model) args.push('--model', req.model)
+      if (req.effort) args.push('--effort', req.effort)
       if (req.sessionId) args.push('--resume', req.sessionId)
       if (req.systemAppend) args.push('--append-system-prompt', req.systemAppend)
       args.push('--permission-mode', 'bypassPermissions')

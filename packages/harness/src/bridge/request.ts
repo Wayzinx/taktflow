@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import type { Effort } from '@taktflow/core'
 import { contentText, decodeThinking, type BridgeRequest, type Wire } from './wire.js'
 
 /** 命名空间里的工具展平成 `ns__name`；函数名上限 64 字符，超长时截断加短哈希。 */
@@ -83,8 +84,9 @@ export function mapRequest(body: Wire, anthropic: boolean): BridgeRequest {
   return { messages, tools, custom, namespaces, options }
 }
 
-export function upstreamBody(req: BridgeRequest, model: string, anthropic: boolean): Wire {
-  if (!anthropic) return { ...req.options, model, messages: req.messages.map(({ thinking_signature, is_error, ...m }) => is_error ? { ...m, content: typeof m.content === 'string' ? `工具执行失败：${m.content}` : [{ type: 'text', text: '工具执行失败：' }, ...m.content] } : m), ...(req.tools.length ? { tools: req.tools } : {}), stream: true, stream_options: { include_usage: true } }
+/** effort：这次调用明确选的推理强度，Chat 写 reasoning_effort，Anthropic 写 output_config.effort；没选就不写，交给上游默认。 */
+export function upstreamBody(req: BridgeRequest, model: string, anthropic: boolean, effort?: Effort): Wire {
+  if (!anthropic) return { ...req.options, model, ...(effort ? { reasoning_effort: effort } : {}), messages: req.messages.map(({ thinking_signature, is_error, ...m }) => is_error ? { ...m, content: typeof m.content === 'string' ? `工具执行失败：${m.content}` : [{ type: 'text', text: '工具执行失败：' }, ...m.content] } : m), ...(req.tools.length ? { tools: req.tools } : {}), stream: true, stream_options: { include_usage: true } }
   const messages: Wire[] = []
   for (const m of req.messages.filter(m => m.role !== 'system')) {
     const parts: Wire[] = typeof m.content === 'string' ? (m.content ? [{ type: 'text', text: m.content }] : []) : m.content.map((p: Wire) => {
@@ -101,7 +103,7 @@ export function upstreamBody(req: BridgeRequest, model: string, anthropic: boole
   const { stop, tool_choice, parallel_tool_calls, ...opts } = req.options
   const choice = tool_choice ? typeof tool_choice === 'string' ? { type: tool_choice === 'required' ? 'any' : tool_choice } : { type: 'tool', name: tool_choice.function.name } : undefined
   const parallel = parallel_tool_calls === undefined ? {} : { disable_parallel_tool_use: !parallel_tool_calls }
-  return { ...opts, model, max_tokens: opts.max_tokens ?? 4096, stream: true, messages,
+  return { ...opts, model, max_tokens: opts.max_tokens ?? 4096, stream: true, messages, ...(effort ? { output_config: { effort } } : {}),
     system: req.messages.filter(m => m.role === 'system').map(m => m.content).join('\n\n'),
     ...(stop ? { stop_sequences: stop } : {}),
     ...(req.tools.length ? { tools: req.tools.map(t => ({ name: t.function.name, description: t.function.description, input_schema: t.function.parameters })) } : {}),

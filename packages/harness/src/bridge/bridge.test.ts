@@ -2,6 +2,7 @@ import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createProviderBridge } from './index.js'
+import { mapRequest, upstreamBody } from './request.js'
 import { claudeRequest, codexRequest, traeRequest } from './fixtures.js'
 import type { Wire } from './wire.js'
 
@@ -226,4 +227,12 @@ it('Responses 的思考、正文与工具合并为同一 assistant 回合；工�
     { type: 'function_call_output', call_id: 'a', output: '内容' },
   ] })).text()
   expect(f.seen[0]!.messages.filter((m: Wire) => m.role === 'assistant')).toEqual([{ role: 'assistant', content: [{ type: 'text', text: '先读文件' }], reasoning_content: '工具思考', tool_calls: [{ id: 'a', type: 'function', function: { name: 'Read', arguments: '{}' } }] }])
+})
+
+it('明确选了推理强度才写进上游请求：Chat 用 reasoning_effort，Anthropic 用 output_config.effort；harness 自带的强度不转发', () => {
+  const chat = upstreamBody(mapRequest(codexRequest, false), 'm', false, 'high')
+  expect(chat.reasoning_effort).toBe('high')
+  expect(upstreamBody(mapRequest(codexRequest, false), 'm', false)).not.toHaveProperty('reasoning_effort')
+  expect(upstreamBody(mapRequest(claudeRequest, true), 'm', true, 'max').output_config).toEqual({ effort: 'max' })
+  expect(upstreamBody(mapRequest(claudeRequest, true), 'm', true)).not.toHaveProperty('output_config')
 })
