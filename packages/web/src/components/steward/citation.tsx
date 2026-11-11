@@ -9,11 +9,15 @@ import { spacePath } from '../../lib/space'
 
 type LinkOpener = (href: string, label?: string) => { href: string; go: () => void }
 
-/** 点站内链接 / 引用：指向需求里的产物时，Solo 在右侧面板打开、别处去需求的产物页；其余照常跳转并高亮。 */
+/** /api/ 开头的是服务端地址（如打开运行成品的预览），不是页面路由：新标签页打开。 */
+const isServerHref = (href: string) => href.startsWith('/api/')
+
+/** 点站内链接 / 引用：指向需求里的产物时，Solo 在右侧面板打开、别处去需求的产物页；服务端地址新开标签页；其余照常跳转并高亮。 */
 function useLinkOpener(): LinkOpener {
   const focus = useEntityFocus()
   const { spaceId } = useLocation()
   return useCallback((href: string, label?: string) => {
+    if (isServerHref(href)) return { href, go: () => void window.open(href, '_blank', 'noopener') }
     const file = fileFocusOf(href, spaceId)
     if (!file) return { href, go: () => jumpTo(href, label) }
     const page = spacePath(file.ref.spaceId!, filePagePath(file))
@@ -80,7 +84,7 @@ export function CitationRef({ n, c }: { n: number; c: StewardCitation }) {
           <span className="stw-cite-label">{c.label}</span>
           <span className="stw-cite-path mono truncate">{path}</span>
           <span className="stw-cite-go">
-            点击跳转并定位 <ArrowUpRight aria-hidden />
+            {isServerHref(c.href) ? '点击在新标签页打开' : '点击跳转并定位'} <ArrowUpRight aria-hidden />
           </span>
         </div>
       </Popover>
@@ -88,8 +92,8 @@ export function CitationRef({ n, c }: { n: number; c: StewardCitation }) {
   )
 }
 
-/** 粗体、行内代码、Markdown 链接 [文字](/站内路径 或 http(s) 地址)、[n] 引用。 */
-const INLINE = /(\*\*[^*]+\*\*)|(`[^`]+`)|\[([^\]\n]+)\]\(((?:\/|https?:\/\/)[^)\s]*)\)|(\[\d+\])/g
+/** 粗体、行内代码、Markdown 链接 [文字](/站内路径 或 http(s) 地址)、指向引用的链接 [文字]([n])、[n] 引用。 */
+const INLINE = /(\*\*[^*]+\*\*)|(`[^`]+`)|\[([^\]\n]+)\]\(((?:\/|https?:\/\/)[^)\s]*)\)|\[([^\]\n]+)\]\(\[(\d+)\]\)|(\[\d+\])/g
 
 function inline(text: string, cites: StewardCitation[] | undefined, key: string, opener: LinkOpener): ReactNode[] {
   const out: ReactNode[] = []
@@ -115,10 +119,27 @@ function inline(text: string, cites: StewardCitation[] | undefined, key: string,
           </a>
         ),
       )
-    } else {
-      const n = Number(m[5]!.slice(1, -1))
+    } else if (m[5] && m[6]) {
+      // 模型有时把引用写成链接目标：用引用的地址做链接，后面仍带来源角标
+      const n = Number(m[6])
       const c = cites?.[n - 1]
-      out.push(c ? <CitationRef key={k} n={n} c={c} /> : <Fragment key={k}>{m[5]}</Fragment>)
+      const link = c && opener(c.href, c.label)
+      out.push(
+        link && c ? (
+          <Fragment key={k}>
+            <a href={link.href} className="stw-link" onClick={(e) => (e.preventDefault(), link.go())}>
+              {m[5]}
+            </a>
+            <CitationRef n={n} c={c} />
+          </Fragment>
+        ) : (
+          <Fragment key={k}>{m[5]}</Fragment>
+        ),
+      )
+    } else {
+      const n = Number(m[7]!.slice(1, -1))
+      const c = cites?.[n - 1]
+      out.push(c ? <CitationRef key={k} n={n} c={c} /> : <Fragment key={k}>{m[7]}</Fragment>)
     }
     last = m.index + m[0].length
   }

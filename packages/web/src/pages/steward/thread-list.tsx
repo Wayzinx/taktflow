@@ -3,13 +3,14 @@ import { Archive, ArchiveRestore, ChevronRight, Hourglass, ListFilter, MoreHoriz
 import type { StewardThread } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { StewardMark } from '../../components/identity'
+import { stripCitations } from '../../components/steward/cite-text'
 import { Dialog, EmptyState, HoverCard, Menu, SkeletonRows, toast, useFlashRows, useHoverCard, useStagger, type MenuItem } from '../../components/ui'
 import { fmtRelative, fmtTime } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { groupThreads, type GroupBy } from './thread-groups'
 
 /** 列表预览用纯文本：去掉 Markdown 链接 / 粗体 / 行内代码与 [n] 引用标记。 */
-const plain = (t: string) => t.replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1').replace(/\*\*|`/g, '').replace(/\[\d+\]/g, '')
+const plain = (t: string) => stripCitations(t.replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1').replace(/\*\*|`/g, ''))
 
 const GROUPS: Array<{ id: GroupBy; label: string }> = [
   { id: 'time', label: '按最近对话' },

@@ -11,6 +11,7 @@ import { Menu, toast } from '../ui'
 import { hm } from './fmt'
 import { StewardBlocks } from './blocks'
 import { StewardText } from './citation'
+import { stripCitations } from './cite-text'
 import { ProposalCard } from './proposal-card'
 import { ToolList } from './tool-card'
 
@@ -38,7 +39,7 @@ function Feedback({ m, onPatch }: { m: StewardMessage; onPatch: (patch: Partial<
   }
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(m.text.replace(/\[\d+\]/g, ''))
+      await navigator.clipboard.writeText(stripCitations(m.text))
       toast('已复制', { tone: 'success', duration: 2000 })
     } catch {
       toast('浏览器不允许复制', { tone: 'failed' })
