@@ -9,6 +9,7 @@ import { Avatar, AvatarStack, Skeleton, StatusBadge, toast, vtName } from '../..
 import { fmtCost, fmtRelative, fmtTokens, totalTokens } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { REQ_STATUS } from '../../lib/status'
+import { DeliveryButton } from '../../components/delivery-button'
 import { RequirementActions } from './header-actions'
 import { FactButton, InlineText } from './header-edit'
 import './header.css'
@@ -66,6 +67,7 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
         )}
         <span style={{ flex: 1 }} />
         {r?.members && <AvatarStack names={r.members} />}
+        <DeliveryButton runId={r?.latestRunId} />
         {r?.latestRunId && (
           <Link to={`/run/${r.latestRunId}`} className="btn btn-sm">
             <Play />

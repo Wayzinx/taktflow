@@ -329,6 +329,9 @@ export function createProjectMock(db: MockDb): ProjectSource {
       const run = getRun(runId)
       return run ? delay(mockTimeline(run), 140) : fail(`运行 ${runId} 不存在`)
     },
+    runDelivery() {
+      return delay(null)
+    },
     nodeChanges(runId, nodeId) {
       const run = getRun(runId)
       return run?.state.nodes[nodeId] ? delay(changes.changes(run, nodeId)) : fail(`节点 ${nodeId} 不存在`)

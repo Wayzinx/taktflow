@@ -4,12 +4,23 @@ import { groupActions, stewardAction } from '../../lib/actions'
 import { ActionRow } from '../action-row'
 import './cards.css'
 
+/** 工具结果常是一段 JSON 文本：先解析再缩进，不然显示成一整行带转义的字符串；太长的只留开头。 */
 const json = (v: unknown) => {
-  try {
-    return JSON.stringify(v, null, 2)
-  } catch {
-    return String(v)
+  let value = v
+  if (typeof v === 'string' && /^\s*[[{]/.test(v)) {
+    try {
+      value = JSON.parse(v)
+    } catch {
+      // 不是完整 JSON，原样显示
+    }
   }
+  let text: string
+  try {
+    text = typeof value === 'string' ? value : JSON.stringify(value, null, 2)
+  } catch {
+    text = String(value)
+  }
+  return text.length > 6000 ? `${text.slice(0, 6000)}\n…（共 ${text.length} 字，只显示开头）` : text
 }
 
 function Raw({ tool }: { tool: StewardToolCall }) {

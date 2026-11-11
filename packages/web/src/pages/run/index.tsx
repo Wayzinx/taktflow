@@ -4,6 +4,7 @@ import '@xyflow/react/dist/style.css'
 import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, OctagonX, Play, RotateCw, Square, Unplug, Workflow } from 'lucide-react'
 import type { RunDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
+import { DeliveryButton } from '../../components/delivery-button'
 import { useCrumbs } from '../../components/layout'
 import { StageRail } from '../../components/stage-rail'
 import { CountUp, ErrorState, Segmented, Skeleton, StatusBadge, SuggestionChips, toast, useStewardSuggestions } from '../../components/ui'
@@ -218,6 +219,7 @@ export function RunPage({ runId }: { runId: string }) {
               )}
             </div>
           )}
+          {d && <DeliveryButton runId={runId} />}
         </div>
         {d && (d.interrupted || d.run.status === 'failed') && <RecoveryBar detail={d} onDone={q.reload} />}
         <div className="run-stage-row">

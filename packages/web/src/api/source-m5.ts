@@ -8,6 +8,7 @@ import type {
   EvalSampleRequest,
   MissDecisionRequest,
   NodeChanges,
+  RunDelivery,
   Observation,
   QualityStatus,
   RewindPreview,
@@ -37,6 +38,8 @@ export interface M5Source {
   // ---- 运行透明与回退
   timeline(runId: string): Promise<RunTimeline>
   nodeChanges(runId: string, nodeId: string): Promise<NodeChanges>
+  /** 运行做出来的东西：集成分支、是否已合进默认分支、能直接打开的网页；没有集成工作树时为 null。 */
+  runDelivery(runId: string): Promise<RunDelivery | null>
   /** 统一 diff；不给 path 为整个节点。 */
   nodeDiff(runId: string, nodeId: string, path?: string): Promise<{ patch: string }>
   rewindPreview(runId: string, nodeId: string): Promise<RewindPreview>

@@ -23,6 +23,7 @@ export function createM5Http({ req, get }: Http): M5Source {
   return {
     timeline: (runId) => get(`/runs/${enc(runId)}/timeline`),
     nodeChanges: (runId, nodeId) => get(`${NODE(runId, nodeId)}/changes`),
+    runDelivery: (runId) => get(`/runs/${enc(runId)}/delivery`),
     nodeDiff: (runId, nodeId, path) => get(`${NODE(runId, nodeId)}/diff${qs({ path })}`),
     rewindPreview: (runId, nodeId) => req('POST', `${NODE(runId, nodeId)}/rewind/preview`),
     rewind: (runId, nodeId, body) => on409(req('POST', `${NODE(runId, nodeId)}/rewind`, body), (m) => new RewindConflictError(m)),

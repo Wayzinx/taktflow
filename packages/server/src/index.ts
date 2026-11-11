@@ -20,6 +20,7 @@ import type { LeadMention } from './space-routes.js'
 import type { CatalogCallbacks } from './catalog.js'
 import { actor, authorize, validateWriteRequest, fail, HttpError, json } from './http.js'
 import { routes, STREAMING } from './routes.js'
+import { createPreviewServer } from './preview.js'
 import { attachLessons } from './commands.js'
 import type { M3Callbacks } from './m3-routes.js'
 import { staticFile } from './static.js'
@@ -66,7 +67,8 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     return pending
   }
   const bridge = options.bridge ?? createProviderBridge()
-  const routeOptions = { ...options, bridge, automationRuntime }
+  const preview = createPreviewServer(options.host ?? '127.0.0.1')
+  const routeOptions = { ...options, bridge, automationRuntime, preview }
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, routeOptions,
     options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
@@ -205,7 +207,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     for (const space of spaces) await automationRuntime(space)
   }
   try { await syncAutomations() } catch (error) {
-    await maintenance.close(); await steward.close()
+    await maintenance.close(); await steward.close(); await preview.close()
     for (const pending of automations.values()) await (await pending).close()
     await new Promise<void>(resolve => server.close(() => resolve()))
     throw error

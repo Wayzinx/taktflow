@@ -7,6 +7,7 @@ import { isObject, readArtifactData } from '../insights/artifacts.js'
 import { createInsights } from '../insights/fs-insights.js'
 import { budgetStatus } from '../insights/budget.js'
 import { addUsage, summarizeUsage } from '../insights/usage.js'
+import { runDelivery } from '../insights/delivery.js'
 import { scorecards } from '../eval/scorecards.js'
 import { sha256 } from '../util/hash.js'
 import { validateSchema } from '../engine/schema.js'
@@ -455,8 +456,11 @@ export class StewardTools {
       case 'requirement_status': {
         const req = await space!.stores.workspaces.getRequirement(reqId!)
         if (!req) throw new StewardError(404, '需求不存在，请检查引用')
-        const run = (await requirementState(space!, reqId!)).runs[0]
+        const { runs } = await requirementState(space!, reqId!)
+        const run = runs[0]
         const snapshot = run ? await space!.stores.runs.getWorkflow(run.runId) : undefined
+        let delivery
+        for (const item of runs) if ((delivery = await this.delivery(space!, spaceId!, item, cite))) break
         const nodeTitles = new Map((snapshot?.nodes ?? []).map((n) => [n.id, n.title ?? n.id]))
         const caseTitles = new Map<string, string>()
         try {
@@ -474,6 +478,7 @@ export class StewardTools {
             : [],
           attention: await space!.stores.attention.list({ requirementId: reqId, pending: true }),
           latestRun: run && { runId: run.runId, workflowId: run.workflowId, status: run.status, startedAt: run.startedAt, endedAt: run.endedAt },
+          delivery,
           tier: run?.route?.tier,
           budget: run
             ? budgetStatus(
@@ -488,7 +493,7 @@ export class StewardTools {
       case 'run_status': {
         const run = await space!.stores.runs.get(stewardId(String(input.runId)))
         if (!run) throw new StewardError(404, '运行不存在，请检查引用')
-        data = { run, events: (await space!.stores.events.read(run.runId)).slice(-20) }
+        data = { run, delivery: await this.delivery(space!, spaceId!, run, cite), events: (await space!.stores.events.read(run.runId)).slice(-20) }
         cite(run.runId, links.run(spaceId!, run.runId), 'run')
         break
       }
@@ -553,7 +558,12 @@ export class StewardTools {
         break
       case 'read_file': {
         const content = await readStewardFile(space!.dir, String(input.path))
-        data = { path: input.path, content, hash: sha256(content ?? '') }
+        if (content === undefined) {
+          // 不存在要说出来：只回一个空内容的哈希，模型会当成「读到了但是空的」
+          data = { path: input.path, exists: false, note: '空间目录（默认分支）里没有这个文件。运行做出来的代码在集成分支，看 requirement_status / run_status 返回的 delivery' }
+          break
+        }
+        data = { path: input.path, content, hash: sha256(content) }
         // 需求目录里的文件引用到需求的产物页，其他文件仍指向空间设置
         const artifact = requirementFile(space!.dir, space!.stores.paths.requirements, String(input.path))
         cite(String(input.path), artifact ? links.artifact(spaceId!, artifact.id, artifact.path) : links.settings(spaceId!, 'general'), 'file')
@@ -773,6 +783,17 @@ export class StewardTools {
     let usage: Usage = { inputTokens: 0, outputTokens: 0 }
     for (const run of runs) usage = addUsage(usage, await this.runUsage(space, run))
     return { row: { title, ref, stages: detail?.stages.map(stage => ({ label: stage.title, status: stageStatus(stage.status) })) ?? [], note: attention[0] ? `等你：${attention[0].ask}` : detail ? undefined : '尚未运行', tone: attention.length ? 'waiting' : detail ? stateTone(detail.run.status) : stateTone(stored) }, status, waiting: attention.length, usage }
+  }
+  /** 运行做出来的东西：集成分支、是否已合进默认分支、能直接打开的网页（带预览链接，并列进引用）。 */
+  private async delivery(space: StewardSpace, spaceId: string, run: RunState, cite: (label: string, href: string, kind?: StewardCitation['kind']) => void) {
+    const delivery = await runDelivery(space.stores, run).catch(() => undefined)
+    if (!delivery) return undefined
+    const entries = delivery.entries.map((path) => ({ path, url: links.preview(spaceId, run.runId, path) }))
+    if (entries[0]) cite(`打开成品 ${entries[0].path}`, entries[0].url, 'file')
+    return {
+      ...delivery, entries,
+      note: delivery.merged ? `已合进 ${delivery.defaultBranch}` : `代码在集成分支 ${delivery.branch}，还没合进 ${delivery.defaultBranch}；网页成品用 entries 里的链接打开（本机预览，不用自己起服务）`,
+    }
   }
   private async runUsage(space: StewardSpace, run: RunState): Promise<Usage> {
     const events = await space.stores.events.read(run.runId).catch(() => [])

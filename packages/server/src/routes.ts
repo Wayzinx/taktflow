@@ -8,13 +8,15 @@ import { qualityRoutes } from './quality-routes.js'
 import { runInsightRoutes } from './run-insight-routes.js'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isUtf8 } from 'node:buffer'
-import { runLiveness, nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, withAttentionStaleness, loadRunGraph, markArtifactEdited, listArtifactHistory, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type EventType, type ProjectStores } from '@taktflow/core'
+import path from 'node:path'
+import { runLiveness, nodeActivity, budgetStatus, qualityMetrics, summarizeUsage, runDelivery, withAttentionStaleness, loadRunGraph, markArtifactEdited, listArtifactHistory, buildRunGraph, stageProgress, createInsights, type ArtifactContent, type AttentionItem, type EventType, type ProjectStores } from '@taktflow/core'
 import { actor, artifactPath, body, HttpError, integer, relativePath, safeId, text } from './http.js'
 import { registerEvalRoutes } from './eval-routes.js'
 import { commandExecutor, m3Routes, type M3Callbacks } from './m3-routes.js'
 import type { CatalogCallbacks } from './catalog.js'
 import { nodeDetail, overview, requirement, run, summaries, summary, runSummaries, workflow } from './read-model.js'
 import { createRouter } from './router.js'
+import type { PreviewServer } from './preview.js'
 import { serialize } from './stale.js'
 import { stream } from './stream.js'
 import { spaceRoutes, type LeadMention } from './space-routes.js'
@@ -36,7 +38,7 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & RuntimeCallbacks & AutomationCallbacks = {}, onLeadMention?: LeadMention) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & RuntimeCallbacks & AutomationCallbacks & { preview?: PreviewServer } = {}, onLeadMention?: LeadMention) {
   const router = createRouter<Handler>()
   const add = router.add
   const { execute } = commandExecutor(catalog)
@@ -121,6 +123,20 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   add('GET', '/api/runs', ({ stores, url }) => {
     const id = url.searchParams.get('requirement')
     return stores.runs.list(id === null ? undefined : { requirementId: safeId(id) }).then((runs) => runSummaries(stores, runs))
+  })
+  // 运行做出来的东西（docs/design/17）：集成分支、是否已合进默认分支、能直接打开的网页
+  add('GET', '/api/runs/:runId/delivery', async ({ stores, params }) => (await runDelivery(stores, await run(stores, params.runId!))) ?? null)
+  // 打开成品里的一个网页：登记集成工作树，跳到预览端口
+  add('GET', '/api/runs/:runId/preview', async ({ stores, params, url, request, response }) => {
+    if (!catalog.preview) throw new HttpError(501, '没有启用成品预览')
+    const state = await run(stores, params.runId!)
+    const delivery = await runDelivery(stores, state)
+    if (!delivery) throw new HttpError(404, '这次运行没有可打开的成品（没有集成工作树，或已经清理）')
+    const file = (url.searchParams.get('path') ?? delivery.entries[0] ?? '').replace(/^\/+/, '')
+    if (!file || file.split('/').some((part) => part === '..' || part.startsWith('.'))) throw new HttpError(400, '预览路径不合法')
+    response.writeHead(302, { location: await catalog.preview.url(path.join(stores.projectDir, delivery.path), file, request.headers.host ?? '127.0.0.1'), 'cache-control': 'no-store' })
+    response.end()
+    return STREAMING
   })
   add('GET', '/api/runs/:runId', async ({ stores, params }) => {
     const state = await run(stores, params.runId!)
