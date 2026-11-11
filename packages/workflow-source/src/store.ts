@@ -115,8 +115,13 @@ export function createWorkflowStore(options: WorkflowStoreOptions) {
         // 编辑列表保留源码用于三方合并；修订查询只读。
         if (options.record !== false) await observe(file)
         const { model, spans } = parseWorkflowSource(file.source, file.file)
+        const useWhen = model.meta.useWhen?.kind === 'literal' && typeof model.meta.useWhen.value === 'string' ? model.meta.useWhen.value : undefined
+        // 同一 id 删掉后可能重建：取最近一次“新建流程”。
+        const created = (await revisions(file.id)).filter((item) => item.summary === '新建流程').at(-1)
         summaries.push({ id: file.id, title: model.meta.title.kind === 'literal' && typeof model.meta.title.value === 'string' ? model.meta.title.value : file.id,
-          file: relative(dirname(dir), file.file), rev: file.rev, editable: model.editable, updatedAt: new Date(file.mtime).toISOString(), nodes: spans.byId.size, runs: 0 })
+          file: relative(dirname(dir), file.file), rev: file.rev, editable: model.editable, updatedAt: new Date(file.mtime).toISOString(), nodes: spans.byId.size, runs: 0,
+          ...(useWhen ? { useWhen } : {}),
+          ...(created ? { createdBy: { author: created.author, ...(created.reason ? { reason: created.reason } : {}), at: created.at } } : {}) })
       }
       return summaries
     })

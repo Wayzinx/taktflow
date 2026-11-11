@@ -46,6 +46,14 @@ describe('workflow 存储', () => {
     await store.get('demo')
     expect(await store.revisions('demo')).toHaveLength(1)
   })
+  it('列表带 useWhen，以及经“新建流程”创建时的作者与原因（Lead 自建的流程能被认出来）', async () => {
+    const lead: Actor = { type: 'agent', role: 'lead', harness: 'dsh', onBehalfOf: 'alice' }
+    expect((await store.list())[0]).not.toHaveProperty('createdBy')
+    const source = workflowFixture.replace("id: 'demo'", "id: 'lite'").replace("version: '1',", "version: '1',\n  useWhen: '单个模块的小改动',")
+    document(await store.create('lite', { source, author: lead, reason: '用户：小改动走短流程' }))
+    const lite = (await store.list()).find((item) => item.id === 'lite')
+    expect(lite).toMatchObject({ useWhen: '单个模块的小改动', createdBy: { author: lead, reason: '用户：小改动走短流程', at: expect.any(String) } })
+  })
   it('缺少 id 时回退文件名；坏源码仍可读取诊断', async () => {
     await writeFile(file, 'export default other')
     expect((await store.list())[0]).toMatchObject({ id: 'sample', editable: false })

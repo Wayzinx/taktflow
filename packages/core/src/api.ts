@@ -528,6 +528,10 @@ export interface WorkflowSummary {
   nodes: number
   /** 最近使用它的运行数。 */
   runs: number
+  /** 源码里 useWhen 是字符串字面量时：这个流程适合什么样的需求。 */
+  useWhen?: string
+  /** 经“新建流程”创建时的作者、原因和时间（取最近一次新建）；模板初始化或手工放进目录的文件没有。 */
+  createdBy?: { author: Actor; reason?: string; at: string }
 }
 
 export interface WorkflowDocument {

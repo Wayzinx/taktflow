@@ -24,6 +24,11 @@
   color: var(--accent-text);
   background: var(--accent-soft);
 }
+.wf-origin {
+  flex: none;
+  font-size: var(--text-label);
+  color: var(--text-2);
+}
 .wf-table-wrap {
   container: wftable / inline-size;
 }

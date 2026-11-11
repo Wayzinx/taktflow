@@ -43,6 +43,11 @@ export function WorkflowTable({ workflows, defaultId, renderActions }: { workflo
                     {w.title}
                   </Link>
                   {w.id === defaultId && <span className="chip wf-default">默认</span>}
+                  {w.createdBy?.author.type === 'agent' && (
+                    <span className="chip wf-origin" title={w.createdBy.reason ? `新建原因：${w.createdBy.reason}` : undefined}>
+                      {w.createdBy.author.role === 'lead' ? 'Lead 新建' : 'Agent 新建'}
+                    </span>
+                  )}
                 </span>
                 <span className="wf-file mono truncate" title={w.file}>
                   {w.file}
