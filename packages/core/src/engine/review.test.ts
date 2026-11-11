@@ -141,6 +141,8 @@ it('两个容器共享叶子并发额度，容器本身不占用执行槽位', a
       active++
       peak = Math.max(peak, active)
       await new Promise((resolve) => setTimeout(resolve, 15))
+      // 慢机器上调度第二个叶子可能超过 15ms：再等它开始（最多 1 秒），峰值才测得到 2
+      for (let i = 0; i < 100 && peak < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10))
       active--
       completed++
     },
