@@ -8,14 +8,13 @@ import { titleOf } from '../canvas/graph'
 import type { WorkflowDocState } from '../state'
 import { MetaForm } from './meta-form'
 import { NodeForm } from './node-form'
-import { useHarnessOptions, useRoleOptions } from './options'
+import { useRoleOptions } from './options'
 import { useDutyOptions } from './owner-fields'
 import './properties.css'
 
 /** 右侧属性面板：字面量属性用表单（setProp），代码值显示只读代码块并可切换文本编辑。nodeId 为空时编辑 workflow 元信息与阶段。 */
 export function PropertiesPanel({ wf, nodeId }: { wf: WorkflowDocState; nodeId?: string }) {
   const roles = useRoleOptions()
-  const harnesses = useHarnessOptions()
   const duties = useDutyOptions()
   const disabled = wf.readOnly || wf.status === 'conflict'
   const apply = useCallback((edits: WorkflowEdit[], reason: string) => void wf.applyEdits(edits, { reason }), [wf])
@@ -78,7 +77,7 @@ export function PropertiesPanel({ wf, nodeId }: { wf: WorkflowDocState; nodeId?:
           ))}
         </ul>
       )}
-      <NodeForm key={node.id} ctx={{ model, node, disabled, roles, harnesses, duties, apply }} />
+      <NodeForm key={node.id} ctx={{ model, node, disabled, roles, duties, apply }} />
     </aside>
   )
 }

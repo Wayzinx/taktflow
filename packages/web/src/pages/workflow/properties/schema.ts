@@ -46,7 +46,7 @@ const BY_KIND: Record<NodeKind, FieldSpec[]> = {
     { key: 'role', label: '角色', type: 'role' },
     { key: 'prompt', label: 'Prompt', type: 'text' },
     { key: 'completion', label: '完成标准', type: 'checklist', optional: true, always: true, hint: '逐条可验证；任何一条缺失、未通过或没有证据，节点即失败（不以退出码为准）。排序会改变编号 c1、c2…' },
-    { key: 'harness', label: 'Harness', type: 'harness', optional: true, hint: '留空用角色默认的 harness' },
+    { key: 'harness', label: 'Harness', type: 'harness', optional: true, hint: 'harness、模型、思考强度都在这里选；不选跟随角色' },
     { key: 'repo', label: '代码仓库', type: 'mono', optional: true },
     ...IO,
     { key: 'writeScope', label: '写权限（glob）', type: 'strings', optional: true },

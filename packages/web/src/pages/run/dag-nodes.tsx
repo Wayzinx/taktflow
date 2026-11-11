@@ -2,7 +2,6 @@ import type { CSSProperties } from 'react'
 import { Handle, Position, type NodeProps, type Node } from '@xyflow/react'
 import { Network } from 'lucide-react'
 import { ActivityLine, useSteadyActivity } from '../../components/activity-line'
-import { AgentMark, actOf, harnessHue, LONG_STEP_MS, markOf } from '../../components/agent-mark'
 import { KindIcon } from '../../components/ui'
 import { fmtTokens, totalTokens } from '../../lib/format'
 import { NODE_KIND, NODE_STATUS, STAGE_STATUS, toneSoftVar, toneVar } from '../../lib/status'
@@ -30,9 +29,6 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
   const sub = data.label.sub ? `${data.label.sub}${n.role ? ` · ${role}` : ''}` : role
   const showIteration = n.iteration !== undefined && !data.hideIteration
   const activity = useSteadyActivity(n.status === 'running' ? n.activity : undefined)
-  const mark = markOf(n.status)
-  // 长步骤在头顶加"…"：按 since 算，节点每次重渲染（SSE 节流刷新）时更新
-  const long = activity && Date.now() - Date.parse(activity.since) >= LONG_STEP_MS
   return (
     <div
       data-steward-anchor={n.id}
@@ -42,8 +38,8 @@ export function DagNodeView({ data }: NodeProps<Node<DagNodeData, 'dag'>>) {
     >
       <Handles />
       <div className="dag-row">
-        {/* ux-audit: ok sign '…' 是形象头顶的符号，不是加载文案 */}
-        {n.kind === 'agent' || (n.kind === 'judge' && activity) ? <AgentMark {...mark} act={actOf(activity)} sign={long ? '…' : mark.sign} role={n.role ?? (n.kind === 'judge' ? 'judge' : undefined)} hue={harnessHue(n.harness)} size={24} label={`${n.harness ?? 'Agent'} · ${meta.label}`} /> : <KindIcon kind={n.kind} size={22} />}
+        {/* 和编辑画布、节点库同一套类型图标；在干什么看第二行的动作和右边的状态 */}
+        <KindIcon kind={n.kind} size={22} />
         <span className="dag-title truncate">{data.label.title}</span>
         <span className="dag-status" title={meta.label}>
           <StatusIcon className={meta.spin ? 'spin' : undefined} strokeWidth={2.6} />

@@ -7,6 +7,7 @@ import { Field, JsonEditor, ListEditor, LongText, NumberInput, Select, TextInput
 import type { Option } from './options'
 import { fieldsOf, HIDDEN_KEYS, type FieldSpec } from './schema'
 import { ChecklistEditor } from './checklist'
+import { HarnessField } from './harness-field'
 import { ArbiterField, DutySelect, type ArbiterValue } from './owner-fields'
 import { ExhaustedField, NeedsField, PassField, RoutesField, siblingOptions, TargetField } from './special-fields'
 
@@ -15,13 +16,13 @@ export interface FormCtx {
   node: EditableNode
   disabled: boolean
   roles: Option[]
-  harnesses: Option[]
   /** 负责人下拉的职责标签（空间成员 duties）。 */
   duties?: Option[]
   apply(edits: WorkflowEdit[], reason: string): void
 }
 
-const OUTPUT_KINDS: Option[] = ARTIFACT_KIND_ORDER.map((k) => ({ value: k, label: `${k} · ${ARTIFACT_KIND[k]}` }))
+// 下拉框窄，只写中文名；源码里写的是英文 kind
+const OUTPUT_KINDS: Option[] = ARTIFACT_KIND_ORDER.map((k) => ({ value: k, label: ARTIFACT_KIND[k] }))
 
 function literalField(f: FieldSpec, v: unknown, fid: string, ctx: FormCtx, set: (value: unknown) => void) {
   const { model, node, disabled } = ctx
@@ -46,10 +47,8 @@ function literalField(f: FieldSpec, v: unknown, fid: string, ctx: FormCtx, set: 
       return <Select id={fid} value={v as string | undefined} options={stagesOf(model).map((s) => ({ value: s.id, label: s.title }))} empty="不分阶段" disabled={disabled} onCommit={set} />
     case 'node':
       return <Select id={fid} value={v as string | undefined} options={siblings} empty="选择节点" disabled={disabled} onCommit={(s) => set(s ?? '')} />
-    case 'harness': {
-      const cur = v as HarnessSelector | undefined
-      return <Select id={fid} value={cur?.harness} options={ctx.harnesses} empty="角色默认" disabled={disabled} onCommit={(h) => set(h ? { ...cur, harness: h } : undefined)} />
-    }
+    case 'harness':
+      return <HarnessField id={fid} role={literalOf<string>(node.props.role)} value={v as HarnessSelector | undefined} disabled={disabled} onCommit={set} />
     case 'strings':
     case 'roles':
       return <ListEditor id={fid} value={Array.isArray(v) ? v : []} disabled={disabled} placeholder={f.type === 'roles' ? 'dev' : 'src/**'} onCommit={(a) => set(a.length || !f.optional ? a : undefined)} />

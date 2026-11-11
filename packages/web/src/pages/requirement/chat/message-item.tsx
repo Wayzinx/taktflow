@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Activity, Cog, CornerUpLeft, Info } from 'lucide-react'
 import type { AttentionItem, RoomMember, RoomMessage } from '@taktflow/core'
-import { AgentMark, harnessHue } from '../../../components/agent-mark'
+import { AgentMark } from '../../../components/agent-mark'
 import { LeadMark } from '../../../components/identity'
 import { RouteCard } from '../../../components/route-card'
 import { Avatar } from '../../../components/ui'
@@ -41,7 +41,7 @@ function authorLabel(m: RoomMessage, member?: RoomMember): { name: string; tag?:
 export function MemberAvatar({ kind, name, id, role, harness, size = 24, busy }: { kind: RoomMember['kind'] | 'system'; name: string; id?: string; role?: string; harness?: string; size?: number; busy?: boolean }) {
   if (kind === 'human') return <Avatar name={name} id={id} size={size} />
   if (kind === 'lead') return <LeadMark size={size} harness={harness} label={name} />
-  if (kind === 'agent') return <AgentMark state={busy ? 'work' : 'idle'} role={role ?? name} hue={harnessHue(harness)} size={size} label={name} />
+  if (kind === 'agent') return <AgentMark state={busy ? 'work' : 'idle'} role={role ?? name} size={size} label={name} />
   return (
     <span className="chat-avatar who-system" style={{ width: size, height: size }} title={name} aria-label={name}>
       <Cog strokeWidth={2} />

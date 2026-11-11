@@ -43,7 +43,7 @@ export function StepTeam({ f, set, me }: { f: SpaceForm; set: (p: Partial<SpaceF
           <span className="ov-field-hint">之后也能在空间设置里加</span>
         </header>
         <div className="sc-row sc-me">
-          <Avatar name={me?.name ?? '你'} size={22} />
+          <Avatar name={me?.name ?? '你'} id={me?.id} size={22} />
           <span className="truncate">{me?.name ?? '你'}</span>
           <span className="sc-role-fixed">owner · 创建者</span>
         </div>

@@ -3,6 +3,7 @@ import { Check, ChevronDown, ChevronRight, Copy, FileCode2, FileJson, FileText, 
 import type { ArtifactEditResponse, ArtifactKind, ArtifactRecord, ArtifactVersion, RequirementDetail, RunDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { Avatar, EmptyState, ErrorState, GlideMark, Segmented, Skeleton, SkeletonRows, toast, useGlide } from '../../components/ui'
+import { AgentMark } from '../../components/agent-mark'
 import { JsonView } from '../../lib/json-view'
 import { Markdown } from '../../lib/markdown'
 import { actorName, fmtDate, fmtRelative } from '../../lib/format'
@@ -334,7 +335,7 @@ export function ArtifactPreview({ reqId, record, version: chosen, onVersion, onO
 
       <div className="art-meta">
         <span className="art-meta-item">
-          <Avatar name={authorLabel(ver)} size={16} />
+          {ver.author.type === 'agent' ? <AgentMark state="idle" role={ver.author.role} size={16} /> : <Avatar name={authorLabel(ver)} id={ver.author.type === 'human' ? ver.author.id : undefined} size={16} />}
           <b>{authorLabel(ver)}</b>
           {ver.author.type === 'agent' && <span className="faint mono">{ver.author.harness}</span>}
         </span>
@@ -459,7 +460,7 @@ function Comments({ reqId, path, version }: { reqId: string; path: string; versi
       </div>
       {q.data?.map((c) => (
         <div key={c.id} className={`comment${c.resolved ? ' resolved' : ''}`}>
-          <Avatar name={actorName(c.author)} size={22} />
+          {c.author.type === 'agent' ? <AgentMark state="idle" role={c.author.role} size={22} /> : <Avatar name={actorName(c.author)} id={c.author.type === 'human' ? c.author.id : undefined} size={22} />}
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="comment-head">
               <b>{actorName(c.author)}</b>

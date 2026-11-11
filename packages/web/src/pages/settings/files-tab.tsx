@@ -3,7 +3,7 @@ import { FileText, Save } from 'lucide-react'
 import type { AgentRoleView, SpaceDetail } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import type { SpaceFileKind } from '../../api/source'
-import { AgentMark, harnessHue } from '../../components/agent-mark'
+import { AgentMark } from '../../components/agent-mark'
 import { EmptyState, ErrorState, SkeletonRows, toast, useStagger } from '../../components/ui'
 import { StewardEditButton } from './ask-steward'
 import { RoleForm, RoleHead } from './role-form'
@@ -150,7 +150,7 @@ export function FilesTab({ kind, space, onChanged }: { kind: SpaceFileKind; spac
                 if (dirty && !window.confirm(`${selected.title} 有未保存的修改，切换后会丢失。继续？`)) return
                 setQuery({ name: e.name })
               }}>
-              {!isSkill && <AgentMark state="idle" role={e.name} hue={harnessHue(e.harness)} size={28} className="file-item-mark" />}
+              {!isSkill && <AgentMark state="idle" role={e.name} size={28} className="file-item-mark" />}
               <span className="file-item-title">
                 <span className={isSkill ? 'mono' : undefined}>{e.title}</span>
                 {!isSkill && <span className="faint mono">{e.name}</span>}
@@ -179,7 +179,6 @@ export function FilesTab({ kind, space, onChanged }: { kind: SpaceFileKind; spac
             <RoleHead
               role={selected.name}
               title={selected.title}
-              harness={selected.harness}
               origin={selected.role?.origin}
               path={selected.role?.path}
               mode={roles ? mode : 'source'}

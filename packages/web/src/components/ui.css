@@ -94,7 +94,10 @@
   font: 600 10px/1 var(--font-sans);
   letter-spacing: 0;
   color: light-dark(#fff, oklch(0.18 0.01 80));
-  background: var(--av, var(--c-7));
+  /* 生成头像（ui.tsx avatarLook）：一层柔光高光叠在两色渐变上 */
+  background:
+    radial-gradient(circle at var(--av-x, 30%) var(--av-y, 25%), color-mix(in oklch, white 55%, transparent), transparent 58%),
+    linear-gradient(var(--av-angle, 135deg), var(--av, var(--c-7)), var(--av2, var(--av, var(--c-7))));
   /* 一圈底色描边：叠放 / 压在别的元素上时分得开 */
   box-shadow: 0 0 0 1.5px var(--surface);
 }

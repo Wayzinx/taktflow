@@ -2,7 +2,6 @@ import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode }
 import { ChevronDown, type LucideIcon } from 'lucide-react'
 import type { NodeKind } from '@taktflow/core'
 import { NODE_KIND, toneSoftVar, toneVar, type StatusMeta, type Tone } from '../lib/status'
-import { initials } from '../lib/format'
 import { Menu } from './ui/menu'
 import './ui.css'
 
@@ -29,27 +28,29 @@ export function KindIcon({ kind, size = 22 }: { kind: NodeKind; size?: number })
   )
 }
 
-/** 人的头像色：图表色板去掉灰（灰留给"未知 harness"），按 id 稳定取。 */
+/** 人的头像色：图表色板去掉灰（灰留给"未知 harness"）。 */
 const AVATAR_COLORS = [1, 2, 3, 4, 5, 6, 8]
 /** 头像只有四档（docs/design/30 §1）：16 行内、20 列表、24 卡片、32 详情；别的尺寸就近取。 */
 const AVATAR_SIZES = [16, 20, 24, 32] as const
-export const avatarColor = (key: string) => `var(--c-${AVATAR_COLORS[[...key].reduce((s, c) => (s * 31 + c.charCodeAt(0)) >>> 0, 7) % AVATAR_COLORS.length]})`
 
-/** 头像里的字：16px 一个字母；汉字名 24px 以下只放最后一个字（两个字挤不进圆里）。 */
-function avatarText(name: string, px: number): string {
-  const t = initials(name)
-  if (px <= 16) return /[一-龥]/.test(t) ? t.slice(-1) : t.slice(0, 1)
-  return /[一-龥]/.test(t) && px < 24 ? t.slice(-1) : t
+/** 按 id 生成头像：两种色板色的渐变，角度和高光位置也由 id 定，同一个人全站一样、改名不变。 */
+export function avatarLook(key: string): CSSProperties {
+  const h = [...key].reduce((s, c) => Math.imul(s ^ c.charCodeAt(0), 16777619) >>> 0, 2166136261)
+  const a = h % AVATAR_COLORS.length
+  const b = (a + 1 + ((h >>> 8) % (AVATAR_COLORS.length - 1))) % AVATAR_COLORS.length
+  return {
+    '--av': `var(--c-${AVATAR_COLORS[a]})`,
+    '--av2': `var(--c-${AVATAR_COLORS[b]})`,
+    '--av-angle': `${(h >>> 12) % 360}deg`,
+    '--av-x': `${20 + ((h >>> 20) % 60)}%`,
+    '--av-y': `${15 + ((h >>> 26) % 40)}%`,
+  } as CSSProperties
 }
 
-/** 人：首字母实色圆。id 定颜色（改名不变色），name 出字。agent 不用它，用 AgentMark。 */
+/** 人：按 id 生成的渐变圆（没有 id 用名字）；名字在悬停提示和读屏里。agent 不用它，用 AgentMark。 */
 export function Avatar({ name, id, size = 20, className }: { name: string; id?: string; size?: number; className?: string }) {
   const px = AVATAR_SIZES.reduce((a, b) => (Math.abs(b - size) < Math.abs(a - size) ? b : a))
-  return (
-    <span className={`avatar s${px}${className ? ` ${className}` : ''}`} title={name} role="img" aria-label={name} style={{ '--av': avatarColor(id ?? name) } as CSSProperties}>
-      {avatarText(name, px)}
-    </span>
-  )
+  return <span className={`avatar s${px}${className ? ` ${className}` : ''}`} title={name} role="img" aria-label={name} style={avatarLook(id ?? name)} />
 }
 
 export function AvatarStack({ names, max = 4, size = 20 }: { names: string[]; max?: number; size?: number }) {

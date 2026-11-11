@@ -177,12 +177,28 @@
 .wf-diags li.is-error svg {
   color: var(--st-failed);
 }
+/* 阶段两行：标题和按钮一行，id 小字另起一行（属性栏只有 300px，两个框挤一行哪个都放不下） */
+.wf-list-row.wf-stage-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  grid-template-areas: 'num title tools' '. id id';
+  gap: 4px 6px;
+}
 .wf-stage-row > .mono.num {
-  width: 18px;
+  grid-area: num;
   font-size: var(--text-meta);
 }
+.wf-stage-row > .input:not(.mono) {
+  grid-area: title;
+}
 .wf-stage-row > .input.mono {
-  flex: 0 0 34%;
+  grid-area: id;
+  height: 26px;
+  padding: 2px 8px;
+  color: var(--text-2);
+}
+.wf-stage-row > .wf-row-tools {
+  grid-area: tools;
 }
 
 /* ---------------------------------------------------------------- 路由与总负责元数据（E 组 M3） */

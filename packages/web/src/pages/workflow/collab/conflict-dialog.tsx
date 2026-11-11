@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { GitMerge } from 'lucide-react'
 import { summarizeEdits } from '../../../api/workflow-edit'
 import { Segmented, toast } from '../../../components/ui'
-import { actorName } from '../../../lib/format'
 import type { ConflictResolution, WorkflowConflictState, WorkflowDocState } from '../state'
 import { CodeView } from './code-view'
 import { DiffStat, DiffView } from './diff-view'
+import { usePersonName } from './revision-author'
+import { revisionAuthor } from './revision-who'
 import { collapse, conflictCount, hasConflictMarkers, lineDiff } from './line-diff'
 import './collab.css'
 
@@ -30,7 +32,8 @@ function ConflictBody({ wf, c }: { wf: WorkflowDocState; c: WorkflowConflictStat
   const left = conflictCount(merged)
   const unresolved = hasConflictMarkers(merged)
   const remote = wf.remoteChange?.event.revision
-  const who = remote && remote.rev === currentRev ? actorName(remote.author) : '其他人'
+  const person = usePersonName()
+  const who = remote && remote.rev === currentRev ? revisionAuthor(remote, person).name : '其他人'
 
   const mergeInput = useRef<HTMLTextAreaElement>(null)
   useEffect(() => box.current?.focus(), [])
@@ -50,7 +53,7 @@ function ConflictBody({ wf, c }: { wf: WorkflowDocState; c: WorkflowConflictStat
     if (ok) toast(done, { tone: 'success' })
   }
 
-  return (
+  return createPortal(
     <div className="wfc-modal-layer">
       <div className="wfc-scrim" aria-hidden />
       <div className="wfc-modal wfc-conflict" role="alertdialog" aria-modal="true" aria-labelledby="wfc-conflict-title" aria-describedby="wfc-conflict-desc" ref={box} tabIndex={-1}>
@@ -115,6 +118,7 @@ function ConflictBody({ wf, c }: { wf: WorkflowDocState; c: WorkflowConflictStat
           </button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

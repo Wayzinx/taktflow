@@ -106,7 +106,7 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
                 <div className="rc-check-list">
                   {members.map((m) => (
                     <button key={m.id} type="button" className={`rh-person pressable${m.id === r.owner ? ' on' : ''}`} onClick={() => (close(), m.id !== r.owner && void save('owner', { owner: m.id }, { owner: r.owner ?? '' }).catch((e: Error) => toast('负责人没改成', { tone: 'failed', body: e.message })))}>
-                      <Avatar name={m.name} size={18} />
+                      <Avatar name={m.name} id={m.id} size={18} />
                       <span className="truncate">{m.name}</span>
                       <span className="faint">{m.duties?.join(' / ')}</span>
                     </button>
@@ -115,7 +115,7 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
                 </div>
               )}
             >
-              {r.owner ? <Avatar name={nameOf(r.owner)!} size={16} /> : null}
+              {r.owner ? <Avatar name={nameOf(r.owner)!} id={r.owner} size={16} /> : null}
               {r.owner ? nameOf(r.owner) : '指定负责人'}
             </FactButton>
             <FactButton label="截止时间" pop={(close) => <DuePicker value={r.dueAt} onPick={(v) => (close(), void save('dueAt', { dueAt: v ?? null }, { dueAt: r.dueAt ?? null }).catch((e: Error) => toast('截止时间没改成', { tone: 'failed', body: e.message })))} />}>

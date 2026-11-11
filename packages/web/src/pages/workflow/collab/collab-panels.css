@@ -4,7 +4,7 @@
 .wfc-modal-layer {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 105;
 }
 .wfc-scrim {
   position: absolute;
@@ -97,9 +97,31 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.wfc-rev-top .wfc-muted {
+.wfc-rev-top > .wfc-muted {
   margin-left: auto;
   flex: none;
+}
+.wfc-rev-author .wfc-muted {
+  font-weight: 400;
+}
+/* 外部修改、系统：和头像同尺寸的图标圆 */
+.wfc-author-icon {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  color: var(--text-2);
+  background: var(--surface-hover);
+}
+.wfc-author-icon > svg {
+  width: 62%;
+  height: 62%;
+}
+.wfc-rev-who {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .wfc-rev-summary {
   font-size: var(--text-ui);

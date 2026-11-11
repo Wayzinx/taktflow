@@ -63,16 +63,19 @@ export function parseUnifiedDiff(diff: string): DiffRow[] {
   const out: DiffRow[] = []
   let a = 0
   let b = 0
+  // 第一个 @@ 之前是文件头（diff --git、index、---、+++），不是内容；下一个文件的 diff 行又回到文件头
+  let inHunk = false
   for (const raw of diff.split('\n')) {
-    if (raw.startsWith('--- ') || raw.startsWith('+++ ')) continue
+    if (raw.startsWith('diff ')) inHunk = false
     const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/.exec(raw)
     if (h) {
       a = Number(h[1])
       b = Number(h[2])
+      inHunk = true
       out.push({ t: '@', text: raw })
       continue
     }
-    if (raw === '' || raw.startsWith('\\')) continue
+    if (!inHunk || raw === '' || raw.startsWith('\\')) continue
     const t = raw[0]
     const text = raw.slice(1)
     if (t === '+') out.push({ t: '+', text, b: b++ })

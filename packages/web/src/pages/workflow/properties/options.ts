@@ -14,11 +14,6 @@ export function useRoleOptions(): Option[] {
   return roles
 }
 
-export function useHarnessOptions(): Option[] {
-  const { data } = useAsync((ds) => ds.harnesses(), [])
-  return (data ?? []).map((h) => ({ value: h.id, label: h.available ? h.displayName : `${h.displayName}（不可用）` }))
-}
-
 /** 当前值不在选项里（例如手写的角色）时补一项，避免下拉把它吞掉。 */
 export function withCurrent(options: Option[], value: string | undefined): Option[] {
   if (!value || options.some((o) => o.value === value)) return options

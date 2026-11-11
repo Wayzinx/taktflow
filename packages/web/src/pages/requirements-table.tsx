@@ -109,7 +109,7 @@ export function RequirementsTable({
                   <div className="req-meta">
                     {r.owner && (
                       <>
-                        <Avatar name={nameOf(r.owner)} size={14} />
+                        <Avatar name={nameOf(r.owner)} id={r.owner} size={14} />
                         <span>{nameOf(r.owner)}</span>
                         <span className="dot-sep" />
                       </>
@@ -134,7 +134,7 @@ export function RequirementsTable({
                 <td className="c-owner">
                   {r.owner && (
                     <span className="owner-cell">
-                      <Avatar name={nameOf(r.owner)} size={20} />
+                      <Avatar name={nameOf(r.owner)} id={r.owner} size={20} />
                       <span className="truncate" title={nameOf(r.owner)}>{nameOf(r.owner)}</span>
                     </span>
                   )}

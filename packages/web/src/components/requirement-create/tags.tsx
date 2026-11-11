@@ -38,7 +38,7 @@ export function PeopleTag({ members, owner, value, onOwner, onChange }: { member
         shown.length ? (
           <span className="rc-people">
             {shown.slice(0, 3).map((m) => (
-              <Avatar key={m} name={members?.find((x) => x.id === m)?.name ?? m} size={16} />
+              <Avatar key={m} name={members?.find((x) => x.id === m)?.name ?? m} id={m} size={16} />
             ))}
             <span>{members?.find((x) => x.id === owner)?.name ?? owner ?? '未指定'}</span>
             {value.filter((m) => m !== owner).length > 0 && <span className="faint">+{value.filter((m) => m !== owner).length}</span>}
@@ -52,7 +52,7 @@ export function PeopleTag({ members, owner, value, onOwner, onChange }: { member
           {(members ?? []).map((m) => (
             <div key={m.id} className="rc-person">
               <CheckRow checked={m.id === owner || value.includes(m.id)} onChange={(on) => onChange(on ? [...value, m.id] : value.filter((x) => x !== m.id))} hint={m.duties?.join(' / ')}>
-                <Avatar name={m.name} size={18} />
+                <Avatar name={m.name} id={m.id} size={18} />
                 {m.name}
               </CheckRow>
               <button type="button" className={`rc-owner-btn${m.id === owner ? ' on' : ''}`} onClick={() => onOwner(m.id)} aria-pressed={m.id === owner} title="设为负责人">

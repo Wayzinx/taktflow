@@ -79,7 +79,7 @@ export function RequirementLanes({ rows, risks }: { rows: RequirementSummary[]; 
                   )}
                   {r.owner && (
                     <span className="rl-owner" title={nameOf(r.owner)}>
-                      <Avatar name={nameOf(r.owner)} size={14} />
+                      <Avatar name={nameOf(r.owner)} id={r.owner} size={14} />
                       <span className="truncate">{nameOf(r.owner)}</span>
                     </span>
                   )}

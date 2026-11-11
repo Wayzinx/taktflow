@@ -1,7 +1,7 @@
 import type { AttentionItem, RequirementDetail, RunDetail, StewardEntitySnapshot } from '@taktflow/core'
 import { useAsync } from '../../../api'
 import { ActivityLine, useSteadyActivity } from '../../../components/activity-line'
-import { actOf, AgentMark, harnessHue, markOf } from '../../../components/agent-mark'
+import { actOf, AgentMark, markOf } from '../../../components/agent-mark'
 import { AttentionCard, attentionMeta } from '../../../components/attention-card'
 import { StageRail } from '../../../components/stage-rail'
 import { useEntityFocus, type FocusTarget } from '../../../components/steward/focus'
@@ -36,7 +36,7 @@ function NowRow({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
   const mark = markOf(cur.status)
   return (
     <div className="ent-now">
-      <AgentMark state={mark.state} sign={mark.sign} act={actOf(activity)} role={g?.role} hue={harnessHue(g?.harness)} size={30} />
+      <AgentMark state={mark.state} sign={mark.sign} act={actOf(activity)} role={g?.role} size={30} />
       <div className="ent-now-main">
         <span className="ent-now-head">
           <b>{cur.title}</b>

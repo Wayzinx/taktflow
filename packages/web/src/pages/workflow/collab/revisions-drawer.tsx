@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { History, X } from 'lucide-react'
 import type { WorkflowRevision } from '@taktflow/core'
 import { useAsync } from '../../../api'
-import { Avatar, EmptyState, ErrorState, Segmented, SkeletonRows, SkeletonText } from '../../../components/ui'
-import { actorName, fmtDate, fmtRelative } from '../../../lib/format'
+import { EmptyState, ErrorState, Segmented, SkeletonRows, SkeletonText } from '../../../components/ui'
+import { fmtDate, fmtRelative } from '../../../lib/format'
+import { Link } from '../../../lib/router'
 import type { WorkflowDocState } from '../state'
 import { DiffStat, DiffView } from './diff-view'
 import { collapse, lineDiff, parseUnifiedDiff } from './line-diff'
 import { RollbackForm } from './rollback-form'
+import { AuthorMark, usePersonName } from './revision-author'
+import { revisionAuthor } from './revision-who'
 import './collab.css'
 
 type Compare = 'parent' | 'current'
@@ -25,6 +29,7 @@ export function RevisionsDrawer({ wf, workflowId, open, onClose }: { wf: Workflo
   const [compare, setCompare] = useState<Compare>('parent')
   const panel = useRef<HTMLElement>(null)
   const opener = useRef<Element | null>(null)
+  const person = usePersonName()
 
   useEffect(() => {
     if (!open) return
@@ -45,7 +50,8 @@ export function RevisionsDrawer({ wf, workflowId, open, onClose }: { wf: Workflo
   if (!open) return null
   const current = revs?.find((r) => r.rev === sel) ?? revs?.[0]
 
-  return (
+  // 挂到 body：页面面板里的层叠上下文会让顶栏、管家停靠面板盖住抽屉
+  return createPortal(
     <div className="wfc-drawer-layer">
       <div className="wfc-scrim" onClick={onClose} aria-hidden />
       <aside className="wfc-drawer" role="dialog" aria-modal="true" aria-label="修订历史" ref={panel} tabIndex={-1}>
@@ -68,12 +74,17 @@ export function RevisionsDrawer({ wf, workflowId, open, onClose }: { wf: Workflo
         ) : (
           <div className="wfc-drawer-body">
             <ol className="wfc-rev-list" aria-label="修订">
-              {revs.map((r) => (
+              {revs.map((r) => {
+                const who = revisionAuthor(r, person)
+                return (
                 <li key={r.rev}>
                   <button className={`wfc-rev${r.rev === current?.rev ? ' is-selected' : ''}`} aria-current={r.rev === current?.rev ? 'true' : undefined} onClick={() => setSel(r.rev)}>
                     <span className="wfc-rev-top">
-                      <Avatar name={actorName(r.author)} size={18} />
-                      <span className="wfc-rev-author">{actorName(r.author)}</span>
+                      <AuthorMark who={who} />
+                      <span className="wfc-rev-author">
+                        {who.name}
+                        {who.note && <span className="wfc-muted"> · {who.note}</span>}
+                      </span>
                       <span className="wfc-muted" title={fmtDate(r.at)}>{fmtRelative(r.at)}</span>
                     </span>
                     <span className="wfc-rev-summary">{r.summary ?? r.reason ?? '（无摘要）'}</span>
@@ -84,17 +95,20 @@ export function RevisionsDrawer({ wf, workflowId, open, onClose }: { wf: Workflo
                     </span>
                   </button>
                 </li>
-              ))}
+                )
+              })}
             </ol>
-            {current && <RevisionDetail key={current.rev} wf={wf} workflowId={workflowId} rev={current} isHead={current.rev === head} compare={compare} setCompare={setCompare} />}
+            {current && <RevisionDetail key={current.rev} wf={wf} workflowId={workflowId} rev={current} isHead={current.rev === head} compare={compare} setCompare={setCompare} person={person} />}
           </div>
         )}
       </aside>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
-function RevisionDetail({ wf, workflowId, rev, isHead, compare, setCompare }: { wf: WorkflowDocState; workflowId: string; rev: WorkflowRevision; isHead: boolean; compare: Compare; setCompare: (c: Compare) => void }) {
+function RevisionDetail({ wf, workflowId, rev, isHead, compare, setCompare, person }: { wf: WorkflowDocState; workflowId: string; rev: WorkflowRevision; isHead: boolean; compare: Compare; setCompare: (c: Compare) => void; person: (id: string) => string }) {
+  const who = revisionAuthor(rev, person)
   const detail = useAsync((ds) => ds.workflowRevision(workflowId, rev.rev), [workflowId, rev.rev])
   const current = wf.doc?.source
   const mode: Compare = isHead ? 'parent' : compare
@@ -109,10 +123,15 @@ function RevisionDetail({ wf, workflowId, rev, isHead, compare, setCompare }: { 
     <section className="wfc-rev-detail" aria-label={`修订 ${rev.rev.slice(0, 8)}`}>
       <div className="wfc-rev-meta">
         <div className="wfc-rev-heading">{rev.summary ?? '（无摘要）'}</div>
-        {rev.reason && <p className="wfc-rev-reason">{rev.reason}</p>}
+        {who.reason && who.reason !== rev.summary && <p className="wfc-rev-reason">{who.reason}</p>}
         <dl className="wfc-kv">
-          <dt>作者</dt>
-          <dd>{actorName(rev.author)}</dd>
+          <dt>谁改的</dt>
+          <dd className="wfc-rev-who">
+            <AuthorMark who={who} size={16} />
+            {who.name}
+            {who.note && <span className="wfc-muted">{who.note}</span>}
+            {who.thread && <Link to={`/solo?thread=${encodeURIComponent(who.thread)}`}>看管家对话</Link>}
+          </dd>
           <dt>时间</dt>
           <dd>{fmtDate(rev.at)}</dd>
           <dt>修订</dt>

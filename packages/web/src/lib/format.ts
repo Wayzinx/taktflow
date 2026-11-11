@@ -77,11 +77,6 @@ export function actorName(a: Actor): string {
   return a.id
 }
 
-export function initials(name: string): string {
-  const clean = name.replace(/^ai:/, '')
-  return /[一-龥]/.test(clean) ? clean.slice(-2) : clean.slice(0, 2).toUpperCase()
-}
-
 const RUN_END: Record<string, string> = { succeeded: '成功', failed: '失败', cancelled: '已取消', waiting_human: '等人处理', running: '运行中' }
 const VERDICT_WORD: Record<string, string> = {
   product_bug: '代码缺陷', case_defect: '用例缺陷', script_defect: '脚本缺陷', env_issue: '环境问题', flaky: '不稳定', requirement_gap: '需求缺口',

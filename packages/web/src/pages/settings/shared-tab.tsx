@@ -1,7 +1,7 @@
 import { Check, GitFork } from 'lucide-react'
 import type { AgentRoleView, SpaceDetail } from '@taktflow/core'
 import { useAsync } from '../../api'
-import { AgentMark, harnessHue } from '../../components/agent-mark'
+import { AgentMark } from '../../components/agent-mark'
 import { EmptyState, ErrorState, SkeletonRows } from '../../components/ui'
 import { setQuery } from '../../lib/router'
 import { selectorText } from './runtime/shared'
@@ -71,7 +71,7 @@ export function SharedTab({ space }: { space?: SpaceDetail }) {
               <tr key={r.role} className="shared-row pressable" onClick={() => open(r.role)} tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && open(r.role)}>
                 <th scope="row">
                   <span className="shared-role">
-                    <AgentMark state="idle" role={r.role} hue={harnessHue(r.effective.harness.harness)} size={24} />
+                    <AgentMark state="idle" role={r.role} size={24} />
                     <span className="truncate">{r.title}</span>
                     <span className="faint mono">{r.role}</span>
                   </span>

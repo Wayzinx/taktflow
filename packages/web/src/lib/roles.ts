@@ -23,3 +23,18 @@ export function roleProp(role?: string): BeeProp | undefined {
   for (const [re, prop] of RULES) if (re.test(r)) return prop
   return POOL[[...r].reduce((s, c) => s + c.charCodeAt(0), 0) % POOL.length]
 }
+
+/**
+ * 角色 → 蜂的身体色（docs/design/30 §1）：同一个角色全站同色，一眼分得开不同角色。
+ * 六个色相各有本色和深色两档，内置角色各占一档；其余角色按名字哈希。
+ * --c-4（琥珀）留给管家和 Lead 的蜂蜜色，--c-7（灰）留给没有角色的。
+ */
+const HUES = [1, 2, 3, 5, 6, 8]
+const SHADES = HUES.flatMap((n) => [`var(--c-${n})`, `color-mix(in oklch, var(--c-${n}) 70%, var(--text))`])
+const BUILTIN: Record<string, number> = { pm: 0, architect: 8, dev: 4, 'test-designer': 10, automation: 2, reviewer: 6, judge: 11, verifier: 3, evaluator: 1, auditor: 9, 'wiki-writer': 5 }
+
+export function roleHue(role?: string): string {
+  if (!role) return 'var(--c-7)'
+  if (/^(steward|lead)$/.test(role)) return 'var(--honey)'
+  return SHADES[BUILTIN[role] ?? [...role].reduce((s, c) => (s * 31 + c.charCodeAt(0)) >>> 0, 7) % SHADES.length]!
+}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUpRight, MoreHorizontal, OctagonAlert, Plus, RotateCw, Save, Trash2, X } from 'lucide-react'
 import type { AgentRoleView, AgentRoleWrite, HarnessSelector, SpaceDetail } from '@taktflow/core'
 import { RoleConflictError, useAsync, useSource } from '../../api'
-import { AgentMark, harnessHue } from '../../components/agent-mark'
+import { AgentMark } from '../../components/agent-mark'
 import { ErrorState, Menu, ReasonDialog, Segmented, SkeletonRows, TagInput, ToggleChips, toast } from '../../components/ui'
 import { Link } from '../../lib/router'
 import { SelectorFields } from './runtime/routing'
@@ -336,14 +336,14 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
 }
 
 /** 角色详情的头部：形象、来源、表单 / 源码切换、删除。 */
-export function RoleHead({ role, title, harness, origin, path, mode, onMode, onDeleted }: { role: string; title: string; harness?: string; origin?: AgentRoleView['origin']; path?: string; mode: 'form' | 'source'; onMode: (m: 'form' | 'source') => void; onDeleted: () => void }) {
+export function RoleHead({ role, title, origin, path, mode, onMode, onDeleted }: { role: string; title: string; origin?: AgentRoleView['origin']; path?: string; mode: 'form' | 'source'; onMode: (m: 'form' | 'source') => void; onDeleted: () => void }) {
   const ds = useSource()
   const more = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState(false)
   const [removing, setRemoving] = useState(false)
   return (
     <header className="rf-head">
-      <AgentMark state="idle" role={role} hue={harnessHue(harness)} size={40} />
+      <AgentMark state="idle" role={role} size={40} />
       <span className="rf-head-title">
         <b className="truncate">{title}</b>
         <span className="faint mono truncate">

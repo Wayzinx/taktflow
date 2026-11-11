@@ -16,3 +16,4 @@ examples/*/.takt/objects/
 examples/*/knowledge/lessons/
 examples/*/.takt/space-events.jsonl
 examples/*/.takt/workflow-revisions/
+.ux-layout/

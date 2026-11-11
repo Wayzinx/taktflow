@@ -16,7 +16,7 @@ import { CheckpointsTab } from './checkpoints-tab'
 import { ChangesCard } from './changes/changes-card'
 import './drawer.css'
 import { BeeGlyph } from '../../components/identity'
-import { AgentMark, harnessHue, markOf } from '../../components/agent-mark'
+import { AgentMark, markOf } from '../../components/agent-mark'
 
 const MIN_W = 440
 const DEFAULT_W = 580
@@ -102,7 +102,7 @@ export function NodeDrawer({ runId, requirementId, nodeId, graphNode, expansions
         <TabPanel key={nodeId} className="drawer-node-swap">
         <div className="drawer-title-row">
           {kind === 'agent' || kind === 'judge' ? (
-            <AgentMark {...markOf(status ?? 'pending')} role={d?.role ?? graphNode?.role ?? (kind === 'judge' ? 'judge' : undefined)} hue={harnessHue(graphNode?.harness)} size={32} label={`${d?.role ?? graphNode?.role ?? kind} · ${graphNode?.harness ?? ''}`} />
+            <AgentMark {...markOf(status ?? 'pending')} role={d?.role ?? graphNode?.role ?? (kind === 'judge' ? 'judge' : undefined)} size={32} label={`${d?.role ?? graphNode?.role ?? kind} · ${graphNode?.harness ?? ''}`} />
           ) : (
             kind && <KindIcon kind={kind} size={28} />
           )}

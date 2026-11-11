@@ -42,6 +42,7 @@ export function HarnessPicker({
   className,
   ariaLabel = 'harness 与模型',
   hideEffort,
+  disabled,
 }: {
   harnesses: PickerHarness[]
   value?: PickerValue | null
@@ -57,6 +58,7 @@ export function HarnessPicker({
   ariaLabel?: string
   /** 旁边另有强度下拉（设置里的路由）时，按钮上不再重复写强度 */
   hideEffort?: boolean
+  disabled?: boolean
 }) {
   const btn = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -140,7 +142,7 @@ export function HarnessPicker({
         aria-expanded={open}
         aria-label={`${ariaLabel}：${current?.text ?? defaultLabel ?? '默认'}${value ? '' : '（默认）'}`}
         title={`换${ariaLabel}`}
-        disabled={loading && !harnesses.length}
+        disabled={disabled || (loading && !harnesses.length)}
         onClick={() => setOpen(true)}
       >
         <BrandIcon k={(current ?? fallback)?.icon} label={(current ?? fallback)?.name ?? defaultLabel ?? '默认'} size={14} />
@@ -266,7 +268,8 @@ export function HarnessPicker({
                                     默认
                                   </button>
                                 )}
-                                {m.efforts.map((e) => (
+                                {/* 已经选了目录里没列的档（手写进配置、或是猜的档位外）：也列出来，不然看不出当前是哪档 */}
+                                {(effortFor && !m.efforts.includes(effortFor) ? [...m.efforts, effortFor] : m.efforts).map((e) => (
                                   <button key={e} type="button" className={`hp-effort${(effortFor ?? m.defaultEffort) === e ? ' is-on' : ''}`} onClick={() => pick(activeH, m, e)}>
                                     {EFFORT_LABEL[e]}
                                     <span className="mono">{e}</span>

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { Bell, Check, GitBranch, Inbox, Plus, Search, Settings, Trash2, Workflow } from 'lucide-react'
 import type { NodeStatus } from '@taktflow/core'
-import { AgentMark, harnessHue, markOf } from '../components/agent-mark'
+import { AgentMark, markOf } from '../components/agent-mark'
 import { BeeGlyph, LeadMark, StewardMark } from '../components/identity'
 import { useCrumbs } from '../components/layout'
 import { TaktRuler } from '../components/takt'
@@ -26,7 +26,6 @@ const ROLES: Array<[string, string]> = [
   ['lead', 'Lead'],
   ['steward', '管家'],
 ]
-const HARNESSES = ['native', 'claude-code', 'codex', 'gemini', 'cursor', 'qwen']
 const STATES: NodeStatus[] = ['pending', 'running', 'waiting_human', 'succeeded', 'failed']
 const TONES: Tone[] = ['success', 'running', 'waiting', 'failed', 'stale', 'pending']
 
@@ -79,23 +78,14 @@ export function UiGalleryPage() {
           </Cell>
         </div>
 
-        <h3 className="uig-sub">Agent · AgentMark（小尺寸道具在右下角标，≥ 40px 拿在手里）</h3>
+        <h3 className="uig-sub">Agent · AgentMark（角色定道具和身体色；小尺寸道具在右下角标，≥ 40px 拿在手里）</h3>
         <div className="uig-row">
           {ROLES.map(([role, label]) => (
             <Cell key={role} label={label}>
               <span className="uig-inline">
-                <AgentMark state="idle" role={role} hue={role === 'steward' ? 'var(--honey)' : harnessHue('claude-code')} size={24} />
-                <AgentMark state="idle" role={role} hue={role === 'steward' ? 'var(--honey)' : harnessHue('claude-code')} size={48} />
+                <AgentMark state="idle" role={role} size={24} />
+                <AgentMark state="idle" role={role} size={48} />
               </span>
-            </Cell>
-          ))}
-        </div>
-
-        <h3 className="uig-sub">harness 着色（同一个 harness 全站同色）</h3>
-        <div className="uig-row">
-          {HARNESSES.map((h) => (
-            <Cell key={h} label={h}>
-              <AgentMark state="idle" role="dev" hue={harnessHue(h)} size={32} />
             </Cell>
           ))}
         </div>
@@ -105,8 +95,8 @@ export function UiGalleryPage() {
           {STATES.map((st) => (
             <Cell key={st} label={NODE_STATUS[st].label}>
               <span className="uig-inline">
-                <AgentMark {...markOf(st)} role="reviewer" hue={harnessHue('codex')} size={24} />
-                <AgentMark {...markOf(st)} role="reviewer" hue={harnessHue('codex')} size={40} />
+                <AgentMark {...markOf(st)} role="reviewer" size={24} />
+                <AgentMark {...markOf(st)} role="reviewer" size={40} />
               </span>
             </Cell>
           ))}

@@ -333,3 +333,20 @@
     max-height: min(360px, 50vh);
   }
 }
+
+/* 表单里当字段用（节点属性）：和 .select 同高同边框，占满一行 */
+.hp-trigger.hp-field {
+  width: 100%;
+  max-width: none;
+  height: 32px;
+  justify-content: flex-start;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+.hp-trigger.hp-field .hp-chev {
+  margin-left: auto;
+}
