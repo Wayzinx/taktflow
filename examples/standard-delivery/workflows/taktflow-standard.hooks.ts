@@ -41,7 +41,7 @@ export function expandTask(item: PlannedItem) {
       outputs: [{ path: `tasks/${item.key}.md`, kind: 'task' }, { path: `tasks/${item.key}.diff`, kind: 'code-change' }],
       prompt: `实现任务 ${item.key}「${item.title}」，仓库 ${repo}。在 tasks/${item.key}.md 写改动说明与自测证据，并把本任务统一 diff 写到 tasks/${item.key}.diff。` }),
     review({ id: 'review-code', title: `代码评审：${item.title}`, needs: ['code'], target: { code: { repo } },
-      author: { role: item.role ?? 'dev' }, reviewers: [{ role: 'reviewer', focus: '正确性、复用、风险；审查 diff 与契约', checklist: ['实现字段与接口契约一致', '改动复用既有公共能力', '异常与边界行为有验证依据', '风险与回滚路径明确'] }],
+      author: { role: item.role ?? 'dev' }, reviewers: [{ role: 'reviewer', focus: '逻辑与写法；审查 diff 与契约', checklist: ['实现字段与接口契约一致', '异常与边界行为有验证依据', '改动复用既有公共能力', '没有更简单直接的写法：无冗余、死代码和无意义的防御性判断', '命名、结构与仓库现有代码一致', '风险与回滚路径明确'] }],
       maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'code', maxReworks: 1 } }),
   ]
 }

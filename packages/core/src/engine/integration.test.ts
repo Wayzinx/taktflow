@@ -8,7 +8,7 @@ import { createRepoManager, createLocalSandboxProvider } from '@taktflow/sandbox
 import { createEngine } from './index.js'
 import { diffPath } from './execution.js'
 import type { AgentProfile, HarnessRequest, SandboxProvider, SandboxSpec, WorkflowDefinition } from '../types.js'
-import { integrate } from '../../../../templates/workflows/taktflow-standard.integration.js'
+import { integrate, mergeToDefault } from '../../../../templates/workflows/taktflow-standard.integration.js'
 import { runCases } from '../../../../templates/workflows/taktflow-standard.hooks.js'
 
 const roots: string[] = []
@@ -148,6 +148,37 @@ it('集成节点合并真实任务分支，冲突时保存冲突文件并使节�
   expect(JSON.parse(artifact!.toString()).conflicts).toEqual(['src/a.ts'])
   expect(await readFile(join(f.app, 'src/a.ts'), 'utf8')).toBe('base\n')
   expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
+})
+
+it('准出后合入默认分支：检出着就在仓库目录里合、没检出就借临时 worktree 合；冲突时中止合并、默认分支不动、节点失败', async () => {
+  const commit = (cwd: string, message: string) => git(cwd, ['-c', 'user.name=Test', '-c', 'user.email=test@localhost', 'commit', '-qam', message])
+  const run = async (before?: (app: string) => Promise<void>) => {
+    const f = await fixture(async (req) => { await writeFile(join(req.cwd, 'src/a.ts'), 'feature\n'); return 'done' })
+    const state = await createEngine(f.deps, { concurrency: 1 }).start({ requirementId: f.req.id, workflow: f.workflow([
+      { id: 'one', kind: 'agent', title: '实现', role: 'dev', repo: 'app', prompt: '实现' },
+      { id: 'integration', kind: 'script', title: '集成', needs: ['one'], run: integrate, outputs: [{ path: 'tasks/integration.json', kind: 'code-change' }] },
+      { id: 'prepare', kind: 'script', title: '准备', needs: ['integration'], run: async () => { await before?.(f.app); return { status: 'succeeded' } } },
+      { id: 'merge', kind: 'script', title: '合入主干', needs: ['prepare'], run: mergeToDefault },
+    ]) })
+    return { f, state }
+  }
+
+  const checkedOut = await run()
+  expect(checkedOut.state.nodes.merge!.status).toBe('succeeded')
+  expect(await readFile(join(checkedOut.f.app, 'src/a.ts'), 'utf8')).toBe('feature\n')
+  expect(git(checkedOut.f.app, ['log', '-1', '--format=%s', 'main'])).toBe(`合入 ${checkedOut.f.req.id}（${checkedOut.state.runId}）`)
+
+  const elsewhere = await run(async (app) => { git(app, ['checkout', '-q', '-b', 'other']) })
+  expect(elsewhere.state.nodes.merge!.status).toBe('succeeded')
+  expect(git(elsewhere.f.app, ['show', 'main:src/a.ts'])).toBe('feature')
+  expect(await readFile(join(elsewhere.f.app, 'src/a.ts'), 'utf8')).toBe('base\n')
+  expect(git(elsewhere.f.app, ['worktree', 'list'])).not.toContain('merge-app')
+
+  const conflict = await run(async (app) => { await writeFile(join(app, 'src/a.ts'), 'main change\n'); commit(app, 'main change') })
+  expect(conflict.state.nodes.merge!.status).toBe('failed')
+  expect(conflict.state.nodes.merge!.error).toContain('合入 main 冲突：src/a.ts')
+  expect(git(conflict.f.app, ['log', '-1', '--format=%s', 'main'])).toBe('main change')
+  expect(git(conflict.f.app, ['status', '--porcelain', '--untracked-files=no'])).toBe('')
 })
 
 it('有依赖的任务叠在上游的改动上：后一个任务看得到前一个的代码，diff 只含自己的改动，集成不冲突；修复节点可指定从集成分支开', async () => {

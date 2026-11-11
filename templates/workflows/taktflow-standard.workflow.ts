@@ -4,7 +4,7 @@
  * 默认 3 轮、1 次打回、人工确认；caseCommand / testScript 指定项目测试入口。
  */
 import { agent, defineWorkflow, gate, human, judge, loop, planner, review, script } from '@taktflow/core'
-import { integrate } from './taktflow-standard.integration.js'
+import { integrate, mergeToDefault } from './taktflow-standard.integration.js'
 import { codeWasFixed, converged, expandTask, freezeBaseline, integratedBranch, qualityReport, repairPrompt, runCases, traceCoverage } from './taktflow-standard.hooks.js'
 
 export default defineWorkflow({
@@ -61,7 +61,7 @@ export default defineWorkflow({
         agent({ id: 'fix-code', goal: '依据失败证据修复产品行为', owner: 'rd', completion: ["修复差异仅涉及产品代码且未改用例或弱化断言", "修复差异关联判决中的失败用例和根因"], title: '修复产品代码', role: 'dev', repo: 'app', base: integratedBranch, needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
           outputs: [{ path: 'tasks/repair.diff', kind: 'code-change' }], prompt: repairPrompt('fix-code', '按证据修复产品代码，禁止改用例与测试。将修复 diff 写入 tasks/repair.diff。') }),
         review({ id: 'review-fix', title: '修复代码评审', needs: ['fix-code'], when: codeWasFixed, target: { code: { repo: 'app' } },
-          author: { role: 'dev' }, reviewers: [{ role: 'reviewer', focus: '修复有效性、无弱化测试', checklist: ["修复覆盖判决指出的根因", "未弱化原有测试断言", "回归范围覆盖受影响分支"] }], maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'fix-code', maxReworks: 1 } }),
+          author: { role: 'dev' }, reviewers: [{ role: 'reviewer', focus: '修复有效性、无弱化测试、改法最简', checklist: ["修复覆盖判决指出的根因", "未弱化原有测试断言", "回归范围覆盖受影响分支", "改法最直接：不绕开根因加兜底或特判"] }], maxRounds: 3, humanSignoff: true, onExhausted: { rework: 'fix-code', maxReworks: 1 } }),
         script({ id: 'integrate-fix', title: '集成评审后的修复', needs: ['review-fix'], when: codeWasFixed, run: integrate, outputs: [{ path: 'tasks/integration.json', kind: 'code-change' }] }),
         agent({ id: 'fix-script', title: '修复脚本', role: 'automation', needs: ['judge'], inputs: [{ path: 'evidence/**' }, { path: 'reports/verdicts/**' }],
           prompt: repairPrompt('fix-script', '只修定位、等待与取值问题，禁止弱化断言。改空间根目录 tests/ 下的正本：集成 worktree 里的 tests/ 是执行时拷过去的副本，改了下一轮会被覆盖。改完把 tests/run-cases.mjs 同步写到 scripts/run-cases.mjs，执行前会核对两者一致。') }),
@@ -75,7 +75,8 @@ export default defineWorkflow({
     gate({ id: 'delivery-check', title: '交付校验', stage: 'report', goal: '逐条核验验收标准、执行结果与证据', owner: 'qa', needs: ['quality-report'],
       // 人工用例、等裁决的用例要人执行或裁决后才有证据：校验不过交人裁决，不直接停掉整个运行
       checks: [{ id: 'acceptance', kind: 'acceptance', role: 'verifier' }], onFail: 'human' }),
-    human({ id: 'acceptance', owner: 'qa', title: '人工准出', stage: 'report', needs: ['delivery-check'], inputs: [{ path: 'reports/**' }, { path: 'spec/prd.md' }], form: 'approve', ask: '审阅质量报告、影响面与评审记录，是否准出？' }),
+    human({ id: 'acceptance', owner: 'qa', title: '人工准出', stage: 'report', needs: ['delivery-check'], inputs: [{ path: 'reports/**' }, { path: 'spec/prd.md' }], form: 'approve', ask: '审阅质量报告、影响面与评审记录，是否准出？准出后代码自动合进默认分支。' }),
+    script({ id: 'merge', title: '合入主干', stage: 'report', needs: ['acceptance'], run: mergeToDefault }),
     agent({ id: 'knowledge-writeback', goal: '提炼可复用的业务规则和教训', owner: 'pm', completion: ["每条知识建议附来源产物或决策记录", "每条建议明确适用范围和需要人工采纳的改动"], title: '知识回流', stage: 'report', needs: ['acceptance'], role: 'pm',
       inputs: [{ path: 'reports/**' }, { path: 'decisions/**' }], outputs: [{ path: 'reports/knowledge-diff.md', kind: 'knowledge' }], prompt: '整理业务规则、决策与问题教训，写成知识库修改建议供人合入。' }),
   ],
