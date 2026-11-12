@@ -4,10 +4,10 @@ import { CornerDownLeft, Search } from 'lucide-react'
 import type { CommandInfo } from '@taktflow/core'
 import { usePresence } from '../lib/motion'
 import { SkeletonRows } from './ui'
-import { trapKeys, useRestoreFocus } from './ui/dialog'
+import { trapKeys, useModalKeys, useRestoreFocus } from './ui/dialog'
 import { RISK } from './ui/reason-dialog'
 import { CommandForm } from './command-palette/command-form'
-import { filterItems, usePaletteData, type Item } from './command-palette/items'
+import { ADVANCED_PREFIX, advancedQuery, filterItems, hiddenCommandMatches, usePaletteData, type Item } from './command-palette/items'
 import './ui/overlay.css'
 import './command-palette.css'
 
@@ -49,7 +49,8 @@ function usePaletteState() {
 export function CommandPalette() {
   const s = usePaletteState()
   const p = usePresence(s.open, 150)
-  useRestoreFocus(s.open)
+  const scrim = useRef<HTMLDivElement>(null)
+  useRestoreFocus(s.open, scrim)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -62,9 +63,9 @@ export function CommandPalette() {
   }, [])
   if (!p.mounted) return null
   return createPortal(
-    <div className="cmdk-scrim presence-scrim" data-state={p.state} onMouseDown={() => setPaletteOpen(false)}>
+    <div ref={scrim} className="cmdk-scrim presence-scrim" data-state={p.state} onMouseDown={() => setPaletteOpen(false)}>
       {/* 每次全新打开重置输入；退出途中重开保留 */}
-      <PaletteDialog presence={p.state} direct={s.direct} />
+      <PaletteDialog open={s.open} presence={p.state} direct={s.direct} />
     </div>,
     document.body,
   )
@@ -72,14 +73,17 @@ export function CommandPalette() {
 
 type Step = { kind: 'list' } | { kind: 'form'; cmd: CommandInfo; input?: Record<string, unknown>; direct: boolean }
 
-function PaletteDialog({ presence, direct }: { presence: string; direct?: PaletteState['direct'] }) {
+function PaletteDialog({ open, presence, direct }: { open: boolean; presence: string; direct?: PaletteState['direct'] }) {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const [step, setStep] = useState<Step>({ kind: 'list' })
   const data = usePaletteData(true)
   const results = useMemo(() => filterItems(data.items, q), [data.items, q])
+  const advanced = advancedQuery(q) !== undefined
+  const hidden = useMemo(() => hiddenCommandMatches(data.items, q), [data.items, q])
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
   const close = () => setPaletteOpen(false)
 
   // openCommand：命令列表到了就进表单
@@ -118,15 +122,19 @@ function PaletteDialog({ presence, direct }: { presence: string; direct?: Palett
     e.preventDefault()
   }
 
+  useModalKeys(open, panel, step.kind === 'form' ? back : close)
+
   const waitingDirect = !!direct && step.kind === 'list' && data.loading
   let lastGroup = ''
   return (
     <div
+      ref={panel}
       className="cmdk presence-dialog"
       data-state={presence}
       role="dialog"
       aria-modal="true"
       aria-label="命令面板"
+      tabIndex={-1}
       onMouseDown={(e) => e.stopPropagation()}
       onKeyDown={(e) => trapKeys(e, step.kind === 'form' ? back : close)}
     >
@@ -144,7 +152,7 @@ function PaletteDialog({ presence, direct }: { presence: string; direct?: Palett
               ref={inputRef}
               autoFocus
               className="cmdk-input"
-              placeholder="搜索需求、运行、页面或命令…"
+              placeholder={advanced ? '搜索全部命令（含维护类）' : '搜索需求、运行、页面或常用命令；输入 > 查看全部命令'}
               value={q}
               onChange={(e) => setQ(e.target.value)}
               role="combobox"
@@ -168,14 +176,14 @@ function PaletteDialog({ presence, direct }: { presence: string; direct?: Palett
                     role="option"
                     aria-selected={i === sel}
                     className={`cmdk-item${i === sel ? ' on' : ''}${it.command?.risk === 'dangerous' ? ' danger' : ''}`}
-                    title={it.command ? `${RISK[it.command.risk].label}：${RISK[it.command.risk].hint}` : undefined}
+                    title={it.command ? `${RISK[it.command.risk].label}：${RISK[it.command.risk].hint}（命令 ${it.command.id}）` : undefined}
                     onMouseMove={() => i !== sel && setSel(i)}
                     onClick={() => pick(it)}
                   >
                     <Icon className="cmdk-icon" style={it.tone ? { color: it.tone } : undefined} aria-hidden />
                     {it.code && !it.command && <span className="mono cmdk-code">{it.code}</span>}
                     <span className="truncate cmdk-label">{it.label}</span>
-                    {it.command && <span className="mono cmdk-code cmdk-code-dim">{it.code}</span>}
+                    {it.command && advanced && <span className="mono cmdk-code cmdk-code-dim">{it.code}</span>}
                     {it.hint && <span className={`cmdk-hint${it.inContext ? ' ctx' : ''}`}>{it.hint}</span>}
                     {i === sel && <CornerDownLeft className="cmdk-enter" aria-hidden />}
                   </div>
@@ -185,6 +193,11 @@ function PaletteDialog({ presence, direct }: { presence: string; direct?: Palett
             {!results.length && (data.loading ? <div className="cmdk-loading" aria-busy="true" style={{ padding: 12 }}>
                 <SkeletonRows rows={4} />
               </div> : <div className="cmdk-empty">没有匹配“{q}”的需求、运行、页面或命令</div>)}
+            {hidden > 0 && (
+              <button type="button" className="cmdk-more" onClick={() => (setQ(`${ADVANCED_PREFIX} ${q.trim()}`), inputRef.current?.focus())}>
+                还有 <span className="num">{hidden}</span> 条高级命令匹配，输入 <span className="kbd">&gt;</span> 查看
+              </button>
+            )}
           </div>
           <div className="cmdk-foot">
             <span>

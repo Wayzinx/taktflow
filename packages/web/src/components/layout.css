@@ -616,6 +616,10 @@
   min-width: 0;
   padding: var(--sp-6) var(--sp-8) 48px;
 }
+/* 只作为焦点的落脚处（浮层关闭、触发处已不在时），不画焦点框 */
+.shell-content:focus {
+  outline: none;
+}
 .shell-content.flush {
   padding: 0;
 }

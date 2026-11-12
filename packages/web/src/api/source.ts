@@ -82,7 +82,7 @@ export interface WorkflowRevisionDetail {
 /** PATCH / PUT source 返回 409：基线已变化且自动三方合并失败。两个数据源都抛这个错误。 */
 export class WorkflowConflictError extends Error {
   constructor(readonly conflict: WorkflowConflict) {
-    super('workflow 已被其他人修改，自动合并失败')
+    super('流水线已被其他人修改，自动合并失败')
   }
 }
 

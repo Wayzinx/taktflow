@@ -9,6 +9,18 @@ const ENUM_LABEL: Record<string, string> = {
   tentative: '试用',
   active: '启用',
   retired: '退役',
+  approve: '批准',
+  reject: '驳回',
+  answer: '回答',
+  choice: '选择',
+  accept: '接受',
+  undo: '撤销',
+  critical: '严重',
+  major: '重要',
+  minor: '次要',
+  node: '节点',
+  skill: '技能',
+  recipe: '配方',
 }
 
 interface FieldProps {

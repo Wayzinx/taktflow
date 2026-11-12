@@ -45,14 +45,14 @@ describe('toInput', () => {
   const fields = fieldsOf(cmd(schema))
   it('treats blank strings as missing and reports required titles', () => {
     const r = toInput(fields, { requirementId: '  ', tier: '', limit: '', pending: false, override: '' })
-    expect(r.missing).toEqual(['requirementId', 'tier'])
+    expect(r.missing).toEqual(['需求', '档位'])
     expect(r.input).toEqual({ pending: false })
   })
   it('parses numbers and JSON, collecting invalid ones', () => {
     const ok = toInput(fields, { requirementId: 'REQ-1', tier: 'T0', limit: '5', pending: true, override: '{"tier":"T1","reason":"r"}' })
     expect(ok).toEqual({ input: { requirementId: 'REQ-1', tier: 'T0', limit: 5, pending: true, override: { tier: 'T1', reason: 'r' } }, missing: [], invalid: [] })
     const bad = toInput(fields, { requirementId: 'REQ-1', tier: 'T0', limit: 'abc', pending: false, override: '{oops' })
-    expect(bad.invalid).toEqual(['limit', 'override'])
+    expect(bad.invalid).toEqual(['limit', '手动指定档位'])
   })
 })
 
@@ -63,5 +63,13 @@ describe('commandScope', () => {
   it('infers scope from required context keys (the real registry has no scope)', () => {
     expect(commandScope(cmd({ type: 'object', required: ['runId', 'nodeId', 'groupKey'] }))).toEqual(['run', 'node'])
     expect(commandScope(cmd({ type: 'object', properties: { requirementId: {} } }))).toEqual([])
+  })
+})
+
+describe('字段名', () => {
+  it('常见参数用中文名，JSON 字段注明格式；不认识的参数退回参数名', () => {
+    const fields = fieldsOf(cmd({ type: 'object', properties: { requirementId: { type: 'string' }, draft: { type: 'object' }, workflowId: { type: 'string' }, fooBar: { type: 'string' }, hint: { type: 'string', title: '自定义' } } }))
+    expect(fields.map((f) => f.title)).toEqual(['需求', '草稿（还没创建的需求）', '流水线', 'fooBar', '自定义'])
+    expect(fields[1]!.description).toBe('JSON 格式')
   })
 })

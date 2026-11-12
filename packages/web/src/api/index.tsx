@@ -1,27 +1,51 @@
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { LinkSpaceProvider } from '../lib/router'
-import { createHttpSource, probeApi } from './client'
+import { connectApi, createHttpSource } from './client'
+import { demoMode, readOnlyDemo } from './demo'
 import type { DataSource } from './source'
 
 export type { CrudSource, DataSource, EvalOutputSnapshot, KnowledgeSource, RepoPatch, ScorecardBy, StewardSource, StewardThreadDetail, WorkflowRevisionDetail } from './source'
 export { RevisionConflictError, RewindConflictError, RoleConflictError, RuntimeConflictError, WorkflowConflictError } from './source'
+export { DEMO_READONLY_MESSAGE, demoMode, type DemoMode } from './demo'
 
 const SourceContext = createContext<DataSource | null>(null)
 
-/** ?mock=1 或 VITE_MOCK=1 强制演示数据；否则探测真实 API，不可达时回退到演示数据（演示数据单独分包，连真实后端时不下载）。 */
-async function pickSource(): Promise<DataSource> {
-  const forced = new URLSearchParams(location.search).get('mock') === '1' || import.meta.env.VITE_MOCK === '1'
-  if (!forced && (await probeApi())) return createHttpSource()
-  return (await import('./mock-source')).createMockSource()
+/**
+ * 只有显式要求（?mock=1 / VITE_MOCK=1，见 ./demo）才用演示数据；否则连真实 API，慢就退避重试（connectApi），
+ * 最终连不上返回 undefined，由外壳显示"连不上 takt serve"。演示数据单独分包，连真实后端时不下载。
+ */
+async function pickSource(onRetry: (attempt: number) => void): Promise<DataSource | undefined> {
+  const demo = demoMode()
+  if (demo) {
+    const mock = (await import('./mock-source')).createMockSource()
+    return readOnlyDemo(mock)
+  }
+  return (await connectApi({ onRetry })) ? createHttpSource() : undefined
 }
 
-export function DataProvider({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
-  const [source, setSource] = useState<DataSource | null>(null)
+type Boot = { phase: 'connecting'; attempt: number } | { phase: 'failed' } | { phase: 'ready'; source: DataSource }
+
+/** fallback：连接中（attempt 是第几次重试，0 为首次）；failed：重试用尽仍连不上，retry 重新连。 */
+export function DataProvider({ children, fallback, failed }: { children: ReactNode; fallback: (attempt: number) => ReactNode; failed: (retry: () => void) => ReactNode }) {
+  const [boot, setBoot] = useState<Boot>({ phase: 'connecting', attempt: 0 })
+  const [round, setRound] = useState(0)
   useEffect(() => {
-    void pickSource().then(setSource)
-  }, [])
-  if (!source) return <>{fallback}</>
-  return <SourceContext.Provider value={source}>{children}</SourceContext.Provider>
+    let alive = true
+    void pickSource((attempt) => alive && setBoot({ phase: 'connecting', attempt })).then(
+      (source) => alive && setBoot(source ? { phase: 'ready', source } : { phase: 'failed' }),
+      () => alive && setBoot({ phase: 'failed' }),
+    )
+    return () => {
+      alive = false
+    }
+  }, [round])
+  const retry = () => {
+    setBoot({ phase: 'connecting', attempt: 0 })
+    setRound((r) => r + 1)
+  }
+  if (boot.phase === 'failed') return <>{failed(retry)}</>
+  if (boot.phase === 'connecting') return <>{fallback(boot.attempt)}</>
+  return <SourceContext.Provider value={boot.source}>{children}</SourceContext.Provider>
 }
 
 /**

@@ -24,13 +24,70 @@ interface PropSchema {
   default?: unknown
 }
 
+/** 命令参数的中文名：真实注册表的 schema 不带 title，表单不该直接显示 requirementId / draft 这类参数名（TF-042）。 */
+const FIELD_LABEL: Record<string, string> = {
+  requirementId: '需求',
+  runId: '运行',
+  nodeId: '节点',
+  nodeIds: '节点',
+  workflowId: '流水线',
+  requestId: '待办',
+  defectId: '缺陷',
+  caseId: '用例',
+  caseIds: '用例',
+  checkpointId: '检查点',
+  suggestionId: '合并建议',
+  title: '标题',
+  description: '描述',
+  owner: '负责人',
+  members: '成员',
+  dueAt: '截止时间',
+  start: '创建后立即启动',
+  repos: '仓库',
+  budget: '预算',
+  attachments: '附件',
+  links: '链接',
+  draft: '草稿（还没创建的需求）',
+  hint: '补充说明',
+  override: '手动指定档位',
+  tier: '档位',
+  decision: '决定',
+  answer: '回答',
+  status: '状态',
+  state: '处置',
+  groupKey: '问题分组',
+  task: '任务',
+  text: '问题',
+  intent: '意图',
+  bases: '知识库',
+  version: '版本',
+  severity: '严重程度',
+  verdict: '判决',
+  note: '备注',
+  reason: '原因',
+  pending: '只看未处理',
+  target: '评测对象',
+  variants: '对比方案',
+  repeats: '重复次数',
+  judge: '判分设置',
+  includeDefects: '包含逃逸缺陷',
+  baseRevision: '基线版本',
+  baseRev: '基线版本',
+  path: '文件路径',
+  content: '内容',
+  name: '名称',
+  kind: '类型',
+  by: '统计维度',
+}
+
 export function fieldsOf(cmd: CommandInfo): FieldSpec[] {
   const schema = cmd.input as { properties?: Record<string, PropSchema>; required?: string[] }
   const required = new Set(schema.required ?? [])
   return Object.entries(schema.properties ?? {}).map(([key, p]) => {
     const t = Array.isArray(p.type) ? p.type.find((x) => x !== 'null') : p.type
     const type: FieldSpec['type'] = p.enum ? 'enum' : t === 'string' ? 'string' : t === 'number' || t === 'integer' ? 'number' : t === 'boolean' ? 'boolean' : 'json'
-    return { key, title: p.title ?? key, type, options: p.enum?.map(String), required: required.has(key), description: p.description, defaultValue: p.default }
+    const description = p.description ?? (type === 'json' ? 'JSON 格式' : undefined)
+    return { key, title: p.title ?? FIELD_LABEL[key] ?? key, type, options: p.enum?.map(String), required: required.has(key), description, defaultValue: p.default }
   })
 }
 
