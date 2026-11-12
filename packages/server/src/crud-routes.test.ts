@@ -111,3 +111,21 @@ it('workflow 转换 dryRun 不写源码，保存后有修订和审计，命令�
   expect(await readFile(join(stores.taktDir, 'space-events.jsonl'), 'utf8')).toContain('workflow.convert')
   expect((await post({ dryRun: true })).reason).toBe('已是可编辑写法')
 }, 15000)
+
+it('没选「我是谁」（不带 x-takt-user）时，全局空间操作按目标空间的 owner 认人，不再被当成非成员拒掉', async () => {
+  const { root, server, request } = await setup()
+  expect((await request('/spaces', 'POST', { id: 'mine', name: '我的空间', template: 'blank' })).status).toBe(200)
+  const anonymous = async (path: string, method: string, data: unknown) => {
+    const response = await fetch(server.url + '/api' + path, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(data) })
+    return { status: response.status, data: await response.json() as any }
+  }
+  expect((await anonymous('/spaces/mine', 'PATCH', { name: '改名', reason: '改名' })).status).toBe(200)
+  const archived = await anonymous('/spaces/mine/archive', 'POST', { reason: '归档' })
+  expect(archived.status, JSON.stringify(archived.data)).toBe(200)
+  expect((await anonymous(`/spaces/${archived.data.id}/restore`, 'POST', { reason: '恢复' })).status).toBe(200)
+  const audit = (await readFile(join(root, '.takt/space-admin.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line).actor.id)
+  expect(audit.slice(-3)).toEqual(['alice', 'alice', 'alice'])
+  // 带了别的身份仍按那个人判权限
+  const response = await fetch(server.url + '/api/spaces/mine/archive', { method: 'POST', headers: { 'content-type': 'application/json', 'x-takt-user': 'mallory' }, body: JSON.stringify({ reason: '归档' }) })
+  expect(response.status).toBe(403)
+})

@@ -52,14 +52,14 @@ export function serverCrudRoutes(add: (method: string, path: string, handler: Ha
   add('GET', '/api/spaces', reads.spaces ?? (({ url }) => listSpaces(deps, url.searchParams.get('archived') === '1')))
   add('POST', '/api/spaces', async ({ request }) => {
     const input = await body(request)
-    return createSpace(deps, input as unknown as SpaceCreateRequest, actor(request))
+    return createSpace(deps, input as unknown as SpaceCreateRequest, (stores) => actor(request, stores))
   })
-  add('PATCH', '/api/spaces/:id', async ({ request, params }) => updateSpace(deps, params.id!, await body(request) as unknown as SpaceUpdateRequest, actor(request)))
-  add('POST', '/api/spaces/:id/archive', async ({ request, params }) => archiveSpace(deps, params.id!, actor(request), text((await body(request)).reason, 'reason')))
-  add('POST', '/api/spaces/:id/restore', async ({ request, params }) => restoreSpace(deps, params.id!, actor(request), text((await body(request)).reason, 'reason')))
+  add('PATCH', '/api/spaces/:id', async ({ request, params }) => updateSpace(deps, params.id!, await body(request) as unknown as SpaceUpdateRequest, (stores) => actor(request, stores)))
+  add('POST', '/api/spaces/:id/archive', async ({ request, params }) => archiveSpace(deps, params.id!, (stores) => actor(request, stores), text((await body(request)).reason, 'reason')))
+  add('POST', '/api/spaces/:id/restore', async ({ request, params }) => restoreSpace(deps, params.id!, (stores) => actor(request, stores), text((await body(request)).reason, 'reason')))
   add('DELETE', '/api/spaces/:id', async ({ request, response, params }) => {
     const input = await body(request)
-    await deleteSpace(deps, params.id!, text(input.confirm, 'confirm'), actor(request), text(input.reason, 'reason'))
+    await deleteSpace(deps, params.id!, text(input.confirm, 'confirm'), (stores) => actor(request, stores), text(input.reason, 'reason'))
     response.writeHead(204); response.end(); return STREAMING
   })
 }
