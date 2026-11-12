@@ -11,13 +11,13 @@ import { openCreateRequirement } from '../../lib/ui-store'
  * 还没有流水线运行时的"启动流程"：和新建对话框的"创建并启动"走同一条路——先让服务端路由器选流程（route.preview），
  * 确认后按这个结论 run.start。对话框里先给出要用的流程和理由，启动会调用 Agent、消耗 token。
  */
-export function StartRunButton({ r, onChanged }: { r: RequirementDetail; onChanged: () => void }) {
+export function StartRunButton({ r, onChanged, label = '启动流程' }: { r: RequirementDetail; onChanged: () => void; label?: string }) {
   const [open, setOpen] = useState(false)
   return (
     <>
       <button type="button" className="btn btn-sm btn-primary" onClick={() => setOpen(true)} title="按服务端路由器选好的流程启动第一次运行">
         <Play />
-        启动流程
+        {label}
       </button>
       <StartRunDialog open={open} r={r} onClose={() => setOpen(false)} onChanged={onChanged} />
     </>

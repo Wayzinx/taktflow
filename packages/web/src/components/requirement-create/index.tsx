@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { TriangleAlert } from 'lucide-react'
 import { useAsync, useSource, invalidate } from '../../api'
-import { navigate } from '../../lib/router'
+import { Link, navigate } from '../../lib/router'
 import { closeCreateRequirement, useCreateRequirement } from '../../lib/ui-store'
 import { Dialog, Kbd, toast } from '../ui'
 import { AcceptanceAssist } from './ac-assist'
@@ -77,6 +78,9 @@ export function RequirementCreateDialog() {
   const patch = (p: Partial<RequirementDraft>) => setD((x) => ({ ...x, ...p }))
   const title = titleOf(d)
   const owner = d.owner ?? me?.id
+  // 空间还没有流水线时不能启动（服务端路由会 409）：只创建，入口引导去建流水线
+  const noWorkflows = !!workflows && workflows.length === 0
+  const start = d.start && !noWorkflows
 
   const submit = async () => {
     if (!title || busy) return
@@ -87,14 +91,14 @@ export function RequirementCreateDialog() {
       const r = await ds.createRequirement({
         title,
         description: descriptionOf(d) || undefined,
-        start: d.start,
-        workflowId: d.workflowId,
+        start,
+        workflowId: noWorkflows ? undefined : d.workflowId,
         repos: d.repos.length ? d.repos : undefined,
         owner,
         members: members.length ? members : undefined,
         // 服务端 createRequirement 把 budget: undefined 原样交给 run.start，被 schema 拒成"$.budget: expected object"（见 knownIssues）；
         // 启动时没填预算就发 {}（RunBudget 各项可选，等价于按 workflow 默认预算）
-        budget: d.budget ?? (d.start ? {} : undefined),
+        budget: d.budget ?? (start ? {} : undefined),
         dueAt: d.dueAt,
         links: d.links.length ? d.links : undefined,
         attachments: attachments.length ? uniqueAttachmentNames(attachments.map((a) => a.name)).map((name, i) => ({ name, content: attachments[i]!.content, encoding: attachments[i]!.encoding })) : undefined,
@@ -157,8 +161,8 @@ export function RequirementCreateDialog() {
               '草稿自动保存在本机'
             ) : null}
           </span>
-          <label className="rc-switch pressable" title="关掉则只创建，稍后在需求页启动">
-            <input type="checkbox" role="switch" checked={d.start} onChange={(e) => patch({ start: e.target.checked })} />
+          <label className="rc-switch pressable" title={noWorkflows ? '这个空间还没有流水线，只能先创建需求' : '关掉则只创建，稍后在需求页启动'}>
+            <input type="checkbox" role="switch" checked={start} disabled={noWorkflows} onChange={(e) => patch({ start: e.target.checked })} />
             <span className="rc-switch-track" aria-hidden>
               <span className="rc-switch-thumb" />
             </span>
@@ -168,7 +172,7 @@ export function RequirementCreateDialog() {
             取消
           </button>
           <button type="button" className="btn btn-primary" disabled={!title || busy} onClick={() => void submit()} title="⌘Enter 提交">
-            {busy ? <span className="shimmer-text">正在创建</span> : d.start ? '创建并启动' : '创建'}
+            {busy ? <span className="shimmer-text">正在创建</span> : start ? '创建并启动' : noWorkflows ? '仅创建' : '创建'}
             <Kbd combo="mod+enter" />
           </button>
         </>
@@ -197,6 +201,13 @@ export function RequirementCreateDialog() {
             </button>
           )}
         </div>
+        {noWorkflows && (
+          <p className="rc-no-workflow" role="note">
+            <TriangleAlert aria-hidden />
+            这个空间还没有流水线 · <Link to="/workflows" onClick={closeCreateRequirement}>去创建</Link>
+            <span className="faint">（先创建需求，流水线建好后再启动）</span>
+          </p>
+        )}
         <DraftEditor text={d.text} onText={(text) => patch({ text })} attachments={attachments} onAttachments={setAttachments} />
         <div className="rc-tags" role="group" aria-label="需求属性">
           <RouteTag text={`${title}\n${d.text}`} workflows={workflows} value={d.workflowId} onChange={(workflowId) => patch({ workflowId })} />

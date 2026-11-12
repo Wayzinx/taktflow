@@ -51,6 +51,15 @@ export function estimateRoute(text: string, workflows: WorkflowSummary[] | undef
 }
 
 /**
+ * 路由预览 409（空间没有流水线 / 没有接得住该档位的流水线）是配置问题，原因要原样给用户看；
+ * 其他错误（旧服务端、离线）才退回本地规则。
+ */
+export function routePreviewFailure(e: unknown): string | undefined {
+  const status = (e as { status?: number } | undefined)?.status
+  return status === 409 && e instanceof Error && e.message ? e.message : undefined
+}
+
+/**
  * 规则模板：未配置管家模型时的验收标准清单（界面上明确标成"规则模板"，不冒充管家）。
  * 只给通用、可验证的条目，不编造描述里没有的具体数字。配置了模型时走真实管家（ac-assist.tsx）。
  */
