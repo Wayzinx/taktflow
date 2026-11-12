@@ -18,6 +18,7 @@ import {
   type KnowledgeCaller,
   type KnowledgeBase,
   type KnowledgeBuild,
+  type KnowledgeDoc,
   type KnowledgeEvalCase,
   type KnowledgeEvalRun,
   type KnowledgeKind,
@@ -223,15 +224,7 @@ export function createKnowledgeStore(
       const path = await resolveSourcePath(kb, source.path)
       manifestResolvedPaths.add(path)
       try {
-        const info = await stat(path)
-        const stamp = `${info.mtimeMs}:${info.ctimeMs}:${info.size}`
-        let cached = sourceHashes.get(path)
-        if (cached?.stamp !== stamp) {
-          cached = { stamp, hash: sha256(await readFile(path)) }
-          if (sourceHashes.size >= 10000) sourceHashes.delete(sourceHashes.keys().next().value!)
-          sourceHashes.set(path, cached)
-        }
-        if (cached.hash !== source.hash) count++
+        if ((await sourceHash(path)) !== source.hash) count++
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
         count++
@@ -251,6 +244,18 @@ export function createKnowledgeStore(
       await save(kb)
     }
     return count
+  }
+  /** 源文件内容哈希，按 mtime / ctime / 大小缓存；文件不在时抛 ENOENT。 */
+  async function sourceHash(path: string): Promise<string> {
+    const info = await stat(path)
+    const stamp = `${info.mtimeMs}:${info.ctimeMs}:${info.size}`
+    let cached = sourceHashes.get(path)
+    if (cached?.stamp !== stamp) {
+      cached = { stamp, hash: sha256(await readFile(path)) }
+      if (sourceHashes.size >= 10000) sourceHashes.delete(sourceHashes.keys().next().value!)
+      sourceHashes.set(path, cached)
+    }
+    return cached.hash
   }
   async function resolveSourcePath(kb: KnowledgeBase, source: string): Promise<string> {
     if (!isAbsolute(source)) {
@@ -604,27 +609,66 @@ export function createKnowledgeStore(
     async docs(id) {
       const kb = await requireBase(id)
       const dir = await safePath((await paths(kb)).base, 'content')
-      const index = await loadIndex(
-        (await context(kb, kb.candidateVersion ?? kb.version)).indexDir,
-      ).catch(() => undefined)
+      const ctx = await context(kb, kb.candidateVersion ?? kb.version)
+      const index = await loadIndex(ctx.indexDir).catch(() => undefined)
+      // 构建 manifest 和分块来源记的是相对空间的路径（旧索引是绝对路径），两种都认
+      const manifest = new Map((index?.manifest ?? []).map((entry) => [entry.path, entry.hash]))
+      const chunkSources = new Set(index?.chunks.map((chunk2) => chunk2.source))
+      const indexed = (full: string, path?: string) =>
+        chunkSources.has(full) || (path !== undefined && (manifest.has(path) || chunkSources.has(path)))
+      const changed = async (full: string, path?: string) => {
+        const hash = path === undefined ? undefined : manifest.get(path)
+        return hash !== undefined && (await sourceHash(full)) !== hash
+      }
+      // 空间内目录、仓库这类数据源的文件不在 content 下，按当前数据源列出，并对照上次构建标出过期
+      const current = kind(kb).needsBuild
+        ? await collectCurrentSourcePaths(kb, ctx, { limit: STALE_SOURCE_SCAN_LIMIT }).catch(() => [])
+        : []
+      const byFull = new Map(current.map((source) => [source.full, source.path]))
       let files: string[] = []
       try {
         files = await listFiles(dir, ['**'])
       } catch (error2) {
         if ((error2 as NodeJS.ErrnoException).code !== 'ENOENT') throw error2
       }
-      return Promise.all(
-        files.map(async (path) => {
+      const uploads = await Promise.all(
+        files.map(async (path): Promise<KnowledgeDoc> => {
           const full = await safePath(dir, path)
           const info = await stat(full)
+          const source = byFull.get(full)
           return {
             path,
             bytes: info.size,
             updatedAt: info.mtime.toISOString(),
-            indexed: index?.chunks.some((chunk2) => chunk2.source === full) ?? false,
+            indexed: indexed(full, source),
+            ...((await changed(full, source)) ? { stale: true } : {}),
           }
         }),
       )
+      const listed = new Set(current.map((source) => source.path))
+      const sourced = await Promise.all(
+        current
+          .filter((source) => !source.full.startsWith(dir + sep))
+          .map(async (source): Promise<KnowledgeDoc> => {
+            const info = await stat(source.full)
+            return {
+              path: source.path,
+              bytes: info.size,
+              updatedAt: info.mtime.toISOString(),
+              indexed: indexed(source.full, source.path),
+              ...((await changed(source.full, source.path)) ? { stale: true } : {}),
+            }
+          }),
+      )
+      // 上次构建时在、现在源文件已经没了的：也列出来，标为已删除
+      const removed: KnowledgeDoc[] = []
+      for (const path of manifest.keys()) {
+        if (listed.has(path)) continue
+        const full = await resolveSourcePath(kb, path)
+        if (await stat(full).then(() => true, () => false)) continue
+        removed.push({ path, bytes: 0, updatedAt: kb.builtAt ?? kb.updatedAt, indexed: true, stale: true, deleted: true })
+      }
+      return [...uploads, ...sourced, ...removed]
     },
     async build(id, by, reason) {
       return knowledgeFileLock(

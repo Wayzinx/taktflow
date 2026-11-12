@@ -13,6 +13,7 @@ import { PairingMatrix } from './runtime/pairing-matrix'
 import { ProvidersCard } from './runtime/providers'
 import { RoutingCard } from './runtime/routing'
 import { TestButton, TestOutcome, useRuntime, type RuntimeApi } from './runtime/shared'
+import { ReadOnlyNote, useAccess } from './access'
 import './models.css'
 import './runtime/runtime.css'
 
@@ -44,6 +45,9 @@ function Stats({ harnesses, models, cfg, failed }: { harnesses?: HarnessInfo[]; 
   const providers = new Set(models?.map((m) => m.provider))
   const protocols = new Set(models?.map((m) => m.protocol))
   const bound = (harnesses ?? []).filter((h) => h.roles.length > 0)
+  // 默认路由只算设置里配的（cfg.roles），和下面路由卡同一个数；角色档案自己选的 Harness 不算
+  const routes = Object.values(cfg?.roles ?? {})
+  const byHarness = [...routes.reduce((m, s) => m.set(s.harness, (m.get(s.harness) ?? 0) + 1), new Map<string, number>())]
   return (
     <StatStrip label="运行环境读数">
       <StatCard
@@ -84,9 +88,14 @@ function Stats({ harnesses, models, cfg, failed }: { harnesses?: HarnessInfo[]; 
       <StatCard
         label="默认路由"
         icon={<Route />}
-        value={<CountUp value={bound.reduce((s, h) => s + h.roles.length, 0)} />}
-        foot={bound.length ? bound.map((h) => `${h.id} ${h.roles.length}`).join(' · ') : '还没有角色指定默认 harness'}
-        {...unread(harnesses, 'Harness 清单')}
+        value={<CountUp value={routes.length} />}
+        foot={
+          routes.length
+            ? byHarness.map(([h, n]) => `${h} ${n}`).join(' · ')
+            : bound.length
+              ? `${bound.reduce((s, h) => s + h.roles.length, 0)} 个角色按档案或内置默认选 Harness`
+              : '还没有默认路由'
+        }
       />
     </StatStrip>
   )
@@ -108,7 +117,7 @@ function HarnessSkeleton() {
   )
 }
 
-/** 行上的操作：测试（探测 / ACP 握手）+ 菜单（内置：设置、隐藏；自加的：编辑、删除）。不可用的内置 harness 直接给「隐藏」，已隐藏的给「取消隐藏」。 */
+/** 行上的操作：测试（探测 / ACP 握手）+ 菜单（内置：设置、隐藏；自加的：编辑、删除）。不可用的内置 Harness 直接给「隐藏」，已隐藏的给「取消隐藏」。 */
 function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: HarnessInfo; rt: RuntimeApi; onResult: (r: RuntimeTestResult | undefined) => void; onSettings: () => void; onEdit: () => void; onRemove: () => void }) {
   const btn = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -154,8 +163,8 @@ function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: 
               disabled
                 ? '取消隐藏后路由和探测都能看到它。'
                 : h.roles.length
-                  ? `还有角色在用它：${h.roles.join('、')}。先把这些角色改到别的 harness，否则保存会被拒绝。`
-                  : '隐藏后路由、选择器和探测都看不到它，内置的 harness 不能删除，隐藏就是移出列表；正在跑的节点不受影响。'
+                  ? `还有角色在用它：${h.roles.join('、')}。先把这些角色改到别的 Harness，否则保存会被拒绝。`
+                  : '隐藏后路由、选择器和探测都看不到它，内置的 Harness 不能删除，隐藏就是移出列表；正在跑的节点不受影响。'
             }
             confirmLabel={disabled ? '取消隐藏' : '隐藏'}
             onSubmit={async (reason) => {
@@ -173,6 +182,7 @@ function HarnessActions({ h, rt, onResult, onSettings, onEdit, onRemove }: { h: 
 }
 
 export function RuntimeTab() {
+  const access = useAccess('owner', '改模型、Harness 和路由，以及测试连通性')
   const hq = useAsync((ds) => ds.harnesses(), [])
   const mq = useAsync((ds) => ds.models(), [])
   const rt = useRuntime()
@@ -202,14 +212,16 @@ export function RuntimeTab() {
         h={h}
         below={results[h.id] && <div className={['hx-below', sx.className, flash(h.id)].filter(Boolean).join(' ')}><TestOutcome r={results[h.id]!} /></div>}
         actions={
-          <HarnessActions
-            h={h}
-            rt={rt}
-            onResult={(r) => setResults((m) => ({ ...m, [h.id]: r }))}
-            onSettings={() => setOverride({ open: true, h })}
-            onEdit={() => setCustom({ open: true, editing: h.id })}
-            onRemove={() => setRemoving(h)}
-          />
+          access.ok && (
+            <HarnessActions
+              h={h}
+              rt={rt}
+              onResult={(r) => setResults((m) => ({ ...m, [h.id]: r }))}
+              onSettings={() => setOverride({ open: true, h })}
+              onEdit={() => setCustom({ open: true, editing: h.id })}
+              onRemove={() => setRemoving(h)}
+            />
+          )
         }
       />
     )
@@ -217,6 +229,7 @@ export function RuntimeTab() {
 
   return (
     <>
+      <ReadOnlyNote why={access.why} block />
       <Stats harnesses={hs} models={mq.data} cfg={rt.cfg} failed={{ harnesses: !!hq.error, models: !!mq.error }} />
       <section className="settings-section">
         <div className="section-head">
@@ -234,9 +247,9 @@ export function RuntimeTab() {
             size="sm"
             ariaLabel="按可用性筛选"
           />
-          {rt.cfg && (
+          {rt.cfg && access.ok && (
             <button type="button" className="btn btn-sm" onClick={() => setCustom({ open: true })}>
-              <Plus aria-hidden /> 添加 harness
+              <Plus aria-hidden /> 添加 Harness
             </button>
           )}
         </div>
@@ -251,9 +264,9 @@ export function RuntimeTab() {
             <EmptyState
               compact
               icon={ServerOff}
-              title={filter === 'unavailable' ? '所有 harness 都可用' : '没有符合条件的 harness'}
-              body={filter === 'unavailable' ? '每个 harness 都能正常调起。' : '接入一个支持 ACP 的 agent，或一个声明式 CLI。'}
-              action={filter !== 'all' ? <button type="button" className="btn btn-sm" onClick={() => setFilter('all')}>看全部</button> : rt.cfg ? <button type="button" className="btn btn-sm btn-primary" onClick={() => setCustom({ open: true })}>添加 harness</button> : undefined}
+              title={filter === 'unavailable' ? '所有 Harness 都可用' : '没有符合条件的 Harness'}
+              body={filter === 'unavailable' ? '每个 Harness 都能正常调起。' : '接入一个支持 ACP 的 agent，或一个声明式 CLI。'}
+              action={filter !== 'all' ? <button type="button" className="btn btn-sm" onClick={() => setFilter('all')}>看全部</button> : rt.cfg && access.ok ? <button type="button" className="btn btn-sm btn-primary" onClick={() => setCustom({ open: true })}>添加 Harness</button> : undefined}
             />
           </div>
         ) : (
@@ -314,12 +327,12 @@ export function RuntimeTab() {
         open={Boolean(removing)}
         onClose={() => setRemoving(undefined)}
         risk="dangerous"
-        title={`删除 harness ${removing?.id ?? ''}`}
-        description={removing?.roles.length ? `还有角色在用它：${removing.roles.join('、')}。先把这些角色改到别的 harness，否则保存会被拒绝。` : '删除后路由里不能再选它；agent 本身不会被卸载。'}
+        title={`删除 Harness ${removing?.id ?? ''}`}
+        description={removing?.roles.length ? `还有角色在用它：${removing.roles.join('、')}。先把这些角色改到别的 Harness，否则保存会被拒绝。` : '删除后路由里不能再选它；agent 本身不会被卸载。'}
         confirmLabel="删除"
         onSubmit={async (reason) => {
           await rt.patch({ harnesses: { [removing!.id]: null } }, reason)
-          toast(`已删除 harness ${removing!.id}`)
+          toast(`已删除 Harness ${removing!.id}`)
         }}
       />
     </>

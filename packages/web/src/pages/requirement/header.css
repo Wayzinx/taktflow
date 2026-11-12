@@ -200,10 +200,31 @@
 .rh-archived .btn {
   margin-left: auto;
 }
+/* 运行被人工终止：用等待色和归档条区分开，提示可以重新启动 */
+.rh-terminated {
+  background: var(--st-waiting-soft);
+}
 .rh-confirm-title {
   margin: 0;
   font-size: var(--text-body);
   font-weight: 500;
+}
+/* 启动流程对话框：路由器选的流程 + 理由 */
+.rh-start-route {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.rh-start-route .tier-glyph {
+  flex: none;
+  margin-top: 1px;
+  color: var(--accent-text);
+}
+.rh-start-reason {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: var(--text-ui);
 }
 @keyframes rh-fade {
   from {

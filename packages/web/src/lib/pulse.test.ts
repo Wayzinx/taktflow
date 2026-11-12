@@ -35,4 +35,11 @@ describe('脉搏', () => {
     expect(decodeURIComponent(pulseIcon('waiting'))).toContain("<circle cx='54' cy='10' r='9' fill='#e0a526'")
     expect(decodeURIComponent(pulseIcon('running'))).toContain("fill='#e8743b'")
   })
+
+  it('标题带上页面与空间', () => {
+    expect(pulseTitle(0, '空间设置', '管家规则演示')).toBe('空间设置 · 管家规则演示 · taktflow')
+    expect(pulseTitle(2, 'REQ-001', '管家规则演示')).toBe('(2) REQ-001 · 管家规则演示 · taktflow')
+    expect(pulseTitle(0, '全部空间')).toBe('全部空间 · taktflow')
+    expect(pulseTitle(0, '演示', '演示')).toBe('演示 · taktflow')
+  })
 })

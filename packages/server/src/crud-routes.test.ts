@@ -129,3 +129,50 @@ it('没选「我是谁」（不带 x-takt-user）时，全局空间操作按目�
   const response = await fetch(server.url + '/api/spaces/mine/archive', { method: 'POST', headers: { 'content-type': 'application/json', 'x-takt-user': 'mallory' }, body: JSON.stringify({ reason: '归档' }) })
   expect(response.status).toBe(403)
 })
+
+it('空根目录没有可推断的创建者时拒绝创建，不能生成匿名开放空间', async () => {
+  const { server } = await setup()
+  const response = await fetch(`${server.url}/api/spaces`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'anonymous', name: '匿名空间', template: 'blank' }) })
+  expect(response.status).toBe(403)
+  expect((await response.json()).error).toContain('创建者身份')
+})
+
+it('没选"我是"时全局空间接口按被操作的空间推断操作者：能复制自己是 owner 的空间，新空间不多出 web', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-crud-actor-')); roots.push(root)
+  for (const [id, members] of [['source', [{ id: 'demo-owner', name: '示例负责人', role: 'owner' }, { id: 'reader', name: 'reader', role: 'viewer' }]], ['team', [{ id: 'demo-owner', name: '示例负责人', role: 'owner' }, { id: 'wazinx', name: 'wazinx', role: 'maintainer' }]]] as const) {
+    const stores = await initSpace(join(root, id), 'quick', { name: id === 'source' ? '来源' : '团队' })
+    await writeFile(join(stores.projectDir, 'takt.config.json'), JSON.stringify({ ...stores.config, space: { id }, members }))
+  }
+  const server = await createServer({ spacesDir: root, port: 0 }); servers.push(server)
+  const request = async (path: string, method: string, data: unknown, user?: string) => {
+    const response = await fetch(`${server.url}/api${path}`, { method, headers: { 'content-type': 'application/json', ...(user ? { 'x-takt-user': user } : {}) }, body: JSON.stringify(data) })
+    return { status: response.status, data: await response.json() as any }
+  }
+  const membersOf = async (id: string) => (await openProject(join(root, id))).config.members
+  const creator = [{ id: 'demo-owner', name: '示例负责人', role: 'owner' }]
+  expect((await request('/spaces', 'POST', { id: 'web-created', name: '匿名空间', template: 'blank' }, 'web')).status).toBe(403)
+  expect((await request('/spaces', 'POST', { id: 'web-member', name: '匿名成员', template: 'blank', members: [{ id: 'web', name: 'web', role: 'owner' }] }, undefined)).status).toBe(400)
+  // 向导：未选身份，第 3 步显示的创建者放在 members 里
+  for (const from of ['source', 'team']) {
+    const copied = await request('/spaces', 'POST', { id: `copy-${from}`, name: `复制-${from}`, template: { copyFrom: from, parts: ['agents', 'workflows'] }, members: creator }, undefined)
+    expect(copied.status, JSON.stringify(copied.data)).toBe(200)
+    expect(await membersOf(`copy-${from}`)).toEqual(creator)
+  }
+  expect((await request('/spaces', 'POST', { id: 'blank-one', name: '空白', template: 'blank', members: creator }, undefined)).status).toBe(200)
+  expect(await membersOf('blank-one')).toEqual(creator)
+  // 不给成员：缺省空间的第一个 owner 是创建者
+  expect((await request('/spaces', 'POST', { id: 'blank-two', name: '空白二', template: 'blank' }, undefined)).status).toBe(200)
+  expect(await membersOf('blank-two')).toEqual([{ id: 'demo-owner', name: 'demo-owner', role: 'owner' }])
+  const audit = (await readFile(join(root, '.takt/space-admin.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line).actor)
+  expect(audit.every((by: { id: string }) => by.id === 'demo-owner')).toBe(true)
+  // 明确选了身份就按那个人校验，提示说清是哪个空间、需要什么角色，不露内部命令名
+  const denied = await request('/spaces', 'POST', { id: 'copy-denied', name: '无权复制', template: { copyFrom: 'source', parts: ['agents'] } }, 'reader')
+  expect(denied.status).toBe(403)
+  expect(denied.data.error).toBe('权限不足：复制这个空间需要 maintainer 或更高角色，你（reader）在「来源」是 viewer（只读）')
+  expect((await request('/spaces', 'POST', { id: 'copy-stranger', name: '陌生人', template: { copyFrom: 'team', parts: ['agents'] } }, 'reader')).data.error).toContain('不是「团队」的成员')
+  // 归档 / 恢复同样按被操作的空间推断（新空间不再靠幽灵 web owner 才能撤销）
+  const archived = await request('/spaces/blank-one/archive', 'POST', { reason: '撤销新建空间' }, undefined)
+  expect(archived.status, JSON.stringify(archived.data)).toBe(200)
+  expect((await request(`/spaces/${archived.data.id}/restore`, 'POST', { reason: '恢复' }, undefined)).status).toBe(200)
+  expect((await request('/spaces/blank-one', 'PATCH', { name: '改名', reason: '验收' }, 'reader')).status).toBe(403)
+})

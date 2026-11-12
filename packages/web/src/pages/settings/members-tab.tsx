@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Users } from 'lucide-react'
+import { Plus, Trash2, TriangleAlert, Users } from 'lucide-react'
 import type { SpaceDetail, SpaceMember } from '@taktflow/core'
-import { useSource } from '../../api'
+import { useAsync, useSource } from '../../api'
+import { uncoveredDuties } from '../attention-assign'
 import { Avatar, EmptyState, ReasonDialog, SkeletonRows, toast, useFlashRows, useStagger } from '../../components/ui'
 import { COMMON_DUTIES, DutiesEditor } from './duties-editor'
+import { ReadOnlyNote, useAccess } from './access'
+import { MEMBER_ID_RULE, memberIdError } from './rules'
 
 const ROLES: Array<{ id: SpaceMember['role']; label: string; can: string }> = [
   { id: 'owner', label: 'owner', can: '全部权限，含成员与绑定仓库' },
@@ -16,6 +19,7 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
   const ds = useSource()
   const [draft, setDraft] = useState<SpaceMember[]>([])
   const [newId, setNewId] = useState('')
+  const [newName, setNewName] = useState('')
   const [newRole, setNewRole] = useState<SpaceMember['role']>('member')
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
@@ -24,19 +28,24 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
   const dirty = JSON.stringify(draft) !== base
   const st = useStagger(draft.length)
   const flash = useFlashRows(draft.map((m) => m.id))
+  const access = useAccess('owner', '改成员、角色和职责')
+  // 待办里的 owner 就是节点职责；没有成员认领的职责，待办会兜底转给需求负责人
+  const attention = useAsync((ds) => ds.attention().catch(() => []), [])
 
   if (!space) return <div className="card"><SkeletonRows rows={5} /></div>
 
   const owners = draft.filter((m) => m.role === 'owner').length
-  const idTaken = draft.some((m) => m.id === newId.trim())
+  const idError = memberIdError(newId, draft.map((m) => m.id))
   const knownDuties = [...new Set(draft.flatMap((m) => m.duties ?? []))]
+  const uncovered = uncoveredDuties(draft, attention.data ?? [])
   const setDuties = (i: number, duties: string[]) => setDraft((d) => d.map((x, j) => (j === i ? { ...x, duties: duties.length ? duties : undefined } : x)))
 
   function add() {
     const id = newId.trim()
-    if (!id || idTaken) return
-    setDraft((d) => [...d, { id, name: id, role: newRole }])
+    if (!id || idError) return
+    setDraft((d) => [...d, { id, name: newName.trim() || id, role: newRole }])
     setNewId('')
+    setNewName('')
   }
 
   // 由 ReasonDialog 调用：服务端要求原因（写进空间审计）；失败时抛错，消息留在对话框里
@@ -66,6 +75,14 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
           <span className="card-title">成员</span>
           <span className="faint num">{draft.length}</span>
         </div>
+        <ReadOnlyNote why={access.why} />
+        {uncovered.length > 0 && (
+          <p className="settings-ro-note is-block" role="note">
+            <TriangleAlert aria-hidden />
+            有节点职责没有成员承担：<span className="mono">{uncovered.join('、')}</span>。这些节点产生的待办会转给需求负责人，建议给相应成员补上职责。
+          </p>
+        )}
+        <fieldset className="settings-ro" disabled={!access.ok}>
         {draft.length === 0 ? (
           <EmptyState compact icon={Users} title="还没有成员" body="在下面输入成员 id 添加，至少需要一位 owner。" stewardAsk="帮我把团队成员加进这个空间：" />
         ) : (
@@ -74,8 +91,8 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
               <li key={m.id} className={`member-row ${st(i).className ?? ''} ${flash(m.id)}`} style={st(i).style}>
                 <Avatar name={m.name} id={m.id} size={32} />
                 <div className="member-text">
-                  <span className="member-name">{m.name}</span>
-                  <span className="faint mono">{m.email ?? m.id}</span>
+                  <span className="member-name" title={m.name}>{m.name}</span>
+                  <span className="faint mono" title={m.email ?? m.id}>{m.email ?? m.id}</span>
                 </div>
                 <DutiesEditor name={m.name} value={m.duties ?? []} known={knownDuties} onChange={(next) => setDuties(i, next)} />
                 <select
@@ -110,7 +127,16 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
             add()
           }}
         >
-          <input className="input" placeholder="成员 id，例如 zhang" aria-label="新成员 id" value={newId} onChange={(e) => setNewId(e.target.value)} />
+          <input
+            className={`input mono${idError ? ' is-bad' : ''}`}
+            placeholder="成员 id，例如 zhang"
+            aria-label="新成员 id"
+            aria-invalid={Boolean(idError)}
+            aria-describedby="member-id-rule"
+            value={newId}
+            onChange={(e) => setNewId(e.target.value)}
+          />
+          <input className="input" placeholder="显示名（可选），例如 张三" aria-label="新成员显示名" value={newName} onChange={(e) => setNewName(e.target.value)} />
           <select className="select" aria-label="新成员角色" value={newRole} onChange={(e) => setNewRole(e.target.value as SpaceMember['role'])}>
             {ROLES.map((r) => (
               <option key={r.id} value={r.id}>
@@ -118,12 +144,20 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
               </option>
             ))}
           </select>
-          <button className="btn" type="submit" disabled={!newId.trim() || idTaken}>
+          <button className="btn" type="submit" disabled={!newId.trim() || Boolean(idError)}>
             <Plus />
             添加
           </button>
         </form>
-        {idTaken && <p className="field-error">{newId.trim()} 已经是成员了。</p>}
+        {idError ? (
+          <p className="field-error" id="member-id-rule" role="alert">
+            {idError}
+          </p>
+        ) : (
+          <p className="field-hint" id="member-id-rule">
+            成员 id {MEMBER_ID_RULE}；中文名填在“显示名”里。
+          </p>
+        )}
         {dirty && (
           <div className="save-bar">
             <span>有未保存的变更{owners === 0 && '：至少保留一位 owner'}</span>
@@ -136,6 +170,7 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
             </button>
           </div>
         )}
+        </fieldset>
         <ReasonDialog open={asking} onClose={() => setAsking(false)} title="保存成员变更" description="保存后立即生效，并记入空间审计。" confirmLabel="保存成员" onSubmit={save} />
       </div>
       <aside className="space-aside">
@@ -150,7 +185,7 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
         </dl>
         <div className="section-label">职责</div>
         <p>
-          节点属性里的"负责人"写职责标签（如 <span className="mono">rd</span>），这个节点产生的待办会自动派给 duties 含此标签的成员，待办页可以筛"派给我"。
+          节点属性里的"负责人"写职责标签（如 <span className="mono">rd</span>），这个节点产生的待办会自动派给职责里有这个标签的成员，待办页可以筛"派给我"。
         </p>
         <dl className="role-legend">
           {COMMON_DUTIES.map((d) => (

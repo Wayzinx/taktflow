@@ -64,10 +64,12 @@ export interface StewardSource {
   risks(opts?: { space?: string; state?: Risk['state'] }): Promise<Risk[]>
   setRiskState(key: string, body: RiskStateRequest): Promise<Risk>
   /** since 缺省为上次查看。 */
-  /** peek：只读，不标已读（服务端默认会把"上次查看"推到此刻并记一次 digest.open）。 */
-  digest(since?: string, opts?: { peek?: boolean }): Promise<Digest>
+  /** peek：只读，不标已读（服务端默认会把"上次查看"推到此刻并记一次 digest.open）。space：只汇报这个空间，已读也只记在它上面。 */
+  digest(since?: string, opts?: { peek?: boolean; space?: string }): Promise<Digest>
   /** "动态"：汇报、风险变化、提案结果、未读数。 */
   stewardFeed(): Promise<StewardFeedItem[]>
+  /** 只要未读数（导轨上的角标），不拉整份动态。 */
+  stewardUnread(): Promise<number>
   /** 全局动态 SSE（含 type: 'unread'）。 */
   subscribeStewardFeed(on: (item: StewardFeedItem) => void): () => void
   stewardPrefs(): Promise<StewardPrefs>

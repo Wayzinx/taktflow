@@ -109,10 +109,10 @@ export function SpaceSwitcher({ fallbackName }: { fallbackName?: string }) {
                   <span className="space-option-text">
                     <span className="space-option-name truncate">{s.name}</span>
                     {(dupNames.get(s.name) ?? 0) > 1 && <span className="space-option-id mono truncate">{s.id}</span>}
-                    <span className="space-option-meta">
+                    <span className="space-option-meta" title={s.active ? '已开始但未交付的需求，不一定有节点在跑' : undefined}>
                       {s.requirements ? (
                         <>
-                          <span className="num">{s.requirements}</span> 个需求 · <span className="num">{s.active}</span> 个进行中
+                          <span className="num">{s.requirements}</span> 个需求 · <span className="num">{s.active}</span> 个未交付
                         </>
                       ) : (
                         '还没有需求'

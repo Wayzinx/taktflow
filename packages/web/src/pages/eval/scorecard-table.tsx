@@ -5,13 +5,11 @@ import { EmptyState, SkeletonRows, useStagger } from '../../components/ui'
 import { fmtCost, fmtTokens, totalTokens } from '../../lib/format'
 import { VERDICT, VERDICT_ORDER } from '../../lib/status'
 import { cardKey, cardTitle, pct } from './labels'
+import { sortScorecards, type SortKey } from './scorecard-sort'
 import { Sparkline } from './sparkline'
 
 export { cardKey }
 
-type SortKey = 'executions' | 'firstPassRate' | 'escapes' | 'detection' | 'cost' | 'none'
-const sortValue = (c: NodeScorecard, k: SortKey): number =>
-  k === 'executions' ? c.executions : k === 'firstPassRate' ? (c.firstPassRate ?? -1) : k === 'escapes' ? c.escapes : k === 'detection' ? (c.detection?.rate ?? -1) : k === 'cost' ? (c.usage.costUsd ?? 0) : 0
 
 export function Downstream({ d }: { d: NodeScorecard['downstream'] }) {
   const items = VERDICT_ORDER.filter((k) => (d[k] ?? 0) > 0) as VerdictCategory[]
@@ -29,6 +27,7 @@ export function Downstream({ d }: { d: NodeScorecard['downstream'] }) {
 }
 
 export function RegressionTag({ c, compact }: { c: NodeScorecard; compact?: boolean }) {
+  if (c.regression?.exploratory) return <span className="sc-explore" title={c.regression.reason}>样本不足</span>
   if (!c.regression?.suspected) return null
   return (
     <span className="sc-regress" title={c.regression.reason}>
@@ -43,7 +42,7 @@ export function ScorecardTable({ cards, by, onOpen }: { cards?: NodeScorecard[];
   const stg = useStagger(cards?.length ?? 0)
   if (!cards) return <SkeletonRows rows={8} />
   if (cards.length === 0) return <EmptyState compact icon={BarChart3} title="还没有成绩单" body="需求跑过几次之后，这里会按节点、配方和技能聚合出指标。" stewardAsk="怎样才能尽快看到节点成绩单？" />
-  const rows = sort.k === 'none' ? cards : [...cards].sort((a, b) => (sortValue(a, sort.k) - sortValue(b, sort.k)) * (sort.desc ? -1 : 1))
+  const rows = sortScorecards(cards, sort.k, sort.desc)
   const Th = ({ k, children, title }: { k: SortKey; children: string; title?: string }) => (
     <th className="r" aria-sort={sort.k === k ? (sort.desc ? 'descending' : 'ascending') : undefined} title={title}>
       <button className="sc-sort" onClick={() => setSort((s) => (s.k === k ? (s.desc ? { k, desc: false } : { k: 'none', desc: true }) : { k, desc: true }))}>
@@ -60,7 +59,7 @@ export function ScorecardTable({ cards, by, onOpen }: { cards?: NodeScorecard[];
           <tr>
             <th>{first}</th>
             <Th k="executions">执行</Th>
-            <Th k="firstPassRate" title="第一次执行就成功且完成标准全部满足">一次通过率</Th>
+            <Th k="firstPassRate" title="第一次执行就成功且完成标准全部满足；评审节点按「只评审一轮且该轮通过」算，反映被评审产物的质量，评审节点自身看检出率">一次通过率</Th>
             <th title="评审轮数均值 · 打回次数 · blocker / major 问题">评审负担</th>
             <th title="人修改产物：语义 / 措辞">人工改写</th>
             <th className="r" title="完成标准未满足次数">未满足</th>

@@ -65,7 +65,7 @@ it('读模型、时间身份、快照与 diff 路径防穿越；质量同步原�
   await rm(file); await writeFile(file, '字段缺失')
   expect(await f.call('/api/quality/sync', 'POST', { runId: f.state.runId, reason: '补齐事件观察' })).toMatchObject({ ok: true })
   expect(await readFile(join(f.stores.taktDir, 'space-events.jsonl'), 'utf8')).toContain('补齐事件观察')
-  expect(await f.call('/api/quality/status')).toMatchObject({ ok: true })
+  expect(await f.call('/api/quality/status')).toMatchObject({ ok: true, lastSeq: { [f.state.runId]: (await f.stores.events.read(f.state.runId)).at(-1)!.seq } })
 })
 it('回退预览与 409；新建产物保留且上下游过期，支持空间前缀', async () => {
   const f = await fixture()

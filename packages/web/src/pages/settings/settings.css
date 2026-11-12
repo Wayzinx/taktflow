@@ -50,3 +50,45 @@
   padding: var(--sp-2);
   border-top: 1px solid var(--divider);
 }
+
+/* ---------------------------------------------------------------- 按当前身份只读：一行说明 + 整块控件禁用 */
+.settings-ro {
+  display: contents;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.settings-ro-note {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface-2);
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.settings-ro-note svg {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--text-3);
+}
+.card > .settings-ro-note:first-child,
+.settings-ro-note.is-block {
+  border: 1px solid var(--divider);
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-4);
+}
+.settings-field-err {
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--st-failed);
+}
+.file-list-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}

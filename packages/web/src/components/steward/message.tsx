@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brain, ChevronRight, CircleAlert, CircleCheck, CircleStop, Copy, CornerDownRight, Forward, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Brain, ChevronRight, CircleAlert, CircleCheck, CircleStop, Copy, CornerDownRight, FileCode, Forward, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Proposal, StewardContextRef, StewardDelegation, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Bee } from '../mascot'
@@ -11,7 +11,7 @@ import { Menu, toast } from '../ui'
 import { hm } from './fmt'
 import { StewardBlocks } from './blocks'
 import { StewardText } from './citation'
-import { stripCitations } from './cite-text'
+import { plainWithSources } from './cite-text'
 import { ProposalCard } from './proposal-card'
 import { ToolList } from './tool-card'
 
@@ -37,10 +37,11 @@ function Feedback({ m, onPatch }: { m: StewardMessage; onPatch: (patch: Partial<
       toast('反馈没有送达', { tone: 'failed', body: (e as Error).message })
     }
   }
-  const copy = async () => {
+  // 默认复制成能直接转发的纯文本（来源列在末尾）；也可以原样复制 Markdown
+  const copy = async (markdown?: boolean) => {
     try {
-      await navigator.clipboard.writeText(stripCitations(m.text))
-      toast('已复制', { tone: 'success', duration: 2000 })
+      await navigator.clipboard.writeText(markdown ? m.text : plainWithSources(m.text, m.citations, location.origin))
+      toast(markdown ? '已复制 Markdown' : '已复制', { tone: 'success', duration: 2000 })
     } catch {
       toast('浏览器不允许复制', { tone: 'failed' })
     }
@@ -48,8 +49,11 @@ function Feedback({ m, onPatch }: { m: StewardMessage; onPatch: (patch: Partial<
   const r = m.feedback?.rating
   return (
     <div className="stw-msg-actions">
-      <button type="button" className="btn btn-ghost btn-icon btn-sm" title="复制" aria-label="复制" onClick={() => void copy()}>
+      <button type="button" className="btn btn-ghost btn-icon btn-sm" title="复制（纯文本，附来源）" aria-label="复制" onClick={() => void copy()}>
         <Copy />
+      </button>
+      <button type="button" className="btn btn-ghost btn-icon btn-sm" title="复制为 Markdown" aria-label="复制为 Markdown" onClick={() => void copy(true)}>
+        <FileCode />
       </button>
       <button type="button" className="btn btn-ghost btn-icon btn-sm" title="有帮助" aria-label="有帮助" aria-pressed={r === 'up'} onClick={() => void rate('up')}>
         <ThumbsUp />
@@ -124,7 +128,7 @@ export interface MessageViewProps {
   onPatch: (patch: Partial<StewardMessage>) => void
   /** 追问；ctx 给了就用它作这条消息的上下文（候选块点选）。 */
   onSuggest: (text: string, ctx?: StewardContextRef[]) => void
-  /** 只给最后一条、失败或被停下的回复：重发前面那条提问。 */
+  /** 只给最后一条回复：重发前面那条提问（失败 / 停下时叫「重试」，写完了叫「重新生成」）。 */
   onRetry?: () => void
 }
 
@@ -240,6 +244,13 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
         {(!m.status || m.status === 'done') && (
           <div className="stw-msg-foot">
             <Feedback m={m} onPatch={onPatch} />
+            {/* 带了提案的回复不再重答：再问一次会再出一份提案 */}
+            {onRetry && !(m.proposalIds ?? []).length && (
+              <button type="button" className="btn btn-ghost btn-sm" title="把上一个问题再问一次" onClick={onRetry}>
+                <RotateCcw aria-hidden />
+                重新生成
+              </button>
+            )}
           </div>
         )}
         {showSuggestions && !live && (m.suggestions ?? []).length > 0 && <FollowUps items={m.suggestions!} onPick={onSuggest} />}

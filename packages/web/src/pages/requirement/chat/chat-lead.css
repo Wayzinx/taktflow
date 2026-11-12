@@ -57,6 +57,53 @@ button.chat-quote:focus-visible {
   border-radius: var(--radius-xs);
 }
 
+/* ---- Lead 回合失败：群头下方一条可操作的失败说明 */
+.chat-lead-failure {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 var(--sp-3) var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid color-mix(in oklch, var(--st-failed) 30%, var(--border));
+  border-radius: var(--radius-sm);
+  background: var(--st-failed-soft);
+  font-size: var(--text-ui);
+}
+.chat-lead-failure > svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  color: var(--st-failed);
+}
+.chat-lead-failure-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.chat-lead-failure-text > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+.chat-lead-failure .btn {
+  flex: none;
+}
+
+/* ---- 成员栏：mock harness 的 Lead 标"演示" */
+.chat-member-demo {
+  flex: none;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
+  font-size: var(--text-label);
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+}
+
 /* ---- 输入框占位语轮播：逐字淡入（每字 28ms 错开、120ms 淡入），整行 140ms 快速退出 */
 .chat-input-wrap {
   position: relative;

@@ -267,6 +267,10 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* 超出目标线 */
+.stwp-metric[data-bad] .stwp-metric-value {
+  color: var(--st-failed);
+}
 .stwp-spark {
   flex: none;
 }

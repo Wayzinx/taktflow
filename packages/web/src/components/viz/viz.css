@@ -102,7 +102,7 @@
   display: flex;
   pointer-events: none;
 }
-@container tile (max-width: 150px) {
+@container tile (max-width: 130px) {
   .tile-spark {
     display: none;
   }
@@ -477,9 +477,29 @@
   stroke-width: 1.5;
   animation: fade-only-in 160ms var(--ease-out-soft) 360ms backwards;
 }
+/* 逐点悬停：透明的按点悬停区，悬停时显出该点（读数格里的迷你图默认不接事件，带逐点说明的例外） */
+.tile-spark .spark-points {
+  pointer-events: auto;
+}
+.spark-hit rect {
+  fill: transparent;
+}
+.spark-hit circle {
+  fill: currentColor;
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.spark-hit:hover circle {
+  opacity: 1;
+}
 .run-bars {
   flex: none;
   overflow: visible;
+}
+.run-bar[data-empty] {
+  stroke-width: 1;
 }
 .run-bar {
   animation: run-bar-reveal 320ms var(--ease-out-soft) backwards;

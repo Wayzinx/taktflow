@@ -137,6 +137,34 @@ it('来源目录新增符合规则的文件会标记过期，删除后自动恢�
   await rm(join(root, 'docs/b.md'))
   expect(await kb.get('docs')).toMatchObject({ status: 'ready', staleDocs: 0 })
 })
+it('数据源页列出空间内目录里的文档，标出构建后变了、新增和已删除的', async () => {
+  const { kb, root } = await setup()
+  await mkdir(join(root, 'docs'), { recursive: true })
+  for (const name of ['a', 'b', 'c']) await writeFile(join(root, `docs/${name}.md`), `# ${name}\n内容`)
+  await kb.create(
+    { id: 'docs', name: '规则', kind: 'rag', config: { sources: [{ type: 'path', path: 'docs' }] } },
+    by,
+    '新建',
+  )
+  expect((await built(kb, 'docs')).status).toBe('succeeded')
+  await kb.publish('docs', { by, reason: '发布' })
+  expect((await kb.docs('docs')).map((doc) => [doc.path, doc.indexed, !!doc.stale])).toEqual([
+    ['docs/a.md', true, false],
+    ['docs/b.md', true, false],
+    ['docs/c.md', true, false],
+  ])
+  await writeFile(join(root, 'docs/b.md'), '# b\n改过')
+  await writeFile(join(root, 'docs/d.md'), '# d\n新增')
+  await rm(join(root, 'docs/c.md'))
+  expect(await kb.get('docs')).toMatchObject({ status: 'stale', staleDocs: 3 })
+  const docs = await kb.docs('docs')
+  expect(docs.map((doc) => [doc.path, doc.indexed, !!doc.stale, !!doc.deleted])).toEqual([
+    ['docs/a.md', true, false, false],
+    ['docs/b.md', true, true, false],
+    ['docs/d.md', false, false, false],
+    ['docs/c.md', true, true, true],
+  ])
+})
 it('来源目录整个被删掉时详情接口照常返回，按 manifest 计过期', async () => {
   const { kb, root } = await setup()
   await mkdir(join(root, 'docs'), { recursive: true })
@@ -263,6 +291,25 @@ it('无嵌入时中文二元组检索，保留全文与分项分数', async () =
     content: expect.stringContaining('用户'),
   })
   expect(result.hits[0]?.snippet).not.toContain('---')
+})
+it('只有 BM25 一路时总分就是归一化后的 BM25 分，不是名次分；minScore 能滤掉低相关命中', async () => {
+  const { kb } = await setup()
+  await kb.create({ id: 'docs', name: '文档', kind: 'rag', config: {} }, by, '新建')
+  await kb.upload(
+    'docs',
+    [
+      { path: 'refund.md', content: '# 退款规则\n退款规则：七天内可以申请退款，退款原路返回。' },
+      { path: 'greeting.md', content: '# 问候规则\n问候语按规则生成，空名字时问候陌生人。' },
+    ],
+    by,
+  )
+  await built(kb, 'docs')
+  const result = await kb.query('docs', { text: '退款规则是什么' }, { version: 'candidate' })
+  expect(result.hits.map((hit) => hit.ref)).toEqual([expect.stringContaining('refund'), expect.stringContaining('greeting')])
+  for (const hit of result.hits) expect(hit.score).toBe(hit.scores?.bm25)
+  expect(result.hits[1]!.score).toBeLessThan(0.6)
+  const strict = await kb.query('docs', { text: '退款规则是什么' }, { version: 'candidate', retrieval: { minScore: 0.6 } })
+  expect(strict.hits.map((hit) => hit.ref)).toEqual([expect.stringContaining('refund')])
 })
 it('路由绑定、角色、RRF 优先级、预算、身份留痕', async () => {
   const custom: KnowledgeKind = {

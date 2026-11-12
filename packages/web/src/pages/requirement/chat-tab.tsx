@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RequirementDetail, RoomMessage } from '@taktflow/core'
-import { MessagesSquare } from 'lucide-react'
+import { MessagesSquare, RotateCw, Settings2, TriangleAlert } from 'lucide-react'
 import { useAsync } from '../../api'
-import { EmptyState, ErrorState, SkeletonRows } from '../../components/ui'
+import { EmptyState, ErrorState, SkeletonRows, toast } from '../../components/ui'
 import { LeadLight } from '../../components/lead-light'
-import { setQuery, useLocation } from '../../lib/router'
+import { Link, setQuery, useLocation } from '../../lib/router'
 import { Composer, type ComposerApi } from './chat/composer'
+import { leadTurnFailure, leadUsesMock } from './chat/lead-receipts'
 import { MemberList } from './chat/member-list'
 import { MessageFeed, type FeedApi } from './chat/message-feed'
 import type { MessageCtx } from './chat/message-item'
@@ -42,6 +43,7 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
   const attention = useAsync((ds) => ds.attention(), [id])
   const [replyTo, setReplyTo] = useState<RoomMessage>()
   const [taskRoles, setTaskRoles] = useState<Record<string, string[]>>({})
+  const [retried, setRetried] = useState<string>()
   const composer = useRef<ComposerApi>(null)
   const feed = useRef<FeedApi>(null)
   const { query } = useLocation()
@@ -86,6 +88,20 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
   }, [taskRoles, chat.leadThinking])
 
   const byId = useMemo(() => new Map(chat.messages.map((m) => [m.id, m])), [chat.messages])
+  // 最近一回合失败：Lead 状态显示"失败"，并给重试 / 去设置两个入口；重试后先收起旧提示
+  const failure = leadTurnFailure(chat.messages, chat.lead)
+  const showFailure = failure && failure.messageId !== retried ? failure : undefined
+  const demo = leadUsesMock(chat.messages)
+  const retryLead = async () => {
+    if (!showFailure?.trigger || !showFailure.retryable) return
+    setRetried(showFailure.messageId)
+    try {
+      await chat.send(showFailure.trigger.text, [...new Set([...(showFailure.trigger.mentions ?? []), 'lead'])], showFailure.trigger.replyTo)
+    } catch (e) {
+      setRetried(undefined)
+      toast('没能重试', { tone: 'failed', body: (e as Error).message })
+    }
+  }
   const ctx: MessageCtx = {
     members: chat.room?.members,
     byId,
@@ -112,16 +128,33 @@ export function ChatTab({ id, detail }: { id: string; detail?: RequirementDetail
   const room = chat.room
   return (
     <div className="chat-layout">
-      <MemberList members={room.members} busy={busy} lead={chat.lead} onMention={(mid) => composer.current?.mention(mid)} />
+      <MemberList members={room.members} busy={busy} lead={chat.lead} leadFailed={showFailure?.reason} demo={demo} onMention={(mid) => composer.current?.mention(mid)} />
       <section className="card chat-main" aria-label={`${detail?.title ?? id} 需求群`}>
         <header className="card-head chat-head">
           <MessagesSquare aria-hidden="true" />
           <h3 className="card-title truncate">{room.title}</h3>
           <span className="spacer" />
-          <LeadLight presence={chat.lead} showLabel />
+          <LeadLight presence={chat.lead} showLabel failed={showFailure?.reason} />
           {room.external && <span className="chip mono">已绑定 {room.external.kind}</span>}
           <span className="faint chat-head-count">{room.members.length} 位成员</span>
         </header>
+        {showFailure && (
+          <div className="chat-lead-failure" role="alert">
+            <TriangleAlert aria-hidden />
+            <span className="chat-lead-failure-text">
+              <b>Lead 上一回合失败</b>
+              <span title={showFailure.reason}>{showFailure.reason}</span>
+            </span>
+            <Link to="/settings?tab=runtime" className="btn btn-sm">
+              <Settings2 aria-hidden />
+              检查模型与 Harness 设置
+            </Link>
+            <button type="button" className="btn btn-sm btn-primary" disabled={!showFailure.retryable || chat.leadThinking} title={showFailure.retryable ? '原样重发触发这一回合的消息' : '找不到触发这一回合的消息，请在输入框重新 @lead'} onClick={() => void retryLead()}>
+              <RotateCw aria-hidden />
+              重试
+            </button>
+          </div>
+        )}
         {chat.messages.length === 0 ? (
           <div className="chat-feed-wrap">
             <EmptyState icon={MessagesSquare} title="群里还没有消息" body="@lead 问进度、提要求，Lead 会派任务并把结果回帖到这里。" />

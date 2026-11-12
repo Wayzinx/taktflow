@@ -1,5 +1,7 @@
+import { useEffect } from 'react'
 import { Copy, FilePlus2, Workflow, Zap, type LucideIcon } from 'lucide-react'
-import type { ServerInfo, SpaceSummary } from '@taktflow/core'
+import type { ServerInfo, SpaceSummary, Viewer } from '@taktflow/core'
+import { useAsync } from '../../api'
 import { SpaceMark } from '../space-switcher'
 import { COPY_PARTS, type SpaceForm, type StartKind } from './model'
 
@@ -10,9 +12,28 @@ const FALLBACK: ServerInfo['spaceTemplates'] = [
   { id: 'quick', title: '快速修复', description: '短 spec → 实现 → 代码评审 → 交付校验' },
 ]
 
+/**
+ * 复制要求在来源空间是 maintainer 及以上（服务端 space.copy）。按各来源的 GET /me 预判：
+ * 和创建请求带同一个身份（没选"我是"时服务端按来源空间的第一个 owner 推断），结果一致。
+ */
+function copyDenied(me: Viewer | undefined): string | undefined {
+  if (!me) return undefined
+  const role = me.member?.role
+  if (role === 'owner' || role === 'maintainer') return undefined
+  return role ? `你（${me.id}）在这里是 ${role}，复制需要 maintainer` : `你（${me.id}）不是这个空间的成员，不能复制`
+}
+
 /** 第 2 步：起点四选一；复制已有空间时选来源并勾选要复制的部分。 */
 export function StepTemplate({ f, set, templates, live }: { f: SpaceForm; set: (p: Partial<SpaceForm>) => void; templates?: ServerInfo['spaceTemplates']; live: SpaceSummary[] }) {
   const cards: Array<{ id: StartKind; title: string; description: string }> = [...(templates?.length ? templates : FALLBACK), { id: 'copy', title: '复制已有空间', description: '沿用一个空间的角色、技能、流水线和设置' }]
+  const mine = useAsync((ds) => Promise.all(live.map((s) => ds.forSpace(s.id).me().catch(() => undefined))), [live.map((s) => s.id)])
+  const denied = (id?: string) => (mine.data ? copyDenied(mine.data[live.findIndex((s) => s.id === id)]) : undefined)
+  const firstAllowed = live.find((s) => !denied(s.id))?.id
+  // 预先选中的来源（卡片上的"复制"、默认第一个）没有权限时换成第一个能复制的，都没有就清空，第 2 步不能继续
+  useEffect(() => {
+    if (f.start === 'copy' && f.copyFrom && denied(f.copyFrom)) set({ copyFrom: firstAllowed })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mine.data, f.start, f.copyFrom])
   return (
     <div className="sc-step">
       <div className="sc-cards" role="radiogroup" aria-label="起点">
@@ -26,7 +47,7 @@ export function StepTemplate({ f, set, templates, live }: { f: SpaceForm; set: (
               role="radio"
               aria-checked={on}
               className={`sc-card pressable${on ? ' on' : ''}`}
-              onClick={() => set({ start: c.id, ...(c.id === 'copy' && !f.copyFrom ? { copyFrom: live[0]?.id } : {}) })}
+              onClick={() => set({ start: c.id, ...(c.id === 'copy' && !f.copyFrom ? { copyFrom: firstAllowed } : {}) })}
             >
               <span className="sc-card-icon">
                 <Icon aria-hidden />
@@ -46,15 +67,22 @@ export function StepTemplate({ f, set, templates, live }: { f: SpaceForm; set: (
             <div className="ov-field">
               <span className="ov-field-label">从哪个空间复制</span>
               <div className="sc-src-list">
-                {live.map((s) => (
-                  <label key={s.id} className={`sc-src pressable${f.copyFrom === s.id ? ' on' : ''}`}>
-                    <input type="radio" name="sc-copy-from" checked={f.copyFrom === s.id} onChange={() => set({ copyFrom: s.id })} />
-                    <SpaceMark space={s} size={18} />
-                    <span className="truncate">{s.name}</span>
-                    <span className="mono faint">{s.id}</span>
-                  </label>
-                ))}
+                {live.map((s) => {
+                  const why = denied(s.id)
+                  return (
+                    <label key={s.id} className={`sc-src pressable${f.copyFrom === s.id ? ' on' : ''}${why ? ' denied' : ''}`} title={why}>
+                      <input type="radio" name="sc-copy-from" checked={f.copyFrom === s.id} disabled={!!why} onChange={() => set({ copyFrom: s.id })} />
+                      <SpaceMark space={s} size={18} />
+                      <span className="sc-src-name">
+                        <span className="truncate">{s.name}</span>
+                        {why && <span className="sc-src-why">{why}</span>}
+                      </span>
+                      <span className="mono faint">{s.id}</span>
+                    </label>
+                  )
+                })}
               </div>
+              {mine.data && live.length > 0 && !firstAllowed && <span className="ov-field-hint">你在这些空间都不是 maintainer，没法复制；可以先选其他起点，或请对方空间的 owner 调整你的角色。</span>}
             </div>
             <div className="ov-field">
               <span className="ov-field-label">

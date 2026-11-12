@@ -1,10 +1,11 @@
-import { Settings2 } from 'lucide-react'
+import { useState } from 'react'
+import { Plus, Settings2 } from 'lucide-react'
 import { useAsync } from '../api'
 import { useCrumbs } from '../components/layout'
 import { ErrorState, PageHeader, Skeleton, useStewardSuggestions } from '../components/ui'
 import { Link } from '../lib/router'
 import { askSteward } from '../lib/ui-store'
-import { WorkflowTable } from './workflows-list-table'
+import { WorkflowCreateDialog, WorkflowTable } from './workflows-list-table'
 import { BeeGlyph } from '../components/identity'
 
 /** /workflows：当前空间的 workflow 列表（ds.workflows()），点进 /workflows/:id 编辑器。 */
@@ -12,6 +13,7 @@ export function WorkflowsListPage() {
   useCrumbs([{ label: '流水线' }], [])
   const q = useAsync((ds) => ds.workflows(), [])
   const suggestions = useStewardSuggestions('workflows')
+  const [creating, setCreating] = useState(false)
   const editable = q.data?.filter((w) => w.editable).length ?? 0
   const readonly = (q.data?.length ?? 0) - editable
   return (
@@ -32,9 +34,10 @@ export function WorkflowsListPage() {
         suggestions={suggestions}
         actions={
           <>
+            <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}><Plus />新建 / 从模板添加</button>
             <button type="button" className="btn btn-sm" onClick={() => askSteward('帮我新建一条流水线：')}>
               <BeeGlyph />
-              让管家新建
+              让管家帮我
             </button>
             <Link to="/settings?tab=workflows" className="btn btn-sm btn-ghost">
               <Settings2 />
@@ -43,7 +46,8 @@ export function WorkflowsListPage() {
           </>
         }
       />
-      <div className="card">{q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : <WorkflowTable workflows={q.data} />}</div>
+      <div className="card">{q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : <WorkflowTable workflows={q.data} onCreate={() => setCreating(true)} />}</div>
+      {creating && <WorkflowCreateDialog open onClose={() => setCreating(false)} />}
     </div>
   )
 }

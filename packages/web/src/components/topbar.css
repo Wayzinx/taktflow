@@ -86,17 +86,49 @@
   height: 24px;
   padding: 0 var(--sp-2);
   border-radius: var(--radius-sm);
-  border: 1px dashed var(--border-strong);
-  color: var(--text-2);
+  border: 1px dashed var(--st-waiting);
+  background: var(--st-waiting-soft);
+  color: var(--st-waiting);
   font-size: var(--text-meta);
+  font-weight: 500;
   white-space: nowrap;
   cursor: help;
+}
+/* 演示数据横幅：工作区最上方一整条，和顶栏的"演示数据"标记一起，确保不会被当成真实数据 */
+.demo-banner {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-8);
+  background: var(--st-waiting-soft);
+  color: var(--text);
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  border-bottom: 1px solid var(--border);
+}
+.demo-banner svg {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--st-waiting);
+}
+.demo-banner-exit {
+  margin-left: auto;
+  flex: none;
+  color: var(--text);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 @media (max-width: 900px) {
   .topbar {
     padding: 0 var(--sp-3) 0 var(--sp-2);
     gap: var(--sp-2);
+  }
+  .demo-banner {
+    padding: var(--sp-2) var(--sp-3);
   }
   .topbar-menu {
     display: inline-flex;

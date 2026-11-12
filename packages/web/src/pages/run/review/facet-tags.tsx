@@ -1,8 +1,8 @@
 import type { CSSProperties, ReactNode } from 'react'
-import { CircleCheck, CircleDashed, Clock3, History, PenLine, ScanEye, ShieldAlert, X } from 'lucide-react'
+import { CircleAlert, CircleCheck, CircleDashed, Clock3, History, PenLine, ScanEye, ShieldAlert, X } from 'lucide-react'
 import type { ReviewFacets } from '@taktflow/core'
 import type { Tone } from '../../../lib/status'
-import { COVERAGE, FRESHNESS, OUTCOME, toneColor, toneSoft } from './review-meta'
+import { COVERAGE, FRESHNESS, outcomeView, toneColor, toneSoft } from './review-meta'
 import './facet-tags.css'
 
 const OUTCOME_ICON = { approved: CircleCheck, no_findings: CircleCheck, changes_requested: PenLine, rejected: X, escalated: ShieldAlert } as const
@@ -19,17 +19,18 @@ export function Tag({ tone, icon, children, title, className }: { tone: Tone | '
 
 /**
  * 评审的三枚正交标签：结论 · 覆盖 · 新鲜度（docs/design/19 §4）。
- * 没有结论（还没评完一轮）时第一枚显示"未出结论"；no_findings 显示"无问题"，不显示"通过"。
+ * 没有结论（还没评完一轮）时第一枚显示"未出结论"；no_findings 显示"无问题"，不显示"通过"；
+ * 还有未关闭的阻断 / 重要问题时结论写明遗留数（outcomeView）。
  */
 export function FacetTags({ facets, compact }: { facets?: ReviewFacets; compact?: boolean }) {
   if (!facets) return null
-  const o = facets.outcome ? OUTCOME[facets.outcome] : undefined
-  const OIcon = facets.outcome ? OUTCOME_ICON[facets.outcome] : CircleDashed
+  const o = outcomeView(facets)
+  const OIcon = !facets.outcome ? CircleDashed : o?.leftover ? CircleAlert : OUTCOME_ICON[facets.outcome]
   const c = COVERAGE[facets.coverage]
   const f = FRESHNESS[facets.freshness]
   return (
     <span className={`rv-facets${compact ? ' compact' : ''}`} aria-label="结论 · 覆盖 · 新鲜度">
-      <Tag tone={o?.tone ?? 'neutral'} icon={<OIcon />} title="结论">
+      <Tag tone={o?.tone ?? 'neutral'} icon={<OIcon />} title={o ? `结论：${o.hint}` : '结论'}>
         {o?.label ?? '未出结论'}
       </Tag>
       <span className="rv-facet-sep" aria-hidden>·</span>

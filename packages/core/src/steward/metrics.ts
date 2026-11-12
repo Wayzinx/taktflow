@@ -157,6 +157,7 @@ export async function productMetrics(
     hint: string,
     select: (row: MetricRow) => boolean,
     calculate: (rows: MetricRow[]) => number,
+    samples: (rows: MetricRow[]) => number = (rs) => rs.length,
   ) => {
     const selected = rows.filter((row) => row.feature === feature && select(row))
     const trend = Array.from({ length: 7 }, (_, i) => {
@@ -178,6 +179,7 @@ export async function productMetrics(
       window: '7d',
       trend,
       hint: selected.length ? hint : `暂无样本；${hint}`,
+      samples: samples(selected),
     })
   }
   for (const feature of ['requirement.create', 'workflow.edit', 'space.create', 'knowledge']) {
@@ -189,12 +191,13 @@ export async function productMetrics(
       (r) => r.type === 'dialog.submit',
       (rs) => mean(rs.map((r) => r.ms ?? 0)),
     )
+    // 新建需求的提交数按真正建出来的需求算（对话框、管家、CLI 都算），和「5 分钟内开始运行」同一个分母
     add(
       feature,
       'submissions',
       'count',
       '结合打开次数检查创建流程流失',
-      (r) => r.type === 'dialog.submit',
+      (r) => (feature === 'requirement.create' ? r.type === 'created' : r.type === 'dialog.submit'),
       (rs) => rs.length,
     )
     add(
@@ -207,6 +210,7 @@ export async function productMetrics(
         (rs.filter((r) => r.type === 'dialog.submit').length /
           Math.max(1, rs.filter((r) => r.type === 'dialog.open').length)) *
         100,
+      (rs) => rs.filter((r) => r.type === 'dialog.open').length,
     )
   }
   add(

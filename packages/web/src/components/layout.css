@@ -439,6 +439,10 @@
   background: var(--rail-active);
   color: var(--rail-text);
 }
+/* 选中项上的次要文字（计数等）也提到 text-2：text-3 在浅色侧栏选中底色上只有约 4.27:1 */
+.sb-item.active .sb-count {
+  color: var(--rail-text-2);
+}
 .sb-item.active::before {
   content: '';
   position: absolute;
@@ -537,6 +541,10 @@
   color: var(--rail-text-3);
   font-size: var(--text-label);
 }
+/* 选中的需求行：REQ-001 这类 id 用 text-3 时对比度不足，跟随行文字提到 text-2 */
+.sb-req.active .sb-req-id {
+  color: var(--rail-text-2);
+}
 .sb-foot {
   margin-top: auto;
   display: flex;
@@ -615,6 +623,10 @@
   flex: 1 0 auto;
   min-width: 0;
   padding: var(--sp-6) var(--sp-8) 48px;
+}
+/* 只作为焦点的落脚处（浮层关闭、触发处已不在时），不画焦点框 */
+.shell-content:focus {
+  outline: none;
 }
 .shell-content.flush {
   padding: 0;

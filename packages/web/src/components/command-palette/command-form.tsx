@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ChevronLeft, CornerDownLeft } from 'lucide-react'
 import type { CommandInfo, CommandRunResponse } from '@taktflow/core'
 import { invalidate, useSource } from '../../api'
@@ -21,16 +21,18 @@ export function CommandForm({ cmd, given, data, onBack, onDone, backLabel }: { c
   const [values, setValues] = useState<Record<string, FieldValue>>(init.values)
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
+  const pending = useRef(false)
   const [res, setRes] = useState<CommandRunResponse>()
 
   const needReason = cmd.risk !== 'read'
   const { input, missing, invalid } = toInput(fields, values)
-  const ready = !missing.length && !invalid.length && (!needReason || reasonOk(reason)) && !busy
+  const ready = !missing.length && !invalid.length && (!needReason || reasonOk(reason))
   // 第一个需要手填的字段拿焦点；都已带入时焦点给原因或执行按钮
   const focusKey = fields.find((f) => !init.fromContext.has(f.key) && (f.required || !values[f.key]))?.key
 
   const submit = async () => {
-    if (!ready) return
+    if (!ready || pending.current) return
+    pending.current = true
     setBusy(true)
     setRes(undefined)
     try {
@@ -46,6 +48,7 @@ export function CommandForm({ cmd, given, data, onBack, onDone, backLabel }: { c
     } catch (e) {
       setRes({ ok: false, message: (e as Error).message })
     } finally {
+      pending.current = false
       setBusy(false)
     }
   }
@@ -111,7 +114,7 @@ export function CommandForm({ cmd, given, data, onBack, onDone, backLabel }: { c
           <span className="kbd">Esc</span> {backLabel}
         </span>
         <span className="cmdk-foot-blocker">{blocker}</span>
-        <button type="submit" className={`btn btn-sm ${cmd.risk === 'dangerous' ? 'btn-danger' : 'btn-primary'}`} disabled={!ready}>
+        <button type="submit" className={`btn btn-sm ${cmd.risk === 'dangerous' ? 'btn-danger' : 'btn-primary'}`} disabled={!ready} aria-disabled={busy || undefined}>
           {busy ? '执行中…' : verb}
           {!busy && <CornerDownLeft aria-hidden />}
         </button>

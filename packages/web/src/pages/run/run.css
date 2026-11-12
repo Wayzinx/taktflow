@@ -43,6 +43,15 @@
   --tone: var(--st-failed);
   --tone-soft: var(--st-failed-soft);
 }
+/* 已被后来的运行取代：中性信息条，不再用失败红催人重试 */
+.run-recover[data-mode='superseded'] {
+  --tone: var(--text-2);
+  --tone-soft: var(--surface-hover);
+}
+.run-recover-confirm {
+  margin: 0;
+  font-size: var(--text-ui);
+}
 .run-recover > svg {
   flex: none;
   width: 16px;
@@ -321,7 +330,7 @@
   margin-top: 6px;
   padding-left: 30px;
   font-size: 11px;
-  color: var(--text-3);
+  color: var(--text-2);
 }
 .dag-tok {
   font-size: 11px;
@@ -371,15 +380,12 @@
   border-style: dashed;
   border-color: color-mix(in srgb, var(--st-stale) 70%, transparent);
 }
+/* 没执行的节点靠虚线框和次级标题色区分，不降整体不透明度：11px 的副标题、token、徽标降透明后对比度不到 4.5:1 */
 .dag-node.st-skipped,
 .dag-node.st-cancelled {
   border-style: dashed;
   box-shadow: none;
   background: var(--surface-2);
-}
-.dag-node.st-skipped > *,
-.dag-node.st-cancelled > * {
-  opacity: 0.75;
 }
 .dag-node.st-pending,
 .dag-node.st-ready {
@@ -387,7 +393,9 @@
   background: var(--surface-2);
 }
 .dag-node.st-pending .dag-title,
-.dag-node.st-ready .dag-title {
+.dag-node.st-ready .dag-title,
+.dag-node.st-skipped .dag-title,
+.dag-node.st-cancelled .dag-title {
   color: var(--text-2);
 }
 .dag-node.selected {

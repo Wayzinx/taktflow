@@ -16,6 +16,13 @@ function dayBucket(iso: string): { key: string; label: string } {
   return { key: '3', label: '更早' }
 }
 
+/** 「空间 · REQ-001 标题」：不同空间常有同号需求；标题缺失或只是编号本身时只写一次编号。 */
+function requirementLabel(t: StewardThread, spaceName: (id: string) => string | undefined): string {
+  const title = t.requirementTitle && t.requirementTitle !== t.requirementId ? ` ${t.requirementTitle}` : ''
+  const space = t.spaceId ? `${spaceName(t.spaceId) ?? t.spaceId} · ` : ''
+  return `${space}${t.requirementId}${title}`
+}
+
 interface Group {
   key: string
   label: string
@@ -37,7 +44,7 @@ export function groupThreads(list: StewardThread[], by: GroupBy, spaceName: (id:
       const b = dayBucket(t.updatedAt)
       add(b.key, b.label, t)
     } else if (by === 'space') add(t.spaceId ? `s:${t.spaceId}` : '~', t.spaceId ? (spaceName(t.spaceId) ?? t.spaceId) : '没关联空间', t)
-    else if (by === 'requirement') add(t.requirementId ? `r:${t.spaceId}/${t.requirementId}` : '~', t.requirementId ? `${t.requirementId} ${t.requirementTitle ?? ''}`.trim() : '没关联需求', t)
+    else if (by === 'requirement') add(t.requirementId ? `r:${t.spaceId}/${t.requirementId}` : '~', t.requirementId ? requirementLabel(t, spaceName) : '没关联需求', t)
     else add(needsYou(t) ? '0' : t.status === 'replying' ? '1' : '2', needsYou(t) ? '需要你处理' : t.status === 'replying' ? '回复中' : '其他', t)
   }
   const order = [...groups.values()].sort((a, b) => {

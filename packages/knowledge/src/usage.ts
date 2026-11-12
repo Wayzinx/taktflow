@@ -1,6 +1,11 @@
 import type { ProjectStores } from '@taktflow/core'
 import type { KnowledgeBaseDetail, KnowledgeBaseSummary } from '@taktflow/core'
 import { readQueries } from './store/query-log.js'
+
+/** 按服务端本地时区分日，与总览的每日活动同口径（UTC 分日会把北京时间凌晨的查询算到前一天）。 */
+const localDay = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
 export async function knowledgeUsage(
   stores: ProjectStores,
   id: string,
@@ -29,6 +34,7 @@ export async function knowledgeUsage(
       Date.parse(query4.at) >= now - 7 * 86400000 &&
       Date.parse(query4.at) <= now,
   )
+  // hitRate 是“有本库结果”的查询占比（线上查询没有相关性标注，不代表相关），恒等于 1 - emptyRate
   const stats = (rows: typeof queries) => ({
     queries: rows.length,
     hitRate: rows.length
@@ -41,9 +47,10 @@ export async function knowledgeUsage(
       ? rows.filter((query7) => used.has(query7.queryId)).length / rows.length
       : 0,
   })
+  const today = new Date(now)
   const trend = Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(now - (6 - index) * 86400000).toISOString().slice(0, 10)
-    return { date, ...stats(queries.filter((query8) => query8.at.slice(0, 10) === date)) }
+    const date = localDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - (6 - index)))
+    return { date, ...stats(queries.filter((query8) => localDay(new Date(query8.at)) === date)) }
   })
   const workflows = new Map<string, string>()
   for (const query9 of queries)

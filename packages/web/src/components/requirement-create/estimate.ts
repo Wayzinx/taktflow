@@ -9,6 +9,8 @@ export interface RouteEstimate {
   workflowId?: string
   workflowTitle?: string
   reason: string
+  /** server：服务端路由器（与创建时同一个）给的；local：接口不可用时本地关键词规则给的。 */
+  source: 'server' | 'local'
 }
 
 const SMALL = /文案|拼写|错别字|typo|文件名|颜色|样式微调|格式|改个|小改|hotfix|修复|bug|崩溃|报错/i
@@ -45,7 +47,16 @@ export function estimateRoute(text: string, workflows: WorkflowSummary[] | undef
   }
   const want = tier === 'T1' ? ['quick-fix', 'hotfix', 'quick'] : ['sdlc', 'standard']
   const wf = workflows?.find((w) => want.includes(w.id)) ?? workflows?.find((w) => want.some((x) => w.id.includes(x)))
-  return { tier, workflowId: wf?.id, workflowTitle: wf?.title, reason }
+  return { tier, workflowId: wf?.id, workflowTitle: wf?.title, reason, source: 'local' }
+}
+
+/**
+ * 路由预览 409（空间没有流水线 / 没有接得住该档位的流水线）是配置问题，原因要原样给用户看；
+ * 其他错误（旧服务端、离线）才退回本地规则。
+ */
+export function routePreviewFailure(e: unknown): string | undefined {
+  const status = (e as { status?: number } | undefined)?.status
+  return status === 409 && e instanceof Error && e.message ? e.message : undefined
 }
 
 /**

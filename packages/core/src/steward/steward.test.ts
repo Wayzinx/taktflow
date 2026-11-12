@@ -339,6 +339,26 @@ describe('提案生命周期', () => {
     expect((result.data as Array<{ id: string }>).map((c) => c.id)).toContain('space.archive')
     await expect(f.agent.tools.call('space_overview', { spaceId: 'shop@20261107-195504' }, ctx)).rejects.toMatchObject({ status: 404 })
   })
+  it('list_commands 给了空间也列出 scope=server 的空间管理命令（归档 / 删除空间）', async () => {
+    const f = await fixture(),
+      ctx = { threadId: f.thread.id, messageId: 'm-cmd', proposals: [], delegations: [] }
+    const rows = (await f.agent.tools.call('list_commands', { spaceId: 'shop' }, ctx)).data as Array<{ id: string; scope: string }>
+    expect(rows.find((c) => c.id === 'space.archive')).toMatchObject({ scope: 'server' })
+    expect(rows.find((c) => c.id === 'requirement.create')).toMatchObject({ scope: 'space' })
+    expect((await f.agent.tools.specs()).find((t) => t.name === 'get_config')?.description).toContain('成员')
+  })
+  it('引用定位到具体页面：需求列表指向需求页，运行失败的节点带 ?node=', async () => {
+    const f = await fixture(),
+      ctx = { threadId: f.thread.id, messageId: 'm-cite', proposals: [], delegations: [] }
+    const req = await f.stores.workspaces.createRequirement({ title: '问候语' })
+    expect((await f.agent.tools.call('list_requirements', { spaceId: 'shop' }, ctx)).citations[0]).toMatchObject({ href: '/s/shop/requirements' })
+    const run: RunState = { runId: 'run-20261109-180307-4aa0', requirementId: req.id, workflowId: 'flow', workflowVersion: '1', status: 'failed', startedAt: '2026-11-06T09:00:00.000Z', args: {}, expansions: [],
+      nodes: { clarify: { id: 'clarify', status: 'failed', attempts: 1, outputs: [], error: 'ACP 协议错误' }, build: { id: 'build', status: 'pending', attempts: 0, outputs: [] } } }
+    await f.stores.runs.create(run, { id: 'flow', title: '交付流程', version: '1', stages: [], nodes: [{ id: 'clarify', kind: 'agent', title: '需求澄清', needs: [] }, { id: 'build', kind: 'agent', title: '开发', needs: ['clarify'] }] })
+    const cites = (await f.agent.tools.call('run_status', { spaceId: 'shop', runId: run.runId }, ctx)).citations
+    expect(cites).toContainEqual({ label: `需求澄清（${run.runId}）`, href: `/s/shop/run/${run.runId}?node=clarify`, kind: 'node' })
+    expect(cites.some((c) => c.href.includes('node=build'))).toBe(false)
+  })
   it('空间管理命令忽略 spaceId：归档空间不在活跃列表里也能出提案并执行', async () => {
     const f = await fixture(),
       step: ProposalStep = { kind: 'command', spaceId: 'shop@20261107-195504', commandId: 'space.archive', input: { id: 'shop@20261107-195504' } }
@@ -827,7 +847,7 @@ describe('问答与工具', () => {
     await vi.waitFor(() => expect(updated).toHaveLength(2))
     await vi.waitFor(async () => expect(await f.agent.store.lines('feed.jsonl')).toHaveLength(2))
     expect(updated[1]?.status).toBe('replied')
-    expect(f.listeners.size).toBe(0)
+    await vi.waitFor(() => expect(f.listeners.size).toBe(0))
   })
   it('禁读内部/密钥/穿越/软链与大文件，脱敏配置', async () => {
     const f = await fixture()
@@ -861,7 +881,7 @@ describe('问答与工具', () => {
       '这是一个超过二十个字的中文标题需要截取并且搜索',
       '2026-11-06T10:00:00Z',
     )
-    expect([...thread.title]).toHaveLength(20)
+    expect(thread.title).toBe('这是一个超过二十个字的中文标题需要截取并…')
     expect(await f.agent.store.threads('中文标题')).toHaveLength(1)
   })
 })
@@ -963,6 +983,9 @@ describe('风险汇报与度量', () => {
       metrics.find((m) => m.feature === 'requirement.create' && m.metric === 'completion_ms'),
     ).toMatchObject({ value: 500, window: '7d', trend: expect.any(Array) })
     expect(metrics.find((m) => m.metric === 'down_verbose')?.value).toBe(1)
+    expect(metrics.find((m) => m.feature === 'requirement.create' && m.metric === 'submit_rate')?.samples).toBe(0)
+    expect(metrics.find((m) => m.metric === 'started_within_5m')?.samples).toBe(0)
+    expect(metrics.find((m) => m.feature === 'requirement.create' && m.metric === 'submissions')?.value).toBe(0)
     expect(metrics.every((m) => m.trend?.length === 7 && m.hint)).toBe(true)
     expect(citationCoverage('有 2 个需求[1]。另有 3 个待办。')).toBe(0.5)
   })
@@ -1053,6 +1076,77 @@ it('配置逆 patch 恢复修改前字段，包括删除新增键', async () => 
     'reverted',
   )
   expect(f.stores.config.project).toEqual(old)
+})
+it('config.patch 待批期间有人改了成员：批准 409 并标 stale，不覆盖别人加的成员；预览按成员列出增删', async () => {
+  const f = await fixture()
+  f.stores.config.members = [{ id: 'owner', name: 'owner', role: 'owner' }, { id: 'alice', name: '爱丽丝', role: 'maintainer' }]
+  const step = (members: unknown[]): ProposalStep => ({ kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { members } } })
+  const bob = { id: 'bob', name: 'bob', role: 'member', duties: ['qa'] }
+  const p = await f.agent.proposals.create(f.thread.id, '添加成员 bob', '用户要求', [step([...f.stores.config.members!, bob])])
+  expect(p.previews?.[0]).toMatchObject({ kind: 'diff' })
+  expect(p.previews![0]!.body.split('\n')).toEqual(['@@ 成员（members） @@', '+ bob · member · qa', '  另外 2 名成员不变'])
+  // 队友在设置页加了 carol
+  f.stores.config.members = [...f.stores.config.members!, { id: 'carol', name: 'carol', role: 'viewer' }]
+  await expect(f.agent.proposals.approve(p.id, { hash: p.hash }, { type: 'human', id: 'alice' })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('members') })
+  expect((await f.agent.store.proposal(p.id)).status).toBe('stale')
+  expect(f.stores.config.members!.map((m) => m.id)).toEqual(['owner', 'alice', 'carol'])
+  // 改的是补丁没碰的键（预算）不算基线变化；基于最新成员重新生成的提案照常执行
+  const next = await f.agent.proposals.create(f.thread.id, '添加成员 bob', '用户要求', [step([...f.stores.config.members!, bob])])
+  f.stores.config.budget = { tokens: 1000 }
+  expect((await f.agent.proposals.approve(next.id, { hash: next.hash }, { type: 'human', id: 'alice' })).status).toBe('applied')
+  expect(f.stores.config.members!.map((m) => m.id)).toEqual(['owner', 'alice', 'carol', 'bob'])
+})
+it('同一提案里两步 config.patch：后一步不因前一步改了配置而被判基线变化', async () => {
+  const f = await fixture()
+  const p = await f.agent.proposals.create(f.thread.id, '改配置', '用户要求', [
+    { kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { lessons: { enabled: false } } } },
+    { kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { lessons: { enabled: true } } } },
+  ])
+  expect((await f.agent.proposals.approve(p.id, { hash: p.hash }, { type: 'human', id: 'alice' })).status).toBe('applied')
+})
+it('旧 config.patch 提案缺少基线时拒绝执行；编辑提案不能绕过原有成员基线', async () => {
+  const f = await fixture()
+  const step: ProposalStep = { kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { members: [{ id: 'alice', name: 'Alice', role: 'owner' }] } } }
+  const legacy = await f.agent.proposals.create(f.thread.id, '旧提案', '测试', [step])
+  delete (legacy.steps[0] as Extract<ProposalStep, { kind: 'command' }>).input.baseHash
+  legacy.hash = proposalHash(legacy.steps)
+  await f.agent.store.saveProposal(legacy)
+  await expect(f.agent.proposals.approve(legacy.id, { hash: legacy.hash }, { type: 'human', id: 'alice' })).rejects.toMatchObject({ status: 409 })
+  const edited = await f.agent.proposals.create(f.thread.id, '添加成员', '测试', [step])
+  f.stores.config.members = [{ id: 'carol', name: 'Carol', role: 'viewer' }]
+  await expect(f.agent.proposals.approve(edited.id, { hash: edited.hash, steps: [step] }, { type: 'human', id: 'alice' })).rejects.toMatchObject({ status: 409 })
+  expect(f.stores.config.members.map((m) => m.id)).toEqual(['carol'])
+})
+it('两步 config.patch 执行期间有人新增成员：第二步不跳过基线，不覆盖成员', async () => {
+  const f = await fixture()
+  f.stores.config.members = [{ id: 'alice', name: 'Alice', role: 'owner' }]
+  let calls = 0
+  bindCrudServices(f.stores, {
+    workflowEdit: async () => ({}), workflowConvert: async () => ({}),
+    configPatch: async (patch) => {
+      Object.assign(f.stores.config, patch)
+      if (++calls === 1) f.stores.config.members!.push({ id: 'carol', name: 'Carol', role: 'viewer' })
+      return f.stores.config
+    },
+  })
+  const p = await f.agent.proposals.create(f.thread.id, '两步修改', '测试', [
+    { kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { lessons: { enabled: false } } } },
+    { kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { members: [...f.stores.config.members, { id: 'bob', name: 'Bob', role: 'member' }] } } },
+  ])
+  expect((await f.agent.proposals.approve(p.id, { hash: p.hash }, { type: 'human', id: 'alice' })).status).toBe('failed')
+  expect(f.stores.config.members.map((m) => m.id)).toEqual(['alice', 'carol'])
+})
+it('空间总览的汇报只含本空间，已读只记在该空间上，不影响全局汇报', async () => {
+  const f = await fixture(),
+    req = await f.stores.workspaces.createRequirement({ title: '新需求' })
+  f.clock(new Date(Date.parse(req.createdAt) + 120000).toISOString())
+  expect((await buildDigest(f.deps, f.agent.store, undefined, true, true, 'shop')).progress.map((p) => p.requirementId)).toEqual([req.id])
+  expect((await buildDigest(f.deps, f.agent.store, undefined, true, true, 'other')).progress).toEqual([])
+  await buildDigest(f.deps, f.agent.store, undefined, true, false, 'shop')
+  expect((await buildDigest(f.deps, f.agent.store, undefined, true, true, 'shop')).progress).toEqual([])
+  expect((await buildDigest(f.deps, f.agent.store, undefined, true, true)).progress).toHaveLength(1)
+  await buildDigest(f.deps, f.agent.store)
+  expect((await buildDigest(f.deps, f.agent.store, undefined, true, true)).progress).toEqual([])
 })
 it('未到 since 的历史进展排除，静音不通知但保留风险', async () => {
   const f = await fixture(),
@@ -1487,4 +1581,27 @@ it('运行时给出的可读原因原样显示，不再套「回复失败…请�
   agents.push(agent)
   const { done } = await agent.post({ text: '进度' })
   expect(await done).toMatchObject({ status: 'error', error: 'TRAE CLI 的上游模型现在太忙，等一会儿点「重试」，或换一个模型' })
+})
+
+it('失败回滚 config.patch 也检查基线，不删除执行后队友新增的成员', async () => {
+  const f = await fixture()
+  f.stores.config.members = [{ id: 'alice', name: 'Alice', role: 'owner' }]
+  let calls = 0
+  bindCrudServices(f.stores, {
+    workflowEdit: async () => ({}), workflowConvert: async () => ({}),
+    configPatch: async (patch) => {
+      if (++calls === 2) throw new Error('第二步失败')
+      Object.assign(f.stores.config, patch)
+      f.stores.config.members!.push({ id: 'carol', name: 'Carol', role: 'viewer' })
+      return f.stores.config
+    },
+  })
+  const p = await f.agent.proposals.create(f.thread.id, '两步配置', '测试', [
+    { kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { members: [...f.stores.config.members, { id: 'bob', name: 'Bob', role: 'member' }] } } },
+    { kind: 'command', spaceId: 'shop', commandId: 'config.patch', input: { patch: { lessons: { enabled: false } } } },
+  ])
+  const result = await f.agent.proposals.approve(p.id, { hash: p.hash }, { type: 'human', id: 'alice' })
+  expect(result).toMatchObject({ status: 'failed', error: expect.stringContaining('回滚失败') })
+  expect(f.stores.config.members.map(m => m.id)).toEqual(['alice', 'bob', 'carol'])
+  expect(proposalHash(result.steps)).toBe(result.hash)
 })

@@ -7,16 +7,25 @@ import { StewardStore } from './store.js'
 import { refreshRisks, isQuiet } from './risks.js'
 import { stewardLinks } from './links.js'
 
+interface Seen {
+  at: string
+  /** 空间总览横幅各自标的已读（docs/design/22 §1.6）：只看过一个空间，不算看过别的空间。 */
+  spaces?: Record<string, string>
+}
+/** spaceId：只汇报这个空间（空间总览的「自上次以来」），已读也只记在这个空间上。 */
 export async function buildDigest(
   deps: StewardDeps,
   store: StewardStore,
   since?: string,
   markSeen = true,
   peek = false,
+  spaceId?: string,
 ): Promise<Digest> {
   const at = timestamp(deps),
-    prefs = await store.prefs()
-  since ??= (await store.read<{ at: string }>('seen.json'))?.at
+    prefs = await store.prefs(),
+    seen = await store.read<Seen>('seen.json')
+  const spaceSeen = spaceId ? seen?.spaces?.[spaceId] : undefined
+  since ??= spaceSeen && (!seen?.at || spaceSeen > seen.at) ? spaceSeen : seen?.at
   if (since && (!Number.isFinite(Date.parse(since)) || Date.parse(since) > Date.parse(at)))
     throw new StewardError(400, '汇报起始时间不合法，请选择过去的时间')
   const from = since ? Date.parse(since) : 0,
@@ -25,6 +34,7 @@ export async function buildDigest(
   const spaces = (await deps.spaces()).filter(
     (space) =>
       !space.archived &&
+      (!spaceId || space.id === spaceId) &&
       !prefs.mutedSpaces?.includes(space.id) &&
       (!prefs.watchedSpaces?.length || prefs.watchedSpaces.includes(space.id)),
   )
@@ -174,8 +184,8 @@ export async function buildDigest(
         .join('')
   }
   if (markSeen && !peek) {
-    await store.write('seen.json', { at })
-    await store.append('metrics.jsonl', { at, feature: 'steward.digest', type: 'digest.open' })
+    await store.write('seen.json', spaceId ? { ...seen, spaces: { ...seen?.spaces, [spaceId]: at } } : { at })
+    await store.append('metrics.jsonl', { at, feature: 'steward.digest', type: 'digest.open', ...(spaceId ? { spaceId } : {}) })
   }
   return digest
 }

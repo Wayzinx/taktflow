@@ -47,8 +47,15 @@ export function diffPulse(before: PulseSnap, after: PulseSnap): PulseEvent[] {
 }
 
 const BASE_TITLE = 'taktflow 控制台'
-/** 标签页标题：括号里是等你决定的数量。 */
-export const pulseTitle = (waiting: number) => (waiting > 0 ? `(${waiting}) ${BASE_TITLE}` : BASE_TITLE)
+/**
+ * 标签页标题：括号里是等你决定的数量，后面是"页面 · 空间 · taktflow"（多标签页、历史记录、书签能分清，TF-078）；
+ * 还不知道在哪一页时是"taktflow 控制台"。
+ */
+export function pulseTitle(waiting: number, page?: string, space?: string): string {
+  const parts = [page, space !== page ? space : undefined].filter(Boolean)
+  const base = parts.length ? [...parts, 'taktflow'].join(' · ') : BASE_TITLE
+  return waiting > 0 ? `(${waiting}) ${base}` : base
+}
 
 /** 浏览器标签页图标：节拍蜂（小尺寸只画轮廓、条纹、眼睛）。index.html 里的静态图标与它的 idle 一致。 */
 export const BEE_FAVICON_BODY =

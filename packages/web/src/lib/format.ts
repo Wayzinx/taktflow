@@ -10,10 +10,47 @@ export function fmtTokens(n: number | undefined): string {
 
 export const totalTokens = (u: Usage | undefined): number => (u ? u.inputTokens + u.outputTokens : 0)
 
-export function fmtCost(usd: number | undefined): string {
-  if (usd === undefined) return '—'
+/** 成本：undefined / null 是没上报（harness 不报费用），不是 $0；只有确实是 0 才写 $0。悬停说明用 COST_UNREPORTED。 */
+export function fmtCost(usd: number | null | undefined): string {
+  if (usd === undefined || usd === null) return '—'
+  if (usd === 0) return '$0'
   if (usd < 0.01) return '<$0.01'
   return `$${usd.toFixed(usd >= 100 ? 0 : 2)}`
+}
+
+export const COST_UNREPORTED = '成本未上报：这些调用的 harness 没有报告费用'
+
+/** 占比：不到 1% 时留一位小数（0.3%），免得写成 0%。 */
+export function fmtShare(ratio: number): string {
+  const pct = ratio * 100
+  if (pct > 0 && pct < 0.1) return '<0.1%'
+  return `${pct > 0 && pct < 1 ? pct.toFixed(1) : Math.floor(pct)}%`
+}
+
+export interface CostReading {
+  /** 已知的成本；undefined = 全部未上报。 */
+  usd?: number
+  /** 只有部分调用报了成本时：报了成本的 Token 占比（0–1）。 */
+  coverage?: number
+  /** 显示文本：—、$0.04，部分上报时 ≥$0.04。 */
+  text: string
+  /** 悬停说明：写明未上报或覆盖率。 */
+  title: string
+}
+
+/** 一份用量的成本怎么读：没报（—）、部分报了（≥ 已知部分，带覆盖率）、全报了。unpricedTokens 由服务端累计。 */
+export function costOf(u: Usage | undefined): CostReading {
+  const tokens = totalTokens(u)
+  if (u?.costUsd === undefined) return { text: '—', title: tokens ? COST_UNREPORTED : '没有用量' }
+  const unpriced = Math.min(u.unpricedTokens ?? 0, tokens)
+  if (!unpriced) return { usd: u.costUsd, text: fmtCost(u.costUsd), title: `成本 ${fmtCost(u.costUsd)}` }
+  const coverage = (tokens - unpriced) / tokens
+  return {
+    usd: u.costUsd,
+    coverage,
+    text: `≥${fmtCost(u.costUsd)}`,
+    title: `成本只覆盖 ${fmtShare(coverage)} 的 Token：${fmtTokens(unpriced)} Token 的调用没有上报费用，实际总成本未知`,
+  }
 }
 
 export function fmtPct(v: number | undefined, digits = 0): string {
@@ -52,6 +89,13 @@ const pad = (n: number) => String(n).padStart(2, '0')
 export function fmtDate(ts: string): string {
   const d = new Date(ts)
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** 本地时间的完整写法（YYYY-MM-DD HH:mm）：相对时间的悬停提示用，不显示 UTC 原文。 */
+export function fmtDateTime(ts: string | undefined): string | undefined {
+  if (!ts) return undefined
+  const d = new Date(ts)
+  return `${d.getFullYear()}-${fmtDate(ts)}`
 }
 
 /** 将来的时间点说成人话：今天 18:30 / 明天 09:30 / 周一 18:30 / 11-20 18:30。 */

@@ -261,3 +261,21 @@
     animation: none;
   }
 }
+
+/* 普通搜索之外还有高级命令匹配：列表底部一行提示，点了切到 > 模式 */
+.cmdk-more {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: var(--text-meta);
+  text-align: left;
+  cursor: pointer;
+}
+.cmdk-more:hover {
+  color: var(--text-2);
+}

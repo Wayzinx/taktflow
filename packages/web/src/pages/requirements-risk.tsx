@@ -2,31 +2,40 @@ import { TriangleAlert } from 'lucide-react'
 import type { Risk, SpaceSummary } from '@taktflow/core'
 import { useAsync } from '../api'
 import { askSteward } from '../lib/ui-store'
-import { useLocation } from '../lib/router'
+import { Link, useLocation } from '../lib/router'
+import { groupRisks, type RiskGroups } from './overview-status'
 
 export type RiskIndex = Map<string, Risk[]>
 
+export interface SpaceRisks extends RiskGroups {
+  /** 还没拿到结果：此时不能下"没有风险"的结论。 */
+  loading: boolean
+  /** 风险接口失败：同样不能说"没有风险"。 */
+  failed: boolean
+}
+
 /**
- * 当前空间未处理的风险，按需求分组（GET /api/steward/risks?space=&state=open）。拿不到时为空，不影响列表。
+ * 当前空间未处理的风险（GET /api/steward/risks?space=&state=open）：按需求分组，另给出与需求无关的空间级风险。
  * 管家接口是跨空间的，需求 ID 在各空间里会重复（都有 REQ-001），所以必须按空间过滤；
  * 不带 /s/:id 前缀时当前空间是列表第一个（与空间切换器一致）。
  */
-export function useRequirementRisks(): RiskIndex {
+export function useSpaceRisks(): SpaceRisks {
   const { spaceId } = useLocation()
   const q = useAsync(async (ds) => {
     const id = spaceId ?? (await ds.spaces().catch(() => [] as SpaceSummary[]))[0]?.id
-    const risks = await ds.risks({ state: 'open', ...(id ? { space: id } : {}) }).catch(() => [] as Risk[])
+    const risks = await ds.risks({ state: 'open', ...(id ? { space: id } : {}) })
     return id ? risks.filter((r) => r.spaceId === id) : risks
   }, [spaceId])
-  const map: RiskIndex = new Map()
-  for (const r of q.data ?? []) {
-    if (!r.requirementId) continue
-    const list = map.get(r.requirementId) ?? []
-    list.push(r)
-    map.set(r.requirementId, list)
+  return { ...groupRisks(q.data ?? []), loading: !q.data && !q.error, failed: !q.data && !!q.error }
+}
+
+/** 风险的依据：成绩单退化去评测成绩单（风险引擎给的链接是总览），其余用风险自带的证据链接。 */
+export function riskHref(r: Risk): string {
+  if (r.kind === 'regression') {
+    const card = r.key.slice(r.key.indexOf('//') + 2)
+    return `/eval?card=${encodeURIComponent(card)}`
   }
-  for (const list of map.values()) list.sort((a, b) => (a.level === b.level ? 0 : a.level === 'high' ? -1 : 1))
-  return map
+  return r.evidence[0]?.href ?? (r.requirementId ? `/req/${r.requirementId}` : '/')
 }
 
 /**
@@ -52,5 +61,31 @@ export function RiskMark({ risks, reqId }: { risks?: Risk[]; reqId: string }) {
       <TriangleAlert aria-hidden />
       {risks.length > 1 && <span className="num">{risks.length}</span>}
     </button>
+  )
+}
+
+/**
+ * 风险列表（总览"等你决定"下方）：全部未处理风险，包括不挂需求的空间级风险；每条点开是它的依据。
+ * 标题后面写挂在哪个需求上，空间级的写"与需求无关"。
+ */
+export function RiskList({ risks }: { risks: Risk[] }) {
+  return (
+    <div className="ov-risks">
+      <div className="ov-sub-head">
+        <TriangleAlert aria-hidden />
+        {risks.length} 条风险
+      </div>
+      <ul className="ov-sub-list">
+        {risks.map((r) => (
+          <li key={r.key}>
+            <Link to={riskHref(r)} className={`ov-sub-item risk-item${r.level === 'high' ? ' high' : ''}`} title={`${r.level === 'high' ? '高风险' : '中风险'}：${r.title}\n${r.detail}`}>
+              <span className="truncate">{r.title}</span>
+              <span className="mono faint">{r.requirementId ?? '与需求无关'}</span>
+              <span className="ov-sub-note truncate">{r.detail}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

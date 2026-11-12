@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, type CSSProperties, type ReactNode } from 're
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { usePresence } from '../../lib/motion'
-import { trapKeys, useRestoreFocus } from './dialog'
+import { trapKeys, useModalKeys, useRestoreFocus } from './dialog'
 import './primitives.css'
 
 export interface DrawerProps {
@@ -36,7 +36,8 @@ export function Drawer({ open, onClose, title, description, headerActions, child
   const p = usePresence(open, 160)
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
-  useRestoreFocus(open)
+  useRestoreFocus(open, panel)
+  useModalKeys(open && mode === 'modal', panel, onClose)
 
   useEffect(() => {
     if (!open || p.state !== 'enter') return

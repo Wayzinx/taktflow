@@ -339,3 +339,6 @@
     padding-left: var(--sp-4);
   }
 }
+.hx-own-pending {
+  color: var(--st-waiting);
+}

@@ -1,6 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import { FsWorkspaceStore, requireRole, type ProjectStores } from '@taktflow/core'
-import { actor, body, HttpError, safeId, text } from './http.js'
+import { actor, body, globalActor, HttpError, safeId, text } from './http.js'
 import { attachCrudServices, auditSpace, projectCommands } from './space.js'
 import { requirement, summary } from './read-model.js'
 import { STREAMING, type Handler } from './routes.js'
@@ -50,16 +50,17 @@ export function crudRoutes(add: (method: string, path: string, handler: Handler)
 export function serverCrudRoutes(add: (method: string, path: string, handler: Handler) => void, deps: ServerCommandDeps, reads: { server?: Handler; spaces?: Handler } = {}): void {
   add('GET', '/api/server', reads.server ?? (() => serverInfo(deps)))
   add('GET', '/api/spaces', reads.spaces ?? (({ url }) => listSpaces(deps, url.searchParams.get('archived') === '1')))
-  add('POST', '/api/spaces', async ({ request }) => {
+  // 全局接口不属于任何空间：没选"我是"时按被操作的空间推断操作者（globalActor），不再一律当成 'web'
+  add('POST', '/api/spaces', async ({ request, stores }) => {
     const input = await body(request)
-    return createSpace(deps, input as unknown as SpaceCreateRequest, (stores) => actor(request, stores))
+    return createSpace(deps, input as unknown as SpaceCreateRequest, globalActor(request, stores))
   })
-  add('PATCH', '/api/spaces/:id', async ({ request, params }) => updateSpace(deps, params.id!, await body(request) as unknown as SpaceUpdateRequest, (stores) => actor(request, stores)))
-  add('POST', '/api/spaces/:id/archive', async ({ request, params }) => archiveSpace(deps, params.id!, (stores) => actor(request, stores), text((await body(request)).reason, 'reason')))
-  add('POST', '/api/spaces/:id/restore', async ({ request, params }) => restoreSpace(deps, params.id!, (stores) => actor(request, stores), text((await body(request)).reason, 'reason')))
+  add('PATCH', '/api/spaces/:id', async ({ request, params }) => updateSpace(deps, params.id!, await body(request) as unknown as SpaceUpdateRequest, globalActor(request)))
+  add('POST', '/api/spaces/:id/archive', async ({ request, params }) => archiveSpace(deps, params.id!, globalActor(request), text((await body(request)).reason, 'reason')))
+  add('POST', '/api/spaces/:id/restore', async ({ request, params }) => restoreSpace(deps, params.id!, globalActor(request), text((await body(request)).reason, 'reason')))
   add('DELETE', '/api/spaces/:id', async ({ request, response, params }) => {
     const input = await body(request)
-    await deleteSpace(deps, params.id!, text(input.confirm, 'confirm'), (stores) => actor(request, stores), text(input.reason, 'reason'))
+    await deleteSpace(deps, params.id!, text(input.confirm, 'confirm'), globalActor(request), text(input.reason, 'reason'))
     response.writeHead(204); response.end(); return STREAMING
   })
 }

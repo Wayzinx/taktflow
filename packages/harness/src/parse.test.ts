@@ -8,7 +8,7 @@ describe('共享用量累加', () => {
     const basic = Object.freeze({ inputTokens: 3, outputTokens: 1 })
     const [left, right]: [Usage, Usage] = reverse ? [basic, reported] : [reported, basic]
     const total = addUsage(left, right)
-    expect(total).toEqual({ inputTokens: 13, outputTokens: 3, cachedTokens: 0, costUsd: 0.25 })
+    expect(total).toEqual({ inputTokens: 13, outputTokens: 3, cachedTokens: 0, costUsd: 0.25, unpricedTokens: 4 })
     expect(total).not.toBe(left)
     expect(total).not.toBe(right)
   })
@@ -24,7 +24,7 @@ describe('共享用量累加', () => {
       addUsage(basic, { inputTokens: 2, outputTokens: 1, cachedTokens: 3, costUsd: 0.5 }),
       { inputTokens: 1, outputTokens: 0, cachedTokens: 2, costUsd: 0.25 },
     )
-    expect(total).toEqual({ inputTokens: 7, outputTokens: 7, cachedTokens: 5, costUsd: 0.75 })
+    expect(total).toEqual({ inputTokens: 7, outputTokens: 7, cachedTokens: 5, costUsd: 0.75, unpricedTokens: 10 })
     expect(basic).toEqual({ inputTokens: 4, outputTokens: 6 })
   })
 })

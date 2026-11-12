@@ -4,7 +4,7 @@ import { actor, authorize, body, HttpError, text, viewer } from './http.js'
 import { projectCommands } from './space.js'
 import type { Handler } from './routes.js'
 import { requirement } from './read-model.js'
-import { routeRequirement } from '@taktflow/core'
+import { routeRequirement, RouteUnavailableError } from '@taktflow/core'
 import { configuredRouteModel } from './knowledge-runtime.js'
 import { routingWorkflows } from './commands.js'
 
@@ -32,7 +32,7 @@ export function commandExecutor(options: M3Callbacks = {}) {
   }
   const execute = async (stores: ProjectStores, request: Parameters<typeof actor>[0], id: string, input: Record<string, unknown>, reason?: string) => {
     const result = await (await commands(stores, id)).run(id, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)), { actor: actor(request, stores), reason })
-    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|已改变|冲突|已存在/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
+    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|已改变|冲突|已存在|还没有流水线|没有支持 T\d 的流水线/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
     return result.result
   }
   return { commands, execute }
@@ -65,6 +65,7 @@ export function m3Routes(add: (method: string, path: string, handler: Handler) =
     if (input.repos !== undefined && (!Array.isArray(input.repos) || input.repos.some((repo) => typeof repo !== 'string' || !repo.trim())))
       throw new HttpError(400, 'repos 必须是字符串数组')
     const [title, ...rest] = draftText.split(/\r?\n/)
+    // 空间没有流水线、或没有接得住该档位的流水线是配置问题：409 带原因，前端据此提示去建流水线。
     return routeRequirement({
       stores,
       draft: { title: title!.trim(), description: rest.join('\n').trim() || undefined },
@@ -73,7 +74,7 @@ export function m3Routes(add: (method: string, path: string, handler: Handler) =
       by: actor(request, stores),
       ...(input.hint === undefined ? {} : { hint: text(input.hint, 'hint') }),
       ...(input.repos === undefined ? {} : { repos: input.repos }),
-    })
+    }).catch((error: unknown) => { throw error instanceof RouteUnavailableError ? new HttpError(409, error.message) : error })
   })
   add('GET', '/api/lessons', async ({ stores, request, url }) => execute(stores, request, 'lessons.list', url.searchParams.has('status') ? { status: url.searchParams.get('status') } : {}))
   add('PATCH', '/api/lessons/:id', async ({ stores, request, params }) => {

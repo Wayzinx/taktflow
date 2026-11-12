@@ -1,4 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
+import { GLOSSARY } from '../lib/glossary'
+import { Link } from '../lib/router'
 import './takt.css'
 
 /**
@@ -26,19 +28,30 @@ export function TaktLoader({ label = '正在载入', compact }: { label?: ReactN
   )
 }
 
-/** 运行中的节拍指示：顶栏用。count=0 时安静显示"空闲"。 */
-export function TaktBeat({ count }: { count: number }) {
+/**
+ * 顶栏节拍指示：当前空间有几个需求的节点正在跑（点开去看）；没有时安静显示。
+ * 和服务断开时变灰、写明"连接已断开"（不能还说"空闲"），点一下立刻重试。
+ */
+export function TaktBeat({ count, to = '/requirements', offline, onRetry }: { count: number; to?: string; offline?: boolean; onRetry?: () => void }) {
+  if (offline)
+    return (
+      <button type="button" className="takt-beat offline" onClick={onRetry} title="连不上 takt serve：页面上的数据可能已经过期。恢复后会自动刷新，点这里立即重试">
+        <span className="takt-beat-dot" aria-hidden />
+        连接已断开
+      </button>
+    )
   const live = count > 0
+  const hint = live ? `当前空间有 ${count} 个需求的节点正在运行，点开查看` : `当前空间没有节点在运行。“进行中”是${GLOSSARY.进行中.hint}`
   return (
-    <span className={`takt-beat${live ? ' live' : ''}`}>
+    <Link to={to} className={`takt-beat${live ? ' live' : ''}`} title={hint} aria-label={live ? `${count} 个需求在跑，查看` : '没有需求在跑，查看需求列表'}>
       <span className="takt-beat-dot" aria-hidden />
       {live ? (
         <>
           <span className="num">{count}</span> 个需求在跑
         </>
       ) : (
-        '流水线空闲'
+        '没有需求在跑'
       )}
-    </span>
+    </Link>
   )
 }

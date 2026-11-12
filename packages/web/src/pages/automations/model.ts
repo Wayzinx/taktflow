@@ -1,5 +1,5 @@
 import type { AutomationAction, AutomationConfig, AutomationEvent, AutomationRunRecord, ChannelConfig } from '@taktflow/core'
-import { describeCron } from '../../lib/cron'
+import { describeCron, nextCron, parseCron } from '../../lib/cron'
 import type { Tone } from '../../lib/status'
 
 /** 自动化页的文案与模板（docs/design/30 §4）。 */
@@ -14,7 +14,7 @@ export const EVENTS: Record<AutomationEvent, { label: string; when: string }> = 
 export const ACTIONS: Record<AutomationAction['kind'], { label: string; hint: string }> = {
   digest: { label: '发进展汇报', hint: '各需求的最新进展、等人的事、失败的运行；同一需求只留最新一条，没变化不发' },
   notify: { label: '发消息', hint: '按模板发一句话，可以带需求、运行和链接' },
-  start_workflow: { label: '启动 workflow', hint: '对需求跑一个 workflow；已有运行在跑时跳过' },
+  start_workflow: { label: '启动流水线', hint: '对需求跑一条流水线；已有运行在跑时跳过' },
 }
 
 export const CHANNEL_KINDS: Record<ChannelConfig['kind'], { label: string; hint: string }> = {
@@ -52,7 +52,7 @@ export const TRIGGER_KIND: Record<AutomationRunRecord['trigger'], string> = { sc
 export function triggerText(a: Pick<AutomationConfig, 'trigger'>): string {
   if ('schedule' in a.trigger) return describeCron(a.trigger.schedule) ?? `cron ${a.trigger.schedule}`
   const f = a.trigger.filter
-  const scope = [f?.workflowIds?.length ? `workflow ${f.workflowIds.join('、')}` : '', f?.requirementIds?.length ? f.requirementIds.join('、') : ''].filter(Boolean).join(' · ')
+  const scope = [f?.workflowIds?.length ? `流水线 ${f.workflowIds.join('、')}` : '', f?.requirementIds?.length ? f.requirementIds.join('、') : ''].filter(Boolean).join(' · ')
   return `${EVENTS[a.trigger.event].when}${scope ? `（${scope}）` : ''}`
 }
 
@@ -93,12 +93,25 @@ export const TEMPLATES: Template[] = [
   {
     id: 'auto-start',
     title: '新需求自动启动',
-    body: '新建需求后自动跑一个 workflow，不用再手动点启动',
+    body: '新建需求后自动跑一条流水线，不用再手动点启动',
     make: () => ({ id: 'auto-start', title: '新需求自动启动', enabled: true, trigger: { event: 'requirement.created' }, action: { kind: 'start_workflow', workflowId: '' } }),
   },
 ]
 
 export const blankAutomation = (): AutomationConfig => ({ id: '', title: '', enabled: true, trigger: { schedule: '30 18 * * 1-5' }, action: { kind: 'digest' }, notify: { channels: [] } })
+
+/**
+ * 自定义 cron 的问题：写法不对时指出第几段；写法对但 8 年内一次都不会触发（如 2 月 31 日）时也算错，不让保存。
+ * 没问题时返回下一次触发时间。
+ */
+export function cronCheck(expr: string, after = new Date()): { error: string } | { next: Date } {
+  try {
+    const next = nextCron(parseCron(expr), after)
+    return next ? { next } : { error: '这个时间表永远不会触发（比如 2 月 31 日、4 月 31 日），换一个日期或改成按周' }
+  } catch (e) {
+    return { error: (e as Error).message }
+  }
+}
 
 export const AUTOMATION_ID = /^[a-z0-9][a-z0-9-]{0,39}$/
 /** 新建时给一个不重名的 id（模板 id 或 automation-n）。 */

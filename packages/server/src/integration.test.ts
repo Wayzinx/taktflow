@@ -3,7 +3,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
-import { createEngine, FsEventStore, initProject, type RunState, type WorkflowDocument } from '@taktflow/core'
+import { createEngine, FsEventStore, initProject, LeadTurnError, type RunState, type WorkflowDocument } from '@taktflow/core'
 import { createServer, type RunningServer } from './index.js'
 
 const roots: string[] = []
@@ -146,6 +146,25 @@ it('群聊成员、消息回放和实时 SSE，@lead 只调用注入点且失败
   await request(server, base + '/room/members', 'POST', [{ id: 'carol', kind: 'human', name: 'carol' }])
   expect((await request(server, '/api/space/members', 'PUT', [{ id: 'carol', name: '卡罗尔', role: 'owner' }], { 'x-takt-reason': 'add member name' })).status).toBe(200)
   expect((await request(server, base + '/room', 'GET', undefined, { 'x-takt-user': 'carol' })).data.members.find((member: { id: string }) => member.id === 'carol').name).toBe('卡罗尔')
+})
+
+it('Lead 已报告回合失败时不再追加重复回调错误，未报告的错误保留兜底', async () => {
+  const { root, stores, req } = await fixture()
+  const mentions: string[] = []
+  const server = await start({ projectDir: root, onLeadMention: async (id, message) => {
+    mentions.push(`${id}:${message.text}`)
+    if (message.text === 'reported') throw new LeadTurnError('Lead 回合失败：登录或认证失败')
+    throw new Error('回调失败')
+  } })
+  const base = `/api/requirements/${req.id}`
+  await request(server, base + '/chat', 'POST', { text: 'reported', mentions: ['lead'] })
+  await request(server, base + '/chat', 'POST', { text: 'unreported', mentions: ['lead'] })
+  for (let i = 0; i < 30 && mentions.length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10))
+  for (let i = 0; i < 30 && !(await stores.chat.list(req.id)).some((message) => message.text.startsWith('Lead 回调失败')); i++) await new Promise((resolve) => setTimeout(resolve, 10))
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  const messages = await stores.chat.list(req.id)
+  expect(messages.filter((message) => message.text.startsWith('Lead 回调失败')).map((message) => message.text)).toEqual(['Lead 回调失败：回调失败'])
+  expect(messages.some((message) => message.text.includes('登录或认证失败'))).toBe(false)
 })
 
 it('评审列表和 NodeDetail.review 返回实际轮次；临时任务摘要从群消息找来源', async () => {

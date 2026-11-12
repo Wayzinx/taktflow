@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Archive, ArrowUpRight, CalendarClock, Play, Plus } from 'lucide-react'
+import { Archive, ArrowUpRight, Ban, CalendarClock, Play, Plus } from 'lucide-react'
 import type { RequirementDetail, RequirementUpdateRequest } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { LinkEditor } from '../../components/requirement-create/links'
@@ -10,13 +10,16 @@ import { fmtCost, fmtRelative, fmtTokens, totalTokens } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { REQ_STATUS } from '../../lib/status'
 import { DeliveryButton } from '../../components/delivery-button'
-import { RequirementActions } from './header-actions'
+import { RequirementActions, StartRunButton } from './header-actions'
 import { FactButton, InlineText } from './header-edit'
+import { cancelledRunOf } from './termination'
 import './header.css'
 
 const LINK_LABEL: Record<string, string> = { meego: 'Meego', feishu: '飞书', github: 'GitHub', jira: 'Jira', url: '链接' }
 type Field = 'title' | 'description' | 'owner' | 'dueAt' | 'links'
 const FIELD_LABEL: Record<Field, string> = { title: '标题', description: '描述', owner: '负责人', dueAt: '截止时间', links: '关联链接' }
+/** 运行被人工终止后需求仍是 blocked，展示上改叫"已终止"（core 的派生语义不动）。 */
+const TERMINATED = { label: '已终止', tone: 'skipped' as const, icon: Ban, hint: '最近一次运行被人工终止，可以重新启动' }
 
 /**
  * 需求页头：id、状态、链接、成员、标题、一句话状态、描述、事实行。
@@ -37,6 +40,7 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
   }
   const nameOf = (m?: string) => members.find((x) => x.id === m)?.name ?? m
   const longDesc = (r?.description?.split('\n').length ?? 0) > 3 || (r?.description?.length ?? 0) > 220
+  const cancelled = r ? cancelledRunOf(r) : undefined
 
   return (
     <>
@@ -49,9 +53,16 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
           </button>
         </div>
       )}
+      {cancelled && r && (
+        <div className="rh-archived rh-terminated" role="status">
+          <Ban aria-hidden />
+          最近一次运行已被人工终止（取消）{cancelled.endedAt ? `，${fmtRelative(cancelled.endedAt)}` : ''}，没有待办需要处理。
+          <StartRunButton r={r} onChanged={onChanged} label="重新启动" />
+        </div>
+      )}
       <div className="req-header-top">
         <span className="req-id-chip mono">{id}</span>
-        {r ? <StatusBadge meta={REQ_STATUS[r.status]} /> : <Skeleton w={56} h={20} r={10} />}
+        {r ? <StatusBadge meta={cancelled ? TERMINATED : REQ_STATUS[r.status]} /> : <Skeleton w={56} h={20} r={10} />}
         {r?.links.map((l) => (
           <a key={l.url} className="chip rh-link-chip" href={l.url} target="_blank" rel="noreferrer">
             <ArrowUpRight />
@@ -74,6 +85,7 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
             最近运行
           </Link>
         )}
+        {r && !r.latestRunId && r.status !== 'archived' && r.status !== 'delivered' && <StartRunButton r={r} onChanged={onChanged} />}
         {r && <RequirementActions r={r} onChanged={onChanged} />}
       </div>
       <h1 className="req-h1 rh-h1" style={{ viewTransitionName: vtName('req', id) }}>
@@ -124,8 +136,8 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
             </FactButton>
             <span className="req-fact">创建于 {fmtRelative(r.createdAt)}</span>
             <span className="req-fact">更新于 {fmtRelative(r.updatedAt)}</span>
-            <span className="req-fact">
-              <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens
+            <span className="req-fact" title="这个需求全部运行（含 Lead 回合、临时任务）的用量合计；预算条只统计最近一次流水线运行">
+              <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens · 全部 {r.runs.length} 次运行合计
               {r.usage.costUsd ? (
                 <>
                   {' · '}

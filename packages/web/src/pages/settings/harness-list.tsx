@@ -4,7 +4,7 @@ import type { HarnessInfo } from '@taktflow/core'
 import { CAPABILITIES, HARNESS_SOURCE } from '../../lib/capabilities'
 import { PROTOCOL_SHORT } from './runtime/shared'
 import { BrandIcon } from '../../components/brand/brand-icon'
-import { harnessMeta, readableReason } from '../../lib/harness-meta'
+import { harnessMeta, isTestOnly, readableReason } from '../../lib/harness-meta'
 import './harness-list.css'
 
 /** server 透传的是原始进程错误（"Process error: spawn gemini ENOENT\nProcess exited…"），换成人话，原文放 title。 */
@@ -24,10 +24,13 @@ function ModelApis({ h }: { h: HarnessInfo }) {
   )
 }
 
+// 能启动但自带账号没就绪（如 DeepSeek 没登录）：搭配矩阵「自带」那一格是「未就绪」，列表里也写出来，两处说法一致
+const ownPending = (h: HarnessInfo) => h.available && !h.override?.disabled && h.ownReady === false
+
 function Status({ h }: { h: HarnessInfo }) {
   const disabled = Boolean(h.override?.disabled)
   return (
-    <span className={`hx-status${disabled ? ' is-off' : h.available ? ' ok' : ''}`}>
+    <span className={`hx-status${disabled ? ' is-off' : h.available ? ' ok' : ''}`} title={ownPending(h) ? '能启动，可以接外部模型 API；自带账号还没就绪' : undefined}>
       {disabled ? <PowerOff aria-hidden /> : h.available ? <CircleCheck aria-hidden /> : <CircleAlert aria-hidden />}
       {disabled ? '已隐藏' : h.available ? '可用' : '不可用'}
     </span>
@@ -79,10 +82,15 @@ export function HarnessRow({ h, actions, below }: { h: HarnessInfo; actions?: Re
               <span className="hx-src" title={src.hint}>
                 {src.label}
               </span>
+              {isTestOnly(h) && <span className="hx-tag" title="测试替身：按脚本回放，不调用真实模型">演示</span>}
             </span>
             {!h.available && !disabled ? (
               <span className="hx-sub hx-reason truncate" title={h.reason}>
                 {readableReason(h.reason)}
+              </span>
+            ) : ownPending(h) ? (
+              <span className="hx-sub hx-own-pending truncate" title={h.ownReason}>
+                自带账号未就绪：{h.ownReason ?? '需要先登录'}（接外部模型 API 不受影响）
               </span>
             ) : (
               <span className="hx-sub truncate" title={command ? `启动命令：${command}` : h.id}>

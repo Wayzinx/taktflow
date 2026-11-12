@@ -473,10 +473,14 @@ export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewar
       return delay(r)
     },
     digest: (_since, opts) => {
-      if (!opts?.peek) bumpUnread(-unread)
-      return delay(digest, 140)
+      if (!opts?.peek && !opts?.space) bumpUnread(-unread)
+      const space = opts?.space
+      if (!space) return delay(digest, 140)
+      const mine = <T extends { spaceId?: string }>(list: T[] = []) => list.filter((x) => x.spaceId === space)
+      return delay({ ...digest, attention: mine(digest.attention), risks: mine(digest.risks), progress: mine(digest.progress), metrics: mine(digest.metrics) }, 140)
     },
     stewardFeed: () => delay(feed, 100),
+    stewardUnread: () => delay(unread, 60),
     subscribeStewardFeed(on) {
       feedSubs.add(on)
       return () => feedSubs.delete(on)

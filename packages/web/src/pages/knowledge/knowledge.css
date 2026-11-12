@@ -118,6 +118,7 @@
 .kb-trend-v { color: var(--text-3); }
 .kb-trend-bar { align-self: end; width: 100%; max-width: 32px; height: var(--h); border-radius: var(--radius-xs) var(--radius-xs) 0 0; background: color-mix(in oklch, var(--st-running) 70%, transparent); }
 .kb-trend-col:hover .kb-trend-bar { background: var(--st-running); }
+.kb-trend-bar[data-empty] { background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
 .kb-trend-d { color: var(--text-2); }
 .kb-trend-hit { color: var(--text-3); font-size: var(--text-label); }
 

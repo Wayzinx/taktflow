@@ -7,6 +7,7 @@ import { Link } from '../../lib/router'
 import { KindGlyph } from '../knowledge/card'
 import { INTENTS, kbStatusMeta, kindMeta } from '../knowledge/meta'
 import { MigrateCard } from '../knowledge/migrate-card'
+import { ReadOnlyNote, useAccess } from './access'
 import '../knowledge/knowledge.css'
 
 const reason = (what: string) => `在空间设置里${what}`
@@ -84,6 +85,7 @@ function BindingRow({ b, base, roles, first, last, onPatch, onMove, className, s
 /** 空间设置 ·「知识库」Tab：只管绑定（启用、优先级、intents、角色），知识库本身在知识库页里建和调。 */
 export function KnowledgeTab({ space }: { space?: SpaceDetail }) {
   const ds = useSource()
+  const access = useAccess('maintainer', '修改知识库绑定')
   const q = useAsync((d) => Promise.all([d.knowledgeBindings(), d.knowledgeBases()]), [])
   const [local, setLocal] = useState<KnowledgeBinding[]>()
   const bindings = [...(local ?? q.data?.[0] ?? [])].sort((a, b) => a.priority - b.priority)
@@ -117,7 +119,9 @@ export function KnowledgeTab({ space }: { space?: SpaceDetail }) {
   if (!q.data || !space) return <div className="card"><SkeletonRows rows={4} /></div>
   return (
     <div className="kb-bind-tab">
-      {space.knowledge.length > 0 && <MigrateCard count={space.knowledge.length} onDone={q.reload} />}
+      <ReadOnlyNote why={access.why} block />
+      {space.knowledge.length > 0 && access.ok && <MigrateCard count={space.knowledge.length} onDone={q.reload} />}
+      <fieldset className="settings-ro" disabled={!access.ok}>
       <section className="kb-section">
         <div className="kb-section-head">
           <h2 className="kb-h2">本空间绑定的知识库</h2>
@@ -129,7 +133,7 @@ export function KnowledgeTab({ space }: { space?: SpaceDetail }) {
           </Link>
         </div>
         {bindings.length === 0 ? (
-          <EmptyState compact icon={BookOpen} title="还没有绑定知识库" body={bases.length ? '从下面选一个绑定，运行里的节点就能查到它。' : '先建一个知识库，再回来绑定。'} action={bases.length ? undefined : <Link to="/knowledge?new=1" className="btn btn-sm btn-primary">新建知识库</Link>} stewardAsk="帮我给这个空间配好知识库" />
+          <EmptyState compact icon={BookOpen} title="还没有绑定知识库" body={bases.length ? '从下面选一个绑定，运行里的节点就能查到它。' : '先建一个知识库，再回来绑定。'} action={bases.length || !access.ok ? undefined : <Link to="/knowledge?new=1" className="btn btn-sm btn-primary">新建知识库</Link>} stewardAsk={access.ok ? '帮我给这个空间配好知识库' : undefined} />
         ) : (
           <ul className="kb-bindings">
             {bindings.map((b, i) => {
@@ -160,6 +164,7 @@ export function KnowledgeTab({ space }: { space?: SpaceDetail }) {
           </ul>
         </section>
       )}
+      </fieldset>
     </div>
   )
 }

@@ -1,10 +1,12 @@
 import { useState, type CSSProperties, type ReactNode } from 'react'
-import { Anchor, ArrowUpRight, Check, Copy, History, Link2, Link2Off, RefreshCw, ShieldAlert, ShieldCheck, Wrench } from 'lucide-react'
+import { Anchor, ArrowUpRight, Check, Copy, History, Link2, Link2Off, RefreshCw, ShieldAlert, ShieldCheck, ShieldQuestion, Wrench } from 'lucide-react'
 import type { QualityStatus } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { EmptyState, ErrorState, ReasonDialog, SkeletonRows, toast } from '../../components/ui'
 import { fmtDate, fmtRelative } from '../../lib/format'
 import { Link } from '../../lib/router'
+import { cursorState, fmtCount } from './quality-meta'
+import { ReadOnlyNote, useAccess } from './access'
 import './quality.css'
 
 type Pending = { kind: 'repair' } | { kind: 'sync'; runId?: string }
@@ -14,30 +16,45 @@ type Pending = { kind: 'repair' } | { kind: 'sync'; runId?: string }
  * - 链完整、锚点最新：只展示；
  * - 链完整、锚点落后：给"修复锚点"（只补锚点并记恢复，需原因）；
  * - 链被篡改或截断：红色警告与处理说明，不提供修复按钮，交给人核对。
- * 各运行的入账游标与上次同步时间；可以补算（需原因）。
+ * 各运行的入账进度与上次同步时间；可以补算（需原因）。游标、幂等键这些实现细节收在"技术细节"里。
  */
 export function QualityTab() {
   const ds = useSource()
+  const access = useAccess('member', '补算和修复质量日志')
   const q = useAsync((d) => d.qualityStatus(), [])
   const runs = useAsync((d) => d.runs().catch(() => []), [])
   const [pending, setPending] = useState<Pending>()
+  const [checking, setChecking] = useState(false)
   if (q.error && !q.data) return <ErrorState error={q.error} onRetry={q.reload} />
   const s = q.data
   if (!s) return <SkeletonRows rows={4} />
   const reqOf = (runId: string) => runs.data?.find((r) => r.runId === runId)?.requirementId
   const cursors = Object.entries(s.cursors).sort((a, b) => b[0].localeCompare(a[0]))
+  const verify = async () => {
+    setChecking(true)
+    try {
+      const next = await ds.qualityStatus()
+      q.reload()
+      toast(next.ok ? (next.anchorBehind ? '链完整，锚点落后' : '校验通过') : '哈希链对不上', { tone: next.ok ? 'success' : 'failed', body: `从头核对了 ${fmtCount(next.entries)} 条记录的哈希。` })
+    } catch (e) {
+      toast('校验没跑完', { tone: 'failed', body: (e as Error).message })
+    } finally {
+      setChecking(false)
+    }
+  }
   return (
     <div className="ql">
-      <Hero s={s} onRepair={() => setPending({ kind: 'repair' })} />
+      <ReadOnlyNote why={access.why} block />
+      <Hero s={s} onRepair={access.ok ? () => setPending({ kind: 'repair' }) : undefined} onVerify={() => void verify()} checking={checking} />
       <div className="card ql-stats">
-        <Stat label="条目" value={<span className="num">{s.entries}</span>} />
+        <Stat label="条目" value={<span className="num">{fmtCount(s.entries)}</span>} />
         <Stat
           label="锚点"
           value={s.anchor ? <AnchorValue a={s.anchor} ok={s.ok} behind={s.anchorBehind ? s.entries - s.anchor.seq : 0} /> : <span className="faint">还没有锚点</span>}
         />
         <Stat label="上次同步" value={s.lastSyncAt ? <span title={fmtDate(s.lastSyncAt)}>{fmtRelative(s.lastSyncAt)}</span> : <span className="faint">还没同步过</span>} />
         <Stat
-          label="M3 缺陷导入"
+          label="旧缺陷文件导入"
           value={
             s.importedM3 ? (
               <span className="ql-yes">
@@ -48,25 +65,26 @@ export function QualityTab() {
               <span className="faint">未导入</span>
             )
           }
-          hint={s.importedM3 ? '存放区里旧的 defects/*.md 已幂等导入日志，现在是给人看的投影' : '首次加载质量数据时会自动导入'}
+          hint={s.importedM3 ? '以前存成 defects/*.md 的缺陷已经导入日志（重复导入不会重复记），缺陷页显示的是从日志生成的视图' : '第一次打开质量数据时会自动导入，不用手动处理'}
         />
       </div>
       <div className="card">
         <div className="card-head">
-          <span className="card-title">各运行的入账游标</span>
-          <span className="faint ql-hint">提交成功后才推进；崩溃后从游标重放，靠幂等键去重</span>
+          <span className="card-title">各运行的入账进度</span>
+          <span className="faint ql-hint">运行的事件会自动写进质量日志；一般不用管，入账中断过才需要补算</span>
           <span className="spacer" />
-          <button type="button" className="btn btn-sm" disabled={!s.ok} title={s.ok ? undefined : '链被篡改时暂停入账'} onClick={() => setPending({ kind: 'sync' })}>
+          <button type="button" className="btn btn-sm" disabled={!s.ok || !access.ok} title={s.ok ? '把所有运行里还没写进日志的事件补进去，已入账的自动跳过' : '链被篡改时暂停入账'} onClick={() => setPending({ kind: 'sync' })}>
             <RefreshCw />
             全部补算
           </button>
         </div>
         {cursors.length === 0 ? (
-          <EmptyState compact icon={History} title="还没有运行入账" body="运行结束时会自动同步；serve 运行期间实时入账。" />
+          <EmptyState compact icon={History} title="还没有运行入账" body="运行事件会自动同步到质量日志，无需手动处理。" />
         ) : (
           <ul className="ql-cursors">
             {cursors.map(([runId, seq], i) => {
               const req = reqOf(runId)
+              const c = cursorState(seq, s.lastSeq?.[runId])
               return (
                 <li key={runId} style={{ '--i': i } as CSSProperties}>
                   <Link to={`/run/${runId}`} className="mono ql-run">
@@ -74,22 +92,29 @@ export function QualityTab() {
                     <ArrowUpRight />
                   </Link>
                   {req ? <span className="mono faint">{req}</span> : <span />}
-                  <span className="ql-seq">
-                    入账到第 <b className="num">{seq}</b> 条事件
-                  </span>
-                  <button type="button" className="btn btn-xs btn-ghost" disabled={!s.ok} onClick={() => setPending({ kind: 'sync', runId })}>
-                    补算
-                  </button>
+                  <span className={`ql-seq num${c.behind ? ' is-behind' : ''}`}>{c.text}</span>
+                  {c.canSync ? (
+                    <button type="button" className="btn btn-xs btn-ghost" disabled={!s.ok || !access.ok} title="把这个运行还没写进日志的事件补进去" onClick={() => setPending({ kind: 'sync', runId })}>
+                      补算
+                    </button>
+                  ) : (
+                    <span />
+                  )}
                 </li>
               )
             })}
           </ul>
         )}
       </div>
-      <p className="faint ql-foot">
-        日志在 <span className="mono">.takt/quality/log.jsonl</span>；缺陷、归因、样本、评测运行都是从它重建的读模型（<span className="mono">.takt/quality/views/</span>），可以删了重建。
-        命令行：<span className="mono">takt quality verify | repair | sync</span>。
-      </p>
+      <details className="faint ql-foot ql-tech">
+        <summary>技术细节</summary>
+        <ul>
+          <li>入账进度就是每个运行的"游标"：事件写进日志成功后才往前推；进程中断后从游标处重放，靠幂等键去重，不会重复记。</li>
+          <li>
+            日志在 <span className="mono">.takt/quality/log.jsonl</span>；缺陷、归因、样本、评测运行都是从它重建的视图（<span className="mono">.takt/quality/views/</span>），可以删了重建。
+          </li>
+        </ul>
+      </details>
       <ReasonDialog
         open={Boolean(pending)}
         onClose={() => setPending(undefined)}
@@ -97,21 +122,27 @@ export function QualityTab() {
         description={
           pending?.kind === 'repair'
             ? '只把锚点补到链尾，并记一条恢复记录；不改任何日志内容。链被篡改或截断时会被拒绝。'
-            : '从游标处重放事件入账；已经入账的按幂等键跳过，不会重复。'
+            : '从上次入账的位置往后，把还没写进质量日志的事件补进去；已入账的自动跳过，不会重复记，也不改运行本身。事件多时可能要等几十秒。'
         }
         confirmLabel={pending?.kind === 'repair' ? '修复锚点' : '补算'}
         onSubmit={async (reason) => {
           if (!pending) return
           const next = pending.kind === 'repair' ? await ds.repairQuality(reason) : await ds.syncQuality({ runId: pending.runId, reason })
           invalidate()
-          toast(pending.kind === 'repair' ? '锚点已修复' : '已补算', { body: `日志共 ${next.entries} 条${next.anchor ? `，锚点在第 ${next.anchor.seq} 条` : ''}`, tone: 'success' })
+          toast(pending.kind === 'repair' ? '锚点已修复' : '已补算', { body: `日志共 ${fmtCount(next.entries)} 条${next.anchor ? `，锚点在第 ${fmtCount(next.anchor.seq)} 条` : ''}`, tone: 'success' })
         }}
       />
     </div>
   )
 }
 
-function Hero({ s, onRepair }: { s: QualityStatus; onRepair: () => void }) {
+function Hero({ s, onRepair, onVerify, checking }: { s: QualityStatus; onRepair?: () => void; onVerify: () => void; checking: boolean }) {
+  const verify = (
+    <button type="button" className="btn btn-sm" onClick={onVerify} disabled={checking} title="从头核对每条记录的哈希和链尾锚点">
+      <ShieldQuestion />
+      {checking ? '校验中…' : '重新校验'}
+    </button>
+  )
   if (!s.ok)
     return (
       <div className="card ql-hero is-broken" role="alert">
@@ -119,16 +150,15 @@ function Hero({ s, onRepair }: { s: QualityStatus; onRepair: () => void }) {
           <Link2Off />
         </span>
         <div className="ql-hero-main">
-          <b className="ql-hero-title">哈希链被篡改或截断{s.brokenAt !== undefined && <span className="num">（从第 {s.brokenAt} 条起对不上）</span>}</b>
-          <p>日志内容和链上记录的哈希不一致，说明有条目被改过、删过，或文件被截断。系统已暂停入账，也不会自动修复。</p>
+          <b className="ql-hero-title">日志完整性校验未通过{s.brokenAt !== undefined && <span className="num">（从第 {fmtCount(s.brokenAt)} 条起对不上）</span>}</b>
+          <p>有记录被改过、删过或文件不完整。系统已暂停入账，请联系空间管理员核对记录。</p>
           <ol className="ql-steps">
-            <li>先备份整个 <span className="mono">.takt/quality/</span> 目录，不要再手动改它。</li>
-            <li>
-              运行 <span className="mono">takt quality verify</span> 看具体从哪一条开始对不上，对照 git 历史或备份找出被改的内容。
-            </li>
-            <li>确认原因后由空间管理员恢复日志文件；在这之前，缺陷、归因和评测的结论可能不可信。</li>
+            <li>保留现有记录，避免继续修改日志。</li>
+            <li>点击「重新校验」确认问题位置，把结果交给空间管理员与备份核对。</li>
+            <li>恢复前，缺陷、归因和评测结论需要重新核实。</li>
           </ol>
         </div>
+        {verify}
       </div>
     )
   if (s.anchorBehind)
@@ -138,13 +168,16 @@ function Hero({ s, onRepair }: { s: QualityStatus; onRepair: () => void }) {
           <Anchor />
         </span>
         <div className="ql-hero-main">
-          <b className="ql-hero-title">链完整，锚点落后{s.anchor && <span className="num"> {s.entries - s.anchor.seq} 条</span>}</b>
-          <p>最近的日志写入后没来得及更新锚点，常见于进程被中断。日志本身没问题；修复只补锚点并记一条恢复记录。</p>
+          <b className="ql-hero-title">日志完整，校验标记落后{s.anchor && <span className="num"> {fmtCount(s.entries - s.anchor.seq)} 条</span>}</b>
+          <p>最新写入的记录还没有更新校验标记（锚点）。日志内容完整；点击「修复锚点」可以补齐标记。</p>
         </div>
-        <button type="button" className="btn btn-sm btn-primary" onClick={onRepair}>
-          <Wrench />
-          修复锚点
-        </button>
+        <span className="ql-hero-acts">
+          {verify}
+          {onRepair && <button type="button" className="btn btn-sm btn-primary" onClick={onRepair}>
+            <Wrench />
+            修复锚点
+          </button>}
+        </span>
       </div>
     )
   return (
@@ -153,9 +186,10 @@ function Hero({ s, onRepair }: { s: QualityStatus; onRepair: () => void }) {
         <ShieldCheck />
       </span>
       <div className="ql-hero-main">
-        <b className="ql-hero-title">链完整，锚点最新</b>
-        <p>每条记录都接在上一条的哈希后面，链尾锚点与最后一条一致。</p>
+        <b className="ql-hero-title">日志健康，无需处理</b>
+        <p>记录完整，校验标记与最新记录一致。</p>
       </div>
+      {verify}
     </div>
   )
 }
@@ -174,7 +208,7 @@ function AnchorValue({ a, ok, behind }: { a: NonNullable<QualityStatus['anchor']
   return (
     <span className="ql-anchor">
       <span>
-        第 <b className="num">{a.seq}</b> 条
+        第 <b className="num">{fmtCount(a.seq)}</b> 条
       </span>
       <button
         type="button"
@@ -187,7 +221,7 @@ function AnchorValue({ a, ok, behind }: { a: NonNullable<QualityStatus['anchor']
       </button>
       {behind > 0 && (
         <span className="ql-behind" title="链尾比锚点多出的条目数">
-          <ShieldAlert />落后 {behind}
+          <ShieldAlert />落后 {fmtCount(behind)}
         </span>
       )}
       {ok && behind === 0 && <Link2 className="ql-linked" aria-label="与链尾一致" />}

@@ -65,6 +65,23 @@
   overflow: auto;
   padding: 6px;
 }
+/* 窄屏：列表在上、预览在下，各占满宽；列表限高，选中后滚到预览（artifacts-tab.tsx pick） */
+@media (max-width: 720px) {
+  .art-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* 不再吸顶；仍要 relative，选中滑块（.art-glide）按列表定位 */
+  .art-list {
+    position: relative;
+    top: auto;
+    max-height: 40vh;
+  }
+  /* 预览至少一屏高：正文还在加载时页面不够长，滚到预览会被截在半路；滚过去时让出吸顶的顶栏 */
+  .art-preview {
+    min-height: 100vh;
+    scroll-margin-top: calc(var(--topbar-h) + var(--sp-2));
+  }
+}
 .art-group + .art-group {
   margin-top: 6px;
   padding-top: 6px;
@@ -106,6 +123,11 @@
 }
 .art-core .art-item-icon {
   color: var(--accent-text);
+}
+/* 强调底色上的 11px 路径、版本号用次级文字色，--text-3 在深色主题下不到 4.5:1 */
+.art-core .art-item-path,
+.art-core .art-ver {
+  color: var(--text-2);
 }
 /* 一类产物一行，点开才列出文件 */
 .art-kind-head {

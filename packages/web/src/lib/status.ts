@@ -20,6 +20,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { BeeGlyph } from '../components/bee-glyph'
+import { GLOSSARY } from './glossary'
 import type {
   ArtifactKind,
   ContextSource,
@@ -39,7 +40,12 @@ export interface StatusMeta {
   tone: Tone
   icon: LucideIcon
   spin?: boolean
+  /** 一句话解释（悬停显示），容易误解的状态才写。 */
+  hint?: string
 }
+
+const WAITING_HINT = '流水线停在这里等人处理，去待办里审批或回答'
+
 
 export const NODE_STATUS: Record<NodeStatus, StatusMeta> = {
   pending: { label: '未开始', tone: 'pending', icon: Circle },
@@ -48,7 +54,7 @@ export const NODE_STATUS: Record<NodeStatus, StatusMeta> = {
   succeeded: { label: '成功', tone: 'success', icon: Check },
   failed: { label: '失败', tone: 'failed', icon: X },
   blocked: { label: '阻塞', tone: 'failed', icon: Ban },
-  waiting_human: { label: '等人处理', tone: 'waiting', icon: Pause },
+  waiting_human: { label: '等人处理', tone: 'waiting', icon: Pause, hint: WAITING_HINT },
   skipped: { label: '跳过', tone: 'skipped', icon: SkipForward },
   stale: { label: '已过期', tone: 'stale', icon: History },
   cancelled: { label: '已取消', tone: 'skipped', icon: Ban },
@@ -58,17 +64,17 @@ export const RUN_STATUS: Record<RunStatus, StatusMeta> = {
   running: { label: '运行中', tone: 'running', icon: LoaderCircle, spin: true },
   succeeded: { label: '已完成', tone: 'success', icon: Check },
   failed: { label: '失败', tone: 'failed', icon: X },
-  waiting_human: { label: '等人处理', tone: 'waiting', icon: Pause },
+  waiting_human: { label: '等人处理', tone: 'waiting', icon: Pause, hint: WAITING_HINT },
   cancelled: { label: '已取消', tone: 'skipped', icon: Ban },
 }
 
 /** 状态还是 running，但没有进程在执行（serve 重启或崩溃时中断）；可以继续运行。 */
-export const RUN_INTERRUPTED: StatusMeta = { label: '已中断', tone: 'waiting', icon: Unplug }
+export const RUN_INTERRUPTED: StatusMeta = { label: '已中断', tone: 'waiting', icon: Unplug, hint: '没有进程在执行（服务重启或崩溃时中断），可以继续运行' }
 export const runStatusMeta = (status: RunStatus, interrupted?: boolean): StatusMeta => (interrupted ? RUN_INTERRUPTED : RUN_STATUS[status])
 
 export const REQ_STATUS: Record<RequirementStatus, StatusMeta> = {
-  draft: { label: '草稿', tone: 'pending', icon: CircleDashed },
-  active: { label: '进行中', tone: 'running', icon: Clock },
+  draft: { label: '草稿', tone: 'pending', icon: CircleDashed, hint: GLOSSARY.草稿.hint },
+  active: { label: '进行中', tone: 'running', icon: Clock, hint: GLOSSARY.进行中.hint },
   blocked: { label: '阻塞', tone: 'failed', icon: Ban },
   delivered: { label: '已交付', tone: 'success', icon: Check },
   archived: { label: '已归档', tone: 'skipped', icon: Ban },
@@ -82,16 +88,17 @@ export const STAGE_STATUS: Record<StageStatus, StatusMeta> = {
   waiting_human: { label: '等人处理', tone: 'waiting', icon: Pause },
 }
 
-export const NODE_KIND: Record<NodeKind, { label: string; icon: LucideIcon }> = {
-  script: { label: '脚本', icon: SquareTerminal },
-  agent: { label: 'Agent', icon: BeeGlyph },
-  gate: { label: '门禁', icon: ShieldCheck },
-  human: { label: '人工', icon: UserRound },
-  judge: { label: '判决', icon: Scale },
-  loop: { label: '循环', icon: Repeat },
-  planner: { label: '规划', icon: Network },
-  review: { label: '评审', icon: ShieldCheck },
-  subflow: { label: '子流程', icon: Layers },
+/** 节点类型：hint 是悬停解释（KindIcon 的 title），新用户靠它认"门禁""判决"这些词。 */
+export const NODE_KIND: Record<NodeKind, { label: string; icon: LucideIcon; hint: string }> = {
+  script: { label: '脚本', icon: SquareTerminal, hint: GLOSSARY.脚本.hint },
+  agent: { label: 'Agent', icon: BeeGlyph, hint: GLOSSARY.Agent.hint },
+  gate: { label: '门禁', icon: ShieldCheck, hint: GLOSSARY.门禁.hint },
+  human: { label: '人工', icon: UserRound, hint: GLOSSARY.人工.hint },
+  judge: { label: '判决', icon: Scale, hint: GLOSSARY.判决.hint },
+  loop: { label: '循环', icon: Repeat, hint: GLOSSARY.循环.hint },
+  planner: { label: '规划', icon: Network, hint: GLOSSARY.规划.hint },
+  review: { label: '评审', icon: ShieldCheck, hint: GLOSSARY.评审.hint },
+  subflow: { label: '子流程', icon: Layers, hint: GLOSSARY.子流程.hint },
 }
 
 export const VERDICT: Record<VerdictCategory, { label: string; color: string; owner: string }> = {

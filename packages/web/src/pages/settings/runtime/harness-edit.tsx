@@ -59,7 +59,7 @@ function EnvEditor({ rows, onChange }: { rows: EnvRow[]; onChange: (rows: EnvRow
   )
 }
 
-/** 内置 harness：可执行文件路径、额外环境变量、在本空间停用。 */
+/** 内置 Harness：可执行文件路径、额外环境变量、在本空间停用。 */
 export function OverrideDrawer({ rt, h, open, onClose }: { rt: RuntimeApi; h?: HarnessInfo; open: boolean; onClose: () => void }) {
   const init = () => {
     const o = h ? rt.cfg?.harnessOverrides[h.id] : undefined
@@ -85,7 +85,7 @@ export function OverrideDrawer({ rt, h, open, onClose }: { rt: RuntimeApi; h?: H
         <input className="input mono" value={d.command} placeholder={defaultCmd ? `/usr/local/bin/${defaultCmd}` : '/path/to/bin'} onChange={(e) => setD((x) => ({ ...x, command: e.target.value }))} />
         <span className="rt-note">装在非标准位置、或想固定某个版本时填绝对路径；相对路径按空间目录解析。</span>
       </Field>
-      <Field label="额外环境变量" hint="合并进这个 harness 的进程环境">
+      <Field label="额外环境变量" hint="合并进这个 Harness 的进程环境">
         <EnvEditor rows={d.env} onChange={(env) => setD((x) => ({ ...x, env }))} />
       </Field>
       <Field label="在本空间停用">
@@ -94,7 +94,7 @@ export function OverrideDrawer({ rt, h, open, onClose }: { rt: RuntimeApi; h?: H
           <Power aria-hidden />
           {d.disabled ? '已停用：路由和探测都看不到它' : '启用中'}
         </button>
-        {d.disabled && used.length > 0 && <span className="rt-field-err">还有角色在用它：{used.join('、')}。先把这些角色改到别的 harness，再停用。</span>}
+        {d.disabled && used.length > 0 && <span className="rt-field-err">还有角色在用它：{used.join('、')}。先把这些角色改到别的 Harness，再停用。</span>}
       </Field>
     </EditorDrawer>
   )
@@ -145,14 +145,14 @@ export function CustomHarnessDrawer({ rt, editing, open, onClose }: { rt: Runtim
         ? { ...base, kind: 'acp', ...(d.preset ? { preset: d.preset } : {}), ...(cmd.length ? { command: cmd } : {}), permissions: d.permissions }
         : { ...(cur?.kind === 'cli' ? cur : {}), ...base, kind: 'cli', command: cmd, promptVia: d.promptVia, output: cur?.kind === 'cli' ? cur.output : { format: 'text' } }
     await rt.patch({ harnesses: { [d.id]: next } }, reason)
-    toast(editing ? `${d.id} 已更新` : `已添加 harness ${d.id}`, { body: '点卡片上的「测试」看它能不能跑起来。' })
+    toast(editing ? `${d.id} 已更新` : `已添加 Harness ${d.id}`, { body: '点卡片上的「测试」看它能不能跑起来。' })
   }
 
   return (
     <EditorDrawer
       open={open}
       onClose={onClose}
-      title={editing ? `编辑 ${editing}` : '添加 harness'}
+      title={editing ? `编辑 ${editing}` : '添加 Harness'}
       description={d.kind === 'acp' ? 'ACP（Agent Client Protocol）是 agent 的开放协议：支持它的 agent 配一条启动命令就能接进来，工具调用、续会话按它声明的能力走。' : '声明式 CLI：任何能从命令行收 prompt、往 stdout 写结果的工具。只有纯文本输出，没有工具事件与用量。'}
       canSave={canSave}
       onSave={save}
@@ -232,5 +232,5 @@ export function CustomHarnessDrawer({ rt, editing, open, onClose }: { rt: Runtim
   )
 }
 
-/** 内置 harness 的 id（自定义的不能重名）。和 packages/harness 的 createHarnesses 对齐。 */
+/** 内置 Harness 的 id（自定义的不能重名）。和 packages/harness 的 createHarnesses 对齐。 */
 export const BUILTIN_IDS = new Set(['native', 'mock', 'claude-code', 'codex', 'dsh', 'gemini-cli', 'cursor-agent', 'qwen-code', 'kimi-cli', 'opencode', 'pi'])

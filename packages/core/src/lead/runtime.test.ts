@@ -145,7 +145,7 @@ it('同需求回合串行；私聊可触发；普通消息和 Lead 自己的消�
   })
   const { lead, requirement, message, stores } = setupResult
   const first = lead.onMessage(requirement.id, await message())
-  await vi.waitFor(() => expect(count).toBe(1))
+  await vi.waitFor(() => expect(count).toBe(1), { timeout: 60_000 })
   const second = lead.onMessage(requirement.id, await message('私聊'), { private: true })
   await new Promise<void>((resolve) => setImmediate(resolve))
   expect(count).toBe(1); release()

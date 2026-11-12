@@ -6,6 +6,8 @@ import { useRuntimeCatalog } from '../../../components/harness-picker/use-catalo
 import { fmtRelative } from '../../../lib/format'
 import { EmptyState, Menu, ReasonDialog, Segmented, Skeleton, toast, useFlashRows, useStagger } from '../../../components/ui'
 import { protocolColor } from '../../../lib/capabilities'
+import { useAccess } from '../access'
+import { baseUrlError } from '../rules'
 import { EditorDrawer, Field, KeySource, SECRET, TestButton, TestOutcome, type RuntimeApi } from './shared'
 
 const PROTOCOLS = ['openai-chat', 'openai-responses', 'anthropic-messages', 'gemini'] as const
@@ -47,7 +49,8 @@ function ProviderDrawer({ rt, editing, open, onClose }: { rt: RuntimeApi; editin
   const idBad = !editing && (!/^[a-z0-9][a-z0-9_-]*$/.test(d.id) || Boolean(cfg.providers[d.id]))
   const envBad = Boolean(d.apiKeyEnv) && !ENV_NAME.test(d.apiKeyEnv)
   const needSecret = d.keyMode === 'local' && Boolean(d.apiKeyEnv) && src !== 'local' && src !== 'env' && !d.secret
-  const canSave = Boolean(d.id) && !idBad && !envBad && Boolean(d.protocol) && (Boolean(preset?.baseURL) || Boolean(d.baseURL.trim())) && !needSecret
+  const urlError = !d.baseURL.trim() && !preset?.baseURL ? '请填写完整的 http:// 或 https:// 地址' : baseUrlError(d.baseURL)
+  const canSave = Boolean(d.id) && !idBad && !envBad && !urlError && Boolean(d.protocol) && (Boolean(preset?.baseURL) || Boolean(d.baseURL.trim())) && !needSecret
 
   const save = async (reason: string) => {
     if (d.keyMode === 'local' && d.apiKeyEnv && d.secret) await ds.putSecret(d.apiKeyEnv, d.secret, reason)
@@ -81,7 +84,8 @@ function ProviderDrawer({ rt, editing, open, onClose }: { rt: RuntimeApi; editin
         <Segmented<string> value={d.protocol} onChange={(v) => set({ protocol: v })} size="sm" ariaLabel="协议" options={PROTOCOLS.map((p) => ({ value: p, label: p }))} />
       </Field>
       <Field label="地址" req={!preset?.baseURL} hint={preset?.baseURL ? `留空用预设：${preset.baseURL}` : undefined}>
-        <input className="input mono" value={d.baseURL} placeholder={preset?.baseURL ?? 'https://…/v1'} onChange={(e) => set({ baseURL: e.target.value })} />
+        <input className={`input mono${urlError ? ' is-bad' : ''}`} aria-invalid={Boolean(urlError)} value={d.baseURL} placeholder={preset?.baseURL ?? 'https://…/v1'} onChange={(e) => set({ baseURL: e.target.value })} />
+        {urlError && <span className="rt-field-err">{urlError}</span>}
       </Field>
       <Field label="密钥环境变量名" hint="只记名字；本地模型（Ollama 等）可以留空">
         <input className={`input mono${envBad ? ' is-bad' : ''}`} value={d.apiKeyEnv} placeholder={preset?.apiKeyEnv ?? 'DEEPSEEK_API_KEY'} onChange={(e) => set({ apiKeyEnv: e.target.value.trim().toUpperCase() })} />
@@ -131,6 +135,7 @@ const SOURCE: Record<CatalogList['source'], string> = { live: '刚从上游列�
 /** provider 行下面的一行：上游列出了几个模型、什么时候列的，能刷新、能展开看全部（docs/design/32 §3）。 */
 function ProviderModels({ id, list, onRefreshed }: { id: string; list?: CatalogList; onRefreshed: () => void }) {
   const ds = useSource()
+  const can = useAccess('owner', '刷新模型列表').ok
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   if (!list) return null
@@ -166,9 +171,11 @@ function ProviderModels({ id, list, onRefreshed }: { id: string; list?: CatalogL
           {list.error ? (list.source === 'preset' ? `没列出来，用的${SOURCE.preset}：${list.error}` : `刷新失败，显示上次结果：${list.error}`) : `${SOURCE[list.source]}${list.fetchedAt ? ` · ${fmtRelative(list.fetchedAt)}` : ''}`}
         </span>
       )}
-      <button type="button" className="btn btn-sm btn-ghost btn-icon rt-pm-refresh" aria-label={`重新列出 ${id} 的模型`} title="重新列出模型" aria-busy={busy || undefined} disabled={busy || loading} onClick={refresh}>
-        <RefreshCw className={busy ? 'spin' : undefined} />
-      </button>
+      {can && (
+        <button type="button" className="btn btn-sm btn-ghost btn-icon rt-pm-refresh" aria-label={`重新列出 ${id} 的模型`} title="重新列出模型" aria-busy={busy || undefined} disabled={busy || loading} onClick={refresh}>
+          <RefreshCw className={busy ? 'spin' : undefined} />
+        </button>
+      )}
       {open && (
         <ul className="rt-pm-list" aria-label={`${id} 的模型`}>
           {list.models.map((m) => (
@@ -197,6 +204,7 @@ export function ProvidersCard({ rt }: { rt: RuntimeApi }) {
   const st = useStagger(rows.length)
   const presetName = (p: ProviderConfig) => cfg.presets.providers.find((x) => x.id === p.preset)?.displayName
   const catalog = useRuntimeCatalog()
+  const can = useAccess('owner', '改 provider').ok
 
   return (
     <div className="card rt-card">
@@ -205,12 +213,14 @@ export function ProvidersCard({ rt }: { rt: RuntimeApi }) {
         <span className="faint num">{rows.length}</span>
         <span className="spacer" />
         <span className="faint models-note">模型 API 的入口；密钥只显示来源</span>
-        <button type="button" className="btn btn-sm" onClick={() => setDrawer({ open: true })}>
-          <Plus aria-hidden /> 添加 provider
-        </button>
+        {can && (
+          <button type="button" className="btn btn-sm" onClick={() => setDrawer({ open: true })}>
+            <Plus aria-hidden /> 添加 provider
+          </button>
+        )}
       </div>
       {rows.length === 0 ? (
-        <EmptyState compact icon={Cable} title="还没有 provider" body="加一个模型 API（DeepSeek、OpenAI、本机 Ollama…），再给它挂模型别名。" action={<button type="button" className="btn btn-sm btn-primary" onClick={() => setDrawer({ open: true })}>添加 provider</button>} />
+        <EmptyState compact icon={Cable} title="还没有 provider" body="加一个模型 API（DeepSeek、OpenAI、本机 Ollama…），再给它挂模型别名。" action={can ? <button type="button" className="btn btn-sm btn-primary" onClick={() => setDrawer({ open: true })}>添加 provider</button> : undefined} />
       ) : (
         <ul className="rt-rows" aria-label="provider 列表">
           {rows.map(([id, p], i) => {
@@ -231,7 +241,7 @@ export function ProvidersCard({ rt }: { rt: RuntimeApi }) {
                     {base ?? '未填地址'}
                   </span>
                   <KeySource name={p.apiKeyEnv} source={p.apiKeyEnv ? cfg.keys[p.apiKeyEnv] : undefined} />
-                  <span className="rt-row-acts">
+                  {can && <span className="rt-row-acts">
                     <TestButton target={{ kind: 'provider', id }} onResult={(x) => setResults((m) => ({ ...m, [id]: x }))} ghost />
                     <button
                       type="button"
@@ -244,7 +254,7 @@ export function ProvidersCard({ rt }: { rt: RuntimeApi }) {
                     >
                       <MoreHorizontal />
                     </button>
-                  </span>
+                  </span>}
                 </div>
                 <ProviderModels id={id} list={catalog.data?.providers.find((x) => x.id === id)?.models} onRefreshed={catalog.reload} />
                 {r && <TestOutcome r={r} />}

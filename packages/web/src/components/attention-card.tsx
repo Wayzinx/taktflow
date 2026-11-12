@@ -4,6 +4,7 @@ import type { AttentionItem } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../api'
 import { actorName, fmtRelative, tidyText } from '../lib/format'
 import { Link, navigate, useSpaceHref } from '../lib/router'
+import { answerOutcome } from './attention-outcome'
 import { TimeboxBar } from './timebox'
 import { toast } from './ui'
 import './attention-card.css'
@@ -28,8 +29,14 @@ export const attentionMeta = (item: AttentionItem) => (item.kind && item.kind !=
 
 const artifactHref = (r: NonNullable<AttentionItem['boundTo']>[number]) => `/req/${r.workspace}?tab=artifacts&path=${encodeURIComponent(r.path)}${r.version ? `&v=${r.version}` : ''}`
 
+/** 职责无人承担、已兜底转给需求负责人时的说明。 */
+export interface AssigneeFallback {
+  duty: string
+  ownerName: string
+}
+
 /** 派给谁（职责 → 成员）与绑定的产物版本；产物之后有新版本时提示"审批对象已更新"。 */
-function AttentionContext({ item, answered }: { item: AttentionItem; answered: boolean }) {
+function AttentionContext({ item, answered, fallback }: { item: AttentionItem; answered: boolean; fallback?: AssigneeFallback }) {
   const bound = item.boundTo ?? []
   const assignees = item.assignees ?? []
   if (!assignees.length && !item.owner && !bound.length) return null
@@ -40,7 +47,15 @@ function AttentionContext({ item, answered }: { item: AttentionItem; answered: b
           <span className="att-ctx-item" title={item.owner ? `节点职责 ${item.owner}，按空间成员的职责标签派发` : undefined}>
             <UserRound />
             <span className="faint">派给</span>
-            {assignees.length ? <span className="att-assignees">{assignees.join('、')}</span> : <span className="faint">还没有成员承担此职责</span>}
+            {assignees.length ? (
+              <span className="att-assignees">{assignees.join('、')}</span>
+            ) : fallback ? (
+              <span className="att-assignees att-fallback">
+                无人承担 <span className="mono">{fallback.duty}</span> → 已转给负责人 {fallback.ownerName}
+              </span>
+            ) : (
+              <span className="faint">还没有成员承担此职责</span>
+            )}
             {item.owner && <span className="att-duty mono">{item.owner}</span>}
           </span>
         )}
@@ -161,7 +176,7 @@ function AssumptionOrigin({ item }: { item: AttentionItem }) {
 const LONG_ASK = 360
 
 /** 一条待办：审批 / 回答 / 选择，可以直接在卡片里处理。 */
-export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem; reqTitle?: string; compact?: boolean }) {
+export function AttentionCard({ item, reqTitle, compact, fallback }: { item: AttentionItem; reqTitle?: string; compact?: boolean; fallback?: AssigneeFallback }) {
   const ds = useSource()
   const at = useSpaceHref()
   const [text, setText] = useState('')
@@ -185,7 +200,15 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
           body: '这个节点与依赖它的节点已标为过期，恢复运行后会按新的回答重跑。',
           action: { label: '去运行页', onClick: () => navigate(at(`/run/${item.runId}?node=${encodeURIComponent(item.nodeId)}`)) },
         })
-      else toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : label === '已确认假设' ? '假设已确认，运行照常继续。' : '已提交，运行将自动继续。', tone: 'success' })
+      else if (label === '已确认假设' || ds.mock) toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : '假设已确认，运行照常继续。', tone: 'success' })
+      else {
+        const outcome = answerOutcome(item, body)
+        toast(`${label}：${item.requirementId} · ${item.nodeId}`, {
+          body: outcome.body,
+          tone: outcome.tone,
+          action: outcome.stopped ? { label: '去需求页', onClick: () => navigate(at(`/req/${item.requirementId}`)) } : undefined,
+        })
+      }
       invalidate()
     } catch (e) {
       toast('提交失败', { body: (e as Error).message, tone: 'failed' })
@@ -235,7 +258,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
         </Link>
         <span className="faint mono">{item.runId}</span>
       </div>
-      <AttentionContext item={item} answered={answered} />
+      <AttentionContext item={item} answered={answered} fallback={fallback} />
       {!answered && item.timebox && item.kind !== 'assumption' && <TimeboxBar createdAt={item.createdAt} timebox={item.timebox} assumption={item.assumption} form={item.form} remindedAt={item.remindedAt} compact={compact} />}
 
       {answered ? (

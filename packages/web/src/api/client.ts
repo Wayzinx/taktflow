@@ -2,6 +2,7 @@ import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@tak
 import { currentSpaceId } from '../lib/space'
 import { actingUserHeader } from '../lib/acting-user'
 import { whileVisible } from '../lib/visible'
+import { isNetworkError, reportConnection } from '../lib/connection'
 import { createM4Http } from './client-m4'
 import { createM5Http } from './client-m5'
 import { createM6Http } from './client-m6'
@@ -41,6 +42,20 @@ export function qs(params: Record<string, string | number | boolean | undefined>
   return s ? `?${s}` : ''
 }
 
+/** fetch 并报告连接状态：拿到响应算连着，网络失败算断开（顶栏显示"连接已断开"，恢复后外壳让页面重新取数）。 */
+function trackedFetch(input: string, init: RequestInit): Promise<Response> {
+  return fetch(input, init).then(
+    (res) => {
+      reportConnection(true)
+      return res
+    },
+    (e: unknown) => {
+      if (isNetworkError(e)) reportConnection(false)
+      throw e
+    },
+  )
+}
+
 /** 基于 fetch 的类型化客户端，路由与 packages/core/src/api.ts 顶部的接口表一一对应。 */
 export function createHttpSource(base = '/api', space?: string): DataSource {
   // 多空间：当前 URL 带 /s/:spaceId 时空间内接口加同样的前缀；全局接口（GLOBAL_PATH）不加。绑定了空间（forSpace）时用绑定的
@@ -52,7 +67,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     // 服务端 validateWriteRequest 要求所有写请求都是 application/json（无 body 的 POST 会 415）：写方法没给 body 时发 {}
     const write = method !== 'GET' && method !== 'HEAD'
     const payload = body === undefined ? (write ? {} : undefined) : body
-    const res = await fetch(scoped(path), {
+    const res = await trackedFetch(scoped(path), {
       method,
       headers: { ...actingUserHeader(STEWARD_PATH.test(path)), ...(payload === undefined ? {} : { 'content-type': 'application/json' }) },
       body: payload === undefined ? undefined : JSON.stringify(payload),
@@ -165,6 +180,8 @@ export function stream<T>(url: string, on: (v: T) => void, named?: Record<string
   let last = ''
   return whileVisible(() => {
     const es = new EventSource(last ? `${url}${url.includes('?') ? '&' : '?'}after=${encodeURIComponent(last)}` : url)
+    es.onopen = () => reportConnection(true)
+    es.onerror = () => reportConnection(false)
     const parse = (m: MessageEvent, fn: (v: never) => void) => {
       if (m.lastEventId) last = m.lastEventId
       try {
@@ -179,19 +196,51 @@ export function stream<T>(url: string, on: (v: T) => void, named?: Record<string
   })
 }
 
-/** 真实 API 是否可达（1.5 秒超时）。 */
-export async function probeApi(base = '/api'): Promise<boolean> {
+/**
+ * 真实 API 是否可达（单次，timeoutMs 超时）。服务端回了 4xx 的 JSON 错误（例如还没有空间）也算连上了：页面自己报具体原因；
+ * 网络错误、超时、5xx、不是 takt 的响应才算没连上。
+ */
+export async function probeApi(base = '/api', timeoutMs = 1500): Promise<boolean> {
   const ctrl = new AbortController()
-  // 没有后端时（静态托管 404、代理连不上）会很快失败；这里只防挂死。给太短的话机器一忙，真实空间会被悄悄换成演示数据
-  const timer = setTimeout(() => ctrl.abort(), 8000)
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
   try {
     const res = await fetch(`${base}/project`, { signal: ctrl.signal })
-    if (!res.ok) return false
-    const body = (await res.json()) as { requirements?: unknown }
-    return Array.isArray(body.requirements)
+    if (res.status >= 500) return false
+    const body = (await res.json()) as { requirements?: unknown; error?: unknown }
+    return res.ok ? Array.isArray(body.requirements) : typeof body.error === 'string'
   } catch {
     return false
   } finally {
     clearTimeout(timer)
+  }
+}
+
+export interface ConnectOptions {
+  base?: string
+  /** 总共愿意等多久才算连不上，默认 12 秒。 */
+  budgetMs?: number
+  /** 第 n 次重试之前回调（启动页显示"正在重试"）。 */
+  onRetry?: (attempt: number) => void
+  probe?: (base: string, timeoutMs: number) => Promise<boolean>
+  sleep?: (ms: number) => Promise<void>
+  now?: () => number
+}
+
+/**
+ * 连真实 API：serve 忙时 /project 可能要好几秒，单次超时逐次放宽（1.5s、3s、6s，最多 10s），失败之间指数退避（0.5s 起，最多 4s），
+ * 总时长用满 budgetMs 仍不行才返回 false，由调用方显示"连不上 takt serve"，绝不静默换成演示数据。
+ */
+export async function connectApi(opts: ConnectOptions = {}): Promise<boolean> {
+  const { base = '/api', budgetMs = 12_000, probe = probeApi, sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)), now = Date.now } = opts
+  const start = now()
+  for (let attempt = 0; ; attempt++) {
+    const left = budgetMs - (now() - start)
+    if (left <= 0) return false
+    if (await probe(base, Math.min(1500 * 2 ** attempt, 10_000, left))) return true
+    const remaining = budgetMs - (now() - start)
+    if (remaining <= 0) return false
+    const wait = Math.min(500 * 2 ** attempt, 4000, remaining)
+    opts.onRetry?.(attempt + 1)
+    await sleep(wait)
   }
 }

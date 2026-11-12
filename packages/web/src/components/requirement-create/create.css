@@ -7,6 +7,28 @@
   gap: var(--sp-3);
 }
 
+/* 空间还没有流水线：说明只能先创建，并给去流水线页的入口 */
+.rc-no-workflow {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-md);
+  background: var(--st-waiting-soft);
+  color: var(--text-2);
+  font-size: var(--text-ui);
+}
+.rc-no-workflow svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.rc-no-workflow a {
+  color: var(--accent);
+  font-weight: 500;
+}
+
 /* ---------------------------------------------------------------- 标题 */
 .rc-title-row {
   display: flex;

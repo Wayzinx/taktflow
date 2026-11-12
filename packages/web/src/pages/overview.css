@@ -74,6 +74,74 @@
   padding-left: 24px;
   font-size: var(--text-meta);
 }
+.ov-run-trend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: 9px;
+  color: var(--text-3);
+}
+/* 等你决定下方：阻塞却没有待办的需求、全部风险（含与需求无关的），每条点到依据 */
+.ov-stuck,
+.ov-risks {
+  flex: none;
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--divider);
+}
+.ov-sub-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 6px;
+  font-size: var(--text-meta);
+  font-weight: 600;
+  color: var(--text-2);
+}
+.ov-sub-head svg {
+  width: 14px;
+  height: 14px;
+}
+.ov-stuck .ov-sub-head svg {
+  color: var(--st-failed);
+}
+.ov-risks .ov-sub-head svg {
+  color: var(--st-waiting);
+}
+.ov-sub-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ov-sub-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 2px 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-ui);
+  color: var(--text);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.ov-sub-item:hover {
+  background: var(--surface-hover);
+}
+.ov-stuck .ov-sub-item {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+.ov-sub-note {
+  grid-column: 1 / -1;
+  font-size: var(--text-meta);
+  color: var(--text-3);
+}
+.risk-item {
+  color: var(--st-waiting);
+}
+.risk-item.high {
+  color: var(--st-failed);
+}
 .attention-panel-list {
   min-height: 0;
   overflow-y: auto;
@@ -124,6 +192,17 @@
 .req-table-wrap {
   container-type: inline-size;
 }
+/* 拦截列只在宽时常驻；按拦截排序（从总览"校验 · 拦截"点进来）时一直显示，直到窄到要保标题 */
+@container (max-width: 1200px) {
+  .req-table:not([data-sort='intercepted']) .c-quality {
+    display: none;
+  }
+}
+@container (max-width: 780px) {
+  .req-table .c-quality {
+    display: none;
+  }
+}
 @container (max-width: 980px) {
   .req-table .c-node,
   .req-table .c-cost {
@@ -135,6 +214,96 @@
   .req-table .c-updated {
     display: none;
   }
+}
+/* 手机宽度：阶段列与 Token 列也收起，阶段挪到标题下面一行，标题至少留 140px */
+.req-stage-inline {
+  display: none;
+}
+@container (max-width: 520px) {
+  .req-table .c-stage,
+  .req-table .c-tokens {
+    display: none;
+  }
+  .req-table .req-stage-inline {
+    display: block;
+    margin-top: 4px;
+  }
+  .req-table .req-title-cell {
+    min-width: 140px;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .req-table .req-title {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .req-table td {
+    height: auto;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+}
+/* 可排序表头：整格是按钮，当前排序列高亮并标方向 */
+.th-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.th-sort:hover,
+.th-sort[data-on] {
+  color: var(--text);
+}
+.th-sort-mark {
+  font-size: 10px;
+  opacity: 0.45;
+}
+.th-sort[data-on] .th-sort-mark {
+  opacity: 1;
+}
+/* 需求列表工具条：状态分段 + 我负责的 + 搜索；窄时换行 */
+.req-toolbar {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 48px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  row-gap: 8px;
+}
+.req-toolbar .segmented {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.req-mine[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.req-search {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 200px;
+  max-width: 100%;
+}
+.req-search svg {
+  position: absolute;
+  left: 9px;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.req-search .input {
+  height: 28px;
+  padding-left: 28px;
+  font-size: var(--text-meta);
 }
 .pending-pill {
   display: inline-grid;

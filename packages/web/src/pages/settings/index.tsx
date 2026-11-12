@@ -14,6 +14,7 @@ import { ReposTab } from './repos-tab'
 import { RuntimeTab } from './runtime-tab'
 import { SharedTab } from './shared-tab'
 import { WorkflowsTab } from './workflows-tab'
+import { SettingsViewer } from './access'
 import './settings.css'
 import './space.css'
 
@@ -29,8 +30,8 @@ const TAB_HINT: Record<Tab, string> = {
   workflows: '这个空间可用的流水线；新建需求时按需求内容自动选。',
   knowledge: '这个空间绑定的知识库，以及每个知识库给哪些角色用。',
   lessons: '从过往运行里沉淀下来的经验，Agent 在相似场景会参考。',
-  runtime: 'Harness、模型 API、模型别名和默认路由；改完不用重启，缺密钥或不可用会标出来。',
-  quality: '缺陷、归因、样本与评测的权威日志：哈希链是否完整、锚点、各运行入账到哪里。',
+  runtime: 'Harness 是执行 Agent 的工具；这里配置模型 API、模型别名和默认路由。',
+  quality: '查看日志是否健康、运行记录是否已同步，按需校验或修复。',
 }
 
 /**
@@ -44,6 +45,10 @@ export function SettingsPage() {
   const q = useAsync((ds) => ds.space(), [])
   const sp = q.data
   const bindings = useAsync((ds) => ds.knowledgeBindings().catch(() => undefined), [tab === 'knowledge'])
+  // 身份加载期间或失败时保持只读，角色门槛以服务端为准
+  const me = useAsync((ds) => ds.me(), [])
+  // 角色列表含插件 / 内置角色：Tab 徽标、角色 Tab、共享资源 Tab 用同一份；接口不可用（老版本服务端）时退回空间档案
+  const roles = useAsync((ds) => ds.agentRoles(), [])
   useCrumbs([{ label: '空间设置' }], [])
   const suggestions = useStewardSuggestions(`settings-${tab === 'runtime' ? 'models' : tab}`)
 
@@ -61,7 +66,7 @@ export function SettingsPage() {
           <ErrorState error={q.error} onRetry={q.reload} />
         </div>
       ) : (
-        <>
+        <SettingsViewer.Provider value={me.data}>
           <Tabs
             value={tab}
             onChange={(t) => setQuery({ tab: t === 'members' ? undefined : t, name: undefined })}
@@ -69,7 +74,7 @@ export function SettingsPage() {
               { id: 'members', label: '成员', icon: Users, count: sp?.members.length },
               { id: 'repos', label: '代码仓库', icon: GitFork, count: sp?.repos.length },
               { id: 'skills', label: '技能', icon: Puzzle, count: sp?.skills.length },
-              { id: 'agents', label: '角色', icon: UserRoundCog, count: sp?.agents.length },
+              { id: 'agents', label: '角色', icon: UserRoundCog, count: roles.data?.length ?? (roles.error ? sp?.agents.length : undefined) },
               { id: 'shared', label: '共享资源', icon: LayoutGrid },
               { id: 'workflows', label: '流水线', icon: Workflow, count: sp?.workflows.length },
               { id: 'knowledge', label: '知识库', icon: BookOpen, count: bindings.data?.length },
@@ -82,15 +87,15 @@ export function SettingsPage() {
             {tab === 'members' && <MembersTab space={sp} onSaved={q.reload} />}
             {tab === 'repos' && <ReposTab space={sp} onChanged={q.reload} />}
             {tab === 'skills' && <SkillsTab space={sp} onChanged={q.reload} />}
-            {tab === 'agents' && <FilesTab kind="agent" space={sp} onChanged={q.reload} />}
-            {tab === 'shared' && <SharedTab space={sp} />}
+            {tab === 'agents' && <FilesTab kind="agent" space={sp} roles={roles} onChanged={q.reload} />}
+            {tab === 'shared' && <SharedTab space={sp} roles={roles} />}
             {tab === 'workflows' && <WorkflowsTab space={sp} />}
             {tab === 'knowledge' && <KnowledgeTab space={sp} />}
             {tab === 'lessons' && <LessonsTab space={sp} />}
             {tab === 'runtime' && <RuntimeTab />}
             {tab === 'quality' && <QualityTab />}
           </TabPanel>
-        </>
+        </SettingsViewer.Provider>
       )}
     </div>
   )

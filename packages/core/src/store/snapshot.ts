@@ -23,6 +23,7 @@ function snapshotNode(node: NodeDef): SnapshotNode {
     goal: node.goal, owner: node.owner,
     stage: node.stage,
     needs: node.needs ?? [],
+    tiers: node.tiers,
     inputs: node.inputs,
     outputs: node.outputs,
   }

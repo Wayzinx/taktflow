@@ -118,7 +118,7 @@ export function KnowledgeDetailPage({ id }: { id: string }) {
         ) : (
           <Suspense fallback={<SkeletonCard height={220} />}>
             {tab === 'overview' && <OverviewTab base={b} live={live} onBuild={() => void build()} onPublish={() => setPublishing(true)} />}
-            {tab === 'sources' && <SourcesTab base={b} reload={q.reload} />}
+            {tab === 'sources' && <SourcesTab base={b} reload={q.reload} onBuild={() => void build()} />}
             {tab === 'builds' && <BuildsTab base={b} live={live} reload={q.reload} onBuild={() => void build()} />}
             {tab === 'query' && <QueryTab base={b} />}
             {tab === 'eval' && <EvalTab base={b} />}

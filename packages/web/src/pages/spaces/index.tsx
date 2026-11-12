@@ -14,7 +14,7 @@ import './spaces.css'
 
 /**
  * /spaces：全部空间的卡片网格（全局路由）。props 无。
- * 卡片：需求数、进行中、待办、风险、最近活动；菜单里编辑（名称 / 描述 / 颜色）、复制为新空间、归档。
+ * 卡片：需求数、进行中、阻塞、待办、风险、最近活动；菜单里编辑（名称 / 描述 / 颜色）、复制为新空间、归档。
  * 已归档区：恢复，或输入 id 确认后彻底删除。
  */
 export function SpacesPage() {
@@ -59,12 +59,13 @@ export function SpacesPage() {
 
   const risky = live?.filter((s) => (s.risks ?? 0) > 0).length ?? 0
   const active = live?.reduce((n, s) => n + s.active, 0) ?? 0
+  const blocked = live?.reduce((n, s) => n + (s.blocked ?? 0), 0) ?? 0
   const single = info && !info.multiSpace
   return (
     <div className="page sp-page">
       <PageHeader
         title="全部空间"
-        description={live ? `${live.length} 个空间，${active} 个需求进行中${risky ? `，${risky} 个空间有待处理的风险` : ''}` : '每个空间是一条交付线：自己的需求、流水线、成员和知识库'}
+        description={live ? `${live.length} 个空间，${active} 个需求未交付${blocked ? `，${blocked} 个需求阻塞` : ''}${risky ? `，${risky} 个空间有待处理的风险` : ''}` : '每个空间是一条交付线：自己的需求、流水线、成员和知识库'}
         suggestions={suggestions}
         actions={
           <button type="button" className="btn btn-primary" onClick={() => openCreateSpace()} title={single ? '单空间模式下不能新建，点开看原因' : '新建空间'}>

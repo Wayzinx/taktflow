@@ -26,6 +26,23 @@ import { threadMetadata } from './thread-metadata.js'
 import { stewardId, StewardError } from './contracts.js'
 
 const scope = new AsyncLocalStorage<Map<string, { active: boolean }>>()
+/** 会话标题：第一句话的前 20 个字，截断时带省略号，换行折成空格。 */
+const threadTitle = (text: string) => {
+  const chars = [...text.replace(/\s+/g, ' ').trim()]
+  return chars.length > 20 ? `${chars.slice(0, 20).join('')}…` : chars.join('')
+}
+/** 会话列表摘要是纯文本：链接留文字，去掉粗体 / 行内代码 / 代码围栏 / 标题井号 / 表格竖线（[n] 引用由页面去）。 */
+const summary = (text: string) =>
+  text
+    .replace(/^```.*$/gm, '')
+    .replace(/^\s*\|?[\s:|-]*-{2,}[\s:|-]*$/gm, '')
+    .replace(/\[([^\]\n]+)\]\((?:\[\d+\]|[^)\s]*)\)/g, '$1')
+    .replace(/\*\*|__|`/g, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\s*\|\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 160)
 const buses = new Map<string, EventEmitter>()
 export class StewardStore {
   private unreadCache?: { seen: string; size: number; count: number }
@@ -98,11 +115,13 @@ export class StewardStore {
   async thread(id: string): Promise<StewardThread> {
     const row = await this.read<StewardThread>(`threads/${stewardId(id)}.json`)
     if (!row) throw new StewardError(404, '会话不存在，请新建会话')
-    if (row.messageCount === undefined) return this.serial(async () => {
+    const missingTitle = (thread: StewardThread) => this.requirementTitle && thread.spaceId && thread.requirementId && (!thread.requirementTitle || thread.requirementTitle === thread.requirementId)
+    if (row.messageCount === undefined || missingTitle(row)) return this.serial(async () => {
       const current = await this.read<StewardThread>(`threads/${id}.json`)
       if (!current) throw new StewardError(404, '会话已删除，请新建会话')
-      if (current.messageCount !== undefined) return current
-      Object.assign(current, await this.metadata(current, await this.messageRows(id)))
+      if (current.messageCount === undefined) Object.assign(current, await this.metadata(current, await this.messageRows(id)))
+      else if (missingTitle(current)) current.requirementTitle = await this.requirementTitle!(current.spaceId!, current.requirementId!)
+      else return current
       await this.write(`threads/${id}.json`, current)
       return current
     })
@@ -172,7 +191,7 @@ export class StewardStore {
   ): Promise<StewardThread> {
     const thread: StewardThread = {
       id: randomUUID(),
-      title: [...text].slice(0, 20).join(''),
+      title: threadTitle(text),
       createdAt: at,
       updatedAt: at,
       context,
@@ -204,7 +223,7 @@ export class StewardStore {
         ...thread,
         ...await this.metadata(thread, await this.messageRows(thread.id)),
         updatedAt: message.at > thread.updatedAt ? message.at : thread.updatedAt,
-        lastMessage: message.text.slice(0, 160),
+        lastMessage: summary(message.text),
       })
     })
   }

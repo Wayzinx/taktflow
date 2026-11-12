@@ -230,3 +230,9 @@
 .ov-hovercard.presence-pop[data-state='exit'] {
   transform: translateX(var(--pop-dx, -4px)) scale(0.985);
 }
+
+/* 提交中的按钮：aria-disabled 而不是 disabled（保留焦点），样子与禁用一致 */
+.btn[aria-disabled='true'] {
+  opacity: 0.6;
+  cursor: progress;
+}

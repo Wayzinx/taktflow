@@ -816,7 +816,8 @@ it('loop 多轮用量按每次调用累计，在列表、运行图、需求详�
     await stores.events.append(runId, { actor, nodeId: 'loop/run', type: 'node.finished', data: { status: 'succeeded', outputs: [], usage } })
   }
   const server = await startServer({ projectDir: root })
-  const total = { inputTokens: 130, outputTokens: 26, cachedTokens: 3, costUsd: 0.75 }
+  // 夹具里原有的调用没报成本（120 token），成本只覆盖 loop 的两轮
+  const total = { inputTokens: 130, outputTokens: 26, cachedTokens: 3, costUsd: 0.75, unpricedTokens: 120 }
   const assertTotals = async (expected: typeof total) => {
     const paths = [`/api/runs?requirement=${requirementId}`, `/api/requirements/${requirementId}`, `/api/requirements/${requirementId}/metrics`, '/api/project']
     const [runs, requirement, metrics, project] = await Promise.all(paths.map(async (path) => {
@@ -846,7 +847,7 @@ it('loop 多轮用量按每次调用累计，在列表、运行图、需求详�
   expect(detail.body.run).toEqual(state)
   await stores.events.append(runId, { actor, nodeId: 'loop/removed', type: 'harness.usage', data: { inputTokens: 7, outputTokens: 1 } })
   await stores.events.append(runId, { actor, nodeId: 'loop/removed', type: 'node.finished', data: { status: 'succeeded', outputs: [], usage: { inputTokens: 7, outputTokens: 1 } } })
-  await assertTotals({ ...total, inputTokens: 137, outputTokens: 27 })
+  await assertTotals({ ...total, inputTokens: 137, outputTokens: 27, unpricedTokens: 128 })
   const reloaded = await getJson<RunDetail>(`${server.url}/api/runs/${runId}`)
   expect(reloaded.body.run).toEqual(state)
   expect(reloaded.body.graph.nodes.some((node) => node.id === 'loop/removed')).toBe(false)

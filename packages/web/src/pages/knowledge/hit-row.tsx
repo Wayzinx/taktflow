@@ -36,8 +36,13 @@ export function ScoreBars({ scores }: { scores?: Hit['scores'] }) {
   )
 }
 
+/** 各路检索分（按本次最高分归一化）都低于它时，标“相关度低”。 */
+const LOW_RELEVANCE = 0.3
+
 export function HitRow({ hit, index, mark, onMark }: { hit: Hit; index: number; mark: Mark; onMark: (m: Mark) => void }) {
   const [open, setOpen] = useState(false)
+  const routes = [hit.scores?.bm25, hit.scores?.vector, hit.scores?.rerank].filter((v): v is number => v !== undefined)
+  const low = routes.length > 0 && Math.max(...routes) < LOW_RELEVANCE
   // 原文和摘要一样（例如 SQL 结果行）时不给"展开原文"
   const more = !!hit.content && hit.content.trim() !== hit.snippet?.trim()
   const ev = hit.evidenceLevel ? EVIDENCE[hit.evidenceLevel] : undefined
@@ -53,8 +58,13 @@ export function HitRow({ hit, index, mark, onMark }: { hit: Hit; index: number; 
               {ev.label}
             </span>
           )}
+          {low && (
+            <span className="kb-tag" data-tone="stale" title={`各路检索分都低于 ${LOW_RELEVANCE}（按本次最高分归一化），可能不相关`}>
+              相关度低
+            </span>
+          )}
           <span className="kb-spacer" />
-          <span className="kb-hit-score num" title="合并后的总分">
+          <span className="kb-hit-score num" title="检索排序分：单路为按本次最高分归一化的检索分，多路为按名次合并的 RRF 分；不代表相关概率">
             {fmtScore(hit.score)}
           </span>
         </div>

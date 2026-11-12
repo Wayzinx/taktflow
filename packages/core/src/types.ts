@@ -32,7 +32,10 @@ export interface Usage {
   inputTokens: number
   outputTokens: number
   cachedTokens?: number
+  /** 报了成本的那部分调用的合计；没有这个字段表示成本未上报（不是 $0）。 */
   costUsd?: number
+  /** 有 costUsd 时，其中没报成本的调用的 token（输入 + 输出）；全部报了时省略。 */
+  unpricedTokens?: number
   /** harness 不报告用量时按字符估算的值。 */
   estimated?: boolean
 }
@@ -217,6 +220,8 @@ interface BaseNodeDef {
   outputs?: OutputSpec[]
   /** 条件执行：返回 false 时节点记为 skipped。 */
   when?: (ctx: NodeContext) => boolean | Promise<boolean>
+  /** 适用档位；不写表示不限。快照无法保留 when 函数，路由预览据此过滤实际会执行的节点。 */
+  tiers?: Tier[]
   retry?: { max: number }
   timeoutMs?: number
 }
@@ -644,6 +649,8 @@ export interface SnapshotNode {
   owner?: string
   stage?: string
   needs: NodeId[]
+  /** 适用档位；不写表示不限。 */
+  tiers?: Tier[]
   role?: string
   harness?: string
   /** agent：完成标准。 */

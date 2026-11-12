@@ -25,14 +25,25 @@ import './solo.css'
  * 会话列表在 App 侧栏的 Solo 模式里（pages/solo/rail.tsx，docs/design/29），这里只有对话和焦点面板。
  */
 export function SoloPage() {
-  const { query } = useLocation()
+  const { query, spaceId } = useLocation()
   const threadId = query.get('thread') ?? undefined
   const drawer = query.get('drawer') ?? (query.get('settings') ? 'settings' : undefined)
   const rawFocus = query.get('focus')
   const focus = decodeFocus(rawFocus)
   const threads = useAsync((ds) => ds.stewardThreads(), [threadId])
   const [draft, setDraft] = useState('')
-  const [ctx, setCtx] = useState<StewardContextRef[]>([])
+  // 从空间里进来（/s/:space/solo）：默认以这个空间为范围，输入框上方是可删的空间标签，删掉就是全部空间（docs/design/28 §1）
+  const scope = useMemo<StewardContextRef[]>(() => (spaceId ? [{ type: 'space', id: spaceId, label: spaceId }] : []), [spaceId])
+  const [ctx, setCtx] = useState<StewardContextRef[]>(scope)
+  useEffect(() => setCtx(scope), [scope])
+  // ⌘K「问管家：…」要直接发出
+  const [ask, setAsk] = useState<{ text: string; context?: StewardContextRef[]; key: number }>()
+  // 页头「更新于 N 分钟前」每分钟重算
+  const [, setMinute] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setMinute((n) => n + 1), 60_000)
+    return () => clearInterval(t)
+  }, [])
   // 地址里带了焦点（分享 / 刷新）就先固定，不被会话里的旧对象带走
   const [follow, setFollow] = useState(!focus)
   const followRef = useRef(follow)
@@ -63,16 +74,19 @@ export function SoloPage() {
 
   // 换会话（侧栏点了别的会话或"新对话"）：恢复跟随，由新会话里的对象重新决定焦点；回到首页时清空草稿和上下文
   const lastThread = useRef(threadId)
-  const pendingAsk = useRef<{ draft: string; context?: StewardContextRef[] } | undefined>(undefined)
+  const pendingAsk = useRef<{ draft: string; context?: StewardContextRef[]; send?: boolean; key: number } | undefined>(undefined)
   useEffect(() => {
     if (lastThread.current === threadId) return
     lastThread.current = threadId
     setFollow(true)
     if (!threadId) {
-      setDraft(pendingAsk.current?.draft ?? '')
-      setCtx(pendingAsk.current?.context ?? [])
+      const pending = pendingAsk.current
+      setDraft(pending && !pending.send ? pending.draft : '')
+      setCtx(pending?.context ?? scope)
+      if (pending?.send) setAsk({ text: pending.draft, context: pending.context, key: pending.key })
       pendingAsk.current = undefined
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId])
 
   // 这一页本身就是和管家的对话，不再叠停靠面板：进来时面板若还开着就收起；之后的"问管家"（⌘J、带问题的入口）落到本页
@@ -86,12 +100,13 @@ export function SoloPage() {
     if (!fresh) return
     if (dock.threadId) setQuery({ thread: dock.threadId })
     else if (dock.prefill && threadId) {
-      // 带着新问题：开新对话（和停靠面板一致），草稿等回到首页后再填
-      pendingAsk.current = { draft: dock.prefill, context: dock.context }
+      // 带着新问题：开新对话（和停靠面板一致），草稿等回到首页后再填（要直接发的回到首页后发出）
+      pendingAsk.current = { draft: dock.prefill, context: dock.context, send: dock.send, key: dock.nonce }
       setQuery({ thread: undefined, focus: undefined })
     } else if (dock.prefill) {
-      setDraft(dock.prefill)
       if (dock.context) setCtx(dock.context)
+      if (dock.send) setAsk({ text: dock.prefill, context: dock.context, key: dock.nonce })
+      else setDraft(dock.prefill)
     }
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.solo-main textarea')?.focus())
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,6 +141,8 @@ export function SoloPage() {
             autoFocus
             globalMentions
             placeholder="问管家，或 @ 一个需求、运行、节点"
+            ask={ask}
+            onAskConsumed={() => setAsk(undefined)}
             hero={<SoloHero />}
             empty={(ask) => (
               <SoloHome

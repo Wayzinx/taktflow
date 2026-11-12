@@ -252,3 +252,28 @@
     display: none;
   }
 }
+
+/* 入账落后、重新校验、技术细节（折叠） */
+.ql-seq.is-behind {
+  color: var(--st-waiting);
+}
+.ql-hero-acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.ql-tech summary {
+  cursor: pointer;
+  width: max-content;
+}
+.ql-tech ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}
+@media (max-width: 760px) {
+  .ql-hero > .ql-hero-acts {
+    grid-column: 2;
+  }
+}

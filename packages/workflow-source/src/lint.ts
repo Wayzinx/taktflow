@@ -3,12 +3,14 @@ import type { EditableNode, EditableValue, EditableWorkflow, WorkflowDiagnostic 
 const value = (field?: EditableValue): unknown => field?.kind === 'literal' ? field.value : undefined
 const object = (entry: unknown): Record<string, unknown> => entry !== null && typeof entry === 'object' && !Array.isArray(entry) ? entry as Record<string, unknown> : {}
 const flatten = (nodes: EditableNode[]): EditableNode[] => nodes.flatMap((node) => [node, ...flatten(node.body ?? [])])
+const tierNames = ['T0', 'T1', 'T2', 'T3']
+const validTiers = (tiers: unknown): boolean => Array.isArray(tiers) && tiers.every((tier) => tierNames.includes(tier as string))
 
 export function lintModel(model: EditableWorkflow): WorkflowDiagnostic[] {
   const diagnostics: WorkflowDiagnostic[] = []
   const report = (severity: WorkflowDiagnostic['severity'], message: string, nodeId?: string) => diagnostics.push({ severity, message, nodeId })
   const tiers = value(model.meta.tiers)
-  if (model.meta.tiers?.kind === 'literal' && (!Array.isArray(tiers) || tiers.some((tier) => !['T0', 'T1', 'T2', 'T3'].includes(tier)))) report('error', 'tiers 只能包含 T0、T1、T2、T3')
+  if (model.meta.tiers?.kind === 'literal' && !validTiers(tiers)) report('error', 'tiers 只能包含 T0、T1、T2、T3')
   const nodes = flatten(model.nodes)
   const byId = new Map(nodes.map((node) => [node.id, node]))
   function upstream(node: EditableNode, seen = new Set<string>()): EditableNode[] {
@@ -22,6 +24,7 @@ export function lintModel(model: EditableWorkflow): WorkflowDiagnostic[] {
     })
   }
   for (const node of nodes) {
+    if (node.props.tiers?.kind === 'literal' && !validTiers(value(node.props.tiers))) report('error', '节点 tiers 只能包含 T0、T1、T2、T3', node.id)
     if (node.kind === 'review') {
       const author = object(value(node.props.author)).role
       const reviewers = value(node.props.reviewers)

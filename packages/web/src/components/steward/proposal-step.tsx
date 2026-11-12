@@ -23,7 +23,8 @@ function ParamForm({ input, original, editable, onChange }: { input: Record<stri
     else next[k] = v
     onChange(next)
   }
-  const keys = [...new Set([...Object.keys(original), ...Object.keys(input)])]
+  // baseHash 是服务端记的基线，不给人改
+  const keys = [...new Set([...Object.keys(original), ...Object.keys(input)])].filter((k) => k !== 'baseHash')
   return (
     <div className="stw-form">
       {keys.map((k) => {
@@ -73,7 +74,7 @@ function WorkflowPreviewButton({ proposalId, threadId, step }: { proposalId: str
   )
 }
 
-/** 提案里的一步：标题 + 对应预览（命令 → 参数表单，workflow → diff + 画布幽灵预览，文件 → diff）。 */
+/** 提案里的一步：标题 + 对应预览（命令 → 参数表单，改配置 → 配置差异，workflow → diff + 画布幽灵预览，文件 → diff）。 */
 export function ProposalStepView({ index, step, original, preview, proposalId, threadId, editable, onChange }: { index: number; step: ProposalStep; original?: ProposalStep; preview?: Preview; proposalId: string; threadId: string; editable: boolean; onChange: (s: ProposalStep) => void }) {
   const Icon = STEP_ICON[step.kind]
   const title = step.title ?? (step.kind === 'command' ? step.commandId : step.kind === 'workflow' ? `修改流水线 ${step.workflowId}` : `写入 ${step.path}`)

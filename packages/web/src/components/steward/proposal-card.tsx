@@ -88,7 +88,7 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
       onChange(next)
       setJustApplied(true)
       clearGhost()
-      // 改的可能正是旁边页面上的数据（设置页成员、需求列表），侧栏会话的「待决定」和管家接着回复的状态也变了：让页面重新取数
+      // 改的可能正是旁边页面上的数据（设置页成员、需求列表），新出现的行会闪一下；侧栏会话的「待决定」和管家接着回复的状态也变了：让页面重新取数
       invalidate()
       toast(`已执行：${p.title}`, { tone: 'success', body: next.results?.map((r) => r.message).join('；'), undo: next.undoUntil ? () => void undo(next) : undefined })
     } catch (e) {

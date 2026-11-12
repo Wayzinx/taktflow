@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, PageHeader, Segmented, Skeleton, SkeletonRows, 
 import { Link } from '../lib/router'
 import { actingUser, setActingUser } from '../lib/acting-user'
 import { REQ_STATUS } from '../lib/status'
+import { assignedTo, fallbackAssigneeOf } from './attention-assign'
 import './overview.css'
 
 type View = 'pending' | 'done'
@@ -28,13 +29,6 @@ function writePref(key: string, value: string) {
   } catch {
     /* 隐私模式等：只是记不住选择 */
   }
-}
-
-/** 是否派给某人：assignees 里有他；没有 assignees 但 owner 职责在他的 duties 里也算。 */
-function assignedTo(a: AttentionItem, me: SpaceMember | undefined): boolean {
-  if (!me) return false
-  if (a.assignees?.length) return a.assignees.includes(me.id)
-  return Boolean(a.owner && me.duties?.includes(a.owner))
 }
 
 export function AttentionPage() {
@@ -65,10 +59,12 @@ export function AttentionPage() {
   // 默认身份取 GET /me（服务端在没有 x-takt-user 时用空间第一个 owner）；人可以改选"我是谁"
   const me = members.find((m) => m.id === meId) ?? members.find((m) => m.id === q.data?.viewer?.id) ?? q.data?.viewer?.member ?? members[0]
   const all = q.data?.items ?? []
-  const inScope = (a: AttentionItem) => scope === 'all' || assignedTo(a, me)
+  const reqs = q.data?.reqs ?? []
+  const mine = (a: AttentionItem) => assignedTo(a, me, members, reqs)
+  const inScope = (a: AttentionItem) => scope === 'all' || mine(a)
   const items = all.filter((a) => (view === 'pending' ? !a.answeredAt : a.answeredAt) && inScope(a))
   const pendingCount = all.filter((a) => !a.answeredAt && inScope(a)).length
-  const mineCount = all.filter((a) => !a.answeredAt && assignedTo(a, me)).length
+  const mineCount = all.filter((a) => !a.answeredAt && mine(a)).length
   const staleCount = items.filter((a) => a.stale).length
   const groups = q.data ? q.data.reqs.map((r) => ({ r, items: items.filter((a) => a.requirementId === r.id) })).filter((g) => g.items.length) : []
 
@@ -137,7 +133,7 @@ export function AttentionPage() {
           <EmptyState
             icon={Inbox}
             title={scope === 'mine' ? (view === 'pending' ? `没有派给 ${me?.name ?? '你'} 的待办` : `${me?.name ?? '你'} 名下还没有处理过的事项`) : view === 'pending' ? '全部处理完了' : '还没有处理过的事项'}
-            body={scope === 'mine' ? '按节点职责派发：节点的负责职责与你的职责标签匹配时才会派给你。' : view === 'pending' ? '新的审批和问题会出现在这里，左侧导航也会显示数量。' : '处理过的审批和回答会留在这里备查。'}
+            body={scope === 'mine' ? '按节点职责派发：节点的负责职责与你的职责标签匹配时派给你；没有成员承担这项职责时派给需求负责人。' : view === 'pending' ? '新的审批和问题会出现在这里，左侧导航也会显示数量。' : '处理过的审批和回答会留在这里备查。'}
             action={scope === 'mine' ? <button className="btn btn-sm" onClick={() => setScope('all')}>看全部待办</button> : view === 'done' ? <button className="btn btn-sm" onClick={() => setView('pending')}>回到待处理</button> : undefined}
             stewardAsk={view === 'pending' ? '最近有哪些需求可能需要我拍板？' : undefined}
           />
@@ -159,7 +155,7 @@ export function AttentionPage() {
               </div>
               {items.map((a) => (
                 <div key={a.requestId} className={flash(a.requestId)}>
-                  <AttentionCard item={a} />
+                  <AttentionCard item={a} fallback={fallbackAssigneeOf(a, members, reqs)} />
                 </div>
               ))}
             </section>
