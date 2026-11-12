@@ -156,7 +156,7 @@ export class Runtime implements HarnessHost {
           if (JSON.stringify(ids) !== JSON.stringify(expansion.nodeIds)) throw new Error(`planner 展开定义已改变：${node.id}`)
           const definitions = snapshotWorkflow({ ...this.workflow, nodes: groups.flatMap((group) => group.nodes) }).nodes
           if (expansion.nodes && JSON.stringify(definitions) !== JSON.stringify(expansion.nodes)) throw new Error(`planner 展开定义已改变：${node.id}`)
-          validateWorkflowHarnesses({ ...this.workflow, nodes: groups.flatMap((group) => group.nodes) }, { config: this.deps.stores.config, profiles: this.deps.profiles, harnesses: this.deps.harnesses }, this.override)
+          validateWorkflowHarnesses({ ...this.workflow, nodes: groups.flatMap((group) => group.nodes) }, { config: this.deps.stores.config, profiles: this.deps.profiles, harnesses: this.deps.harnesses, bridge: this.deps.bridge }, this.override)
           expansion.nodes ??= definitions
           for (const group of groups) this.add(group.nodes, node.id, group.scope, group.item, entry.iteration)
         }

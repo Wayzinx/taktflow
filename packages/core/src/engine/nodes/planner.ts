@@ -29,7 +29,7 @@ export async function run(host: NodeHost, entry: Entry, ctx: NodeContext): Promi
       for (const message of serializePlannerGroups(groups, host.deps.profiles)) await host.emit('log', { level: 'info', message }, node.id)
       const definitions = groups.flatMap((group) => group.nodes)
       const workflow = { id: node.id, title: node.title, version: '1', stages: [], nodes: definitions }
-      validateWorkflowHarnesses(workflow, { config: host.deps.stores.config, profiles: host.deps.profiles, harnesses: host.deps.harnesses }, host.override)
+      validateWorkflowHarnesses(workflow, { config: host.deps.stores.config, profiles: host.deps.profiles, harnesses: host.deps.harnesses, bridge: host.deps.bridge }, host.override)
       const ids = groups.flatMap((group) => group.nodes.map((child) => child.id))
       if (ids.some((id) => host.graph.has(id))) throw new Error('planner 展开节点 ID 冲突')
       for (const group of groups) host.add(group.nodes, node.id, group.scope, group.item, entry.iteration)

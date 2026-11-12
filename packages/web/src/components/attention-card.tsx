@@ -209,10 +209,11 @@ export function AttentionCard({ item, reqTitle, compact, fallback }: { item: Att
           action: outcome.stopped ? { label: '去需求页', onClick: () => navigate(at(`/req/${item.requirementId}`)) } : undefined,
         })
       }
-      invalidate()
     } catch (e) {
       toast('提交失败', { body: (e as Error).message, tone: 'failed' })
     } finally {
+      // 失败也要刷新：服务端可能已记下回答（如审批通过但应用失败），不刷新卡片会一直留着按钮让人反复点。
+      invalidate()
       setBusy(false)
     }
   }

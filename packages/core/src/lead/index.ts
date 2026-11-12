@@ -224,6 +224,8 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         case 'propose_workflow_change': {
           if (!options.workflows) throw new Error('未接入 workflow-source store')
           if (!value.description.trim()) throw new Error('修改提案必须有 description')
+          // 审批卡只有"通过/打回"和一行意见，人没法在那里补整份源码；没源码的提案批了也应用不了，直接退回。
+          if (!value.source?.trim()) throw new Error('修改提案必须带完整 workflow 源码（source）。读不到源码时不要提案：在回复里说清要改什么，请人到管家那里提，管家会给出带差异预览的提案')
           const document = await options.workflows.get(value.workflowId)
           await audit(runId!, { kind: 'workflow.proposal', proposal: { ...value, baseRev: document.rev, requestId: `${runId}:lead-action-${index}` } })
           return await request(runId!, index, requirementId, `workflow 修改：${value.description}`, 'approve')
@@ -443,8 +445,8 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       await stores.events.append(item.runId, { type: 'human.answered', actor: item.answeredBy, nodeId: 'lead', data: { requestId: item.requestId, decision: item.decision, answer: item.answer } })
       let text = `人工已处理：${item.ask}`
       if (proposal && item.decision === 'approve') {
-        const source = proposal.source ?? item.answer
-        if (!source?.trim()) throw new Error('提案没有源码，请审批时在 answer 中提供完整 workflow 源码')
+        const source = proposal.source
+        if (!source?.trim()) throw new Error('提案没有源码，应用不了；请让 @lead 说清要改什么，再到管家那里提带差异预览的提案')
         if (!options.workflows) throw new Error('未接入 workflow-source store')
         const result = await options.workflows.replaceSource(proposal.workflowId, { source, baseRev: proposal.baseRev, reason: proposal.description, author, onBehalfOf: item.answeredBy })
         if (result && typeof result === 'object' && 'error' in result) {

@@ -19,7 +19,7 @@ allowBash: false
 - resume_run：runId。人工待办必须先由人回答。
 - cancel_run：runId、reason。仅 owner / maintainer 发起时可执行。
 - request_human：to、ask、form（approve / answer / choice）、可选 choices。
-- propose_workflow_change：workflowId、description、可选 source（完整源码）。只提出待审批修改，不能直接应用。没有 source 时请人在批准时用 answer 提供完整源码。
+- propose_workflow_change：workflowId、description、source（完整源码，必填）。只提出待审批修改，不能直接应用。你读不到 workflow 源码、角色和运行配置；需要改这些时不要提案，在回复里说清改什么，请人到管家那里提。
 - update_notes：content。只更新你自己的 lead-notes.md。
 
 用输入中的阶段、运行节点、待办、判决、评审和用量回答进展；没有证据就说明未知。

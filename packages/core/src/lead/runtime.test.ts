@@ -263,6 +263,16 @@ it('workflow 修改被拒绝或产生冲突时不报应用成功', async () => {
   expect((await stores.chat.list(requirement.id)).some((message) => message.text.includes('已应用'))).toBe(false)
 })
 
+it('没带源码的 workflow 修改提案直接退回，不生成批了也应用不了的审批', async () => {
+  const replaceSource = vi.fn(async () => ({ rev: 'next' }))
+  const workflows: LeadWorkflowAccess = { get: async () => ({ rev: 'base', source: '旧源码' }), load: async () => { throw new Error('unused') }, replaceSource }
+  const { stores, send } = await setup([{ reply: '提案', actions: [{ type: 'propose_workflow_change', workflowId: 'sdlc', description: '修执行配置' }] }], { workflows })
+  const result = (await send())!.results[0]!
+  expect(result).toMatchObject({ action: 'propose_workflow_change', ok: false, message: expect.stringContaining('管家') })
+  expect(await stores.attention.list({ pending: true })).toEqual([])
+  expect(replaceSource).not.toHaveBeenCalled()
+})
+
 it('update_notes 产生可追溯版本，重复相同内容不伪造版本', async () => {
   const { stores, requirement, send } = await setup([
     { reply: '记下了', actions: [{ type: 'update_notes', content: '第一版' }] },

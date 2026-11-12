@@ -40,7 +40,7 @@
    - `onMessage(requirementId, message)`：消息 @lead 或私聊 Lead 时触发一次 Lead 回合；同一需求的回合串行。
    - `onRunEvent(...)`：`config.lead.progressUpdates` 为 true 时，阶段完成、运行结束、产生待办、评审结论、打回时由 Lead 发一条简短的进度消息（模板化即可，不必每次调模型）。
 2. 一次 Lead 回合：组装上下文（`templates/agents/lead.md` 角色说明 + 状态快照：阶段、运行中节点、待办、最近判决与评审 + 最近 30 条群消息 + `lead-notes.md`），用 `config.lead.harness`（默认按 lead 角色）调用 harness，`resultSchema` 为 `LeadTurn`；记一次运行级审计（Lead 回合本身也是一次 task 运行，workflowId `lead`，只有一个 agent 节点，便于在运行列表与哈希链里查）。
-3. 动作执行器：逐个校验并执行 `LeadAction`（规则见设计文档的表格）。`dispatch_task` → 生成临时 workflow（`task:<role>`：一个 agent 节点，`TaskSpec.review` 不为 false 时追加 review 节点）并启动运行，`RunSummary.kind='task'`、`origin` 指向触发消息；运行中状态变化回帖任务卡片（kind task，refs.taskRunId）。`request_human` → 待办 + 群里 attention 卡片。`propose_workflow_change` → 生成"workflow 修改"待办，人批准后通过 workflow-source store 应用（作者记为 Lead，onBehalfOf 审批人）。`update_notes` → 写 `lead-notes.md`（产物版本）。禁止的动作返回失败结果并在回复里说明。
+3. 动作执行器：逐个校验并执行 `LeadAction`（规则见设计文档的表格）。`dispatch_task` → 生成临时 workflow（`task:<role>`：一个 agent 节点，`TaskSpec.review` 不为 false 时追加 review 节点）并启动运行，`RunSummary.kind='task'`、`origin` 指向触发消息；运行中状态变化回帖任务卡片（kind task，refs.taskRunId）。`request_human` → 待办 + 群里 attention 卡片。`propose_workflow_change` → 必须带完整 source，否则动作失败；生成"workflow 修改"待办，人批准后通过 workflow-source store 应用（作者记为 Lead，onBehalfOf 审批人）。`update_notes` → 写 `lead-notes.md`（产物版本）。禁止的动作返回失败结果并在回复里说明。
 4. 回复与动作结果作为群消息发出（author 为 Lead；动作结果用 system 消息）。
 5. 示例：在 `examples/standard-delivery` 加 Lead 的 mock 剧本；`npm run demo:chat`：创建需求 → 人在群里问"@lead 现在进展如何" → Lead 回复状态 → 人说"@lead 把 PRD 里 AC-2 的描述改成……" → Lead 派发 pm 任务 → 任务运行完成、产物新版本、任务卡片更新 → Lead 回报；校验消息、运行、产物版本、审计链。
 

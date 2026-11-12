@@ -127,7 +127,7 @@ export async function runEval(original: EngineDeps, input: EvalRunRequest, by: A
     const profile = await candidateProfile(candidate, 'evaluator')
     judge = { candidate, profile, selector, recipeKey: judgeRecipe(candidate, profile, selector) }
     for (const plan of [...plans, judge]) for (const choice of harnessSelectors(plan.selector)) {
-      const selected = resolveHarnessSelector(choice, config, deps.harnesses)
+      const selected = resolveHarnessSelector(choice, config, deps.harnesses, deps.bridge)
       const isolation = await preflightIsolation(deps, selected.harness)
       isolations.push(isolation)
       if (!isolation.ok) reasons.push(...isolation.reasons ?? [])
