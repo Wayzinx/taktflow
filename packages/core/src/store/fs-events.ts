@@ -68,6 +68,8 @@ interface ReadTail extends FileStamp, Checkpoint {
   /** 从文件开头到 offset 的全部事件（已跳过旧版 thinking 行）；有它时读取只解析新追加的字节。 */
   events?: EventEnvelope[]
   eventBytes?: number
+  /** 大到进不了常驻缓存：之后按节点读取只解析含该 nodeId 的行 */
+  oversize?: boolean
 }
 interface VerifyTail extends FileStamp {
   offset: number; seq: number; hash: string
@@ -86,17 +88,19 @@ function tails(file: string) {
 /**
  * 解析好的事件常驻内存：运行页一次打开会并发十来个请求（节点详情、事件、运行详情……），每个都从头解析几百 MB 的
  * 日志会让 serve 排队十几秒。按文件缓存，读时只解析追加部分；总量超过上限按最近使用淘汰（淘汰后退回检查点读取）。
+ * 上限默认 256MB、单个文件最多占一半，可用 TAKT_EVENT_CACHE_BYTES 调。
  */
-const EVENT_CACHE_LIMIT = 256 * 1024 * 1024
+const cacheLimit = () => Number(process.env.TAKT_EVENT_CACHE_BYTES) || 256 * 1024 * 1024
 const cachedEventBytes = new Map<string, number>()
 function rememberEvents(file: string, bytes: number): boolean {
   cachedEventBytes.delete(file)
-  if (bytes > EVENT_CACHE_LIMIT / 2) return false
+  const limit = cacheLimit()
+  if (bytes > limit / 2) return false
   cachedEventBytes.set(file, bytes)
   let total = 0
   for (const value of cachedEventBytes.values()) total += value
   for (const [other, value] of cachedEventBytes) {
-    if (total <= EVENT_CACHE_LIMIT || other === file) break
+    if (total <= limit || other === file) break
     const read = fileTails.get(other)?.read
     if (read) { delete read.events; delete read.eventBytes }
     cachedEventBytes.delete(other)
@@ -496,7 +500,7 @@ export class FsEventStore implements EventStore {
     runId: string,
     opts?: { afterSeq?: number; nodeId?: string; types?: EventType[] },
   ): Promise<EventEnvelope[]> {
-    let events = await this.readEvents(runId, opts?.afterSeq)
+    let events = await this.readEvents(runId, opts?.afterSeq, opts?.nodeId)
     const afterSeq = opts?.afterSeq
     if (afterSeq !== undefined) events = events.filter((e) => e.seq > afterSeq)
     const nodeId = opts?.nodeId
@@ -525,13 +529,13 @@ export class FsEventStore implements EventStore {
     return verifyFile(path.resolve(eventsFile(this.taktDir, runId)), runId)
   }
 
-  private readEvents(runId: string, afterSeq?: number): Promise<EventEnvelope[]> {
+  private readEvents(runId: string, afterSeq?: number, nodeId?: string): Promise<EventEnvelope[]> {
     // 同一文件的读取排队：常驻缓存是共享数组，并发读会把同一段追加解析两遍
     const file = path.resolve(eventsFile(this.taktDir, runId))
-    return withLock(`${file}#read`, () => this.readEventsLocked(file, runId, afterSeq))
+    return withLock(`${file}#read`, () => this.readEventsLocked(file, runId, afterSeq, nodeId))
   }
 
-  private async readEventsLocked(file: string, runId: string, afterSeq?: number): Promise<EventEnvelope[]> {
+  private async readEventsLocked(file: string, runId: string, afterSeq?: number, nodeId?: string): Promise<EventEnvelope[]> {
     let handle
     try { handle = await open(file, 'r') } catch (error) {
       if (!isEnoent(error)) throw error
@@ -546,7 +550,9 @@ export class FsEventStore implements EventStore {
       const resident = cached?.events
       const from = resident ? cached : afterSeq === undefined || !cached ? undefined : afterSeq >= cached.seq
         ? cached : checkpointBefore(cached.checkpoints, afterSeq)
-      const building = resident !== undefined || !from || from.offset === 0
+      // 进不了缓存的大日志按节点读：先按子串挑出可能属于该节点的行再解析，其余只取行首 seq（运行页节点抽屉一次要读四五遍）
+      const skim = !resident && cached?.oversize && nodeId !== undefined ? `"nodeId":${JSON.stringify(nodeId)}` : undefined
+      const building = !skim && (resident !== undefined || !from || from.offset === 0)
       let offset = from?.offset ?? 0, lines = from?.lines ?? 0, seq = from?.seq ?? 0
       let eventBytes = resident ? cached!.eventBytes ?? 0 : 0
       const checkpoints = [...(cached?.checkpoints ?? [])]
@@ -555,7 +561,7 @@ export class FsEventStore implements EventStore {
         if (!complete) return true
         offset = end
         lines++
-        const legacy = legacyThinkingSeq(line)
+        const legacy = legacyThinkingSeq(line) ?? (skim && !line.includes(skim) ? leadingSeq(line) : undefined)
         if (legacy !== undefined) seq = Math.max(seq, legacy)
         else if (line.trim()) {
           try {
@@ -573,7 +579,8 @@ export class FsEventStore implements EventStore {
         return true
       })
       const keep = building && rememberEvents(file, eventBytes)
-      state.read = { ...fileStamp(info), offset, lines, seq, checkpoints, ...(keep ? { events, eventBytes } : {}) }
+      const oversize = cached?.oversize || (building && !keep)
+      state.read = { ...fileStamp(info), offset, lines, seq, checkpoints, ...(keep ? { events, eventBytes } : {}), ...(oversize ? { oversize } : {}) }
       if (!building) return events
       // 缓存数组不外借：调用方拿到的是副本
       return afterSeq === undefined ? events.slice() : events.filter((e) => e.seq > afterSeq)
@@ -587,6 +594,12 @@ export class FsEventStore implements EventStore {
  * 哈希链校验照常逐行计入。按旧解析器写出的 data 前缀精确匹配，真实事件不会命中。
  */
 const LEGACY_THINKING = '"data":{"role":"system","text":"{\\"type\\":\\"system\\",\\"subtype\\":\\"thinking_tokens\\"'
+/** append 写出的行以 {"seq":N, 开头：不解析整行就能拿到 seq */
+function leadingSeq(line: string): number | undefined {
+  const match = /^\{"seq":(\d+),/.exec(line)
+  return match ? Number(match[1]) : undefined
+}
+
 export function legacyThinkingSeq(line: string): number | undefined {
   if (!line.includes(LEGACY_THINKING) || !line.includes('"type":"harness.message"')) return undefined
   const match = /^\{"seq":(\d+),/.exec(line)

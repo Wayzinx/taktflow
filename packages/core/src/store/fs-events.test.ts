@@ -354,3 +354,29 @@ it('常驻缓存：并发读取不重复，追加后只多出新事件，afterSe
   expect((await store.read('r')).map((e) => e.seq)).toEqual([1, 2])
   expect(await store.verify('r')).toEqual({ ok: true })
 })
+
+it('进不了常驻缓存的大日志：按节点读只解析含该 nodeId 的行，结果、游标和检查点照常', async () => {
+  const dir = await mkdtemp(`${tmpdir()}/takt-events-skim-`)
+  process.env.TAKT_EVENT_CACHE_BYTES = '4000'
+  try {
+    const store = new FsEventStore(dir)
+    const actor = { type: 'system', id: 'engine' } as const
+    for (let i = 0; i < 60; i++) await store.append('r', { type: 'log', actor, nodeId: i % 3 ? 'a' : 'b"x', data: { level: 'info', message: `m${i} "nodeId":"b\\"x"` } })
+    const all = await store.read('r')
+    expect(all).toHaveLength(60)
+    const parse = vi.spyOn(JSON, 'parse')
+    try {
+      const b = await store.read('r', { nodeId: 'b"x' })
+      expect(b.map((e) => e.seq)).toEqual(all.filter((e) => e.nodeId === 'b"x').map((e) => e.seq))
+      // 只解析了 b 的 20 行，没有整份解析
+      expect(parse.mock.calls.length).toBeLessThanOrEqual(25)
+    } finally { parse.mockRestore() }
+    expect((await store.read('r', { nodeId: 'a', afterSeq: 50 })).map((e) => e.seq)).toEqual(all.filter((e) => e.nodeId === 'a' && e.seq > 50).map((e) => e.seq))
+    await store.append('r', { type: 'log', actor, nodeId: 'b"x', data: { level: 'info', message: 'late' } })
+    expect((await store.read('r', { nodeId: 'b"x' })).at(-1)?.data).toMatchObject({ message: 'late' })
+    expect(await store.read('r')).toHaveLength(61)
+  } finally {
+    delete process.env.TAKT_EVENT_CACHE_BYTES
+    await rm(dir, { recursive: true, force: true })
+  }
+})
