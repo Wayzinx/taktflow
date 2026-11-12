@@ -348,6 +348,25 @@ export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewar
     pushFeed({ type: 'proposal', at: now(), proposal: clone(pr) })
     return delay(pr, 380)
   }
+  /** 批准的提案执行完：系统消息回到会话，管家接着往下说（真后端由模型决定下一步，这里给一句固定的）。 */
+  const resume = async (pr: Proposal) => {
+    if (proposals.some((x) => x.threadId === pr.threadId && x.status === 'pending')) return
+    const note: StewardMessage = { id: nid('m'), threadId: pr.threadId, role: 'system', at: now(), author: ME, text: `已批准并执行：${pr.title}`, proposalIds: [pr.id], status: 'done' }
+    messages.push(note)
+    emit(pr.threadId, { type: 'message', message: note })
+    touch(pr.threadId, note.text)
+    replying.add(pr.threadId)
+    try {
+      await sleep(700)
+      const msg: StewardMessage = { id: nid('m'), threadId: pr.threadId, role: 'steward', at: now(), author: STEWARD, text: `「${pr.title}」已经生效。按刚才说的接着往下做，需要你拍板的地方会再出提案。`, status: 'done', tools: [], citations: [] }
+      messages.push(msg)
+      emit(pr.threadId, { type: 'message', message: msg })
+      emit(pr.threadId, { type: 'done', messageId: msg.id })
+      touch(pr.threadId, msg.text)
+    } finally {
+      replying.delete(pr.threadId)
+    }
+  }
 
   return {
     stewardThreads: (opts) =>
@@ -431,7 +450,9 @@ export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewar
       if (!pr) return fail(404, `提案 ${id} 不存在`)
       if (pr.status !== 'pending') return fail(409, `提案已是 ${pr.status}`)
       if (body.hash !== pr.hash && !body.steps) return (pr.status = 'stale'), fail(409, '提案内容或基线已变化，请让管家重新生成')
-      return decide(pr, { status: 'applied', edited: !!body.steps, steps: body.steps ?? pr.steps, reason: body.reason, results: pr.steps.map((s) => ({ ok: true, message: `已执行：${s.title ?? s.kind}` })), undoUntil: new Date(Date.now() + 24 * 3600_000).toISOString() })
+      const decided = decide(pr, { status: 'applied', edited: !!body.steps, steps: body.steps ?? pr.steps, reason: body.reason, results: pr.steps.map((s) => ({ ok: true, message: `已执行：${s.title ?? s.kind}` })), undoUntil: new Date(Date.now() + 24 * 3600_000).toISOString() })
+      void decided.then(() => resume(pr))
+      return decided
     },
     rejectProposal(id, reason) {
       const pr = findProposal(id)

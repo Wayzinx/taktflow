@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brain, ChevronRight, CircleAlert, CircleStop, Copy, CornerDownRight, Forward, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Brain, ChevronRight, CircleAlert, CircleCheck, CircleStop, Copy, CornerDownRight, Forward, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Proposal, StewardContextRef, StewardDelegation, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Bee } from '../mascot'
@@ -182,6 +182,17 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
         )}
       </div>
     )
+  // 系统消息：批准的提案执行完回到会话的那一行，管家紧接着往下说
+  if (m.role === 'system') {
+    const failed = (m.proposalIds ?? []).some((id) => proposals[id]?.results?.some((r) => !r.ok))
+    return (
+      <div className={`stw-msg stw-msg-system${failed ? ' is-failed' : ''}${animate ? ' stw-in' : ''}`} data-steward-anchor={m.id}>
+        {failed ? <CircleAlert aria-hidden /> : <CircleCheck aria-hidden />}
+        <span className="stw-msg-system-text">{m.text}</span>
+        <span className="faint num">{hm(m.at)}</span>
+      </div>
+    )
+  }
   const live = m.status === 'streaming'
   const delegations = m.delegations ?? []
   return (

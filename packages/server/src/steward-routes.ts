@@ -369,13 +369,16 @@ export function registerStewardRoutes(
       (p) => !url.searchParams.get('status') || p.status === url.searchParams.get('status'),
     ),
   )
-  route('POST', '/proposals/:id/approve', async ({ request, params }, { agent, by }) =>
-    agent.proposals.approve(
+  route('POST', '/proposals/:id/approve', async ({ request, params }, { agent, by }) => {
+    const proposal = await agent.proposals.approve(
       params.id!,
       (await body(request)) as unknown as ProposalDecisionRequest,
       by,
-    ),
-  )
+    )
+    // 批准是这一轮对话的继续：执行结果回到会话，管家接着做下一步（响应前会话已标成回复中）
+    await agent.resume(proposal)
+    return proposal
+  })
   for (const action of ['reject', 'undo'] as const)
     route('POST', `/proposals/:id/${action}`, async ({ request, params }, { agent, by }) => {
       const input = await body(request, true)

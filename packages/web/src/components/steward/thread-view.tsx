@@ -86,10 +86,10 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
   const showEmpty = !threadId && t.messages.length === 0
   const busy = !!t.streamingId || t.waiting
   const stop = () => void t.stop().catch((e: Error) => toast('没停下来', { tone: 'failed', body: e.message }))
-  // 最后一条回复失败或被停下：重发它前面那条提问（带原来的上下文）
+  // 最后一条回复失败或被停下：重发它前面那条提问（带原来的上下文）。前面是批准后的系统消息时不重发更早的提问，免得把已执行的提案再提一遍
   const last = t.messages.at(-1)
-  const asked = last?.role === 'steward' && (last.status === 'error' || last.status === 'stopped') ? [...t.messages].reverse().find((m) => m.role === 'user') : undefined
-  const retry = asked && !busy ? () => void send(asked.text, { context: asked.context ?? [], attachments: [] }) : undefined
+  const asked = last?.role === 'steward' && (last.status === 'error' || last.status === 'stopped') ? [...t.messages].reverse().find((m) => m.role !== 'steward') : undefined
+  const retry = asked?.role === 'user' && !busy ? () => void send(asked.text, { context: asked.context ?? [], attachments: [] }) : undefined
   const composer = <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={busy} onStop={threadId && busy ? stop : undefined} autoFocus={autoFocus} globalMentions={globalMentions} placeholder={placeholder} tools={<RuntimePicker value={runtime} onChange={changeRuntime} />} />
   const emptyBody = typeof empty === 'function' ? empty((text, c) => void send(text, { context: c ?? context, attachments: [] })) : empty
 

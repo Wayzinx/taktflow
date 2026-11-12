@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import type { ChatMessage } from '../types.js'
 import type {
+  Proposal,
   StewardCitation,
   StewardContextRef,
   StewardMessage,
@@ -125,17 +126,73 @@ export class StewardAgent {
       this.store.emit(thread.id, { type: 'message', message })
       return { thread: await this.store.thread(thread.id), message }
     })
-    const previous = this.jobs.get(initial.thread.id)
+    return { ...initial, done: this.queue(initial.message, input) }
+  }
+  /** 同一会话的回复排队：上一条回完再回下一条。 */
+  private queue(message: StewardMessage, request: StewardPostRequest): Promise<StewardMessage> {
+    const previous = this.jobs.get(message.threadId)
     const job = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() =>
-      this.respond(initial.message, input),
+      this.respond(message, request),
     )
-    this.jobs.set(initial.thread.id, job)
+    this.jobs.set(message.threadId, job)
     void job
       .finally(() => {
-        if (this.jobs.get(initial.thread.id) === job) this.jobs.delete(initial.thread.id)
+        if (this.jobs.get(message.threadId) === job) this.jobs.delete(message.threadId)
       })
       .catch(() => {})
-    return { ...initial, done: job }
+    return job
+  }
+  /**
+   * 人批准的提案执行完（成功或失败）：结果作为一条系统消息回到会话，管家接着做批准前说好的下一步。
+   * 拒绝、撤销和自动执行的不接着说；同一会话还有待批准的提案时，等都决定完再接着说。
+   */
+  async resume(proposal: Proposal): Promise<StewardMessage | undefined> {
+    if (proposal.auto || (proposal.status !== 'applied' && proposal.status !== 'failed')) return
+    // 没接模型时只有规则回复，接不住「接着做」
+    const runtime = this.deps.resolveRuntime
+      ? await this.store.thread(proposal.threadId).then(async (thread) => this.deps.resolveRuntime!(await this.store.prefs(), thread.runtime)).catch(() => undefined)
+      : { chat: this.deps.chat }
+    if (runtime && !runtime.chat && !('run' in runtime && runtime.run)) return
+    const note = await this.store.serial(async () => {
+      const thread = await this.store.thread(proposal.threadId)
+      if ((await this.store.list<Proposal>('proposals')).some((p) => p.threadId === thread.id && p.status === 'pending')) return
+      const message: StewardMessage = {
+        id: randomUUID(),
+        threadId: thread.id,
+        role: 'system',
+        author: proposal.decidedBy,
+        at: timestamp(this.deps),
+        text: proposal.status === 'applied' ? `已批准并执行：${proposal.title}` : `已批准，但执行失败：${proposal.title}（${proposal.error ?? '原因未知'}）`,
+        context: thread.context,
+        proposalIds: [proposal.id],
+        status: 'done',
+      }
+      await this.store.saveMessage(message)
+      await this.store.setStatus(thread.id, 'replying')
+      this.store.emit(thread.id, { type: 'message', message })
+      return message
+    }).catch(async (error: unknown) => {
+      // 批准已经生效，接不上只在会话上标出来，不让批准请求跟着失败
+      await this.store.setStatus(proposal.threadId, 'error', `提案已执行，管家没能接着回复：${error instanceof Error ? error.message : String(error)}`).catch(() => {})
+      return undefined
+    })
+    if (note) void this.queue(note, { text: note.text, context: note.context })
+    return note
+  }
+  /** 系统消息给模型看的样子：写明不是用户说的，带上提案的执行结果（新建对象的 id 之类，下一步要用）。 */
+  private async note(m: StewardMessage, current: boolean): Promise<string> {
+    const outcomes = await Promise.all(
+      (m.proposalIds ?? []).map(async (id) => {
+        const p = await this.store.proposal(id).catch(() => undefined)
+        return p && { title: p.title, status: p.status, error: p.error, results: p.results }
+      }),
+    )
+    const detail = JSON.stringify(outcomes.filter(Boolean))
+    return [
+      `（系统消息，不是用户说的）${m.text}`,
+      `执行结果：${detail.length > 4000 ? `${detail.slice(0, 4000)}…` : detail}`,
+      ...(current ? ['批准前你说过接下来要做的事，现在接着做；没说过就用一两句话确认结果，不要复述提案。执行失败就说明原因和下一步怎么处理。'] : []),
+    ].join('\n')
   }
   /** 停下会话里正在写的回复；没有在写的返回 false。 */
   stop(threadId: string): boolean {
@@ -284,10 +341,13 @@ export class StewardAgent {
         const history = all.slice(0, all.findIndex((m) => m.id === user.id) + 1)
         const messages: ChatMessage[] = [
           { role: 'system', content: await this.prompt(refs) },
-          ...history.map((m): ChatMessage => ({
-            role: m.role === 'user' ? 'user' : 'assistant',
-            content: m.text,
-          })),
+          ...(await Promise.all(
+            history.map(async (m): Promise<ChatMessage> =>
+              m.role === 'system'
+                ? { role: 'user', content: await this.note(m, m.id === user.id) }
+                : { role: m.role === 'user' ? 'user' : 'assistant', content: m.text },
+            ),
+          )),
         ]
         if (request.attachments?.length)
           messages.push({

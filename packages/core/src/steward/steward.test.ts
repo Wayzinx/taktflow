@@ -1431,6 +1431,45 @@ it('停止正在写的回复：harness 收到中止信号，消息是「已停�
   expect(agent.stop(thread.id)).toBe(false)
 })
 
+it('批准的提案执行完，结果作为系统消息回到会话，管家接着回一轮；拒绝、自动执行、还有待批准的提案和没接模型都不接着说', async () => {
+  const f = await fixture()
+  const seen: string[][] = []
+  const agent = new StewardAgent({ ...f.deps, chat: async (request) => {
+    seen.push(request.messages.map((m) => `${m.role}:${m.content}`))
+    return { message: { role: 'assistant', content: '空间建好了，接着提交 workflow 提案。' }, stopReason: 'end' } satisfies ChatResponse
+  } }, 'alice')
+  agents.push(agent)
+  const alice = { type: 'human', id: 'alice' } as const
+  const thread = await agent.store.createThread('建空间', '2026-11-06T10:00:00Z')
+  const [first, second] = [await agent.proposals.create(thread.id, '建需求一', '先建', [f.create]), await agent.proposals.create(thread.id, '建需求二', '再建', [f.create])]
+  // 同一会话还有待批准的：等都决定完
+  expect(await agent.resume(await agent.proposals.approve(first.id, { hash: first.hash }, alice))).toBeUndefined()
+  expect(await agent.resume(await agent.proposals.reject(second.id, alice))).toBeUndefined()
+  const third = await agent.proposals.create(thread.id, '建需求三', '最后', [f.create])
+  const note = await agent.resume(await agent.proposals.approve(third.id, { hash: third.hash }, alice))
+  expect(note).toMatchObject({ role: 'system', text: '已批准并执行：建需求三', author: alice, proposalIds: [third.id] })
+  expect((await agent.store.thread(thread.id)).status).toBe('replying')
+  await agent.drain()
+  const last = seen.at(-1)!.at(-1)!
+  expect(last).toContain('user:（系统消息，不是用户说的）已批准并执行：建需求三')
+  expect(last).toContain('"status":"applied"')
+  expect(last).toContain('批准前你说过接下来要做的事，现在接着做')
+  expect((await agent.store.messages(thread.id)).map((m) => [m.role, m.text])).toEqual([
+    ['system', '已批准并执行：建需求三'],
+    ['steward', '空间建好了，接着提交 workflow 提案。'],
+  ])
+  expect((await agent.store.thread(thread.id)).status).toBeUndefined()
+  // 没接模型：规则回复接不住「接着做」
+  const offline = await f.agent.proposals.create(f.thread.id, '离线', '无模型', [f.create])
+  expect(await f.agent.resume(await f.agent.proposals.approve(offline.id, { hash: offline.hash }, alice))).toBeUndefined()
+  expect(await f.agent.store.messages(f.thread.id)).toEqual([])
+  // 自动执行的提案在管家自己那一轮里已经拿到结果
+  await agent.store.write('prefs.json', { trust: 'auto-low', digestTimes: [] })
+  const auto = await agent.proposals.create(thread.id, '自动', '低风险', [f.create])
+  expect(auto).toMatchObject({ auto: true, status: 'applied' })
+  expect(await agent.resume(auto)).toBeUndefined()
+})
+
 it('服务重启：上次没写完的回复标成已停止，页面不会一直显示它在跑', async () => {
   const f = await fixture()
   await f.agent.store.saveMessage({ id: 'm1', threadId: f.thread.id, role: 'steward', at: '2026-11-06T10:00:00Z', text: '写了一半', status: 'streaming' })

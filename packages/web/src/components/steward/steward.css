@@ -63,6 +63,30 @@
   grid-template-columns: 28px minmax(0, 1fr);
   gap: var(--sp-3);
 }
+/* 系统消息：和管家正文对齐的一行事件（批准的提案执行完了），不是谁说的话 */
+.stw-msg-system {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding-left: calc(28px + var(--sp-3));
+  font-size: var(--text-meta);
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.stw-msg-system > svg {
+  flex-shrink: 0;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  color: var(--st-success);
+}
+.stw-msg-system.is-failed > svg {
+  color: var(--st-failed);
+}
+.stw-msg-system-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 /* 管家头像 = Agent 形象（节拍橙）：回复中睁眼眨眼，回完眯眼笑，出错 ✕ */
 .stw-avatar {
   align-self: start;
