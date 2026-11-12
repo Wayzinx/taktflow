@@ -1,8 +1,9 @@
-import type { Risk, NodeScorecard } from '../api.js'
+import type { Risk, NodeScorecard, QualityStatus } from '../api.js'
 import type { AttentionItem, ProjectStores } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, Requirement, RunState } from '../types.js'
 import { listDefects } from '../defects/index.js'
 import { scorecards } from '../eval/scorecards.js'
+import { qualityStatus } from '../quality/index.js'
 import { budgetUsage } from '../util/budget.js'
 import { stewardLinks } from '../steward/links.js'
 import { runEventsOf, runLastEventAt } from './run-digest.js'
@@ -18,6 +19,7 @@ export interface RiskSnapshot {
   attention: AttentionItem[]
   defects?: Array<{ id: string; requirementId: string; title: string }>
   scorecards?: NodeScorecard[]
+  quality?: QualityStatus
 }
 export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now: Date, thresholds: RiskThresholds = {}): ComputedRisk[] {
   const at = now.toISOString(), time = now.getTime(), risks: ComputedRisk[] = []
@@ -25,6 +27,10 @@ export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now
     const href = link ?? (runId ? stewardLinks.run(spaceId, runId, nodeId) : req ? stewardLinks.requirement(spaceId, req) : stewardLinks.overview(spaceId))
     risks.push({ key: `${kind}:${spaceId}/${req}/${subject}`, kind, level, spaceId, ...(req ? { requirementId: req } : {}), runId, nodeId,
       title, detail, evidence: [{ label: title, href }], firstSeenAt: at, lastSeenAt: at, actions: [{ label: '让管家协助处理', ask: `帮我处理${title}`, href }] })
+  }
+  if (snapshot.quality && !snapshot.quality.ok && (snapshot.quality.brokenAt !== undefined || !snapshot.quality.anchorBehind)) {
+    const detail = `质量日志${snapshot.quality.brokenAt === undefined ? '' : `从第 ${snapshot.quality.brokenAt} 条起`}断链，缺陷、归因和评测结论可能不可信，请人工检查`
+    add('gate-failed', 'high', '', 'quality-broken', '质量日志校验未通过', detail, undefined, undefined, `${stewardLinks.overview(spaceId)}/settings?tab=quality`)
   }
   for (const item of snapshot.attention) {
     const age = time - Date.parse(item.createdAt)
@@ -73,13 +79,16 @@ export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now
 }
 export async function computeRisks(stores: ProjectStores, spaceId: string, now: Date, thresholds?: RiskThresholds): Promise<ComputedRisk[]> {
   const requirements = await stores.workspaces.listRequirements(), runs = await stores.runs.list()
+  const quality = await qualityStatus(stores)
   // 风险只看用量、重复失败、评审卡住、门禁结果和最后一条事件的时间：按类型取缓存的子集，不再每次整份解析事件日志
   return computeRiskSnapshot({ requirements, runs: await Promise.all(runs.map(async (run) => {
     const [events, lastAt] = await Promise.all([runEventsOf(stores, run, RISK_EVENT_TYPES), runLastEventAt(stores, run)])
     return { run, events, lastAt }
   })),
     attention: await stores.attention.list({ pending: true }),
-    defects: (await Promise.all(requirements.map((req) => listDefects(stores, req.id)))).flat().filter((d) => d.status === 'confirmed'),
-    scorecards: await scorecards(stores, { by: 'node' }),
+    // 断链时这些读模型会拒绝读取；仍需返回校验风险和其他可独立计算的风险。
+    defects: quality.ok ? (await Promise.all(requirements.map((req) => listDefects(stores, req.id)))).flat().filter((d) => d.status === 'confirmed') : [],
+    scorecards: quality.ok ? await scorecards(stores, { by: 'node' }) : [],
+    quality,
   }, spaceId, now, thresholds)
 }

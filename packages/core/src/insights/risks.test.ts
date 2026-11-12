@@ -1,11 +1,32 @@
 import { describe, expect, it } from 'vitest'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { initProject } from '../store/project.js'
 import type { RunState, EventEnvelope, EventPayloads, EventType } from '../types.js'
-import { computeRiskSnapshot, type RiskSnapshot } from './risks.js'
+import { computeRisks, computeRiskSnapshot, type RiskSnapshot } from './risks.js'
 const now = new Date('2026-11-06T12:00:00Z')
 const run: RunState = { runId: 'run-1', workflowId: 'flow', workflowVersion: '1', requirementId: 'REQ-001', status: 'running', startedAt: '2026-11-06T11:00:00Z', nodes: {}, args: {}, expansions: [], budget: { tokens: 100 } }
 const event = <T extends EventType>(type: T, data: EventPayloads[T], nodeId = 'test'): EventEnvelope<T> => ({ type, data, nodeId, runId: 'run-1', seq: 1, ts: '2026-11-06T11:59:00Z', actor: { type: 'system', id: 'test' }, hash: '', prevHash: '' })
 const base = (): RiskSnapshot => ({ requirements: [], runs: [], attention: [] })
 describe('确定性风险规则', () => {
+  it('质量日志断链返回高风险，证据直达质量日志，锚点落后不报断链', () => {
+    const snapshot = base()
+    snapshot.quality = { ok: false, brokenAt: 7, anchorBehind: false } as never
+    expect(computeRiskSnapshot(snapshot, 'shop', now)[0]).toMatchObject({ key: 'gate-failed:shop//quality-broken', level: 'high', detail: expect.stringContaining('第 7 条'), evidence: [{ href: '/s/shop/settings?tab=quality' }] })
+    snapshot.quality = { ok: false, anchorBehind: true } as never
+    expect(computeRiskSnapshot(snapshot, 'shop', now)).toEqual([])
+  })
+  it('真实质量日志损坏不使风险接口报错，跳过不可信的缺陷和成绩单读模型', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'takt-risk-broken-'))
+    try {
+      const stores = await initProject(root)
+      await stores.workspaces.createRequirement({ title: '断链风险' })
+      await mkdir(join(stores.taktDir, 'quality'), { recursive: true })
+      await writeFile(join(stores.taktDir, 'quality/log.jsonl'), 'broken\n')
+      expect(await computeRisks(stores, 'shop', now)).toMatchObject([{ key: 'gate-failed:shop//quality-broken', level: 'high' }])
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
   it.each([[4, undefined], [4.1, 'medium'], [24, 'medium'], [24.1, 'high']] as const)('待办 %s 小时', (hours, level) => {
     const snapshot = base(); snapshot.attention.push({ requestId: 'a', runId: 'run-1', nodeId: 'human', requirementId: 'REQ-001', ask: '确认', form: 'approve', createdAt: new Date(now.getTime() - hours * 3600000).toISOString() })
     expect(computeRiskSnapshot(snapshot, 'shop', now)[0]?.level).toBe(level)

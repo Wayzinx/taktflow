@@ -462,3 +462,26 @@
   gap: 6px;
   flex-wrap: wrap;
 }
+
+/* 质量日志断链：评测页、缺陷 Tab 顶部 */
+.ev-quality-alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--sp-3);
+  padding: 8px 12px;
+  border: 1px solid color-mix(in oklch, var(--st-failed) 30%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--st-failed-soft);
+  color: var(--st-failed);
+  font-size: var(--text-ui);
+}
+.ev-quality-alert > svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.ev-quality-alert > span {
+  flex: 1;
+  min-width: 0;
+}

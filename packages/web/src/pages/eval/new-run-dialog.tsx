@@ -121,7 +121,7 @@ export function NewRunDialog({ open, initialTarget, onClose }: { open: boolean; 
             {targets.data?.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
-                {o.cases ? '' : ' · 无用例'}
+                {o.cases ? '' : ' · 无样本'}
               </option>
             ))}
           </select>

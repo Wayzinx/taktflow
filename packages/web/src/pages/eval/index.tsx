@@ -5,6 +5,7 @@ import { useCrumbs } from '../../components/layout'
 import { ErrorState, PageHeader, Segmented, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
 import { NewRunDialog } from './new-run-dialog'
+import { QualityAlert } from './quality-alert'
 import { RunDetail } from './run-detail'
 import { RunsList } from './runs-list'
 import { Samples } from './samples'
@@ -112,6 +113,7 @@ export function EvalPage() {
         ]}
       />
       <TabPanel key={tab} className="eval-body">
+        <QualityAlert what="成绩单的逃逸与检出率、样本和评测结论" />
         {tab === 'runs' ? <Runs /> : tab === 'cases' ? <Samples /> : <Scorecards />}
       </TabPanel>
     </div>
