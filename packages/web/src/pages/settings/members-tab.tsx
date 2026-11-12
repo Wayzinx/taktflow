@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Plus, Trash2, Users } from 'lucide-react'
+import { Plus, Trash2, TriangleAlert, Users } from 'lucide-react'
 import type { SpaceDetail, SpaceMember } from '@taktflow/core'
-import { useSource } from '../../api'
+import { useAsync, useSource } from '../../api'
+import { uncoveredDuties } from '../attention-assign'
 import { Avatar, EmptyState, ReasonDialog, SkeletonRows, toast, useFlashRows, useStagger } from '../../components/ui'
 import { COMMON_DUTIES, DutiesEditor } from './duties-editor'
 import { ReadOnlyNote, useAccess } from './access'
@@ -28,12 +29,15 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
   const st = useStagger(draft.length)
   const flash = useFlashRows(draft.map((m) => m.id))
   const access = useAccess('owner', '改成员、角色和职责')
+  // 待办里的 owner 就是节点职责；没有成员认领的职责，待办会兜底转给需求负责人
+  const attention = useAsync((ds) => ds.attention().catch(() => []), [])
 
   if (!space) return <div className="card"><SkeletonRows rows={5} /></div>
 
   const owners = draft.filter((m) => m.role === 'owner').length
   const idError = memberIdError(newId, draft.map((m) => m.id))
   const knownDuties = [...new Set(draft.flatMap((m) => m.duties ?? []))]
+  const uncovered = uncoveredDuties(draft, attention.data ?? [])
   const setDuties = (i: number, duties: string[]) => setDraft((d) => d.map((x, j) => (j === i ? { ...x, duties: duties.length ? duties : undefined } : x)))
 
   function add() {
@@ -72,6 +76,12 @@ export function MembersTab({ space, onSaved }: { space?: SpaceDetail; onSaved: (
           <span className="faint num">{draft.length}</span>
         </div>
         <ReadOnlyNote why={access.why} />
+        {uncovered.length > 0 && (
+          <p className="settings-ro-note is-block" role="note">
+            <TriangleAlert aria-hidden />
+            有节点职责没有成员承担：<span className="mono">{uncovered.join('、')}</span>。这些节点产生的待办会转给需求负责人，建议给相应成员补上职责。
+          </p>
+        )}
         <fieldset className="settings-ro" disabled={!access.ok}>
         {draft.length === 0 ? (
           <EmptyState compact icon={Users} title="还没有成员" body="在下面输入成员 id 添加，至少需要一位 owner。" stewardAsk="帮我把团队成员加进这个空间：" />

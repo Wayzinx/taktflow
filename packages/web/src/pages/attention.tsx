@@ -8,7 +8,7 @@ import { EmptyState, ErrorState, PageHeader, Segmented, Skeleton, SkeletonRows, 
 import { Link } from '../lib/router'
 import { actingUser, setActingUser } from '../lib/acting-user'
 import { REQ_STATUS } from '../lib/status'
-import { assignedTo } from './attention-assign'
+import { assignedTo, fallbackAssigneeOf } from './attention-assign'
 import './overview.css'
 
 type View = 'pending' | 'done'
@@ -155,7 +155,7 @@ export function AttentionPage() {
               </div>
               {items.map((a) => (
                 <div key={a.requestId} className={flash(a.requestId)}>
-                  <AttentionCard item={a} />
+                  <AttentionCard item={a} fallback={fallbackAssigneeOf(a, members, reqs)} />
                 </div>
               ))}
             </section>

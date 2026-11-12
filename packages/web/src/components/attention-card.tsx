@@ -29,8 +29,14 @@ export const attentionMeta = (item: AttentionItem) => (item.kind && item.kind !=
 
 const artifactHref = (r: NonNullable<AttentionItem['boundTo']>[number]) => `/req/${r.workspace}?tab=artifacts&path=${encodeURIComponent(r.path)}${r.version ? `&v=${r.version}` : ''}`
 
+/** 职责无人承担、已兜底转给需求负责人时的说明。 */
+export interface AssigneeFallback {
+  duty: string
+  ownerName: string
+}
+
 /** 派给谁（职责 → 成员）与绑定的产物版本；产物之后有新版本时提示"审批对象已更新"。 */
-function AttentionContext({ item, answered }: { item: AttentionItem; answered: boolean }) {
+function AttentionContext({ item, answered, fallback }: { item: AttentionItem; answered: boolean; fallback?: AssigneeFallback }) {
   const bound = item.boundTo ?? []
   const assignees = item.assignees ?? []
   if (!assignees.length && !item.owner && !bound.length) return null
@@ -41,7 +47,15 @@ function AttentionContext({ item, answered }: { item: AttentionItem; answered: b
           <span className="att-ctx-item" title={item.owner ? `节点职责 ${item.owner}，按空间成员的职责标签派发` : undefined}>
             <UserRound />
             <span className="faint">派给</span>
-            {assignees.length ? <span className="att-assignees">{assignees.join('、')}</span> : <span className="faint">还没有成员承担此职责</span>}
+            {assignees.length ? (
+              <span className="att-assignees">{assignees.join('、')}</span>
+            ) : fallback ? (
+              <span className="att-assignees att-fallback">
+                无人承担 <span className="mono">{fallback.duty}</span> → 已转给负责人 {fallback.ownerName}
+              </span>
+            ) : (
+              <span className="faint">还没有成员承担此职责</span>
+            )}
             {item.owner && <span className="att-duty mono">{item.owner}</span>}
           </span>
         )}
@@ -162,7 +176,7 @@ function AssumptionOrigin({ item }: { item: AttentionItem }) {
 const LONG_ASK = 360
 
 /** 一条待办：审批 / 回答 / 选择，可以直接在卡片里处理。 */
-export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem; reqTitle?: string; compact?: boolean }) {
+export function AttentionCard({ item, reqTitle, compact, fallback }: { item: AttentionItem; reqTitle?: string; compact?: boolean; fallback?: AssigneeFallback }) {
   const ds = useSource()
   const at = useSpaceHref()
   const [text, setText] = useState('')
@@ -244,7 +258,7 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
         </Link>
         <span className="faint mono">{item.runId}</span>
       </div>
-      <AttentionContext item={item} answered={answered} />
+      <AttentionContext item={item} answered={answered} fallback={fallback} />
       {!answered && item.timebox && item.kind !== 'assumption' && <TimeboxBar createdAt={item.createdAt} timebox={item.timebox} assumption={item.assumption} form={item.form} remindedAt={item.remindedAt} compact={compact} />}
 
       {answered ? (

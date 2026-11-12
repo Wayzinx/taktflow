@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { Activity, CircleCheckBig, Coins, Inbox, OctagonAlert, TriangleAlert } from 'lucide-react'
-import type { ProjectOverview, RequirementSummary } from '@taktflow/core'
+import type { ProjectOverview, QualityStatus, RequirementSummary, SpaceMember } from '@taktflow/core'
 import { useAsync } from '../api'
 import { AttentionCard } from '../components/attention-card'
 import { useCrumbs } from '../components/layout'
@@ -10,6 +10,7 @@ import { Sparkline, StatTiles, type Tile } from '../components/viz'
 import { costOf, fmtCost, fmtShare, fmtTokens, totalTokens } from '../lib/format'
 import { Link } from '../lib/router'
 import { qualityTile } from './overview-quality'
+import { fallbackAssigneeOf } from './attention-assign'
 import { RequirementLanes, currentText } from './overview-lanes'
 import { SinceBanner } from './overview-since'
 import { describeOverview, isStuck } from './overview-status'
@@ -32,7 +33,7 @@ function TokenShare({ reqs }: { reqs: RequirementSummary[] }) {
 }
 
 /** 读数：进行中 / 阻塞 / 风险 / 已交付可点（筛选下方泳道），Token 与质量只读。数字只在表达状态时着色。 */
-function tilesOf(p: ProjectOverview, risks: SpaceRisks, filter: Filter, onFilter: (f: Filter) => void): Tile[] {
+function tilesOf(p: ProjectOverview, risks: SpaceRisks, filter: Filter, onFilter: (f: Filter) => void, quality?: QualityStatus): Tile[] {
   const running = p.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length
   const waiting = p.requirements.filter((r) => r.stages.some((s) => s.status === 'waiting_human')).length
   const stuck = p.requirements.filter(isStuck).length
@@ -50,7 +51,8 @@ function tilesOf(p: ProjectOverview, risks: SpaceRisks, filter: Filter, onFilter
   const tokenSpark = active ? <Sparkline values={daily.map((d) => d.tokens)} points={points} label={`近 ${daily.length} 天每日 Token（按运行开始日）`} /> : undefined
   const riskCount = risks.all.length
   return [
-    { key: 'active', label: '进行中', icon: <Activity />, value: <CountUp value={p.totals.active} from0 />, tone: running ? 'running' : undefined, hint: <><b>{running}</b> 在跑 · <b>{waiting}</b> 等人</>, onClick: toggle('active'), active: filter === 'active', title: '只看进行中的需求' },
+    // 未交付 = 已开始但还没交付的需求（不一定有节点在跑）；与顶栏"流水线空闲 / N 在跑"区分开
+    { key: 'active', label: '未交付', icon: <Activity />, value: <CountUp value={p.totals.active} from0 />, tone: running ? 'running' : undefined, hint: <><b>{running}</b> 在跑 · <b>{waiting}</b> 等人</>, onClick: toggle('active'), active: filter === 'active', title: '已开始但未交付的需求；下面写的是其中正在跑的运行数' },
     { key: 'blocked', label: '阻塞', icon: <OctagonAlert />, value: <CountUp value={p.totals.blocked} from0 />, tone: p.totals.blocked ? 'failed' : undefined, hint: !p.totals.blocked ? '没有阻塞' : stuck ? <><b>{stuck}</b> 个没有待办，没人被叫来处理</> : '都在等人处理', onClick: toggle('blocked'), active: filter === 'blocked', title: '只看阻塞的需求' },
     {
       key: 'risks',
@@ -83,7 +85,7 @@ function tilesOf(p: ProjectOverview, risks: SpaceRisks, filter: Filter, onFilter
       children: <TokenShare reqs={p.requirements} />,
       title: '色段为各需求占比',
     },
-    qualityTile(p.totals, p.requirements),
+    qualityTile(p.totals, p.requirements, quality),
   ]
 }
 
@@ -115,6 +117,8 @@ export function OverviewPage() {
   const q = useAsync((ds) => ds.project(), [])
   const risks = useSpaceRisks()
   const space = useAsync((ds) => ds.space(), [])
+  // 质量日志状态读不到时不阻塞总览，只是这一格不显示告警
+  const quality = useAsync((ds) => ds.qualityStatus().catch(() => undefined), [])
   const suggestions = useStewardSuggestions('overview')
   const [filter, setFilter] = useState<Filter>('all')
   useCrumbs([{ label: q.data?.name ?? '项目' }, { label: '总览' }], [q.data?.name])
@@ -150,7 +154,7 @@ export function OverviewPage() {
       ) : (
         <>
           <SinceBanner />
-          <StatTiles label="项目读数" tiles={tilesOf(p, risks, filter, setFilter)} />
+          <StatTiles label="项目读数" tiles={tilesOf(p, risks, filter, setFilter, quality.data)} />
           <div className="ov-main">
             <section className="card ov-lanes">
               <div className="card-head">
@@ -173,7 +177,7 @@ export function OverviewPage() {
                 <EmptyState compact icon={Inbox} title="这个状态下没有需求" body="换个筛选看看全部。" action={<button type="button" className="btn btn-sm" onClick={() => setFilter('all')}>看全部</button>} />
               )}
             </section>
-            <Decisions attention={attention} titleOf={titleOf} stuck={p.requirements.filter(isStuck)} risks={risks} />
+            <Decisions attention={attention} titleOf={titleOf} stuck={p.requirements.filter(isStuck)} risks={risks} members={space.data?.members ?? []} reqs={p.requirements} />
           </div>
         </>
       )}
@@ -184,7 +188,7 @@ export function OverviewPage() {
 type Filter = 'all' | 'active' | 'blocked' | 'delivered' | 'risk'
 const FILTERS: Array<{ value: Filter; label: string }> = [
   { value: 'all', label: '全部' },
-  { value: 'active', label: '进行中' },
+  { value: 'active', label: '未交付' },
   { value: 'blocked', label: '阻塞' },
   { value: 'delivered', label: '已交付' },
   { value: 'risk', label: '有风险' },
@@ -194,7 +198,7 @@ const FILTERS: Array<{ value: Filter; label: string }> = [
  * 等你决定：审批、澄清、门禁裁决；没有时只占一行，不放大空状态。
  * 阻塞却没有待办的需求和全部风险（含与需求无关的空间级风险）跟在后面，每条都能点到依据。
  */
-function Decisions({ attention, titleOf, stuck, risks }: { attention: ProjectOverview['attention']; titleOf: (id: string) => string | undefined; stuck: RequirementSummary[]; risks: SpaceRisks }) {
+function Decisions({ attention, titleOf, stuck, risks, members, reqs }: { attention: ProjectOverview['attention']; titleOf: (id: string) => string | undefined; stuck: RequirementSummary[]; risks: SpaceRisks; members: SpaceMember[]; reqs: RequirementSummary[] }) {
   const st = useStagger(Math.min(attention.length, 10))
   const flash = useFlashRows(attention.map((a) => a.requestId))
   return (
@@ -218,7 +222,7 @@ function Decisions({ attention, titleOf, stuck, risks }: { attention: ProjectOve
         <div className="attention-panel-list">
           {attention.map((a, i) => (
             <div key={a.requestId} className={`${st(i).className ?? ''} ${flash(a.requestId)}`} style={st(i).style}>
-              <AttentionCard item={a} reqTitle={titleOf(a.requirementId)} compact />
+              <AttentionCard item={a} reqTitle={titleOf(a.requirementId)} compact fallback={fallbackAssigneeOf(a, members, reqs)} />
             </div>
           ))}
         </div>

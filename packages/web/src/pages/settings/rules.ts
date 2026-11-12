@@ -13,7 +13,8 @@ export function accessOf(me: Viewer | undefined, min: SpaceMember['role'], what:
   const role = me.member?.role
   if (role && RANK[role] >= RANK[min]) return { ok: true }
   const need = min === 'owner' ? 'owner' : `${min} 及以上`
-  return { ok: false, why: `${role ? `你（${me.name}）在这个空间是 ${role}` : `你（${me.name}）不是这个空间的成员`}，只能查看；${what}需要 ${need}，请找 owner 调整你的角色。` }
+  const who = role === 'viewer' ? '你是 viewer' : role ? `你（${me.name}）在这个空间是 ${role}` : `你（${me.name}）不是这个空间的成员`
+  return { ok: false, why: `${who}，只能查看；${what}需要 ${need}，请找 owner 调整你的角色。` }
 }
 
 // 字符规则同 packages/core/src/store/paths.ts 的 SAFE_ID（服务端用它校验成员 id）；再限 64 个字符，免得长 id 撑破成员行

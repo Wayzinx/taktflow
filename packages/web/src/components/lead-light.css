@@ -83,6 +83,13 @@
   background: linear-gradient(100deg, var(--text-3) 35%, var(--accent-text) 50%, var(--text-3) 65%) 0 0 / 300% 100%;
   animation: shimmer-text var(--takt) linear infinite;
 }
+/* failed：最近一回合失败，红色实心点 + 文字，不脉动 */
+.lead-light[data-state='failed'] .lead-light-dot {
+  background: var(--st-failed);
+}
+.lead-light[data-state='failed'] .lead-light-label {
+  color: var(--st-failed);
+}
 
 /* 悬停 / 聚焦显示 detail：120ms 淡入、退出同样有过渡 */
 .lead-light-tip {

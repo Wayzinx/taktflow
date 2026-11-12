@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, GanttChartSquare, History, Map as MapIcon, Maximize2, OctagonX, Play, RotateCw, Square, Unplug, Workflow } from 'lucide-react'
+import { Crosshair, Fingerprint, GanttChartSquare, History, Map as MapIcon, Maximize2, OctagonX, Play, RotateCw, Settings2, Square, Unplug, Workflow } from 'lucide-react'
 import type { RunDetail, RunSummary } from '@taktflow/core'
 import { supersededBy } from './run-context'
 import { useAsync, useSource } from '../../api'
@@ -19,6 +19,7 @@ import { nodeTypes } from './dag-nodes'
 import { edgeTypes } from './dag-edges'
 import { EventTicker } from '../../components/event-ticker'
 import { NodeDrawer } from './node-drawer'
+import { isEnvFailure } from './recovery'
 import { RunCounters } from './run-counters'
 import { TimeView } from './time/time-view'
 import './run.css'
@@ -367,6 +368,12 @@ function RecoveryBar({ detail, newer, delivered, historyUnknown, onDone }: { det
           {mode === 'interrupted' ? <Play aria-hidden /> : <RotateCw aria-hidden />}
           {actLabel}
         </button>
+      )}
+      {mode === 'failed' && isEnvFailure(firstError) && (
+        <Link to="/settings?tab=runtime" className="btn btn-sm" title="认证、登录或 harness 环境问题，重试前先检查配置">
+          <Settings2 aria-hidden />
+          检查模型与 Harness 设置
+        </Link>
       )}
     </div>
   )

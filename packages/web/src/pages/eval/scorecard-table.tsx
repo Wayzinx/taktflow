@@ -5,13 +5,11 @@ import { EmptyState, SkeletonRows, useStagger } from '../../components/ui'
 import { fmtCost, fmtTokens, totalTokens } from '../../lib/format'
 import { VERDICT, VERDICT_ORDER } from '../../lib/status'
 import { cardKey, cardTitle, pct } from './labels'
+import { sortScorecards, type SortKey } from './scorecard-sort'
 import { Sparkline } from './sparkline'
 
 export { cardKey }
 
-type SortKey = 'executions' | 'firstPassRate' | 'escapes' | 'detection' | 'cost' | 'none'
-const sortValue = (c: NodeScorecard, k: SortKey): number =>
-  k === 'executions' ? c.executions : k === 'firstPassRate' ? (c.firstPassRate ?? -1) : k === 'escapes' ? c.escapes : k === 'detection' ? (c.detection?.rate ?? -1) : k === 'cost' ? (c.usage.costUsd ?? 0) : 0
 
 export function Downstream({ d }: { d: NodeScorecard['downstream'] }) {
   const items = VERDICT_ORDER.filter((k) => (d[k] ?? 0) > 0) as VerdictCategory[]
@@ -44,7 +42,7 @@ export function ScorecardTable({ cards, by, onOpen }: { cards?: NodeScorecard[];
   const stg = useStagger(cards?.length ?? 0)
   if (!cards) return <SkeletonRows rows={8} />
   if (cards.length === 0) return <EmptyState compact icon={BarChart3} title="还没有成绩单" body="需求跑过几次之后，这里会按节点、配方和技能聚合出指标。" stewardAsk="怎样才能尽快看到节点成绩单？" />
-  const rows = sort.k === 'none' ? cards : [...cards].sort((a, b) => (sortValue(a, sort.k) - sortValue(b, sort.k)) * (sort.desc ? -1 : 1))
+  const rows = sortScorecards(cards, sort.k, sort.desc)
   const Th = ({ k, children, title }: { k: SortKey; children: string; title?: string }) => (
     <th className="r" aria-sort={sort.k === k ? (sort.desc ? 'descending' : 'ascending') : undefined} title={title}>
       <button className="sc-sort" onClick={() => setSort((s) => (s.k === k ? (s.desc ? { k, desc: false } : { k: 'none', desc: true }) : { k, desc: true }))}>
