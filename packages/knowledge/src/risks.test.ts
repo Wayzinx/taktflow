@@ -92,15 +92,26 @@ it('最新构建失败产生可去重的 knowledge 风险，后续成功解除',
   builds.push(build(2, 'succeeded'))
   expect(await knowledgeRisks(space, now)).toEqual([])
 })
-it('stale 必须严格超过三天，ready 不报警', async () => {
+it('stale 立即产生中风险，ready 不报警', async () => {
   const { space, base } = await setup()
   base.status = 'stale'
-  base.updatedAt = new Date(now.getTime() - 3 * 86400000).toISOString()
-  expect(await knowledgeRisks(space, now)).toEqual([])
-  base.updatedAt = new Date(Date.parse(base.updatedAt) - 1).toISOString()
-  expect((await knowledgeRisks(space, now))[0]?.key).toContain('/stale')
+  base.updatedAt = now.toISOString()
+  expect((await knowledgeRisks(space, now))[0]).toMatchObject({ key: 'knowledge:space//docs/stale', level: 'medium', firstSeenAt: base.updatedAt, evidence: [{ href: '/s/space/knowledge/docs' }] })
   base.status = 'ready'
   expect(await knowledgeRisks(space, now)).toEqual([])
+})
+it('没有构建记录的 error 状态也产生构建失败风险', async () => {
+  const { space, base } = await setup()
+  base.status = 'error'
+  base.error = '索引写入失败'
+  expect((await knowledgeRisks(space, now))[0]).toMatchObject({ key: 'knowledge:space//docs/build', detail: '索引写入失败' })
+})
+it('仅有未发布候选不报过期，源文档变化仍报', async () => {
+  const { space, base } = await setup()
+  Object.assign(base, { status: 'stale', candidateVersion: 2, staleDocs: 0 })
+  expect(await knowledgeRisks(space, now)).toEqual([])
+  Object.assign(base, { staleDocs: 1 })
+  expect((await knowledgeRisks(space, now))[0]?.key).toBe('knowledge:space//docs/stale')
 })
 it('最近两次完成评测降幅严格超过 5 个百分点，忽略运行中和失败评测', async () => {
   const { space, runs } = await setup()

@@ -41,8 +41,6 @@ const LOW_RELEVANCE = 0.3
 
 export function HitRow({ hit, index, mark, onMark }: { hit: Hit; index: number; mark: Mark; onMark: (m: Mark) => void }) {
   const [open, setOpen] = useState(false)
-  // 两路都命中时总分是 RRF 融合名次分，只反映排序；只有一路时总分就是这一路的归一化相关度
-  const fused = hit.scores?.bm25 !== undefined && hit.scores.vector !== undefined
   const routes = [hit.scores?.bm25, hit.scores?.vector, hit.scores?.rerank].filter((v): v is number => v !== undefined)
   const low = routes.length > 0 && Math.max(...routes) < LOW_RELEVANCE
   // 原文和摘要一样（例如 SQL 结果行）时不给"展开原文"
@@ -66,7 +64,7 @@ export function HitRow({ hit, index, mark, onMark }: { hit: Hit; index: number; 
             </span>
           )}
           <span className="kb-spacer" />
-          <span className="kb-hit-score num" title={fused ? '融合名次分：BM25 与向量两路按名次合并（RRF），只反映排序，不代表相关度' : '相关度：检索分按本次最高分归一化'}>
+          <span className="kb-hit-score num" title="检索排序分：单路为按本次最高分归一化的检索分，多路为按名次合并的 RRF 分；不代表相关概率">
             {fmtScore(hit.score)}
           </span>
         </div>

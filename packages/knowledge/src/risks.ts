@@ -1,4 +1,4 @@
-import type { ProjectStores, Risk } from '@taktflow/core'
+import type { KnowledgeBaseSummary, ProjectStores, Risk } from '@taktflow/core'
 import { readStaleSince } from './store/stale.js'
 import { readQueries } from './store/query-log.js'
 
@@ -36,17 +36,19 @@ export async function knowledgeRisks(
     const latest = (await store.builds(base.id)).sort(
       (build2, build3) => build3.version - build2.version,
     )[0]
-    if (latest?.status === 'failed')
+    if (latest?.status === 'failed' || base.status === 'error')
       add(
         'build',
         `${base.name} 构建失败`,
-        latest.log.at(-1) ?? '请检查构建日志后重新构建',
-        latest.endedAt ?? latest.startedAt,
+        base.error ?? latest?.log.at(-1) ?? '请检查构建日志后重新构建',
+        latest?.endedAt ?? latest?.startedAt ?? base.updatedAt,
       )
+    const detail = base as KnowledgeBaseSummary
+    const pendingOnly = detail.staleDocs === 0 && detail.candidateVersion !== undefined && detail.candidateVersion > base.version
     const staleSince =
-      base.status === 'stale' ? await readStaleSince(space.stores, base) : undefined
-    if (staleSince && time - Date.parse(staleSince) > 3 * 86400000)
-      add('stale', `${base.name} 已过期超过 3 天`, '请重新构建并评测后发布', staleSince)
+      base.status === 'stale' && !pendingOnly ? await readStaleSince(space.stores, base) : undefined
+    if (staleSince)
+      add('stale', `${base.name} 已过期`, '请重新构建并评测后发布', staleSince)
     const runs = (await store.evalRuns(base.id))
       .filter((record) => record.status === 'done')
       .sort((left, right) =>
