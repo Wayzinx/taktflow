@@ -1,10 +1,11 @@
 import type { CSSProperties, ReactNode } from 'react'
-import type { GraphNode, QualityMetrics, Usage } from '@taktflow/core'
+import type { GraphNode, QualityMetrics } from '@taktflow/core'
 import { useAsync } from '../../api'
 import { ErrorState, Skeleton } from '../../components/ui'
 import { fmtCost, fmtPct, fmtTokens, totalTokens } from '../../lib/format'
 import { NODE_KIND, VERDICT, VERDICT_ORDER } from '../../lib/status'
 import { INTERCEPT_SOURCES } from '../overview-quality'
+import { harnessSplit, sumBy } from './metrics-split'
 
 function Ring({ value }: { value?: number }) {
   const r = 22
@@ -64,18 +65,6 @@ const ROLE_LABEL: Record<string, string> = { pm: '产品 pm', architect: '架构
 const roleKey = (n: GraphNode) => n.role ?? `kind:${n.kind}`
 const roleLabel = (k: string) => ROLE_LABEL[k] ?? (k.startsWith('kind:') ? `${NODE_KIND[k.slice(5) as GraphNode['kind']]?.label ?? k.slice(5)}（未标角色）` : k)
 
-function sumBy(nodes: GraphNode[], key: (n: GraphNode) => string | undefined): Array<[string, Usage]> {
-  const m = new Map<string, Usage>()
-  for (const n of nodes) {
-    if (!n.usage) continue
-    const k = key(n)
-    if (k === undefined) continue
-    const u = m.get(k) ?? { inputTokens: 0, outputTokens: 0, costUsd: 0 }
-    m.set(k, { inputTokens: u.inputTokens + n.usage.inputTokens, outputTokens: u.outputTokens + n.usage.outputTokens, costUsd: (u.costUsd ?? 0) + (n.usage.costUsd ?? 0) })
-  }
-  return [...m.entries()].sort((a, b) => totalTokens(b[1]) - totalTokens(a[1]))
-}
-
 export function MetricsTab({ id, quality }: { id: string; quality?: QualityMetrics }) {
   const q = useAsync(async (ds) => {
     const [metrics, runs] = await Promise.all([ds.metrics(id), ds.runs(id)])
@@ -100,18 +89,17 @@ export function MetricsTab({ id, quality }: { id: string; quality?: QualityMetri
   const qm = m.quality ?? quality
   const verdictTotal = Object.values(m.verdicts).reduce((s, n) => s + (n ?? 0), 0)
   const byRole = sumBy(nodes, roleKey)
-  const byHarness = sumBy(nodes, (n) => n.harness)
   const tokens = totalTokens(m.usage)
-  // 拆分只能按运行图节点的 usage 汇总，和需求级 usage 可能对不上（不是每次调用都落到节点上），占比按节点合计算
+  // 拆分只能按运行图节点的 usage 汇总，和需求级 usage 可能对不上（不是每次调用都落到节点上）
   const nodeTokens = byRole.reduce((s, [, u]) => s + totalTokens(u), 0)
-  const harnessTokens = byHarness.reduce((s, [, u]) => s + totalTokens(u), 0)
+  const byHarness = harnessSplit(nodes, tokens)
   return (
     <div className="metrics">
       <div className="kpis">
         <Kpi label="首跑可用率" value={fmtPct(m.firstPassRate)} hint="首轮执行就通过的用例占比" visual={m.firstPassRate !== undefined ? <Ring value={m.firstPassRate} /> : undefined} />
         <Kpi label="Loop 轮次" value={m.loopIterations} hint="研发测试 Loop 累计迭代次数" />
         <Kpi label="人工介入" value={m.humanInterventions} hint="审批、回答、门禁放行、判决交人" />
-        <Kpi label="交付周期" value={m.leadTimeHours !== undefined ? <>{m.leadTimeHours.toFixed(1)}<span className="kpi-unit">h</span></> : '—'} hint="需求创建到准出" />
+        <Kpi label="交付周期" value={m.leadTimeHours !== undefined ? <>{m.leadTimeHours.toFixed(1)}<span className="kpi-unit">h</span></> : '—'} hint={m.leadTimeHours !== undefined ? '需求创建到准出' : '需求创建到准出，交付后计算'} />
         <Kpi label="Token / 成本" value={fmtTokens(tokens)} hint={<>{fmtCost(m.usage.costUsd)} · {m.runs} 次运行</>} />
       </div>
       {qm && <QualityCard q={qm} />}
@@ -155,24 +143,30 @@ export function MetricsTab({ id, quality }: { id: string; quality?: QualityMetri
           </div>
           <div className="card-head" style={{ borderTop: '1px solid var(--divider)' }}>
             <span className="card-title">按 harness</span>
+            <span className="spacer" />
+            {byHarness.known > 0 && byHarness.known < byHarness.denominator && (
+              <span className="faint num" style={{ fontSize: 12 }} title="多评审人的评审节点、门禁和没落到节点上的调用不记单一 harness">
+                已记录 {fmtTokens(byHarness.known)} / {fmtTokens(byHarness.denominator)}（{fmtPct(byHarness.known / byHarness.denominator)}）
+              </span>
+            )}
           </div>
           <div className="card-pad">
-            {byHarness.length === 0 ? (
+            {byHarness.known === 0 ? (
               <p className="faint metrics-empty">运行图节点没有记录 harness，暂时无法按 harness 拆分。</p>
             ) : (
             <>
             <div className="stack-bar">
-              {byHarness.map(([k, u], i) => (
-                <span key={k} style={{ flex: totalTokens(u), background: ROLE_COLORS[(i * 3) % ROLE_COLORS.length] }} title={`${k} ${fmtTokens(totalTokens(u))}`} />
+              {byHarness.rows.map((r, i) => (
+                <span key={r.key} style={{ flex: r.tokens, background: r.unknown ? 'var(--bg-sunken)' : ROLE_COLORS[(i * 3) % ROLE_COLORS.length] }} title={`${r.key} ${fmtTokens(r.tokens)}`} />
               ))}
             </div>
             <div className="stack-legend">
-              {byHarness.map(([k, u], i) => (
-                <span key={k}>
-                  <i style={{ background: ROLE_COLORS[(i * 3) % ROLE_COLORS.length] }} />
-                  <span className="mono">{k}</span>
-                  <b className="mono num">{fmtTokens(totalTokens(u))}</b>
-                  <span className="faint num">{harnessTokens ? Math.round((totalTokens(u) / harnessTokens) * 100) : 0}%</span>
+              {byHarness.rows.map((r, i) => (
+                <span key={r.key}>
+                  <i style={{ background: r.unknown ? 'var(--bg-sunken)' : ROLE_COLORS[(i * 3) % ROLE_COLORS.length] }} />
+                  <span className={r.unknown ? 'faint' : 'mono'}>{r.key}</span>
+                  <b className="mono num">{fmtTokens(r.tokens)}</b>
+                  <span className="faint num">{fmtPct(r.tokens / byHarness.denominator)}</span>
                 </span>
               ))}
             </div>
