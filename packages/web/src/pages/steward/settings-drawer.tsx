@@ -17,8 +17,9 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
   const q = useAsync(
     async (d) => {
       if (!open) return undefined
-      const [prefs, profile, spaces, harnesses, models] = await Promise.all([d.stewardPrefs(), d.stewardProfile(), d.spaces().catch(() => []), d.harnesses().catch(() => []), d.models().catch(() => [])])
-      return { prefs, profile: profile.content, spaces, harnesses, models }
+      // harness × 模型和输入框的选择器同一来源：管家是全局的，不按当前所在空间的配置判断能不能用
+      const [prefs, profile, spaces, choices] = await Promise.all([d.stewardPrefs(), d.stewardProfile(), d.spaces().catch(() => []), d.stewardRuntimeChoices()])
+      return { prefs, profile: profile.content, spaces, choices }
     },
     [open],
   )
@@ -108,7 +109,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
         ) : (
           <TabPanel key={tab}>
             {tab === 'prefs' ? (
-              <PrefsForm prefs={prefs} onChange={setPrefs} spaces={q.data.spaces} harnesses={q.data.harnesses} models={q.data.models} />
+              <PrefsForm prefs={prefs} onChange={setPrefs} spaces={q.data.spaces} choices={q.data.choices} />
             ) : (
               <div className="stwp-memory">
                 <p className="stwp-field-note">

@@ -54,17 +54,16 @@ function Logo() {
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 const tip = (label: string, combo: string) => `${label}（${shortcutLabel(combo)}）`
 
-/** 管家未读数：首屏取 /steward/feed 里最近的 unread，之后跟 /steward/stream。 */
+/** 管家未读数：首屏取 /steward/unread（只要一个数，不拉整份动态），之后跟 /steward/stream。 */
 function useStewardUnreadSync() {
   const ds = useSource()
   useEffect(() => {
     let alive = true
     const load = () =>
       void ds
-        .stewardFeed()
-        .then((items) => {
-          const last = items.find((i) => i.type === 'unread')
-          if (alive && last && last.type === 'unread') setStewardUnread(last.count)
+        .stewardUnread()
+        .then((count) => {
+          if (alive) setStewardUnread(count)
         })
         .catch(() => undefined)
     load()
