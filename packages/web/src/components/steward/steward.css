@@ -215,27 +215,35 @@
 }
 .stw-live-glyph {
   flex: none;
-  width: 1em;
-  text-align: center;
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
   color: var(--accent);
-  font-weight: 600;
 }
-.stw-live-glyph::before {
-  content: '✻';
+/* 六芒星：一个图形匀速转、同时轻轻呼吸（只动 rotate / scale / opacity，走合成层），不换字符，就不会一跳一跳 */
+.stw-live-glyph svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
 }
-@keyframes stw-glyph {
-  0% { content: '·'; }
-  17% { content: '✢'; }
-  33% { content: '✳'; }
-  50% { content: '✶'; }
-  67% { content: '✻'; }
-  83% { content: '✽'; }
+@keyframes stw-glyph-spin {
+  to { rotate: 360deg; }
+}
+@keyframes stw-glyph-breathe {
+  0%, 100% { scale: 0.78; opacity: 0.7; } /* motion-audit: ok 进行中指示的呼吸，不是按压反馈 */
+  50% { scale: 1; opacity: 1; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .stw-live-glyph::before {
-    animation: stw-glyph 1.2s steps(1, end) infinite;
+  .stw-live-glyph svg {
+    will-change: rotate, scale;
+    animation: stw-glyph-spin calc(var(--takt) * 3) linear infinite, stw-glyph-breathe var(--takt) ease-in-out infinite;
   }
 }
+
 /* 回复结束在失败或停止上：原因 + 重试 */
 .stw-msg-end {
   display: flex;
@@ -410,24 +418,74 @@ button.stw-thinking:hover {
   width: 11px;
   height: 11px;
 }
-/* 回复进行中：输入框上沿有一道光从左扫到右 */
-.stw-composer[data-busy]::before {
-  content: '';
+/* 回复进行中：一道光沿输入框整圈边框匀速绕行。用 SVG 描边的虚线偏移走周长，长边短边一样快；
+   三段虚线前端对齐：亮头、半透明中段、淡尾巴 */
+.stw-composer[data-busy] {
+  border-color: color-mix(in oklch, var(--accent) 26%, var(--border-strong));
+}
+.stw-orbit {
   position: absolute;
-  inset: -1px -1px auto;
-  height: 2px;
-  border-radius: var(--r-md) var(--r-md) 0 0;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent) 0 0 / 40% 100% no-repeat;
-  background-color: color-mix(in oklch, var(--accent) 18%, transparent);
+  inset: -1px;
+  width: calc(100% + 2px);
+  height: calc(100% + 2px);
+  overflow: visible;
   pointer-events: none;
 }
-@keyframes stw-sweep {
-  from { background-position: -60% 0; }
-  to { background-position: 160% 0; }
+.stw-orbit rect {
+  x: 0.75px;
+  y: 0.75px;
+  width: calc(100% - 1.5px);
+  height: calc(100% - 1.5px);
+  rx: calc(var(--r-md) - 0.25px);
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+}
+/* pathLength=100：虚线长度按周长百分比算；起点偏移 = 段长，三段的前端落在同一处 */
+.stw-orbit-tail {
+  stroke-dasharray: 26 74;
+  stroke-dashoffset: 26;
+  opacity: 0.16;
+}
+.stw-orbit-mid {
+  stroke-dasharray: 11 89;
+  stroke-dashoffset: 11;
+  opacity: 0.45;
+}
+.stw-orbit-head {
+  stroke-dasharray: 3 97;
+  stroke-dashoffset: 3;
+  stroke-width: 2px;
+  filter: drop-shadow(0 0 3px color-mix(in oklch, var(--accent) 80%, transparent));
+}
+@keyframes stw-orbit-tail {
+  to { stroke-dashoffset: -74; }
+}
+@keyframes stw-orbit-mid {
+  to { stroke-dashoffset: -89; }
+}
+@keyframes stw-orbit-head {
+  to { stroke-dashoffset: -97; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .stw-composer[data-busy]::before {
-    animation: stw-sweep calc(var(--takt) * 2) linear infinite;
+  .stw-orbit rect {
+    animation: stw-orbit-tail calc(var(--takt) * 3) linear infinite;
+  }
+  .stw-orbit .stw-orbit-mid {
+    animation-name: stw-orbit-mid;
+  }
+  .stw-orbit .stw-orbit-head {
+    animation-name: stw-orbit-head;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 不绕圈：整圈强调色边框，仍看得出在回复 */
+  .stw-orbit {
+    display: none;
+  }
+  .stw-composer[data-busy] {
+    border-color: color-mix(in oklch, var(--accent) 60%, var(--border-strong));
   }
 }
 /* 窄输入框（Solo 对话栏、停靠面板）：快捷键提示让位给模型名 */

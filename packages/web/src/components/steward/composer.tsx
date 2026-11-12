@@ -179,6 +179,14 @@ export function Composer({ draft, onDraft, context, onContext, onSend, busy, onS
       }}
       onDrop={onDrop}
     >
+      {onStop && (
+        // 回复进行中：一道光沿边框匀速绕圈（亮头 + 两段渐隐的尾巴，前端对齐）
+        <svg className="stw-orbit" aria-hidden>
+          <rect className="stw-orbit-tail" pathLength={100} />
+          <rect className="stw-orbit-mid" pathLength={100} />
+          <rect className="stw-orbit-head" pathLength={100} />
+        </svg>
+      )}
       {(context.length > 0 || files.length > 0) && (
         <div className="stw-composer-ctx">
           {context.length > 0 && <Chips items={context.map((c) => ({ id: refKey(c), label: c.label ?? c.id, title: `${CTX_LABEL[c.type]}：${c.id}` }))} onRemove={(id) => onContext(context.filter((c) => refKey(c) !== id))} />}

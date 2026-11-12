@@ -102,7 +102,11 @@ function LiveStatus({ m }: { m: StewardMessage }) {
   const secs = Math.max(0, Math.round((now - Date.parse(m.at)) / 1000))
   return (
     <div className="stw-live" role="status">
-      <span className="stw-live-glyph" aria-hidden />
+      <span className="stw-live-glyph" aria-hidden>
+        <svg viewBox="0 0 16 16">
+          <path d="M8 1.6v12.8M2.46 4.8l11.08 6.4M2.46 11.2l11.08-6.4" />
+        </svg>
+      </span>
       <span className="shimmer-text truncate">{label}</span>
       <span className="num">{secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`}</span>
     </div>
