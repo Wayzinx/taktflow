@@ -5,6 +5,7 @@ import { useCrumbs } from '../../components/layout'
 import { ErrorState, PageHeader, Segmented, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
 import { setQuery, useLocation } from '../../lib/router'
 import { NewRunDialog } from './new-run-dialog'
+import { QualityAlert } from './quality-alert'
 import { RunDetail } from './run-detail'
 import { RunsList } from './runs-list'
 import { Samples } from './samples'
@@ -27,6 +28,7 @@ function Scorecards() {
   const open = query.get('card') ?? query.get('node') ?? undefined
   const card: NodeScorecard | undefined = open ? findCard(q.data ?? [], open) : undefined
   const regressed = q.data?.filter((c) => c.regression?.suspected) ?? []
+  const onlyRegressed = query.get('regressed') === '1' && regressed.length > 0
   return (
     <>
       <div className="ev-toolbar">
@@ -34,13 +36,19 @@ function Scorecards() {
         <span className="faint ev-toolbar-hint">从事件与产物直接计算，零 token；缺陷只有人确认归因后才计入逃逸与检出率。</span>
         <span style={{ flex: 1 }} />
         {regressed.length > 0 && (
-          <span className="sc-regress" title={regressed.map((c) => `${c.label}：${c.regression?.reason}`).join('\n')}>
+          <button
+            type="button"
+            className="sc-regress sc-regress-btn"
+            aria-pressed={onlyRegressed}
+            title={`${regressed.map((c) => `${c.label}：${c.regression?.reason}`).join('\n')}\n${onlyRegressed ? '点击显示全部节点' : '点击只看这些节点'}`}
+            onClick={() => setQuery({ regressed: onlyRegressed ? undefined : '1' })}
+          >
             <TrendingDown aria-hidden />
-            {regressed.length} 项疑似退化
-          </span>
+            {onlyRegressed ? `只看 ${regressed.length} 项疑似退化 · 显示全部` : `${regressed.length} 项疑似退化`}
+          </button>
         )}
       </div>
-      <div className="card">{q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : <ScorecardTable cards={q.data} by={by} onOpen={(k) => setQuery({ card: k, node: undefined })} />}</div>
+      <div className="card">{q.error && !q.data ? <ErrorState error={q.error} onRetry={q.reload} /> : <ScorecardTable cards={onlyRegressed ? regressed : q.data} by={by} onOpen={(k) => setQuery({ card: k, node: undefined })} />}</div>
       <ScorecardDetail card={card} onClose={() => setQuery({ card: undefined, node: undefined })} />
     </>
   )
@@ -97,7 +105,7 @@ export function EvalPage() {
       />
       <Tabs
         value={tab}
-        onChange={(t) => setQuery({ tab: t === 'scorecards' ? undefined : t, run: undefined, card: undefined, node: undefined, by: undefined, new: undefined })}
+        onChange={(t) => setQuery({ tab: t === 'scorecards' ? undefined : t, run: undefined, card: undefined, node: undefined, by: undefined, new: undefined, regressed: undefined })}
         tabs={[
           { id: 'scorecards', label: '成绩单', icon: BarChart3 },
           { id: 'runs', label: '评测运行', icon: FlaskConical },
@@ -105,6 +113,7 @@ export function EvalPage() {
         ]}
       />
       <TabPanel key={tab} className="eval-body">
+        <QualityAlert what="成绩单的逃逸与检出率、样本和评测结论" />
         {tab === 'runs' ? <Runs /> : tab === 'cases' ? <Samples /> : <Scorecards />}
       </TabPanel>
     </div>

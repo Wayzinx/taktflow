@@ -30,7 +30,7 @@ function ConfigSummary({ config }: { config: Record<string, unknown> }) {
   )
 }
 
-export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload: () => void }) {
+export function SourcesTab({ base, reload, onBuild }: { base: KnowledgeBaseDetail; reload: () => void; onBuild: () => void }) {
   const ds = useSource()
   const docs = useAsync((d) => d.knowledgeDocs(base.id), [base.id])
   const st = useStagger(docs.data?.length ?? 0)
@@ -145,13 +145,19 @@ export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload
           <h2 className="kb-h2">文档</h2>
           {docs.data && <span className="faint num">{docs.data.length}</span>}
           {!!base.staleDocs && <span className="kb-stale">{base.staleDocs} 篇在构建后变了</span>}
+          {!!base.staleDocs && isRag && (
+            <button type="button" className="btn btn-sm" onClick={onBuild}>
+              <RefreshCw />
+              重新构建
+            </button>
+          )}
         </div>
         {docs.error && !docs.data ? (
           <ErrorState compact error={docs.error} onRetry={docs.reload} />
         ) : !docs.data ? (
           <SkeletonRows rows={6} icon={false} />
         ) : docs.data.length === 0 ? (
-          <EmptyState compact icon={FileText} title="还没有文档" body={isRag ? '上传文件或添加仓库路径，然后同步一次。' : '这个类型查询时实时读取，不需要文档。'} action={isRag ? <button type="button" className="btn btn-sm btn-primary" onClick={() => (setKind('upload'), setAdding(true))}>上传文件</button> : undefined} />
+          <EmptyState compact icon={FileText} title="还没有文档" body={isRag ? (sources.some((x) => x.type === 'path' || x.type === 'repo') ? '目录或仓库里没有符合规则的文件，检查路径和 glob。' : '上传文件或添加仓库路径，然后同步一次。') : '这个类型查询时实时读取，不需要文档。'} action={isRag ? <button type="button" className="btn btn-sm btn-primary" onClick={() => (setKind('upload'), setAdding(true))}>上传文件</button> : undefined} />
         ) : (
           <table className="table kb-docs">
             <thead>
@@ -168,9 +174,19 @@ export function SourcesTab({ base, reload }: { base: KnowledgeBaseDetail; reload
                 return (
                   <tr key={d.path} className={`${s.className ?? ''} ${flash(d.path)}`} style={s.style}>
                     <td className="mono">{d.path}</td>
-                    <td className="r num">{Math.max(1, Math.round(d.bytes / 1000))} KB</td>
-                    <td className="faint">{fmtRelative(d.updatedAt)}</td>
-                    <td>{d.indexed ? <span className="kb-tag" data-tone="success">已索引</span> : <span className="kb-tag" data-tone="waiting">待索引</span>}</td>
+                    <td className="r num">{d.deleted ? <span className="faint">—</span> : `${Math.max(1, Math.round(d.bytes / 1000))} KB`}</td>
+                    <td className="faint">{d.deleted ? '已删除' : fmtRelative(d.updatedAt)}</td>
+                    <td>
+                      {d.deleted ? (
+                        <span className="kb-tag" data-tone="stale" title="上次构建时还在，源文件已经没了；重新构建后从索引里移除">已删除 · 索引里还有</span>
+                      ) : d.stale ? (
+                        <span className="kb-tag" data-tone="stale" title="构建之后内容又变了，运行查到的是旧内容；重新构建后更新">构建后变了</span>
+                      ) : d.indexed ? (
+                        <span className="kb-tag" data-tone="success">已索引</span>
+                      ) : (
+                        <span className="kb-tag" data-tone="waiting">待索引</span>
+                      )}
+                    </td>
                   </tr>
                 )
               })}

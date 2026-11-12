@@ -206,6 +206,21 @@ describe('FsInsights.metrics', () => {
     expect((await new FsInsights(stores()).metrics(requirement.id)).leadTimeHours).toBeUndefined()
   })
 
+  it('交付周期 = 需求创建到最终阶段人工签字；没有人工节点时取最终阶段最后完成的节点；Lead 任务和未交付不算', async () => {
+    const snapshot: WorkflowSnapshot = { id: 'test', title: '测试', version: '1', stages: [{ id: 'build', title: '开发' }, { id: 'report', title: '准出' }], nodes: [
+      node('code', { stage: 'build' }), node('check', { kind: 'gate', stage: 'report' }), node('acceptance', { kind: 'human', stage: 'report', needs: ['check'] }), node('writeback', { kind: 'agent', stage: 'report', needs: ['acceptance'] }),
+    ] }
+    const done = (endedAt: string, result?: unknown) => runtime('', { status: 'succeeded', attempts: 1, endedAt, result })
+    const nodes = { code: done('2026-11-04T01:00:00.000Z'), check: done('2026-11-04T02:00:00.000Z'), acceptance: done('2026-11-04T03:00:00.000Z', { decision: 'approve' }), writeback: done('2026-11-04T05:00:00.000Z') }
+    const delivered = run({ status: 'succeeded', endedAt: '2026-11-04T05:00:00.000Z', nodes })
+    const lead = run({ runId: 'task', kind: 'task', workflowId: 'lead', status: 'succeeded', startedAt: '2026-11-05T00:00:00.000Z' })
+    const metrics = (runs: RunState[], snap = snapshot) => new FsInsights(stores({ runs, snapshots: { 'run-1': snap } })).metrics(requirement.id)
+    expect((await metrics([delivered, lead])).leadTimeHours).toBe(3)
+    const noHuman: WorkflowSnapshot = { ...snapshot, nodes: snapshot.nodes.filter((item) => item.id !== 'acceptance' && item.id !== 'writeback') }
+    expect((await metrics([run({ status: 'succeeded', nodes: { code: nodes.code, check: nodes.check } })], noHuman)).leadTimeHours).toBe(2)
+    expect((await metrics([run({ status: 'running', nodes: { ...nodes, acceptance: runtime('acceptance', { status: 'waiting_human' }) } })])).leadTimeHours).toBeUndefined()
+  })
+
   it('快照已知时仅 loop 内 script 的结果计首跑率，父 loop/agent/loop 外结果不重复计数', async () => {
     const snapshot = workflow([
       node('outside'), node('loop', { kind: 'loop', body: [node('run'), node('agent', { kind: 'agent' }), node('inner', { kind: 'loop' })] }),

@@ -79,6 +79,7 @@ export function ScorecardDetail({ card, onClose }: { card?: NodeScorecard; onClo
       {c && (
         <div className="sc-detail">
           {c.regression?.suspected && <div className="sc-callout">{c.regression.reason}</div>}
+          {c.regression?.exploratory && <div className="sc-callout is-explore">{c.regression.reason}</div>}
           <div className="sc-metrics">
             <Metric label="执行" value={c.executions} sub={c.durationMsAvg ? `平均 ${fmtDuration(c.durationMsAvg)}` : undefined} />
             <Metric label="一次通过率" value={pct(c.firstPassRate)} tone={c.regression?.suspected ? 'bad' : undefined} />

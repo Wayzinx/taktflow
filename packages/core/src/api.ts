@@ -1140,7 +1140,8 @@ export interface NodeScorecard {
   durationMsAvg?: number
   /** 按配方的时间序列（最早出现时间升序）。 */
   trend?: Array<{ recipeKey: string; firstAt: string; executions: number; firstPassRate?: number }>
-  regression?: { suspected: boolean; reason?: string }
+  /** exploratory：指标变差但前后某一组执行次数不足，只作参考，不判退化、不产生风险。 */
+  regression?: { suspected: boolean; reason?: string; exploratory?: boolean }
 }
 
 export interface EvalCollectRequest {
@@ -1709,6 +1710,10 @@ export interface KnowledgeDoc {
   bytes: number
   updatedAt: string
   indexed: boolean
+  /** 构建之后内容又变了（或源文件已删除），运行查到的可能是旧内容。 */
+  stale?: boolean
+  /** 上次构建时在、现在源文件已经没了。 */
+  deleted?: boolean
 }
 
 export interface KnowledgeEvalSet {

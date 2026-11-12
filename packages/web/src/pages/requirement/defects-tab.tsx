@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpRight, Bug, FlaskConical, PencilLine, Plus, ScanSearch } from 'lucide-react'
+import { ArrowUpRight, Bug, PencilLine, Plus, ScanSearch } from 'lucide-react'
 import type { DefectDetail, DefectMergeSuggestion, Observation, RequirementDetail } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../../api'
 import { EmptyState, ErrorState, Segmented, SkeletonRows, toast } from '../../components/ui'
 import { TaktLoader } from '../../components/takt'
 import { actorName, fmtDate, fmtRelative } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
-import { DEFECT_STATUS, OBS_KIND, OBS_SOURCE, ORIGIN, pct, SEVERITY, targetKey } from '../eval/labels'
+import { DEFECT_STATUS, OBS_KIND, OBS_SOURCE, ORIGIN, pct, SEVERITY } from '../eval/labels'
+import { QualityAlert } from '../eval/quality-alert'
+import { RegressionCases } from '../eval/regression-cases'
 import { nodeIndex, Precheck, StageMarks, Suggestions, TraceChain } from './defects-tab.attribution'
 import { ConfirmDialog } from './defects-tab.confirm'
 import { MissCard, parseCheckpoint } from './defects-tab.checkpoints'
@@ -20,29 +22,6 @@ import './defects-tab.css'
 function Tag({ meta }: { meta: { label: string; tone: string } }) {
   return <span className={`df-tag df-tone-${meta.tone}`}>{meta.label}</span>
 }
-
-function RegressionCases({ d, runIds }: { d: DefectDetail; runIds: string[] }) {
-  const q = useAsync((ds) => ds.evalCases(), [d.id, d.status])
-  const list = (q.data ?? []).filter((c) => c.source.kind === 'defect' && c.source.defectId === d.id && (!c.source.runId || runIds.includes(c.source.runId)))
-  if (!q.data) return <SkeletonRows rows={2} gap={10} />
-  if (list.length === 0) return <p className="faint df-none">还没有生成回归用例。</p>
-  return (
-    <ul className="df-cases">
-      {list.map((c) => (
-        <li key={c.id}>
-          <FlaskConical aria-hidden />
-          <span className="truncate">{c.title}</span>
-          <span className="mono faint">{targetKey(c.target)}</span>
-          <Link to={`/eval?tab=runs&new=${encodeURIComponent(targetKey(c.target))}`} className="btn btn-ghost btn-sm">
-            用它评测
-            <ArrowUpRight />
-          </Link>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
 /** 缺陷由哪些观察创建：来源、类型、所属检查点。 */
 function SourceObservations({ list }: { list: Observation[] }) {
   return (
@@ -226,7 +205,7 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
   }, [attributing])
   const selectedId = query.get('defect') ?? list?.[0]?.id
   const selected = list?.find((d) => d.id === selectedId)
-  if (q.error && !list) return <ErrorState error={q.error} onRetry={q.reload} />
+  if (q.error && !list) return <><QualityAlert what="缺陷、观察和归因结论" /><ErrorState error={q.error} onRetry={q.reload} /></>
   const form = (
     <DefectForm
       open={formOpen}
@@ -248,9 +227,11 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
       ]}
     />
   )
+  const alert = <QualityAlert what="缺陷、观察和归因结论" />
   if (view === 'obs')
     return (
       <div className="df-wrap">
+        {alert}
         <div className="df-switch">{viewSwitch}</div>
         <ObservationList requirementId={id} onCreate={(picked) => (setFrom(picked), setFormOpen(true))} />
         {form}
@@ -259,6 +240,7 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
   if (list && list.length === 0)
     return (
       <div className="card">
+        {alert}
         <EmptyState
           icon={Bug}
           title="还没有录入缺陷"
@@ -280,6 +262,7 @@ export function DefectsTab({ id, detail }: { id: string; detail?: RequirementDet
     )
   return (
     <div className="df-wrap">
+      {alert}
     <div className="df-switch">{viewSwitch}</div>
     <div className="df-layout">
       <div className="card df-list">

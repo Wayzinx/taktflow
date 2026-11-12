@@ -9,7 +9,7 @@ import { listDefects } from '../defects/index.js'
 import { runEventsOf } from '../insights/run-digest.js'
 
 /** 成绩单用到的事件类型：按类型取缓存的子集，不再每次整份解析每个运行的事件日志。 */
-const SCORECARD_EVENT_TYPES = ['node.started', 'node.recipe', 'node.finished', 'node.failed', 'node.checks', 'invocation.started', 'retry.suppressed', 'artifact.edited', 'judge.verdict', 'harness.usage'] as const
+const SCORECARD_EVENT_TYPES = ['node.started', 'node.recipe', 'node.finished', 'node.failed', 'node.checks', 'invocation.started', 'retry.suppressed', 'artifact.edited', 'judge.verdict', 'harness.usage', 'review.round'] as const
 
 export interface ScorecardOptions { by: 'node' | 'recipe' | 'skill'; workflowId?: string }
 interface Sample {
@@ -18,6 +18,20 @@ interface Sample {
   downstream: NodeScorecard['downstream']; escapes: Set<string>; missed: Set<string>; caught: Set<string>; detector: boolean
 }
 const emptyIssues = () => ({ blocker: 0, major: 0, minor: 0, nit: 0 })
+const pct = (rate?: number) => `${Math.round((rate ?? 0) * 100)}%`
+interface RecipeGroup { executions: number; firstPassRate?: number; escapes: number }
+/**
+ * 相邻两组（配方 / 技能版本）的退化判定：一次通过率下降超过 20 个百分点，或确认的逃逸缺陷增加。
+ * 前后两组都要有至少 min 次执行，否则只标“样本不足”（探索性），不判退化、不进风险。
+ */
+function regressionOf(current: RecipeGroup, previous: RecipeGroup, min: number, what: string): NonNullable<NodeScorecard['regression']> {
+  const worse = (previous.firstPassRate ?? 0) - (current.firstPassRate ?? 0) > 0.2, escapeGrowth = current.escapes > previous.escapes
+  if (!worse && !escapeGrowth) return { suspected: false }
+  const change = worse ? `${what}一次通过率 ${pct(previous.firstPassRate)} → ${pct(current.firstPassRate)}` : `${what}确认的逃逸缺陷 ${previous.escapes} → ${current.escapes}`
+  const counts = `（${previous.executions} → ${current.executions} 次执行）`
+  if (current.executions < min || previous.executions < min) return { suspected: false, exploratory: true, reason: `样本不足，暂不判断：${change}${counts}，每组至少 ${min} 次执行才比较` }
+  return { suspected: true, reason: `${change}${counts}` }
+}
 /** 产物关系索引：路径 → 产物（同路径取第一条）、父路径 → 派生自它的产物、AC → 关联它的产物。 */
 function artifactGraph(artifacts: ArtifactRecord[], req: string) {
   const byPath = new Map<string, ArtifactRecord>(), children = new Map<string, ArtifactRecord[]>(), byAc = new Map<string, ArtifactRecord[]>()
@@ -56,8 +70,11 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
       const firstFailure = nodeEvents.find((e) => e.type === 'node.failed')
       const firstChecks = nodeEvents.find((e) => e.type === 'node.checks')?.data as EventPayloads['node.checks'] | undefined
       const definition = definitions.find((node) => node.id === nodeId)
+      // 评审节点每个评审人调用、人工确认都会重新进入节点，attempts 不是执行次数：按本次运行里只评审了一轮且该轮通过判定。
+      const rounds = nodeEvents.filter((e) => e.type === 'review.round').map((e) => e.data as EventPayloads['review.round'])
+      const firstTry = definition?.kind === 'review' ? rounds.length === 1 && rounds[0]!.passed : state.attempts === 1
       for (const event of identities) samples.push({ kind: definition?.kind, run, nodeId, recipe: event?.data as NodeRecipe | undefined, firstAt: event?.ts ?? state.startedAt ?? run.startedAt,
-        events: nodeEvents, pass: firstFinish?.status === 'succeeded' && !firstFailure && state.attempts === 1 && !(state.reworks ?? 0)
+        events: nodeEvents, pass: firstFinish?.status === 'succeeded' && !firstFailure && firstTry && !(state.reworks ?? 0)
           && (!definition?.completion?.length || !!firstChecks && !firstChecks.unmet.length && firstChecks.checks.length === definition.completion.length),
         artifacts, rounds: 0, reworks: 0, issues: emptyIssues(), edits: { cosmetic: 0, semantic: 0 }, editedPaths: new Set(), downstream: {}, escapes: new Set(), missed: new Set(), caught: new Set(),
         detector: definition?.kind === 'review' || definition?.kind === 'gate',
@@ -168,6 +185,7 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
     }
   }
   const cards: NodeScorecard[] = []
+  const minExecutions = Math.max(3, stores.config.eval?.gate?.minSamples ?? 0)
   for (const { key, samples: rows } of groups.values()) {
     const card: NodeScorecard = { key, label: key.skill ? `${key.skill.name}@${key.skill.hash?.slice(0, 8)}` : `${key.workflowId}/${key.nodeId}${key.recipeKey ? `@${key.recipeKey}` : ''}`,
       role: rows[0]?.recipe?.role, executions: rows.length, firstPassRate: rows.filter((row) => row.pass).length / rows.length,
@@ -197,28 +215,18 @@ export async function scorecards(stores: ProjectStores, options: ScorecardOption
     const latest = card.trend.at(-1), previous = card.trend.at(-2)
     if (latest && previous) {
       const escaped = (recipe: string) => new Set(trends.get(recipe)!.flatMap((row) => [...row.escapes])).size
-      const worse = latest.executions >= 3 && (previous.firstPassRate ?? 0) - (latest.firstPassRate ?? 0) > 0.2
-      const escapeGrowth = escaped(latest.recipeKey) > escaped(previous.recipeKey)
-      card.regression = { suspected: worse || escapeGrowth, reason: worse ? '最近配方的一次通过率下降超过 20 个百分点' : escapeGrowth ? '最近配方确认的逃逸缺陷增加' : undefined }
+      card.regression = regressionOf({ ...latest, escapes: escaped(latest.recipeKey) }, { ...previous, escapes: escaped(previous.recipeKey) }, minExecutions, '最近配方')
     }
     cards.push(card)
   }
   // 技能按内容版本分行，退化比较需要跨相邻版本。
   if (options.by === 'skill') for (const name of new Set(cards.map((card) => card.key.skill!.name))) {
     const versions = cards.filter((card) => card.key.skill!.name === name).sort((a, b) => (a.trend?.[0]?.firstAt ?? '').localeCompare(b.trend?.[0]?.firstAt ?? ''))
-    for (let i = 1; i < versions.length; i++) {
-      const current = versions[i]!, previous = versions[i - 1]!
-      const suspected = current.executions >= 3 && (previous.firstPassRate ?? 0) - (current.firstPassRate ?? 0) > 0.2 || current.escapes > previous.escapes
-      current.regression = { suspected, reason: suspected ? '技能新版本的一次通过率下降或逃逸缺陷增加' : undefined }
-    }
+    for (let i = 1; i < versions.length; i++) versions[i]!.regression = regressionOf(versions[i]!, versions[i - 1]!, minExecutions, '技能新版本')
   }
   if (options.by === 'recipe') for (const node of new Set(cards.map((card) => `${card.key.workflowId}/${card.key.nodeId}`))) {
     const versions = cards.filter((card) => `${card.key.workflowId}/${card.key.nodeId}` === node).sort((a, b) => (a.trend?.[0]?.firstAt ?? '').localeCompare(b.trend?.[0]?.firstAt ?? ''))
-    for (let i = 1; i < versions.length; i++) {
-      const current = versions[i]!, previous = versions[i - 1]!
-      const suspected = current.executions >= 3 && (previous.firstPassRate ?? 0) - (current.firstPassRate ?? 0) > 0.2 || current.escapes > previous.escapes
-      current.regression = { suspected, reason: suspected ? '新配方的一次通过率下降或逃逸缺陷增加' : undefined }
-    }
+    for (let i = 1; i < versions.length; i++) versions[i]!.regression = regressionOf(versions[i]!, versions[i - 1]!, minExecutions, '新配方')
   }
   return cards.sort((a, b) => a.label.localeCompare(b.label))
 }

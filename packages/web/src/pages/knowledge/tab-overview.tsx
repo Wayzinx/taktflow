@@ -27,17 +27,17 @@ function Health({ icon: Icon, tone, children, action }: { icon: typeof CircleChe
   )
 }
 
-/** 7 天趋势：查询量柱 + 命中率读数。柱高是静态的（不对 height 做动画）。 */
+/** 7 天趋势：查询量柱 + 有结果率读数（没有查询的日子记“—”，不是 0%）。柱高是静态的（不对 height 做动画）。 */
 function Trend({ trend }: { trend: KnowledgeBaseDetail['usage']['trend'] }) {
   const max = Math.max(1, ...trend.map((t) => t.queries))
   return (
     <div className="kb-trend" role="img" aria-label={`近 7 天查询量：${trend.map((t) => t.queries).join('、')}`}>
       {trend.map((t) => (
-        <div key={t.date} className="kb-trend-col" title={`${t.date}：${t.queries} 次查询，命中率 ${pct(t.hitRate)}`}>
+        <div key={t.date} className="kb-trend-col" title={t.queries ? `${t.date}：${t.queries} 次查询，有结果率 ${pct(t.hitRate)}` : `${t.date}：没有查询`}>
           <span className="kb-trend-v num">{t.queries}</span>
-          <span className="kb-trend-bar" style={{ '--h': `${Math.max(4, (t.queries / max) * 100)}%` } as CSSProperties} />
+          <span className="kb-trend-bar" data-empty={t.queries ? undefined : ''} style={{ '--h': `${Math.max(4, (t.queries / max) * 100)}%` } as CSSProperties} />
           <span className="kb-trend-d num">{t.date.slice(5)}</span>
-          <span className="kb-trend-hit num">{pct(t.hitRate)}</span>
+          <span className="kb-trend-hit num">{t.queries ? pct(t.hitRate) : '—'}</span>
         </div>
       ))}
     </div>
@@ -63,7 +63,6 @@ export function OverviewTab({ base, live, onBuild, onPublish }: { base: Knowledg
     <div className="kb-overview">
       <div className="kb-kpis">
         <Stat label="7 天查询" value={has ? u.queries : undefined} format={(v) => Math.round(v).toLocaleString()} hint="运行和检索测试查了几次" />
-        <Stat label="命中率" value={has ? u.hitRate : undefined} format={(v) => pct(v)} hint="top k 里至少一条相关" />
         <Stat label="引用率" value={has ? u.citedRate : undefined} format={(v) => pct(v)} hint="命中被产物引用" />
         <Stat label="无结果率" value={has ? u.emptyRate : undefined} format={(v) => pct(v)} tone={has && u.emptyRate > 0.1 ? 'waiting' : undefined} hint="一条都没查到的占比" />
         <Stat label="Recall@10" value={recall} format={(v) => v.toFixed(2)} hint={base.lastEval ? `${fmtRelative(base.lastEval.at)}评测` : '还没有评测'} tone={recall === undefined ? undefined : recall >= 0.85 ? 'success' : recall >= 0.75 ? 'waiting' : 'failed'} />
