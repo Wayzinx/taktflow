@@ -6,6 +6,7 @@ import type { HarnessInfo, HarnessSelector, RuntimeSystemRole } from '@taktflow/
 import { EmptyState, ReasonDialog, Segmented, toast, useFlashRows, useStagger } from '../../../components/ui'
 import { EditorDrawer, EFFORTS, Field, selectorText, type RuntimeApi } from './shared'
 import { BeeGlyph } from '../../../components/identity'
+import { useAccess } from '../access'
 import { PairingPath } from './pairing-matrix'
 import { HarnessPicker } from '../../../components/harness-picker/harness-picker'
 import { useRuntimeCatalog } from '../../../components/harness-picker/use-catalog'
@@ -53,7 +54,7 @@ export function SelectorFields({ value, onChange, harnesses, compact }: { value:
           placement="bottom-start"
           loading={(cq.loading && !cq.data) || catalogPending(cq.data)}
           className="rt-sel-picker"
-          ariaLabel="harness 与模型"
+          ariaLabel="Harness 与模型"
           hideEffort
         />
         {typing && (
@@ -181,12 +182,13 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
   const [drawer, setDrawer] = useState<{ open: boolean; target?: Target }>({ open: false })
   const [removing, setRemoving] = useState<string>()
   const roles = useMemo(() => Object.entries(cfg.roles).sort(([a], [b]) => a.localeCompare(b)), [cfg.roles])
-  // 角色档案自己写了 harness 的，默认路由对它不生效（docs/design/30 §3）
+  // 角色档案自己写了 Harness 的，默认路由对它不生效（docs/design/30 §3）
   const profiles = useAsync((d) => d.agentRoles().catch(() => []), [])
   const pinned = useMemo(() => new Map((profiles.data ?? []).filter((p) => p.harness).map((p) => [p.role, p.harness!] as const)), [profiles.data])
   const flash = useFlashRows(roles.map(([r]) => r))
   const st = useStagger(roles.length)
   const open = (target: Target) => setDrawer({ open: true, target })
+  const can = useAccess('owner', '改路由').ok
 
   return (
     <div className="card rt-card">
@@ -203,7 +205,7 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
           ]}
         />
         <span className="spacer" />
-        {view === 'roles' && (
+        {view === 'roles' && can && (
           <button type="button" className="btn btn-sm" onClick={() => open({ kind: 'role', id: '', isNew: true })}>
             <Plus aria-hidden /> 添加默认路由
           </button>
@@ -211,7 +213,7 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
       </div>
       {view === 'roles' ? (
         roles.length === 0 ? (
-          <EmptyState compact title="还没有默认路由" body="给 dev、reviewer 这样的角色指定默认 harness 和模型；角色档案里写了的以档案为准。" action={<button type="button" className="btn btn-sm btn-primary" onClick={() => open({ kind: 'role', id: '', isNew: true })}>添加默认路由</button>} />
+          <EmptyState compact title="还没有默认路由" body="给 dev、reviewer 这样的角色指定默认 Harness 和模型；角色档案里写了的以档案为准。" action={can ? <button type="button" className="btn btn-sm btn-primary" onClick={() => open({ kind: 'role', id: '', isNew: true })}>添加默认路由</button> : undefined} />
         ) : (
           <ul className="rt-rows" aria-label="默认路由">
             {roles.map(([role, s], i) => {
@@ -226,14 +228,14 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
                         被角色档案覆盖
                       </Link>
                     )}
-                    <span className="rt-row-acts">
+                    {can && <span className="rt-row-acts">
                       <button type="button" className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'role', id: role })}>
                         <Pencil aria-hidden /> 编辑
                       </button>
                       <button type="button" className="btn btn-sm btn-ghost btn-icon" aria-label={`删除 ${role} 的默认路由`} onClick={() => setRemoving(role)}>
                         <Trash2 />
                       </button>
-                    </span>
+                    </span>}
                   </div>
                 </li>
               )
@@ -253,11 +255,11 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
                   </span>
                 </span>
                 <SelChips s={cfg.system[id]} harnesses={harnesses} />
-                <span className="rt-row-acts">
+                {can && <span className="rt-row-acts">
                   <button type="button" className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'system', id })}>
                     <Pencil aria-hidden /> 编辑
                   </button>
-                </span>
+                </span>}
               </div>
             </li>
           ))}
@@ -269,7 +271,7 @@ export function RoutingCard({ rt, harnesses }: { rt: RuntimeApi; harnesses: Harn
         onClose={() => setRemoving(undefined)}
         risk="dangerous"
         title={`删除角色 ${removing ?? ''} 的默认路由`}
-        description="删除后这个角色用角色档案里写的 harness，没写就用内置默认。"
+        description="删除后这个角色用角色档案里写的 Harness，没写就用内置默认。"
         confirmLabel="删除"
         onSubmit={async (reason) => {
           await rt.patch({ roles: { [removing!]: null } }, reason)

@@ -3,6 +3,8 @@ import { Boxes, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { ModelConfig, ModelInfo, RuntimeTestResult } from '@taktflow/core'
 import { EmptyState, ErrorState, Menu, ReasonDialog, Segmented, SkeletonRows, toast, useFlashRows, useStagger } from '../../../components/ui'
 import { ModelsTable } from '../models-table'
+import { useAccess } from '../access'
+import { invalidNumber, optionalNumber } from './numeric'
 import { EditorDrawer, Field, TestButton, TestOutcome, type RuntimeApi } from './shared'
 
 interface Draft {
@@ -16,8 +18,12 @@ interface Draft {
   priceOut: string
 }
 
-const num = (s: string) => (s.trim() === '' ? undefined : Number(s))
-const numBad = (s: string) => s.trim() !== '' && !(Number(s) >= 0)
+const num = optionalNumber
+const numBad = (s: string) => invalidNumber(s, 'price')
+// 与服务端 runtime-config 校验一致：上下文窗口、向量维度是正整数，价格是非负有限数
+const CONTEXT_ERR = '上下文窗口必须是正整数；留空表示未配置'
+const DIM_ERR = '向量维度必须是正整数'
+const PRICE_ERR = '价格必须是非负有限数值；不能填写 Infinity 或负数'
 
 function ModelDrawer({ rt, editing, open, onClose }: { rt: RuntimeApi; editing?: string; open: boolean; onClose: () => void }) {
   const cfg = rt.cfg!
@@ -44,9 +50,18 @@ function ModelDrawer({ rt, editing, open, onClose }: { rt: RuntimeApi; editing?:
   const set = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }))
   const aliasBad = !editing && (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(d.alias) || Boolean(cfg.models[d.alias]))
   const priced = d.priceIn.trim() !== '' || d.priceOut.trim() !== ''
-  const canSave =
-    Boolean(d.alias) && !aliasBad && Boolean(cfg.providers[d.provider]) && Boolean(d.id.trim()) &&
-    !numBad(d.contextWindow) && !numBad(d.priceIn) && !numBad(d.priceOut) && !(d.kind === 'embedding' && !(Number(d.dimensions) > 0))
+  const ctxBad = invalidNumber(d.contextWindow, 'integer')
+  const dimBad = d.kind === 'embedding' && (d.dimensions.trim() === '' || invalidNumber(d.dimensions, 'integer'))
+  // 保存按钮旁列出还差哪几项，不让人对着灰按钮猜
+  const missing = [
+    (!d.alias || aliasBad) && '别名',
+    !cfg.providers[d.provider] && 'Provider',
+    !d.id.trim() && '厂商模型 ID',
+    dimBad && '向量维度',
+    ctxBad && '上下文窗口',
+    (numBad(d.priceIn) || numBad(d.priceOut)) && '价格',
+  ].filter((x): x is string => Boolean(x))
+  const canSave = missing.length === 0
   const providers = Object.keys(cfg.providers).sort()
 
   const save = async (reason: string) => {
@@ -82,7 +97,8 @@ function ModelDrawer({ rt, editing, open, onClose }: { rt: RuntimeApi; editing?:
         )}
       </Field>
       <Field label="厂商模型 ID" req hint="provider 那边的模型名">
-        <input className="input mono" value={d.id} placeholder="deepseek-chat" onChange={(e) => set({ id: e.target.value })} />
+        <input className={`input mono${!d.id.trim() ? ' is-bad' : ''}`} aria-invalid={!d.id.trim()} value={d.id} placeholder="deepseek-chat" onChange={(e) => set({ id: e.target.value })} />
+        {!d.id.trim() && <span className="rt-field-err">厂商模型 ID 不能为空或只有空格：填 Provider 那边的模型名，例如 deepseek-chat</span>}
       </Field>
       <Field label="类型">
         <Segmented<Draft['kind']>
@@ -96,22 +112,29 @@ function ModelDrawer({ rt, editing, open, onClose }: { rt: RuntimeApi; editing?:
           ]}
         />
       </Field>
-      {d.kind === 'embedding' ? (
+      {d.kind === 'embedding' && (
         <Field label="向量维度" req>
-          <input className="input mono num" inputMode="numeric" value={d.dimensions} placeholder="1536" onChange={(e) => set({ dimensions: e.target.value })} />
-        </Field>
-      ) : (
-        <Field label="上下文窗口" hint="token 数，用于上下文曲线与压缩提示">
-          <input className={`input mono num${numBad(d.contextWindow) ? ' is-bad' : ''}`} inputMode="numeric" value={d.contextWindow} placeholder="128000" onChange={(e) => set({ contextWindow: e.target.value })} />
+          <input className={`input mono num${dimBad ? ' is-bad' : ''}`} aria-invalid={dimBad} inputMode="numeric" value={d.dimensions} placeholder="1536" onChange={(e) => set({ dimensions: e.target.value })} />
+          {dimBad && <span className="rt-field-err">{DIM_ERR}</span>}
         </Field>
       )}
+      <Field label="上下文窗口" hint="token 数，用于上下文曲线与压缩提示">
+        <input className={`input mono num${ctxBad ? ' is-bad' : ''}`} aria-invalid={ctxBad} inputMode="numeric" value={d.contextWindow} placeholder="128000" onChange={(e) => set({ contextWindow: e.target.value })} />
+        {ctxBad && <span className="rt-field-err">{CONTEXT_ERR}</span>}
+      </Field>
       <Field label="价格" hint="$ / 1M token；不填则成本记为未定价">
         <div className="rt-pair">
           <input className={`input mono num${numBad(d.priceIn) ? ' is-bad' : ''}`} inputMode="decimal" value={d.priceIn} placeholder="输入" aria-label="输入价格" onChange={(e) => set({ priceIn: e.target.value })} />
           <span className="faint">/</span>
           <input className={`input mono num${numBad(d.priceOut) ? ' is-bad' : ''}`} inputMode="decimal" value={d.priceOut} placeholder="输出" aria-label="输出价格" onChange={(e) => set({ priceOut: e.target.value })} />
         </div>
+        {(numBad(d.priceIn) || numBad(d.priceOut)) && <span className="rt-field-err">{PRICE_ERR}</span>}
       </Field>
+      {missing.length > 0 && (
+        <span className="rt-field-err" role="status">
+          保存前还差：{missing.join('、')}
+        </span>
+      )}
     </EditorDrawer>
   )
 }
@@ -132,7 +155,8 @@ export function ModelsCard({ rt, models, error, reload }: { rt: RuntimeApi; mode
     const sys = Object.entries(cfg.system).filter(([, s]) => s?.model === alias).map(([r]) => r)
     return [...roles, ...sys]
   }
-  const canEdit = Boolean(cfg)
+  const access = useAccess('owner', '改模型')
+  const canEdit = Boolean(cfg) && access.ok
 
   return (
     <div className="card rt-card">
