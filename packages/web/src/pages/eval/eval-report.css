@@ -349,8 +349,13 @@
 .er-d-pass {
   background: var(--st-success);
 }
+/* 状态不只靠颜色：通过是实心圆，失败是带 ✕ 的方块，证据不足是斜纹空心圆 */
 .er-d-fail {
-  background: var(--st-failed);
+  border-radius: 2px;
+  background:
+    linear-gradient(45deg, transparent calc(50% - 0.75px), var(--surface) calc(50% - 0.75px) calc(50% + 0.75px), transparent calc(50% + 0.75px)),
+    linear-gradient(-45deg, transparent calc(50% - 0.75px), var(--surface) calc(50% - 0.75px) calc(50% + 0.75px), transparent calc(50% + 0.75px)),
+    var(--st-failed);
 }
 .er-d-insufficient {
   background: transparent;
