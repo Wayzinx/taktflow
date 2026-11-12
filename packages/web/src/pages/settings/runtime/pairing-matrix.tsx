@@ -6,13 +6,14 @@ import { EmptyState, ErrorState, Popover, Skeleton } from '../../../components/u
 import { PROTOCOL_SHORT, TestButton, TestOutcome, type RuntimeApi } from './shared'
 import { BrandIcon } from '../../../components/brand/brand-icon'
 import { harnessMeta } from '../../../lib/harness-meta'
+import { useAccess } from '../access'
 import './pairing.css'
 
 type Status = PairingInfo['status']
 
 export const PAIRING_STATUS: Record<Status, { label: string; icon: typeof House; hint: string }> = {
-  builtin: { label: '自带', icon: House, hint: '用 harness 自己的登录和默认模型' },
-  direct: { label: '直连', icon: ArrowRight, hint: '协议对得上，harness 直接调这家 API' },
+  builtin: { label: '自带', icon: House, hint: '用 Harness 自己的登录和默认模型' },
+  direct: { label: '直连', icon: ArrowRight, hint: '协议对得上，Harness 直接调这家 API' },
   bridge: { label: '桥接', icon: ArrowLeftRight, hint: '协议对不上，由 takt 内置的协议桥自动转换' },
   unavailable: { label: '不可用', icon: Minus, hint: '这个组合跑不起来' },
 }
@@ -47,7 +48,10 @@ function Cell({ p, harness, models, keyMissing }: { p: PairingInfo; harness: Har
   const [open, setOpen] = useState(false)
   const [model, setModel] = useState(models[0]?.alias)
   const [result, setResult] = useState<RuntimeTestResult>()
-  const meta = PAIRING_STATUS[p.status]
+  const can = useAccess('owner', '测试搭配').ok
+  // Harness 本身可用、只是自带账号没就绪（如 DeepSeek 没登录）：和上面 harness 列表的「可用」不矛盾，单独说
+  const ownPending = p.status === 'unavailable' && p.provider === null && harness.available && harness.ownReady === false
+  const meta = ownPending ? { ...PAIRING_STATUS.unavailable, label: '未就绪', hint: harness.ownReason ?? '自带账号未就绪' } : PAIRING_STATUS[p.status]
   const Icon = meta.icon
   const usable = p.status !== 'unavailable'
   const needsModel = p.provider !== null
@@ -78,14 +82,14 @@ function Cell({ p, harness, models, keyMissing }: { p: PairingInfo; harness: Har
             </span>
           </div>
           <PairingPath p={p} harness={harnessMeta(harness).name} />
-          <p className="pm-pop-note">{p.status === 'unavailable' ? p.reason : p.status === 'bridge' ? `${meta.hint}；${(p.reason ?? '').replace(/^经协议桥转换[；;]?/, '') || '托管工具不可用'}。` : meta.hint}</p>
+          <p className="pm-pop-note">{ownPending ? `${harness.ownReason ?? '自带账号未就绪'}：Harness 本身可用，接下面的模型 API 不受影响；就绪后（例如登录账号）自带这一格就能用。` : p.status === 'unavailable' ? p.reason : p.status === 'bridge' ? `${meta.hint}；${(p.reason ?? '').replace(/^经协议桥转换[；;]?/, '') || '托管工具不可用'}。` : meta.hint}</p>
           {keyMissing && usable && (
             <p className="pm-pop-warn">
               <TriangleAlert aria-hidden />
               缺少密钥 <span className="mono">{keyMissing}</span>：在下面的 provider 里存到本机密钥库，或在启动 serve 的终端里设置。
             </p>
           )}
-          {usable && (
+          {usable && can && (
             <div className="pm-pop-test">
               {needsModel &&
                 (models.length ? (
@@ -110,7 +114,7 @@ function Cell({ p, harness, models, keyMissing }: { p: PairingInfo; harness: Har
 }
 
 /**
- * 搭配矩阵（docs/design/31 §6）：行是「自带」和每个 provider，列是能用的 harness。
+ * 搭配矩阵（docs/design/31 §6）：行是「自带」和每个 provider，列是能用的 Harness。
  * 每格标自带 / 直连 / 桥接 / 不可用；点开看链路、原因，能用的可以真跑一次测试（计费，先确认）。
  */
 export function PairingMatrix({ rt, harnesses, models }: { rt: RuntimeApi; harnesses?: HarnessInfo[]; models?: ModelInfo[] }) {
@@ -168,7 +172,7 @@ export function PairingMatrix({ rt, harnesses, models }: { rt: RuntimeApi; harne
       <>
         {head}
         <div className="card">
-          <EmptyState compact icon={ServerOff} title="还没有可用的 harness" body="上面的 harness 都没装好或已停用；装好一个（Claude Code、Codex、TRAE CLI、Pi），这里就会列出它能接哪些模型 API。" />
+          <EmptyState compact icon={ServerOff} title="还没有可用的 Harness" body="上面的 Harness 都没装好或已停用；装好一个（Claude Code、Codex、TRAE CLI、Pi），这里就会列出它能接哪些模型 API。" />
         </div>
       </>
     )
@@ -186,7 +190,7 @@ export function PairingMatrix({ rt, harnesses, models }: { rt: RuntimeApi; harne
     <>
       {head}
       <p className="pm-intro">
-        任一 harness 都能接任一模型 API：协议对得上就<b>直连</b>，对不上由 takt 内置的协议桥<b>桥接</b>，不用另起网关、不改 harness 的全局配置。角色和节点里选「harness + 模型」时按这里的结果走。
+        任一 Harness 都能接任一模型 API：协议对得上就<b>直连</b>，对不上由 takt 内置的协议桥<b>桥接</b>，不用另起网关、不改 Harness 的全局配置。角色和节点里选「Harness + 模型」时按这里的结果走。
       </p>
       <div className="card pm-card">
         <div className="pm-scroll">
@@ -209,7 +213,7 @@ export function PairingMatrix({ rt, harnesses, models }: { rt: RuntimeApi; harne
               <tr className="pm-builtin">
                 <th scope="row" className="pm-row">
                   <span className="pm-row-name">自带</span>
-                  <span className="pm-row-sub">harness 自己的登录和默认模型</span>
+                  <span className="pm-row-sub">Harness 自己的登录和默认模型</span>
                 </th>
                 {row(null)}
               </tr>
@@ -227,8 +231,8 @@ export function PairingMatrix({ rt, harnesses, models }: { rt: RuntimeApi; harne
         </div>
         {(hidden > 0 || providers.length === 0) && (
           <p className="pm-foot faint">
-            {providers.length === 0 ? '还没有 provider：在下面加一家模型 API，这里就会列出每个 harness 能不能接。' : ''}
-            {hidden > 0 ? `${hidden} 个不可用或已停用的 harness 没有列出。` : ''}
+            {providers.length === 0 ? '还没有 provider：在下面加一家模型 API，这里就会列出每个 Harness 能不能接。' : ''}
+            {hidden > 0 ? `${hidden} 个不可用或已停用的 Harness 没有列出。` : ''}
           </p>
         )}
       </div>

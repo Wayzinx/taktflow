@@ -9,6 +9,7 @@ import { useLastDefined, usePresence } from '../../lib/motion'
 import { VERDICT } from '../../lib/status'
 import { LESSON_STATUS, SOURCE_LABEL, TRANSITIONS, type LessonStatus } from './lesson-meta'
 import { LessonRatio, LessonStats } from './lesson-parts'
+import { ReadOnlyNote, useAccess } from './access'
 
 function TriggerList({ trigger }: { trigger: Lesson['trigger'] }) {
   const rows: Array<[string, string[], boolean]> = [
@@ -109,6 +110,7 @@ function ReasonForm({ lesson, to, onCancel, onDone }: { lesson: Lesson; to?: Les
 }
 
 export function LessonDetail({ lesson, onChanged }: { lesson: Lesson; onChanged(l: Lesson): void }) {
+  const access = useAccess('maintainer', '修改经验状态')
   const [to, setTo] = useState<LessonStatus>()
   useEffect(() => setTo(undefined), [lesson.id])
   const meta = LESSON_STATUS[lesson.status]
@@ -171,13 +173,14 @@ export function LessonDetail({ lesson, onChanged }: { lesson: Lesson; onChanged(
       <footer className="lesson-actions">
         <span className="faint">{meta.hint}</span>
         <span className="spacer" />
-        {TRANSITIONS[lesson.status].map((t) => (
+        {access.ok && TRANSITIONS[lesson.status].map((t) => (
           <button key={t.to} className={`btn btn-sm${to === t.to ? ' is-on' : ''}`} aria-expanded={to === t.to} onClick={() => setTo((cur) => (cur === t.to ? undefined : t.to))}>
             {t.label}
           </button>
         ))}
       </footer>
-      <ReasonForm
+      <ReadOnlyNote why={access.why} />
+      {access.ok && <ReasonForm
         lesson={lesson}
         to={to}
         onCancel={() => setTo(undefined)}
@@ -185,7 +188,7 @@ export function LessonDetail({ lesson, onChanged }: { lesson: Lesson; onChanged(
           setTo(undefined)
           onChanged(l)
         }}
-      />
+      />}
     </article>
   )
 }

@@ -3,10 +3,10 @@ import { Plus } from 'lucide-react'
 import type { AutomationAction, AutomationConfig, AutomationEvent, ChannelView } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { Segmented, TagInput, ToggleChips, toast } from '../../components/ui'
-import { describeCron, nextCron, parseCron } from '../../lib/cron'
+import { describeCron } from '../../lib/cron'
 import { fmtUpcoming } from '../../lib/format'
 import { EditorDrawer, Field } from '../settings/runtime/shared'
-import { ACTIONS, AUTOMATION_ID, CHANNEL_KINDS, EVENTS, PLACEHOLDERS, SCHEDULES } from './model'
+import { ACTIONS, AUTOMATION_ID, CHANNEL_KINDS, EVENTS, PLACEHOLDERS, SCHEDULES, cronCheck } from './model'
 
 type Kind = AutomationAction['kind']
 
@@ -37,14 +37,9 @@ export function AutomationEditor({ open, onClose, initial, isNew, channels, take
   const set = (patch: Partial<AutomationConfig>) => setD((x) => ({ ...x, ...patch }))
   const scheduled = 'schedule' in d.trigger
   const cron = scheduled ? (d.trigger as { schedule: string }).schedule : ''
-  let cronError: string | undefined
-  if (scheduled)
-    try {
-      parseCron(cron)
-    } catch (e) {
-      cronError = (e as Error).message
-    }
-  const next = scheduled && !cronError ? nextCron(cron) : undefined
+  const checked = scheduled ? cronCheck(cron) : undefined
+  const cronError = checked && 'error' in checked ? checked.error : undefined
+  const next = checked && 'next' in checked ? checked.next : undefined
   const kind = d.action.kind
   const picked = d.notify?.channels ?? []
   const needsChannel = kind !== 'start_workflow' && picked.length === 0
@@ -145,7 +140,7 @@ export function AutomationEditor({ open, onClose, initial, isNew, channels, take
             </div>
             {'event' in d.trigger && d.trigger.event !== 'requirement.created' && (wq.data?.length ?? 0) > 0 && (
               <Field label="只看这些流水线" hint="不选就是全部">
-                <ToggleChips ariaLabel="只看这些 workflow" mono options={(wq.data ?? []).map((w) => ({ id: w.id, label: w.id, title: w.title }))} value={filter?.workflowIds ?? []} onChange={(workflowIds) => setFilter({ ...filter, workflowIds })} />
+                <ToggleChips ariaLabel="只看这些流水线" mono options={(wq.data ?? []).map((w) => ({ id: w.id, label: w.id, title: w.title }))} value={filter?.workflowIds ?? []} onChange={(workflowIds) => setFilter({ ...filter, workflowIds })} />
               </Field>
             )}
             {'event' in d.trigger && d.trigger.event !== 'requirement.created' && (
@@ -191,7 +186,7 @@ export function AutomationEditor({ open, onClose, initial, isNew, channels, take
         )}
         {d.action.kind === 'start_workflow' && (
           <div className="au-ed-row">
-            <Field label="workflow" req>
+            <Field label="流水线" req>
               <select className="select mono" value={d.action.workflowId} onChange={(e) => set({ action: { ...(d.action as Extract<AutomationAction, { kind: 'start_workflow' }>), workflowId: e.target.value } })}>
                 {!d.action.workflowId && <option value="">选一条流水线</option>}
                 {(wq.data ?? []).map((w) => (

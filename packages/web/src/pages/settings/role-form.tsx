@@ -15,7 +15,8 @@ import './role-form.css'
  */
 
 const SOURCE: Record<AgentRoleView['effective']['source'], string> = { role: '角色档案', 'space-default': '默认路由', builtin: '内置默认' }
-const ORIGIN: Record<AgentRoleView['origin'], string> = { space: '空间档案', plugin: '插件', builtin: '内置' }
+// 角色列表、共享资源 Tab 和这里同一套说法
+export const ROLE_ORIGIN: Record<AgentRoleView['origin'], string> = { space: '空间档案', plugin: '插件角色', builtin: '内置角色' }
 
 interface Draft {
   title: string
@@ -149,7 +150,7 @@ function RunWith({ v, d, set }: { v: AgentRoleView; d: Draft; set: (patch: Parti
       )}
       {overridden.length > 0 && (
         <p className="rf-note">
-          {overridden.length} 个节点自己写了 harness，会覆盖这里：
+          {overridden.length} 个节点自己写了 Harness，会覆盖这里：
           {overridden.map((u) => (
             <span key={`${u.workflowId}/${u.nodeId}`} className="mono">
               {' '}
@@ -231,6 +232,7 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
           <label className="ov-field">
             <span className="ov-field-label">名字</span>
             <input className="input" value={d.title} onChange={(e) => set({ title: e.target.value })} aria-invalid={!d.title.trim()} />
+            {!d.title.trim() && <span className="settings-field-err">角色名字不能为空或只有空格</span>}
           </label>
           <label className="ov-field">
             <span className="ov-field-label">一句话描述</span>
@@ -239,7 +241,7 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
         </div>
       </Sec>
 
-      <Sec title="用什么跑" hint="harness、模型、effort 和备选。节点里写了的以节点为准。">
+      <Sec title="用什么跑" hint="Harness、模型、推理档位和备选。节点里写了的以节点为准。">
         <RunWith v={v} d={d} set={set} />
       </Sec>
 
@@ -282,7 +284,7 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
           <label className="rf-check">
             <input type="checkbox" checked={d.allowBash} onChange={(e) => set({ allowBash: e.target.checked })} />
             <span>
-              允许执行 bash<span className="faint">只对内置 harness 生效；外部 harness 按它自己的权限设置</span>
+              允许执行 bash<span className="faint">只对内置 Harness 生效；外部 Harness 按它自己的权限设置</span>
             </span>
           </label>
         </div>
@@ -300,7 +302,7 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
                 <Link to={`/workflows/${encodeURIComponent(u.workflowId)}?node=${encodeURIComponent(u.nodeId)}`} className="rf-used-link pressable">
                   <span className="truncate">{u.workflowTitle ?? u.workflowId}</span>
                   <span className="mono faint">{u.nodeId}</span>
-                  {u.harness && <span className="chip mono" title="节点自己写了 harness，会覆盖角色">{selectorText(u.harness)}</span>}
+                  {u.harness && <span className="chip mono" title="节点自己写了 Harness，会覆盖角色">{selectorText(u.harness)}</span>}
                   <ArrowUpRight aria-hidden />
                 </Link>
               </li>
@@ -336,7 +338,7 @@ export function RoleForm({ role, space, onDirty, onSaved }: { role: string; spac
 }
 
 /** 角色详情的头部：形象、来源、表单 / 源码切换、删除。 */
-export function RoleHead({ role, title, origin, path, mode, onMode, onDeleted }: { role: string; title: string; origin?: AgentRoleView['origin']; path?: string; mode: 'form' | 'source'; onMode: (m: 'form' | 'source') => void; onDeleted: () => void }) {
+export function RoleHead({ role, title, origin, path, readOnly, mode, onMode, onDeleted }: { role: string; title: string; origin?: AgentRoleView['origin']; path?: string; readOnly?: boolean; mode: 'form' | 'source'; onMode: (m: 'form' | 'source') => void; onDeleted: () => void }) {
   const ds = useSource()
   const more = useRef<HTMLButtonElement>(null)
   const [menu, setMenu] = useState(false)
@@ -348,7 +350,7 @@ export function RoleHead({ role, title, origin, path, mode, onMode, onDeleted }:
         <b className="truncate">{title}</b>
         <span className="faint mono truncate">
           {role}
-          {origin && <> · {path ?? ORIGIN[origin]}</>}
+          {origin && <> · {path ?? ROLE_ORIGIN[origin]}</>}
         </span>
       </span>
       <span className="spacer" />
@@ -362,7 +364,7 @@ export function RoleHead({ role, title, origin, path, mode, onMode, onDeleted }:
           { value: 'source', label: '源码' },
         ]}
       />
-      {origin === 'space' && (
+      {origin === 'space' && !readOnly && (
         <>
           <button ref={more} type="button" className="btn btn-ghost btn-icon btn-sm" aria-label={`${title} 的更多操作`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(true)}>
             <MoreHorizontal />

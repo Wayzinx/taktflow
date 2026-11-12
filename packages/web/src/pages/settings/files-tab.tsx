@@ -1,14 +1,16 @@
 import { useEffect, useState, type KeyboardEvent } from 'react'
 import { FileText, Save } from 'lucide-react'
 import type { AgentRoleView, SpaceDetail } from '@taktflow/core'
-import { useAsync, useSource } from '../../api'
+import { useAsync, useSource, type AsyncState } from '../../api'
 import type { SpaceFileKind } from '../../api/source'
 import { AgentMark } from '../../components/agent-mark'
 import { EmptyState, ErrorState, SkeletonRows, toast, useStagger } from '../../components/ui'
 import { StewardEditButton } from './ask-steward'
-import { RoleForm, RoleHead } from './role-form'
+import { ROLE_ORIGIN, RoleForm, RoleHead } from './role-form'
 import { selectorText } from './runtime/shared'
 import { setQuery, useLocation } from '../../lib/router'
+import { ReadOnlyNote, useAccess } from './access'
+import { NewFileButton } from './new-file'
 import './space-files.css'
 
 interface Entry {
@@ -28,7 +30,7 @@ function entries(kind: SpaceFileKind, sp: SpaceDetail, roles?: AgentRoleView[]):
   if (roles)
     return roles.map((r) => {
       const src = SOURCE_SHORT[r.effective.source]
-      return { name: r.role, title: r.title, description: r.description, harness: r.effective.harness.harness, role: r, meta: [r.role, `${selectorText(r.effective.harness)}${src ? `（${src}）` : ''}`, r.origin === 'space' ? `写 ${r.writeScope.join(' ')}` : '插件角色'] }
+      return { name: r.role, title: r.title, description: r.description, harness: r.effective.harness.harness, role: r, meta: [r.role, `${selectorText(r.effective.harness)}${src ? `（${src}）` : ''}`, r.origin === 'space' ? `写 ${r.writeScope.join(' ')}` : ROLE_ORIGIN[r.origin]] }
     })
   return sp.agents.map((a) => ({ name: a.role, title: a.title, description: a.description, harness: a.harness.harness, meta: [a.role, [a.harness.harness, a.harness.model].filter(Boolean).join(' · '), `写 ${a.writeScope.join(' ')}`] }))
 }
@@ -67,7 +69,7 @@ function Editor({ kind, name, onDirty, onSaved }: { kind: SpaceFileKind; name: s
     setBusy(true)
     try {
       await ds.saveSpaceFile(kind, name, { content: text, reason: reason.trim() })
-      toast(`已保存 ${q.data!.path}`, { body: `原因：${reason.trim()}。运行前会同步到各 harness 的技能目录。` })
+      toast(`已保存 ${q.data!.path}`, { body: `原因：${reason.trim()}。运行前会同步到各 Harness 的技能目录。` })
       q.reload()
       onSaved?.()
     } catch (e) {
@@ -112,33 +114,52 @@ function Editor({ kind, name, onDirty, onSaved }: { kind: SpaceFileKind; name: s
   )
 }
 
-export function FilesTab({ kind, space, onChanged }: { kind: SpaceFileKind; space?: SpaceDetail; onChanged?: () => void }) {
+const NO_ROLES: AsyncState<AgentRoleView[]> = { loading: false, reload: () => {} }
+
+/** roles：角色列表由设置页取一次（Tab 徽标与这里同一份）；技能 Tab 不传。 */
+export function FilesTab({ kind, space, roles: rolesQuery, onChanged }: { kind: SpaceFileKind; space?: SpaceDetail; roles?: AsyncState<AgentRoleView[]>; onChanged?: () => void }) {
   const { query } = useLocation()
   const [dirty, setDirty] = useState(false)
   const [mode, setMode] = useState<'form' | 'source'>('form')
   const isSkill = kind === 'skill'
-  // 结构化接口不可用（老版本服务端）时 data 为 null：只有源码编辑
-  const rq = useAsync((d) => (isSkill ? Promise.resolve(null) : d.agentRoles().catch(() => null)), [isSkill])
-  const roles = rq.data ?? undefined
+  // 结构化接口不可用（老版本服务端）时取不到 data：退回空间详情里的列表，只有源码编辑
+  const rq = rolesQuery ?? NO_ROLES
+  const roles = rq.data
   const list = space ? entries(kind, space, roles) : []
   const st = useStagger(list.length)
+  const access = useAccess(isSkill ? 'maintainer' : 'owner', isSkill ? '新建和修改技能' : '新建和修改角色')
   if (!space || (!isSkill && rq.loading && rq.data === undefined)) return <div className="card"><SkeletonRows rows={6} /></div>
+  const changed = () => {
+    rq.reload()
+    onChanged?.()
+  }
+  const created = (name: string) => {
+    setMode('form')
+    setQuery({ name })
+    changed()
+  }
+  const taken = list.map((e) => e.name)
+  const stewardAsk = isSkill ? '帮我新建一个技能，内容是：' : '帮我新建一个角色，负责：'
   if (list.length === 0) {
     return (
       <div className="card">
+        <ReadOnlyNote why={access.why} />
         <EmptyState
           title={isSkill ? '还没有技能' : '还没有角色'}
-          body={isSkill ? '技能是团队沉淀的做事方法，运行前会同步给每个 Agent。说说你们怎么做事，管家帮你写成技能。' : '角色决定节点由谁来做：职责说明、默认模型和写权限。'}
-          action={<StewardEditButton ask={isSkill ? '帮我新建一个技能，内容是：' : '帮我新建一个角色，负责：'} label={isSkill ? '让管家写一个技能' : '让管家建一个角色'} size="md" />}
+          body={isSkill ? '技能是团队沉淀的做事方法，运行前会同步给每个 Agent。可以直接新建一份自己写，也可以说说你们怎么做事，让管家写成技能。' : '角色决定节点由谁来做：职责说明、默认模型和写权限。'}
+          action={
+            access.ok ? (
+              <>
+                <NewFileButton kind={kind} taken={taken} primary onCreated={created} />
+                <StewardEditButton ask={stewardAsk} label={isSkill ? '让管家写一个技能' : '让管家建一个角色'} ghost />
+              </>
+            ) : undefined
+          }
         />
       </div>
     )
   }
   const selected = list.find((e) => e.name === query.get('name')) ?? list[0]!
-  const changed = () => {
-    rq.reload()
-    onChanged?.()
-  }
   const sourceUnavailable = !isSkill && selected.role && selected.role.origin !== 'space'
   return (
     <div className="files-layout">
@@ -167,13 +188,19 @@ export function FilesTab({ kind, space, onChanged }: { kind: SpaceFileKind; spac
             </button>
           </li>
         ))}
-        <li className="file-list-foot">
-          <StewardEditButton ask={isSkill ? '帮我新建一个技能，内容是：' : '帮我新建一个角色，负责：'} label={isSkill ? '让管家新建技能' : '让管家新建角色'} ghost />
-        </li>
+        {access.ok && (
+          <li className="file-list-foot">
+            <NewFileButton kind={kind} taken={taken} onCreated={created} />
+            <StewardEditButton ask={stewardAsk} label={isSkill ? '让管家写' : '让管家建'} ghost />
+          </li>
+        )}
       </ul>
       <div className="card">
+        <ReadOnlyNote why={access.why} />
         {isSkill ? (
-          <Editor key={selected.name} kind={kind} name={selected.name} onDirty={setDirty} />
+          <fieldset className="settings-ro" disabled={!access.ok}>
+            <Editor key={selected.name} kind={kind} name={selected.name} onDirty={setDirty} />
+          </fieldset>
         ) : (
           <>
             <RoleHead
@@ -181,6 +208,7 @@ export function FilesTab({ kind, space, onChanged }: { kind: SpaceFileKind; spac
               title={selected.title}
               origin={selected.role?.origin}
               path={selected.role?.path}
+              readOnly={!access.ok}
               mode={roles ? mode : 'source'}
               onMode={(m) => {
                 if (dirty && !window.confirm('有未保存的修改，切换后会丢失。继续？')) return
@@ -191,13 +219,15 @@ export function FilesTab({ kind, space, onChanged }: { kind: SpaceFileKind; spac
                 changed()
               }}
             />
+            <fieldset className="settings-ro" disabled={!access.ok}>
             {roles && mode === 'form' ? (
               <RoleForm key={selected.name} role={selected.name} space={space} onDirty={setDirty} onSaved={changed} />
             ) : sourceUnavailable ? (
-              <p className="file-note">这是插件带的角色，空间里还没有它的档案。在表单里保存一次，会在空间里建一份 <span className="mono">agents/{selected.name}.md</span>，之后就能看源码了。</p>
+              <p className="file-note">这是{ROLE_ORIGIN[selected.role!.origin]}，空间里还没有它的档案。在表单里保存一次，会在空间里建一份 <span className="mono">agents/{selected.name}.md</span>，之后就能看源码了。</p>
             ) : (
               <Editor key={selected.name} kind={kind} name={selected.name} onDirty={setDirty} onSaved={changed} />
             )}
+            </fieldset>
           </>
         )}
       </div>
