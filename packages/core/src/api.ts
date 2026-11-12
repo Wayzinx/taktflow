@@ -594,6 +594,8 @@ export interface SpaceSummary {
   /** 已归档（只在 ?archived=1 的列表里出现）。 */
   archived?: boolean
   archivedAt?: string
+  /** 阻塞的需求数（与总览 totals.blocked 同口径）。 */
+  blocked?: number
   /** 未处理风险数（管家风险引擎）。 */
   risks?: number
   pendingAttention?: number

@@ -32,7 +32,10 @@ export interface Usage {
   inputTokens: number
   outputTokens: number
   cachedTokens?: number
+  /** 报了成本的那部分调用的合计；没有这个字段表示成本未上报（不是 $0）。 */
   costUsd?: number
+  /** 有 costUsd 时，其中没报成本的调用的 token（输入 + 输出）；全部报了时省略。 */
+  unpricedTokens?: number
   /** harness 不报告用量时按字符估算的值。 */
   estimated?: boolean
 }

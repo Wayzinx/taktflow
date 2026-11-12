@@ -8,7 +8,7 @@ import { projectCommands as baseProjectCommands } from './commands.js'
 import { convertWorkflow } from './workflow-routes.js'
 import { spaceLock } from './space-lock.js'
 import { randomUUID } from 'node:crypto'
-import { FsEventStore, listSkills, loadProfiles, openProject, type Actor, type ProjectStores, type RepoBinding, type SpaceDetail, type SpaceFile, type SpaceMember, type SpaceSummary, type TaktConfig } from '@taktflow/core'
+import { FsEventStore, deriveRequirementState, listSkills, loadProfiles, openProject, type Actor, type ProjectStores, type RepoBinding, type Requirement, type RequirementStatus, type RunState, type SpaceDetail, type SpaceFile, type SpaceMember, type SpaceSummary, type TaktConfig } from '@taktflow/core'
 import { createRepoManager } from '@taktflow/sandbox'
 import { createWorkflowStore, type WorkflowStore } from '@taktflow/workflow-source'
 import { HttpError, safeId, text } from './http.js'
@@ -62,7 +62,16 @@ export async function spaceSummary(stores: ProjectStores): Promise<SpaceSummary>
   const runs = await stores.runs.list()
   const lastActivityAt = [...allRequirements.map(item => item.updatedAt), ...runs.map(run => run.endedAt ?? run.startedAt)].sort().at(-1)
   const pendingAttention = (await stores.attention.list({ pending: true })).filter((item) => requirements.some((req) => req.id === item.requirementId)).length
-  return { pendingAttention, lastActivityAt, id: spaceId(stores), ...stores.config.project, requirements: requirements.length, active: requirements.filter((req) => req.status === 'active').length }
+  const statuses = await Promise.all(requirements.map((req) => currentStatus(stores, req, runs)))
+  const count = (status: RequirementStatus) => statuses.filter((item) => item === status).length
+  return { pendingAttention, lastActivityAt, id: spaceId(stores), ...stores.config.project, requirements: requirements.length, active: count('active'), blocked: count('blocked') }
+}
+/** 与总览（read-model 的需求摘要）同口径：按最近一次流水线运行推导，Lead 的运行与任务不算；存下来的 status 可能还没跟上。 */
+async function currentStatus(stores: ProjectStores, req: Requirement, runs: RunState[]): Promise<RequirementStatus> {
+  const latest = runs.filter((run) => run.requirementId === req.id && run.kind !== 'task' && run.workflowId !== 'lead' && !run.workflowId.startsWith('task:'))
+    .sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt) || a.runId.localeCompare(b.runId)).at(-1)
+  const snapshot = latest && await stores.runs.getWorkflow(latest.runId)
+  return latest && snapshot ? deriveRequirementState(snapshot, latest).status : req.status
 }
 export async function spaceDetail(stores: ProjectStores): Promise<SpaceDetail> {
   const profiles = await loadProfiles(stores.paths)

@@ -127,7 +127,7 @@ describe('summarizeUsage / summarizeRun', () => {
       event(12, 'harness.usage', { inputTokens: 7, outputTokens: 1 }),
     ]
     const before = JSON.stringify(events)
-    expect(summarizeUsage([...events].reverse())).toEqual({ inputTokens: 42, outputTokens: 10, costUsd: expect.closeTo(0.2) })
+    expect(summarizeUsage([...events].reverse())).toEqual({ inputTokens: 42, outputTokens: 10, costUsd: expect.closeTo(0.2), unpricedTokens: 28 })
     expect(JSON.stringify(events)).toBe(before)
   })
 
@@ -374,7 +374,7 @@ it('旧运行（没有 harness.usage）按所有完成事件累计 loop/retry，
     event(1, 'node.finished', { status: 'succeeded', outputs: [], usage: { inputTokens: 888, outputTokens: 888 } }, 'loop/dev', 'other'),
   ]
   const before = JSON.stringify(state)
-  expect(summarizeRun(state, events).usage).toEqual({ inputTokens: 37, outputTokens: 6, cachedTokens: 3, costUsd: expect.closeTo(0.3) })
+  expect(summarizeRun(state, events).usage).toEqual({ inputTokens: 37, outputTokens: 6, cachedTokens: 3, costUsd: expect.closeTo(0.3), unpricedTokens: 8 })
   expect(buildRunGraph(snapshot, state, [], events).nodes.find((item) => item.id === 'loop/dev')?.usage).toEqual({ inputTokens: 30, outputTokens: 5, cachedTokens: 3, costUsd: expect.closeTo(0.3) })
   expect(buildRunGraph(snapshot, state, [], events).nodes.some((item) => item.id === 'loop/removed')).toBe(false)
   expect(summarizeRun(state, []).usage).toEqual({ inputTokens: 0, outputTokens: 0 })
