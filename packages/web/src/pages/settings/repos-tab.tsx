@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { AlertTriangle, Check, Pencil, CircleDashed, FolderSymlink, GitBranch, GitFork, LoaderCircle, Plus, RefreshCw, SquareTerminal, X } from 'lucide-react'
 import type { SpaceDetail } from '@taktflow/core'
-import { useSource } from '../../api'
-import { EmptyState, ReasonDialog, SkeletonRows, StatusBadge, toast, useFlashRows, useStagger, type StaggerProps } from '../../components/ui'
+import { useAsync, useSource } from '../../api'
+import { actingUserHeader } from '../../lib/acting-user'
+import { currentSpaceId } from '../../lib/space'
+import { EmptyState, ReasonDialog, Segmented, SkeletonRows, StatusBadge, toast, useFlashRows, useStagger, type StaggerProps } from '../../components/ui'
 import type { StatusMeta } from '../../lib/status'
 import { RepoSetupEdit } from './repo-setup-edit'
 
@@ -17,11 +19,12 @@ const REPO_STATUS: Record<Repo['status'], StatusMeta> = {
 
 const PURPOSE: Record<string, string> = { app: '应用', library: '库', test: '测试', docs: '文档' }
 
-function RepoRow({ repo, onChanged, stagger, flash }: { repo: Repo; onChanged: () => void; stagger?: StaggerProps; flash?: string }) {
+function RepoRow({ repo, onChanged, stagger, flash, canWrite }: { repo: Repo; onChanged: () => void; stagger?: StaggerProps; flash?: string; canWrite: boolean }) {
   const ds = useSource()
   const [syncing, setSyncing] = useState(false)
   const [editing, setEditing] = useState(false)
   const [asking, setAsking] = useState(false)
+  const [removing, setRemoving] = useState(false)
   const status = syncing ? 'syncing' : repo.status
 
   // 原因由 ReasonDialog 收集（服务端必填，写进审计）；同步本身较慢，对话框先关，进度在行内显示
@@ -68,7 +71,7 @@ function RepoRow({ repo, onChanged, stagger, flash }: { repo: Repo; onChanged: (
         ) : (
           <div className="repo-setup-row">
             <WorktreeSetup repo={repo} />
-            <button className="btn btn-ghost btn-sm repo-setup-btn" onClick={() => setEditing(true)} aria-label={`编辑 ${repo.id} 的 worktree 引导`}>
+            <button className="btn btn-ghost btn-sm repo-setup-btn" disabled={!canWrite} onClick={() => setEditing(true)} aria-label={`编辑 ${repo.id} 的 worktree 引导`}>
               <Pencil />
               编辑引导
             </button>
@@ -82,10 +85,21 @@ function RepoRow({ repo, onChanged, stagger, flash }: { repo: Repo; onChanged: (
         )}
       </div>
       <StatusBadge meta={REPO_STATUS[status]} subtle />
-      <button className="btn btn-sm" onClick={() => setAsking(true)} disabled={status === 'syncing'}>
+      <div className="page-actions">
+      <button className="btn btn-sm" onClick={() => setAsking(true)} disabled={!canWrite || status === 'syncing'}>
         <RefreshCw className={status === 'syncing' ? 'spin' : undefined} />
         {repo.status === 'missing' ? '拉取镜像' : '同步'}
       </button>
+      <button type="button" className="btn btn-sm btn-ghost" disabled={!canWrite || syncing} onClick={() => setRemoving(true)} aria-label={`解绑 ${repo.id}`}>解绑</button>
+      </div>
+      <ReasonDialog open={removing} onClose={() => setRemoving(false)} title={`确认解绑 ${repo.id}？`} description="只移除空间里的仓库绑定，不删除磁盘上的本地目录、镜像或历史工作区。有运行中的任务正在使用时会拒绝解绑。" confirmLabel="确认解绑" onSubmit={async (reason) => {
+        if (ds.mock) throw new Error('演示模式不能解绑仓库，请连接真实空间')
+        const sid = currentSpaceId()
+        const response = await fetch(`/api${sid ? `/s/${encodeURIComponent(sid)}` : ''}/space/repos/${encodeURIComponent(repo.id)}`, { method: 'DELETE', headers: { 'content-type': 'application/json', ...actingUserHeader() }, body: JSON.stringify({ reason }) })
+        const value = await response.json() as { error?: string }
+        if (!response.ok) throw new Error(value.error ?? '解绑失败')
+        toast(`已解绑 ${repo.id}`, { body: '磁盘上的目录已保留。' }); onChanged()
+      }} />
       <ReasonDialog
         open={asking}
         onClose={() => setAsking(false)}
@@ -135,13 +149,20 @@ function WorktreeSetup({ repo }: { repo: Repo }) {
 }
 
 const splitList = (s: string) => s.split(/[\n,]/).map((x) => x.trim()).filter(Boolean)
+const REPO_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+const REMOTE = /^(?:(?:https?|ssh|git|file):\/\/\S+|[\w.-]+@[\w.-]+:\S+|\/.+)$/
 
 function AddRepo({ onDone }: { onDone: () => void }) {
   const ds = useSource()
   const [f, setF] = useState({ id: '', url: '', defaultBranch: 'main', bootstrap: '', share: '' })
+  const [source, setSource] = useState<'remote' | 'local'>('remote')
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
-  const valid = /^[a-z0-9][a-z0-9-]*$/.test(f.id) && f.url.trim() !== ''
+  const idError = !f.id ? '填写仓库 ID' : !REPO_ID.test(f.id) ? '以字母或数字开头，只能用字母、数字、短横线和下划线' : undefined
+  const urlError = !f.url.trim() ? `填写${source === 'local' ? '本地目录' : '远程地址'}` : source === 'remote' && !REMOTE.test(f.url.trim()) ? '支持 https://、ssh://、git://、file://、git@主机:路径或绝对路径' : undefined
+  const branchError = !f.defaultBranch ? '填写默认分支' : f.defaultBranch.startsWith('-') || /[\s~^:?*\[\\]/.test(f.defaultBranch) || f.defaultBranch.includes('..') ? '分支名不能含空格、.. 或 git 特殊字符' : undefined
+  const shareError = splitList(f.share).some((path) => path.startsWith('/') || path.includes('\\') || path.split('/').includes('..')) ? '共享目录必须是仓库内相对路径，不能包含 .. 或反斜线' : undefined
+  const valid = !idError && !urlError && !branchError && !shareError
   // 由 ReasonDialog 调用：失败时抛错，消息留在对话框里
   async function submit(reason: string) {
     setBusy(true)
@@ -149,13 +170,12 @@ function AddRepo({ onDone }: { onDone: () => void }) {
       const share = splitList(f.share)
       await ds.addRepo({
         id: f.id,
-        url: f.url.trim(),
-        path: `.takt/repos/${f.id}`,
+        ...(source === 'remote' ? { url: f.url.trim(), path: `.takt/repos/${f.id}` } : { path: f.url.trim() }),
         defaultBranch: f.defaultBranch || 'main',
         ...(f.bootstrap.trim() ? { bootstrap: f.bootstrap.trim() } : {}),
         ...(share.length ? { share } : {}),
       }, reason)
-      toast(`已绑定 ${f.id}`, { body: '点同步把仓库镜像到本地。' })
+      toast(`已绑定 ${f.id}`, { body: source === 'remote' ? '点同步把仓库镜像到本地。' : '使用已有本地仓库，不会再克隆一份。' })
       onDone()
     } finally {
       setBusy(false)
@@ -170,17 +190,21 @@ function AddRepo({ onDone }: { onDone: () => void }) {
         if (valid) setAsking(true)
       }}
     >
+      <Segmented ariaLabel="仓库来源" value={source} onChange={(value) => { setSource(value); setF({ ...f, url: '' }) }} options={[{ value: 'remote', label: '远程仓库' }, { value: 'local', label: '本地目录' }]} />
       <label>
         <span className="field-label">id</span>
-        <input className="input mono" placeholder="shop-admin" value={f.id} onChange={(e) => setF({ ...f, id: e.target.value.trim() })} />
+        <input className="input mono" placeholder="shop-admin" value={f.id} aria-invalid={!!f.id && !!idError} aria-describedby="repo-id-error" onChange={(e) => setF({ ...f, id: e.target.value })} />
+        <span id="repo-id-error" className={f.id && idError ? 'ov-error' : 'faint'}>{idError ?? '字母、数字、短横线和下划线'}</span>
       </label>
       <label className="grow">
-        <span className="field-label">远程地址</span>
-        <input className="input mono" placeholder="git@github.com:org/repo.git" value={f.url} onChange={(e) => setF({ ...f, url: e.target.value })} />
+        <span className="field-label">{source === 'local' ? '本地目录' : '远程地址'}</span>
+        <input className="input mono" placeholder={source === 'local' ? '/Users/me/projects/app' : 'git@github.com:org/repo.git'} value={f.url} aria-invalid={!!f.url && !!urlError} aria-describedby="repo-source-error" onChange={(e) => setF({ ...f, url: e.target.value })} />
+        <span id="repo-source-error" className={f.url && urlError ? 'ov-error' : 'faint'}>{urlError ?? (source === 'local' ? '服务端已有 git 仓库的根目录；相对路径以空间目录为起点' : '绑定时校验格式，同步时检查是否可访问')}</span>
       </label>
       <label>
         <span className="field-label">默认分支</span>
         <input className="input mono" value={f.defaultBranch} onChange={(e) => setF({ ...f, defaultBranch: e.target.value.trim() })} />
+        {branchError && <span className="ov-error">{branchError}</span>}
       </label>
       <label className="grow">
         <span className="field-label">引导命令（可选）</span>
@@ -189,12 +213,13 @@ function AddRepo({ onDone }: { onDone: () => void }) {
       <label className="grow">
         <span className="field-label">共享目录（可选，逗号分隔）</span>
         <input className="input mono" placeholder="node_modules, .cache" value={f.share} onChange={(e) => setF({ ...f, share: e.target.value })} />
+        {shareError && <span className="ov-error">{shareError}</span>}
       </label>
       <button className="btn btn-primary" type="submit" disabled={!valid || busy}>
         绑定
       </button>
       <p className="faint repo-add-hint">
-        id 用小写字母、数字和短横线。每个写代码的任务会从这个仓库开自己的工作区；引导命令在工作区建好后执行，失败时节点会停下来等人；共享目录在工作区之间复用，免得每次重装依赖。
+        每个写代码的任务会从这个仓库开自己的工作区；引导命令在工作区建好后执行，失败时节点会停下来等人；共享目录在工作区之间复用。
       </p>
     </form>
     <ReasonDialog open={asking} onClose={() => setAsking(false)} title={`绑定仓库 ${f.id}`} description="绑定后立即生效，并记入空间审计。" confirmLabel="绑定" onSubmit={submit} />
@@ -203,6 +228,8 @@ function AddRepo({ onDone }: { onDone: () => void }) {
 }
 
 export function ReposTab({ space, onChanged }: { space?: SpaceDetail; onChanged: () => void }) {
+  const me = useAsync((ds) => ds.me(), [])
+  const canWrite = me.data?.member?.role === 'owner' || me.data?.member?.role === 'maintainer'
   const [adding, setAdding] = useState(false)
   const st = useStagger(space?.repos.length ?? 0)
   const flash = useFlashRows((space?.repos ?? []).map((r) => r.id))
@@ -216,11 +243,12 @@ export function ReposTab({ space, onChanged }: { space?: SpaceDetail; onChanged:
           <span className="num">{ready}</span> / <span className="num">{space.repos.length}</span> 已就绪
         </span>
         <span className="spacer" />
-        <button className="btn btn-sm" onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
+        <button className="btn btn-sm" disabled={!canWrite} onClick={() => setAdding((a) => !a)} aria-expanded={adding}>
           <Plus />
           绑定代码仓库
         </button>
       </div>
+      {me.data && !canWrite && <p className="repo-add-hint faint">你是 {me.data.member?.role ?? '非成员'}，绑定、同步和解绑仓库需要 maintainer 或 owner。</p>}
       <div className="expand" data-open={adding ? 'true' : 'false'}>
         <div inert={!adding}>
           <AddRepo
@@ -237,13 +265,13 @@ export function ReposTab({ space, onChanged }: { space?: SpaceDetail; onChanged:
           icon={GitFork}
           title="还没有绑定代码仓库"
           body="一个空间可以绑定多个仓库（前端、后端、测试），任务按仓库各开工作区，互不冲突。"
-          action={!adding ? <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding(true)}><Plus />绑定代码仓库</button> : undefined}
+          action={!adding && canWrite ? <button type="button" className="btn btn-sm btn-primary" onClick={() => setAdding(true)}><Plus />绑定代码仓库</button> : undefined}
           stewardAsk="帮我把这个仓库绑定到空间："
         />
       ) : (
         <ul className="repo-list">
           {space.repos.map((r, i) => (
-            <RepoRow key={r.id} repo={r} onChanged={onChanged} stagger={st(i)} flash={flash(r.id)} />
+            <RepoRow key={r.id} repo={r} onChanged={onChanged} stagger={st(i)} flash={flash(r.id)} canWrite={canWrite} />
           ))}
         </ul>
       )}

@@ -100,8 +100,8 @@ const repoId = (loc: string) => loc.replace(/\.git$/, '').split(/[/:]/).filter(B
 
 /**
  * creator：对话框里显示为"owner · 创建者"的当前用户（GET /api/me）。显式放进 members：
- * 服务端 createSpace 取请求头身份，没有头时回落成 'web'，和管家 / 其他接口的缺省身份（第一个空间的 owner）不是同一个人，
- * 新空间就只有 'web' 一个 owner，管家查这个空间一律 403（见 knownIssues）。复制来源空间成员且没填成员时不加，保留服务端的复制。
+ * 没选"我是"时请求不带身份头，服务端把 members 里的第一个 owner 当作创建者（space-admin createSpace），
+ * 新空间的成员就是向导里看到的这些，不会多出别人。复制来源空间成员且没填成员时不加，保留服务端的复制。
  */
 export function toRequest(f: SpaceForm, creator?: { id: string; name: string }): SpaceCreateRequest {
   const template: SpaceTemplate = f.start === 'copy' && f.copyFrom ? { copyFrom: f.copyFrom, parts: f.parts } : f.start === 'copy' ? 'blank' : f.start

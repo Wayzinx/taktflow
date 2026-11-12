@@ -267,6 +267,21 @@
   margin-left: auto;
   font-size: var(--text-meta);
 }
+.sc-src-name {
+  display: grid;
+  min-width: 0;
+}
+.sc-src-why {
+  color: var(--text-3);
+  font-size: var(--text-meta);
+}
+.sc-src.denied {
+  cursor: not-allowed;
+  color: var(--text-3);
+}
+.sc-src.denied:hover {
+  background: none;
+}
 .sc-src input,
 .sc-part input {
   accent-color: var(--ink);
