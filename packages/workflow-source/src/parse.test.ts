@@ -27,6 +27,13 @@ describe('源码解析', () => {
     expect(parsed.spans.byId.get('leaf')?.parent).toBe('inner')
     expect(parsed.spans.bodies.size).toBe(2)
   })
+  it('节点适用档位作为字面量保存，非法档位报错', () => {
+    const source = wrap("[review({ id: 'r', tiers: ['T1'] }), agent({ id: 'a', tiers: ['T9'] })]")
+    const parsed = parseWorkflowSource(source)
+    expect(parsed.model.nodes[0]!.props.tiers).toEqual({ kind: 'literal', value: ['T1'] })
+    expect(parsed.diagnostics).toEqual([])
+    expect(lintWorkflowSource(source)).toContainEqual({ severity: 'error', message: '节点 tiers 只能包含 T0、T1、T2、T3', nodeId: 'a' })
+  })
   it.each([
     ['export default workflow', '默认导出'],
     [wrap('nodes'), 'nodes 不是数组字面量'],

@@ -97,7 +97,7 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
   const { stores, workflows, by } = input
   const requirement = input.draft ?? (input.requirementId ? await stores.workspaces.getRequirement(input.requirementId) : undefined)
   if (!requirement) throw new Error(`需求不存在：${input.requirementId ?? ''}`)
-  if (!workflows.length) throw new RouteUnavailableError('这个空间还没有可用的流水线：先到「流水线」页新建，或从模板导入')
+  if (!workflows.length) throw new RouteUnavailableError('这个空间还没有流水线，先在流水线页新建或从模板添加')
   const prompt = [
     '按改动形状路由：T0 需求里已给出补丁（diff / patch）且只动一处；T1 单面；T2 多面串行；T3 多面且路径不相交。只输出指定 JSON。',
     JSON.stringify({ requirement, hint: input.hint, workflows: workflows.map(({ id, snapshot }) => ({ id, useWhen: snapshot.useWhen, tiers: snapshot.tiers })) }),
@@ -135,14 +135,15 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
   }
   const supported = ({ snapshot }: RouteInput['workflows'][number]) => !snapshot.tiers || snapshot.tiers.includes(tier)
   const requested = workflows.find((workflow) => workflow.id === proposal.workflowId)
-  if (proposal.workflowId && (!requested || !supported(requested))) adjustments.push(`流程 ${proposal.workflowId} 不存在或不支持 ${tier}，已改选`)
+  if (proposal.workflowId && (!requested || !supported(requested))) adjustments.push(`流水线 ${proposal.workflowId} 不存在或不支持 ${tier}，已改选`)
   const selected = (requested && supported(requested) ? requested : undefined)
     ?? workflows.find((workflow) => workflow.snapshot.tiers?.includes(tier))
     ?? workflows.find((workflow) => workflow.id === stores.config.route?.defaultWorkflow && supported(workflow))
     ?? workflows.find((workflow) => workflow.id === 'taktflow-standard' && supported(workflow))
     ?? workflows.find(supported)
-  if (!selected) throw new RouteUnavailableError(`没有支持 ${tier} 的流水线（现有：${workflows.map(({ id, snapshot }) => `${id} 支持 ${snapshot.tiers?.join('/')}`).join('、')}）；可以手动选择流程或改档，或在流水线的 tiers 里加上 ${tier}`)
-  const nodes = flatten(selected.snapshot.nodes)
+  if (!selected) throw new RouteUnavailableError(`没有支持 ${tier} 的流水线（现有：${workflows.map(({ id, snapshot }) => `${id} 支持 ${snapshot.tiers?.join('/')}`).join('、')}）；可以手动选择流水线或改档，或在流水线的 tiers 里加上 ${tier}`)
+  // 快照丢掉了 when 函数，只能靠节点声明的适用档位判断哪些门禁 / 角色真的会执行。
+  const nodes = flatten(selected.snapshot.nodes).filter((node) => !node.tiers || node.tiers.includes(tier))
   const roles = nodes.flatMap((node) => [node.role, ...(node.allowedRoles ?? []), ...(node.checks?.map((check) => check.role) ?? []), node.review?.author,
     ...(node.review?.reviewers.map((reviewer) => reviewer.role) ?? []), node.review?.arbiter?.role]).filter((role): role is string => Boolean(role))
   return { tier, workflowId: selected.id, reason: input.override?.reason ?? proposal.reason, surfaces: observed.surfaces.length > proposal.surfaces.length ? observed.surfaces : proposal.surfaces,

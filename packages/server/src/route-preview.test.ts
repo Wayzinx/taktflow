@@ -30,7 +30,7 @@ it('空间没有流水线时路由预览返回 409 和可操作的原因，而�
   const { req, request } = await setup()
   for (const response of [await request('/api/route/preview', { text: '新用户体验测试\n背景：第一次使用' }), await request(`/api/requirements/${req.id}/route`, {})]) {
     expect(response.status).toBe(409)
-    expect(response.data.error).toContain('这个空间还没有可用的流水线')
+    expect(response.data.error).toContain('这个空间还没有流水线，先在流水线页新建或从模板添加')
   }
 })
 

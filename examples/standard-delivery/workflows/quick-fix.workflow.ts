@@ -14,7 +14,7 @@ export default defineWorkflow({
       goal: '实现改动并留下自测证据', completion: ['改动符合验收标准且自测结果有证据'], retry: { max: 3 },
       inputs: [{ path: 'inputs/**' }, { path: 'spec/**' }, { path: 'cases/**' }], outputs: [{ path: 'tasks/change.md', kind: 'task' }],
       prompt: '实现需求，记录改动与自测证据到 tasks/change.md；不修改测试断言。' }),
-    review({ id: 'review-code', title: '独立代码评审', stage: 'verify', needs: ['implement'], owner: 'rd', when: (ctx) => ctx.args.tier !== 'T0',
+    review({ id: 'review-code', title: '独立代码评审', stage: 'verify', needs: ['implement'], owner: 'rd', tiers: ['T1'], when: (ctx) => ctx.args.tier !== 'T0',
       target: { code: { repo: 'app' } }, author: { role: 'dev' }, reviewers: [{ role: 'reviewer' }], maxRounds: 2, onExhausted: 'human' }),
     gate({ id: 'delivery-check', title: '交付校验', stage: 'verify', needs: ['review-code'], owner: 'qa',
       inputs: [{ path: 'spec/**' }, { path: 'cases/**' }], outputs: [{ path: 'evidence/**', kind: 'evidence' }],

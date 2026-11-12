@@ -92,6 +92,20 @@ it('路径冲突降 T2 并重新选择支持该档的流程，递归收集门禁
   expect(result.adjustments).toHaveLength(2)
   expect(model.mock.calls).toHaveLength(1)
 })
+it('路由预览按节点适用档位过滤门禁和角色：T0 不列被跳过的独立代码评审', async () => {
+  const input = await setup()
+  input.workflows[0]!.snapshot.nodes = [
+    { id: 'implement', kind: 'agent', title: '实现改动', needs: [], role: 'dev' },
+    { id: 'review-code', kind: 'review', title: '独立代码评审', needs: ['implement'], tiers: ['T1'],
+      review: { author: 'dev', reviewers: [{ role: 'reviewer' }], pass: 'all', maxRounds: 2, onExhausted: 'human', target: [] } },
+    { id: 'delivery-check', kind: 'gate', title: '交付校验', needs: ['review-code'], checks: [{ id: 'acceptance', kind: 'acceptance', role: 'verifier' }] },
+  ]
+  const patch = '```diff\n--- a/src/greet.js\n+++ b/src/greet.js\n-a\n+b\n```'
+  await expect(routeRequirement({ ...input, requirementId: undefined, draft: { title: '空名字回退', description: patch } })).resolves.toMatchObject({
+    tier: 'T0', workflowId: 'quick-fix', gates: ['交付校验'], roles: ['dev', 'verifier'] })
+  await expect(routeRequirement({ ...input, requirementId: undefined, draft: { title: '修复按钮文案错别字' } })).resolves.toMatchObject({
+    tier: 'T1', workflowId: 'quick-fix', gates: ['独立代码评审', '交付校验'], roles: ['dev', 'reviewer', 'verifier'] })
+})
 it('不相交路径保持 T3；不同仓库的同名目录可以并行', async () => {
   const input = await setup()
   for (const surfaces of [[{ id: 'a', paths: ['api/**'] }, { id: 'b', paths: ['web/**'] }], [{ id: 'a', repo: 'api', paths: ['src/**'] }, { id: 'b', repo: 'web', paths: ['src/**'] }]]) {
@@ -125,7 +139,7 @@ it('非法模型结果、缺失需求、空流程、全部不支持都不生成�
   const input = await setup()
   await expect(routeRequirement({ ...input, model: async () => ({ tier: 'T9', surfaces: [], reason: 'bad' }) })).rejects.toThrow('取值须为')
   await expect(routeRequirement({ ...input, workflows: [] })).rejects.toThrow(RouteUnavailableError)
-  await expect(routeRequirement({ ...input, workflows: [] })).rejects.toThrow('这个空间还没有可用的流水线')
+  await expect(routeRequirement({ ...input, workflows: [] })).rejects.toThrow('这个空间还没有流水线，先在流水线页新建或从模板添加')
   await expect(routeRequirement({ ...input, requirementId: 'REQ-999' })).rejects.toThrow('需求不存在')
   await expect(routeRequirement({ ...input, workflows: [workflow('wrong', ['T3'])] })).rejects.toThrow('没有支持 T1 的流水线（现有：wrong 支持 T3）')
 })

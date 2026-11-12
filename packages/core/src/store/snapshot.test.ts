@@ -10,7 +10,7 @@ describe('snapshotWorkflow', () => {
       stages: [{ id: 'build', title: 'Build' }],
       nodes: [
         { id: 'script', kind: 'script', title: 'Script', run: callback, when: callback },
-        { id: 'agent', kind: 'agent', title: 'Agent', stage: 'build', role: 'dev',
+        { id: 'agent', kind: 'agent', title: 'Agent', stage: 'build', role: 'dev', tiers: ['T1'],
           prompt: 'static', needs: ['script'], harness: { harness: 'codex', model: 'model' },
           inputs: [{ path: 'spec/**' }],
           outputs: [{ path: 'out.json', kind: 'other', schema: {
@@ -41,7 +41,7 @@ describe('snapshotWorkflow', () => {
     }
     const snapshot = snapshotWorkflow(def)
     expect(snapshot.nodes[0]).toEqual({ id: 'script', kind: 'script', title: 'Script', needs: [] })
-    expect(snapshot.nodes[1]).toMatchObject({ prompt: 'static', harness: 'codex', needs: ['script'],
+    expect(snapshot.nodes[1]).toMatchObject({ prompt: 'static', harness: 'codex', needs: ['script'], tiers: ['T1'],
       outputs: [{ schema: { type: 'object', properties: { field: { type: 'string' } },
         allOf: [{ type: 'object' }, null] } }],
     })
