@@ -42,8 +42,13 @@ const keywordSurfaces: Array<[RegExp, string, string]> = [
 ]
 const parallel = /互不|独立|并行|各自|分别/
 // T0 只认给定的补丁：```diff / ```patch 代码块或 git diff 正文（docs/design/19 §1）。
-const patches = /```(?:diff|patch)[^\n]*\n[\s\S]*?(?:```|(?![\s\S]))|^diff --git [\s\S]*/gm
-const hasPatch = (text: string) => new RegExp(patches.source, 'm').test(text)
+const patches = /```(?:diff|patch)[^\n]*\n[\s\S]*?```|^diff --git .*?(?:\r?\n(?:diff --git .*|index .*|--- .*|\+\+\+ .*|@@.*|[ +\-\\].*|(?:new|deleted) file mode .*|(?:old|new) mode .*|(?:rename|copy) (?:from|to) .*|similarity index .*))*$/gm
+// 只有补丁标记还不够；T0 限制为一个文件、至多 40 行实际增删，避免大补丁绕过评审。
+function hasSmallPatch(text: string): boolean {
+  const chunks = [...new Set([...text.matchAll(patches)].map(([patch]) => patch))]
+  const changes = chunks.join('\n').split(/\r?\n/).filter((line) => /^[+-]/.test(line) && !/^(---|\+\+\+) /.test(line)).length
+  return chunks.length > 0 && changes > 0 && changes <= 40 && new Set(splitPatches(text).files).size <= 1
+}
 /** 补丁正文是代码：只取它改到的文件当改动面，+/- 行里的词不算需求描述。 */
 function splitPatches(text: string): { prose: string; files: string[] } {
   const files: string[] = []
@@ -55,7 +60,7 @@ function splitPatches(text: string): { prose: string; files: string[] } {
   return { prose, files }
 }
 function heuristic(raw: string, repos: string[]): Pick<RouteDecision, 'tier' | 'surfaces' | 'reason'> {
-  const patched = hasPatch(raw)
+  const patched = hasSmallPatch(raw)
   const { prose: text, files } = splitPatches(raw)
   const roots = new Set([...text.matchAll(/(?:^|[\s`"'(（，、])((?:[\w.-]+\/)+[\w.*?/-]*)/g)].map((match) => match[1]!.replace(/^\.\//, '').split('/')[0]!).filter(Boolean))
   for (const file of files) if (file.includes('/')) roots.add(file.split('/')[0]!)
@@ -103,8 +108,8 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
     return typeof value === 'string' ? { ok: true, finalText: value } : { ok: true, finalText: JSON.stringify(value) ?? '', structured: value }
   } }
   const text = `${requirement.title}\n${'description' in requirement ? requirement.description ?? '' : ''}\n${input.hint ?? ''}`
-  const proposed = model ? (await runStructured(adapter, { prompt, cwd: stores.projectDir, readOnly: true }, schema, { repairs: stores.config.output?.repairs })).data
-    : heuristic(text, input.repos ?? stores.config.repos?.map((repo) => repo.id) ?? [])
+  const observed = heuristic(text, input.repos ?? stores.config.repos?.map((repo) => repo.id) ?? [])
+  const proposed = model ? (await runStructured(adapter, { prompt, cwd: stores.projectDir, readOnly: true }, schema, { repairs: stores.config.output?.repairs })).data : observed
   validateSchema(proposed, schema)
   const proposal = proposed as Pick<RouteDecision, 'tier' | 'surfaces' | 'reason'> & { workflowId?: string }
   let tier = proposal.tier
@@ -113,13 +118,14 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
     if (!tiers.includes(input.override.tier) || !input.override.reason.trim()) throw new Error('改档必须提供合法档位和原因')
     tier = input.override.tier
   }
-  // T0 / T1 走轻量流程（T0 还跳过代码评审），自动判档只给单一改动面；T0 还要求需求里真有补丁。人工改档已留痕，按人的判断走。
-  if (!input.override && (tier === 'T0' || tier === 'T1') && proposal.surfaces.length >= 2) {
-    adjustments.push(`${tier} 只适用于单一改动面，这次涉及 ${proposal.surfaces.length} 个，改为 T2`)
+  // 模型漏报改动面时，文本里确定识别出的多面仍然约束轻量流程；人工改档也不能绕过。
+  const surfaceCount = Math.max(proposal.surfaces.length, observed.surfaces.length)
+  if ((tier === 'T0' || tier === 'T1') && surfaceCount >= 2) {
+    adjustments.push(`${tier} 只适用于单一改动面，这次涉及 ${surfaceCount} 个，改为 T2`)
     tier = 'T2'
   }
-  if (!input.override && tier === 'T0' && !hasPatch(text)) {
-    adjustments.push('需求里没有给出补丁，T0 改为 T1')
+  if (tier === 'T0' && !hasSmallPatch(text)) {
+    adjustments.push('需求里没有给出单文件小补丁，T0 改为 T1')
     tier = 'T1'
   }
   const unproven = proposal.surfaces.length < 2 || proposal.surfaces.some((surface) => !surface.paths.length || surface.paths.some((path) => !path.trim()))
@@ -139,7 +145,7 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
   const nodes = flatten(selected.snapshot.nodes)
   const roles = nodes.flatMap((node) => [node.role, ...(node.allowedRoles ?? []), ...(node.checks?.map((check) => check.role) ?? []), node.review?.author,
     ...(node.review?.reviewers.map((reviewer) => reviewer.role) ?? []), node.review?.arbiter?.role]).filter((role): role is string => Boolean(role))
-  return { tier, workflowId: selected.id, reason: input.override?.reason ?? proposal.reason, surfaces: proposal.surfaces,
+  return { tier, workflowId: selected.id, reason: input.override?.reason ?? proposal.reason, surfaces: observed.surfaces.length > proposal.surfaces.length ? observed.surfaces : proposal.surfaces,
     gates: nodes.filter((node) => ['gate', 'review', 'human'].includes(node.kind)).map((node) => node.title), roles: [...new Set(roles)],
     adjustments, decidedBy: by, at: new Date().toISOString(),
     ...(input.override ? { overridden: { by, reason: input.override.reason, from: proposal.tier } } : {}),
