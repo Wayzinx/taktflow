@@ -10,7 +10,7 @@ import { fmtCost, fmtRelative, fmtTokens, totalTokens } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { REQ_STATUS } from '../../lib/status'
 import { DeliveryButton } from '../../components/delivery-button'
-import { RequirementActions } from './header-actions'
+import { RequirementActions, StartRunButton } from './header-actions'
 import { FactButton, InlineText } from './header-edit'
 import './header.css'
 
@@ -74,6 +74,7 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
             最近运行
           </Link>
         )}
+        {r && !r.latestRunId && r.status !== 'archived' && r.status !== 'delivered' && <StartRunButton r={r} onChanged={onChanged} />}
         {r && <RequirementActions r={r} onChanged={onChanged} />}
       </div>
       <h1 className="req-h1 rh-h1" style={{ viewTransitionName: vtName('req', id) }}>
@@ -124,8 +125,8 @@ export function RequirementHeader({ id, detail: r, status, onChanged }: { id: st
             </FactButton>
             <span className="req-fact">创建于 {fmtRelative(r.createdAt)}</span>
             <span className="req-fact">更新于 {fmtRelative(r.updatedAt)}</span>
-            <span className="req-fact">
-              <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens
+            <span className="req-fact" title="这个需求全部运行（含 Lead 回合、临时任务）的用量合计；预算条只统计最近一次流水线运行">
+              <span className="mono">{fmtTokens(totalTokens(r.usage))}</span> tokens · 全部 {r.runs.length} 次运行合计
               {r.usage.costUsd ? (
                 <>
                   {' · '}
