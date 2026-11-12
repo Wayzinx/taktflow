@@ -2,6 +2,8 @@
   position: sticky;
   top: 0;
   z-index: 20;
+  /* 嵌入时 shell-main 是定高的 flex 列：内容一长（空间设置），可收缩的顶栏会被压到只剩 Tab 的高度 */
+  flex: none;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
