@@ -128,7 +128,7 @@ export async function listSkills(skillsDir: string): Promise<SkillRecord[]> {
     let root = path.dirname(skillsDir)
     while (!await fileExists(path.join(root, CONFIG_FILE)) && path.dirname(root) !== root) root = path.dirname(root)
     if (path.dirname(root) === root) root = path.dirname(skillsDir)
-    skills.push({ name: readString(data, 'name') ?? entry.name, description: readString(data, 'description') ?? '', path: path.relative(root, file) })
+    skills.push({ name: readString(data, 'name') ?? entry.name, dir: entry.name, description: readString(data, 'description') ?? '', path: path.relative(root, file) })
   }
   return skills
 }

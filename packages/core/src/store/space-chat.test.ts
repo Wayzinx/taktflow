@@ -33,7 +33,7 @@ it('新旧布局与显式路径覆盖，重新打开不漂移', async () => {
   expect(await listWorkflowFiles(custom.paths)).toEqual([join(custom.paths.workflows, 'demo.workflow.ts')])
   await mkdir(join(custom.paths.skills, 'hello'))
   await writeFile(join(custom.paths.skills, 'hello/SKILL.md'), '---\nname: greeting\ndescription: 问候技能\n---\n正文')
-  expect(await listSkills(custom.paths.skills)).toEqual([{ name: 'greeting', description: '问候技能', path: 'skills/hello/SKILL.md' }])
+  expect(await listSkills(custom.paths.skills)).toEqual([{ name: 'greeting', dir: 'hello', description: '问候技能', path: 'skills/hello/SKILL.md' }])
 })
 
 it('需求创建自动开群，成员去重且消息跨实例 seq 连续', async () => {

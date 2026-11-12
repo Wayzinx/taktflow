@@ -7,6 +7,7 @@ import { nextCron, parseCron } from '../lib/cron'
 import type { MockSpace } from './mock-space'
 import type { WorkflowApi } from './mock-workflows'
 import { RoleConflictError, type M8Source } from './source-m8'
+import { createMockSkills } from './mock-skills'
 
 const clone = <T,>(v: T): T => structuredClone(v)
 const delay = <T,>(v: T, ms = 140): Promise<T> => new Promise((r) => setTimeout(() => r(clone(v)), ms))
@@ -232,6 +233,7 @@ export function createMockM8({ withSpace, workflowsOf, runtimeConfig }: Ctx): { 
   }
 
   const api: M8Source = {
+    ...createMockSkills(withSpace),
     agentRoles: () =>
       withSpace(async (sp) => {
         const [used, cfg] = await Promise.all([usage(sp), runtimeConfig().catch(() => undefined)])

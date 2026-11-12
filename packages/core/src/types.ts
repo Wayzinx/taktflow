@@ -1448,6 +1448,8 @@ export interface RepoBinding {
 
 export interface SkillRecord {
   name: string
+  /** skills/ 下的目录名（frontmatter 的 name 可能和它不一样；文件接口按目录名寻址） */
+  dir?: string
   /** 相对空间根目录的 SKILL.md 路径。 */
   path: string
   description: string

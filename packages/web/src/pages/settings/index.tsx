@@ -5,6 +5,7 @@ import { ErrorState, PageHeader, Skeleton, TabPanel, Tabs, useStewardSuggestions
 import { StewardEditButton } from './ask-steward'
 import { setQuery, useLocation } from '../../lib/router'
 import { FilesTab } from './files-tab'
+import { SkillsTab } from './skills-tab'
 import { KnowledgeTab } from './knowledge-tab'
 import { LessonsTab } from './lessons-tab'
 import { MembersTab } from './members-tab'
@@ -22,7 +23,7 @@ type Tab = (typeof TABS)[number]
 const TAB_HINT: Record<Tab, string> = {
   members: '谁在这个空间里、各自负责什么职责；待办按职责派发。',
   repos: '交付会改动的代码仓库，以及每个仓库的安装、构建和测试命令。',
-  skills: 'Agent 可以调用的技能说明，改完立即对新运行生效。',
+  skills: '每个技能是一个文件夹：SKILL.md 加参考资料、脚本和模板；可以从 Git 仓库或本地导入，改完对新运行生效。',
   agents: '每个角色用什么跑、用哪些技能和知识库、能写哪些路径。节点里写了的以节点为准，其次是角色，最后是默认路由。',
   shared: '代码仓库、技能、知识库都挂在空间上，所有角色共用；这里一张表看全每个角色实际用了哪些。',
   workflows: '这个空间可用的流水线；新建需求时按需求内容自动选。',
@@ -80,7 +81,7 @@ export function SettingsPage() {
           <TabPanel key={tab} className="space-tab-body">
             {tab === 'members' && <MembersTab space={sp} onSaved={q.reload} />}
             {tab === 'repos' && <ReposTab space={sp} onChanged={q.reload} />}
-            {tab === 'skills' && <FilesTab kind="skill" space={sp} />}
+            {tab === 'skills' && <SkillsTab space={sp} onChanged={q.reload} />}
             {tab === 'agents' && <FilesTab kind="agent" space={sp} onChanged={q.reload} />}
             {tab === 'shared' && <SharedTab space={sp} />}
             {tab === 'workflows' && <WorkflowsTab space={sp} />}

@@ -40,6 +40,14 @@
  * | POST | /api/space/repos/:repoId/sync                  | { head } |
  * | GET  | /api/space/files?kind=skill|agent&name=        | SpaceFile（SKILL.md / 角色档案原文） |
  * | PUT  | /api/space/files?kind=skill|agent&name=        | 请求体 { content, reason } → SpaceFile |
+ * | --- 技能文件夹与导入（SKILL.md 之外还有 references / scripts / assets，整个文件夹同步给 harness） | | |
+ * | GET  | /api/space/skills/:name/files                  | SkillTree |
+ * | GET  | /api/space/skills/:name/file?path=             | SkillFileContent（二进制只给大小，text=false） |
+ * | PUT  | /api/space/skills/:name/file?path=             | 请求体 { content, reason } → SkillFileContent（maintainer；不存在时新建） |
+ * | DELETE | /api/space/skills/:name/file?path=           | 请求体 { reason } → 204（SKILL.md 不能删） |
+ * | DELETE | /api/space/skills/:name                      | 请求体 { reason } → 204（整个技能） |
+ * | POST | /api/space/skills/import/preview               | 请求体 { source: SkillImportSource } → SkillImportPreview（拉取 / 解包到暂存区，列出找到的技能） |
+ * | POST | /api/space/skills/import                       | 请求体 SkillImportRequest → SkillImportResult（同名不带 overwrite 时 409） |
  * | --- 角色与自动化（docs/design/30 §3、§4） | | |
  * | GET  | /api/space/agents                              | AgentRoleView[]（每个角色的结构化字段、生效的 harness 及来源、被哪些 workflow 节点用到） |
  * | GET  | /api/space/agents/:role                        | AgentRoleView |
@@ -715,6 +723,65 @@ export interface SpaceFile {
   name: string
   path: string
   content: string
+}
+
+/** 技能文件夹里的一个文件；path 相对技能目录，用 / 分隔。 */
+export interface SkillFileEntry {
+  path: string
+  size: number
+  /** 能按 UTF-8 文本编辑（否则只显示大小） */
+  text: boolean
+}
+
+export interface SkillTree {
+  name: string
+  /** 相对空间根目录的技能目录 */
+  dir: string
+  files: SkillFileEntry[]
+}
+
+export interface SkillFileContent extends SkillFileEntry {
+  name: string
+  content: string
+}
+
+/** 导入来源：Git 仓库（GitHub 网址可带 /tree/<分支>/<目录>），或浏览器上传的文件（整个文件夹，或一个 .zip / .skill 包）。 */
+export type SkillImportSource =
+  | { kind: 'git'; url: string; ref?: string; path?: string }
+  | { kind: 'upload'; files: Array<{ path: string; base64: string }> }
+
+export interface SkillImportCandidate {
+  /** 暂存区里的目录（相对来源根目录；'' 表示根目录本身就是技能） */
+  dir: string
+  /** 建议的技能名（frontmatter 的 name，没有就用目录名） */
+  name: string
+  description: string
+  files: number
+  bytes: number
+  /** 空间里已有同名技能 */
+  exists: boolean
+  /** 有问题不能导入（缺 SKILL.md 的 name / 太大等） */
+  problem?: string
+}
+
+export interface SkillImportPreview {
+  token: string
+  /** 来源的简短说明（仓库地址或上传的文件名） */
+  source: string
+  candidates: SkillImportCandidate[]
+  /** 跳过的东西（符号链接、.git、超限文件），给人看 */
+  skipped: string[]
+}
+
+export interface SkillImportRequest {
+  token: string
+  picks: Array<{ dir: string; name: string }>
+  overwrite?: boolean
+  reason: string
+}
+
+export interface SkillImportResult {
+  imported: Array<{ name: string; files: number; replaced: boolean }>
 }
 
 // ------------------------------------------------------------ workflow 协同编辑

@@ -28,5 +28,12 @@ export function createM8Http({ req, get }: Http): M8Source {
     saveChannel: (channel, reason) => req('PUT', `/space/channels/${enc(channel.id)}`, { channel, reason }),
     deleteChannel: (id, reason) => req<void>('DELETE', `/space/channels/${enc(id)}`, { reason }),
     testChannel: (id, reason) => req('POST', `/space/channels/${enc(id)}/test`, { reason }),
+    skillTree: (name) => get(`/space/skills/${enc(name)}/files`),
+    skillFile: (name, path) => get(`/space/skills/${enc(name)}/file?path=${enc(path)}`),
+    saveSkillFile: (name, path, body) => req('PUT', `/space/skills/${enc(name)}/file?path=${enc(path)}`, body),
+    deleteSkillFile: (name, path, reason) => req<void>('DELETE', `/space/skills/${enc(name)}/file?path=${enc(path)}`, { reason }),
+    deleteSkill: (name, reason) => req<void>('DELETE', `/space/skills/${enc(name)}`, { reason }),
+    previewSkillImport: (source) => req('POST', '/space/skills/import/preview', { source }),
+    importSkills: (request) => req('POST', '/space/skills/import', request),
   }
 }

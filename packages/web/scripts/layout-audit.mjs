@@ -52,6 +52,8 @@ const PAGES = [
   { name: '评测', path: `${S}/eval` },
   { name: '自动化', path: `${S}/automations` },
   ...['members', 'repos', 'skills', 'agents', 'shared', 'workflows', 'knowledge', 'lessons', 'runtime', 'quality'].map((tab) => ({ name: `空间设置 ${tab}`, path: `${S}/settings/${tab}` })),
+  { name: '技能导入', path: `${S}/settings?tab=skills`, open: ['导入技能'] },
+  { name: '技能添加文件', path: `${S}/settings?tab=skills`, open: ['添加文件'] },
   { name: '管家 Solo', path: `${S}/solo` },
   { name: '命令面板', path: `${S}/`, keys: ['Meta+K'] },
 ].filter(Boolean).filter((p) => !only || p.name.includes(only))

@@ -20,6 +20,7 @@ import type { PreviewServer } from './preview.js'
 import { serialize } from './stale.js'
 import { stream } from './stream.js'
 import { spaceRoutes, type LeadMention } from './space-routes.js'
+import { skillRoutes } from './skill-routes.js'
 import { workflowRoutes } from './workflow-routes.js'
 import { registerKnowledgeRoutes } from './knowledge-routes.js'
 import { createSecretResolver } from '@taktflow/knowledge'
@@ -51,6 +52,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   registerKnowledgeRoutes(add, { connections })
   crudRoutes(add, catalog)
   spaceRoutes(add, connections, onLeadMention, catalog)
+  skillRoutes(add)
   m3Routes(add, catalog)
   registerEvalRoutes(add, catalog.resolveRuntime ?? (() => { throw new HttpError(501, '未接入评测运行时') }), catalog)
   workflowRoutes(add, connections, (stores) => {

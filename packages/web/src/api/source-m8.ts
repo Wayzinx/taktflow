@@ -1,4 +1,4 @@
-import type { AgentRoleView, AgentRoleWrite, AutomationConfig, AutomationDelivery, AutomationRunRecord, AutomationsView, AutomationView, ChannelConfig, ChannelView } from '@taktflow/core'
+import type { AgentRoleView, AgentRoleWrite, AutomationConfig, AutomationDelivery, AutomationRunRecord, AutomationsView, AutomationView, ChannelConfig, ChannelView, SkillFileContent, SkillImportPreview, SkillImportRequest, SkillImportResult, SkillImportSource, SkillTree } from '@taktflow/core'
 
 /** 角色档案 PUT 时 baseRevision 不一致（409）：别人刚改过，需要重新载入。 */
 export class RoleConflictError extends Error {
@@ -26,4 +26,16 @@ export interface M8Source {
   /** 还有自动化引用时 409。 */
   deleteChannel(id: string, reason: string): Promise<void>
   testChannel(id: string, reason: string): Promise<AutomationDelivery>
+  /** 技能是一个文件夹：SKILL.md 之外还有 references / scripts / assets。name 是 skills/ 下的目录名。 */
+  skillTree(name: string): Promise<SkillTree>
+  skillFile(name: string, path: string): Promise<SkillFileContent>
+  /** 不存在就新建；技能本身不存在时只能先写 SKILL.md（= 新建技能）。content 与 base64 二选一。 */
+  saveSkillFile(name: string, path: string, body: { content?: string; base64?: string; reason: string }): Promise<SkillFileContent>
+  /** SKILL.md 不能单独删。 */
+  deleteSkillFile(name: string, path: string, reason: string): Promise<void>
+  deleteSkill(name: string, reason: string): Promise<void>
+  /** 拉取 / 解包到暂存区，列出找到的技能；没找到时 token 为空。 */
+  previewSkillImport(source: SkillImportSource): Promise<SkillImportPreview>
+  /** 同名且没勾覆盖时 409。 */
+  importSkills(request: SkillImportRequest): Promise<SkillImportResult>
 }
