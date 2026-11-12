@@ -1,6 +1,6 @@
 import { clearHarnessAvailability } from './harness-availability.js'
-import { assertSecretName, patchRuntimeConfig, providerProtocols, readRuntimeConfig, RuntimeConfigError, setLocalSecret, systemWrite, validateHarnessSelector,
-  type ProviderBridge, type ProjectStores, type RuntimeConfig, type RuntimeTestRequest, type TaktConfig } from '@taktflow/core'
+import { assertSecretName, harnessSelectors, patchRuntimeConfig, providerProtocols, readRuntimeConfig, RuntimeConfigError, selectHarness, setLocalSecret, systemWrite, validateHarnessSelector,
+  type EngineDeps, type ProviderBridge, type ProjectStores, type RuntimeConfig, type RuntimeTestRequest, type TaktConfig } from '@taktflow/core'
 import { ACP_PRESETS, PROVIDER_PRESETS, createHarnesses, providerConfig, collectSecrets, createRedactor, withProviderPresets } from '@taktflow/harness'
 import { actor, authorize, body, HttpError, text } from './http.js'
 import type { Handler } from './routes.js'
@@ -18,6 +18,25 @@ export interface RuntimeCallbacks {
 const presets: RuntimeConfig['presets'] = {
   providers: Object.entries(PROVIDER_PRESETS).map(([id, config]) => ({ id, displayName: providerBrands[id]!, protocol: config.protocol, baseURL: config.baseURL, ...('apiKeyEnv' in config ? { apiKeyEnv: config.apiKeyEnv } : {}), ...('endpoints' in config ? { endpoints: config.endpoints } : {}) })),
   acp: ACP_PRESETS,
+}
+
+/** 角色档案（含备用）还指着的 harness 不能删或停用：档案不走配置校验，删掉后这个角色会在加载时被悄悄跳过。 */
+function assertProfilesKeepHarnesses(runtime: EngineDeps | undefined, config: TaktConfig, builtinHarnesses: string[]) {
+  if (!runtime) return
+  const after = new Set([
+    ...builtinHarnesses.filter(id => !config.harnessOverrides?.[id]?.disabled),
+    ...(config.harnesses ?? []).map(h => h.id),
+    ...Object.keys(runtime.harnesses).filter(id => !builtinHarnesses.includes(id) && !runtime.stores.config.harnesses?.some(h => h.id === id)),
+  ])
+  const removed = new Set(Object.keys(runtime.harnesses).filter(id => !after.has(id)))
+  if (!removed.size) return
+  const users = new Map<string, string[]>()
+  for (const role of Object.keys(runtime.profiles)) {
+    const [primary, ...backups] = harnessSelectors(selectHarness(role, undefined, { config, profiles: runtime.profiles, harnesses: runtime.harnesses }))
+    if (removed.has(primary!.harness)) users.set(primary!.harness, [...users.get(primary!.harness) ?? [], role])
+    for (const id of new Set(backups.map(s => s.harness).filter(id => removed.has(id) && id !== primary!.harness))) users.set(id, [...users.get(id) ?? [], `${role}（备用）`])
+  }
+  if (users.size) throw new RuntimeConfigError(400, [...users].map(([id, roles]) => `harness ${id} 仍被角色使用：${roles.join('、')}`).join('；') + '。先在角色设置里换掉再删除或停用')
 }
 
 function view(config: TaktConfig): RuntimeConfig {
@@ -52,6 +71,7 @@ export function runtimeRoutes(add: (method: string, path: string, handler: Handl
         protocols: Object.values(stores.config.providers ?? {}).flatMap(providerProtocols).filter(protocol => Object.values(runtime?.harnesses ?? {}).some(h => h.capabilities?.providerProtocols?.includes(protocol))),
         acpPresets: ACP_PRESETS.map(p => p.id), providerPresets: Object.keys(PROVIDER_PRESETS),
         prepare: async config => {
+          assertProfilesKeepHarnesses(runtime, config, builtinHarnesses)
           if (options.prepareRuntime) return options.prepareRuntime(stores, config)
           const normalized = withProviderPresets(config)
           const harnesses = createHarnesses({ config: normalized, projectDir: stores.projectDir })

@@ -20,8 +20,9 @@ import './runtime/runtime.css'
 
 type Filter = 'all' | 'available' | 'unavailable'
 
-function Stats({ harnesses, models, cfg }: { harnesses?: HarnessInfo[]; models?: ModelInfo[]; cfg?: RuntimeConfig }) {
-  if (!harnesses || !models) {
+/** 只在还在读时给骨架；某一路读失败，依赖它的卡写明没读到，其余照常出数。 */
+function Stats({ harnesses, models, cfg, failed }: { harnesses?: HarnessInfo[]; models?: ModelInfo[]; cfg?: RuntimeConfig; failed: { harnesses: boolean; models: boolean } }) {
+  if ((!harnesses && !failed.harnesses) || (!models && !failed.models)) {
     return (
       <StatStrip label="运行环境读数">
         {[0, 1, 2, 3].map((i) => (
@@ -34,14 +35,15 @@ function Stats({ harnesses, models, cfg }: { harnesses?: HarnessInfo[]; models?:
       </StatStrip>
     )
   }
-  const live = harnesses.filter((h) => !h.override?.disabled)
+  const unread = (ok: unknown, what: string) => (ok ? {} : { tone: 'var(--st-failed)', value: '—', foot: `${what}没读到，原因见下方` })
+  const live = (harnesses ?? []).filter((h) => !h.override?.disabled)
   const available = live.filter((h) => h.available)
   const down = live.filter((h) => !h.available)
   const local = cfg ? Object.values(cfg.keys).filter((k) => k === 'local').length : 0
-  const missingKeys = models.filter((m) => !m.keyPresent)
-  const providers = new Set(models.map((m) => m.provider))
-  const protocols = new Set(models.map((m) => m.protocol))
-  const bound = harnesses.filter((h) => h.roles.length > 0)
+  const missingKeys = (models ?? []).filter((m) => !m.keyPresent)
+  const providers = new Set(models?.map((m) => m.provider))
+  const protocols = new Set(models?.map((m) => m.protocol))
+  const bound = (harnesses ?? []).filter((h) => h.roles.length > 0)
   return (
     <StatStrip label="运行环境读数">
       <StatCard
@@ -63,25 +65,28 @@ function Stats({ harnesses, models, cfg }: { harnesses?: HarnessInfo[]; models?:
             '全部可用'
           )
         }
+        {...unread(harnesses, 'Harness 清单')}
       />
-      <StatCard label="模型" icon={<Boxes />} value={<CountUp value={models.length} />} foot={<><b>{providers.size}</b> 个 provider · <b>{protocols.size}</b> 种协议</>} />
+      <StatCard label="模型" icon={<Boxes />} value={<CountUp value={models?.length ?? 0} />} foot={<><b>{providers.size}</b> 个 provider · <b>{protocols.size}</b> 种协议</>} {...unread(models, '模型清单')} />
       <StatCard
         label="密钥已配置"
         icon={<KeyRound />}
         tone={missingKeys.length ? 'var(--st-waiting)' : undefined}
         value={
           <>
-            <CountUp value={models.length - missingKeys.length} />
-            <span className="stat-unit">/ {models.length}</span>
+            <CountUp value={(models?.length ?? 0) - missingKeys.length} />
+            <span className="stat-unit">/ {models?.length ?? 0}</span>
           </>
         }
         foot={missingKeys.length ? <>缺少：{[...new Set(missingKeys.map((m) => m.provider))].join(' · ')}</> : local ? <><b>{local}</b> 个存在本机密钥库 · 其余来自环境变量</> : '只检查密钥在不在，不读取值'}
+        {...unread(models, '模型清单')}
       />
       <StatCard
         label="默认路由"
         icon={<Route />}
         value={<CountUp value={bound.reduce((s, h) => s + h.roles.length, 0)} />}
         foot={bound.length ? bound.map((h) => `${h.id} ${h.roles.length}`).join(' · ') : '还没有角色指定默认 harness'}
+        {...unread(harnesses, 'Harness 清单')}
       />
     </StatStrip>
   )
@@ -212,7 +217,7 @@ export function RuntimeTab() {
 
   return (
     <>
-      <Stats harnesses={hs} models={mq.data} cfg={rt.cfg} />
+      <Stats harnesses={hs} models={mq.data} cfg={rt.cfg} failed={{ harnesses: !!hq.error, models: !!mq.error }} />
       <section className="settings-section">
         <div className="section-head">
           <h2 className="section-title">Harness</h2>

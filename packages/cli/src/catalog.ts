@@ -86,28 +86,46 @@ export function createRuntimeCatalog(options: {
   const now = options.now ?? Date.now
   const mtime = options.mtime ?? (async (dir: string) => (await stat(join(dir, 'takt.config.json'))).mtimeMs)
   const ttl = 60_000
-  const runtimes = new Map<string, RuntimeEntry>()
   const probes = new WeakMap<ProjectContext, CacheEntry<HarnessInfo[]>>()
 
-  async function runtime(stores: ProjectStores): Promise<ProjectContext> {
+  // models 目录只取配置：共享同一加载上下文，但不做 harness selector 严格校验，避免某个失效档案把整个 models 目录拖成 500。
+  interface RawEntry extends RuntimeEntry { validated?: Promise<ProjectContext> }
+  const raws = new Map<string, RawEntry>()
+  async function rawEntry(stores: ProjectStores): Promise<RawEntry> {
     const dir = stores.projectDir
     const modified = await mtime(dir)
-    const cached = runtimes.get(dir)
-    if (cached && cached.mtime === modified && now() < cached.expires) return cached.promise
-    const entry: RuntimeEntry = {
+    const cached = raws.get(dir)
+    if (cached && cached.mtime === modified && now() < cached.expires) return cached
+    const entry: RawEntry = {
       mtime: modified, expires: Infinity,
       promise: Promise.resolve().then(() => load(dir)).then((context) => {
-        // 目录要能展示被停用的默认角色；执行注册表仍保持移除状态。
-        validate({ ...context, harnesses: catalogHarnesses(context) })
         entry.expires = now() + ttl
         return context
       }).catch((error: unknown) => {
-        if (runtimes.get(dir) === entry) runtimes.delete(dir)
+        if (raws.get(dir) === entry) raws.delete(dir)
         throw error
       }),
     }
-    runtimes.set(dir, entry)
-    return entry.promise
+    raws.set(dir, entry)
+    return entry
+  }
+  async function loadRaw(stores: ProjectStores): Promise<ProjectContext> {
+    return (await rawEntry(stores)).promise
+  }
+
+  // 目录要能展示被停用的默认角色；执行注册表仍保持移除状态。校验挂在同一条加载上下文上，并发复用一次。
+  async function runtime(stores: ProjectStores): Promise<ProjectContext> {
+    const entry = await rawEntry(stores)
+    if (!entry.validated) {
+      entry.validated = entry.promise.then((context) => {
+        validate({ ...context, harnesses: catalogHarnesses(context) })
+        return context
+      }).catch((error: unknown) => {
+        entry.validated = undefined
+        throw error
+      })
+    }
+    return entry.validated
   }
 
   async function getHarnesses(stores: ProjectStores, includeTest = false): Promise<HarnessInfo[]> {
@@ -131,7 +149,8 @@ export function createRuntimeCatalog(options: {
   }
 
   async function getModels(stores: ProjectStores): Promise<ModelInfo[]> {
-    return runtimeModels(await runtime(stores))
+    // 模型清单只取配置；不做 harness selector 严格校验，避免某个失效档案把整个 models 目录拖成 500。
+    return runtimeModels(await loadRaw(stores))
   }
 
   async function getCatalog(stores: ProjectStores, includeTest = false): Promise<RuntimeCatalog> {
@@ -139,7 +158,7 @@ export function createRuntimeCatalog(options: {
     return { harnesses, models }
   }
 
-  return { getHarnesses, getModels, getCatalog, invalidate: (projectDir: string) => { runtimes.delete(projectDir) } }
+  return { getHarnesses, getModels, getCatalog, invalidate: (projectDir: string) => { raws.delete(projectDir) } }
 }
 
 export const getRuntimeCatalog = createRuntimeCatalog().getCatalog

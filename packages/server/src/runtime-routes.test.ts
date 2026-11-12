@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vitest'
-import { initProject, resolveSecret, type RuntimeConfig, type HarnessAdapter, type TaktConfig } from '@taktflow/core'
+import { initProject, resolveSecret, type AgentProfile, type RuntimeConfig, type HarnessAdapter, type TaktConfig } from '@taktflow/core'
 import { createServer, type ServerOptions } from './index.js'
 import { configuredChat } from './knowledge-runtime.js'
 
@@ -109,6 +109,28 @@ it('harness 传回 detail 并脱敏；停用项不进行探测', async () => {
   await f.patch({ harnessOverrides: { codex: { disabled: true } } })
   expect(await (await f.request('/api/space/runtime/test', 'POST', { target: { kind: 'harness', id: 'codex' } })).json()).toMatchObject({ ok: false, billed: false, message: '本空间已停用' })
   expect(available).toHaveBeenCalledTimes(1)
+})
+
+it('角色档案（含备用）还在用的 harness 不能删或停用；早已失效的引用不挡别的修改', async () => {
+  const fake = (id: string): HarnessAdapter => ({ id, displayName: id, available: async () => ({ ok: true }), run: async () => ({ ok: true, finalText: '' }) })
+  const profile = (role: string, harness: AgentProfile['harness']): AgentProfile => ({ role, title: role, description: '', instructions: '', skills: [], writeScope: [], harness })
+  const f = await fixture({ resolveRuntime: async stores => ({ stores, knowledge: [],
+    harnesses: Object.fromEntries(['codex', 'mock', ...(stores.config.harnesses ?? []).map(h => h.id)].filter(id => !stores.config.harnessOverrides?.[id]?.disabled).map(id => [id, fake(id)])),
+    profiles: {
+      auditor: profile('auditor', { harness: 'mock', fallback: [{ harness: 'extra' }] }),
+      dev: profile('dev', { harness: 'codex' }),
+      stale: profile('stale', { harness: 'mock', fallback: [{ harness: 'ghost' }] }),
+    } }) })
+  expect((await f.patch({ harnesses: { extra: { id: 'extra', kind: 'cli', command: ['synthetic-cli'], output: { format: 'text' } } } })).status).toBe(200)
+  const removed = await f.patch({ harnesses: { extra: null } })
+  expect(removed.status).toBe(400)
+  expect((await removed.json()).error).toBe('harness extra 仍被角色使用：auditor（备用）。先在角色设置里换掉再删除或停用')
+  const disabled = await f.patch({ harnessOverrides: { codex: { disabled: true } } })
+  expect(disabled.status).toBe(400)
+  expect((await disabled.json()).error).toContain('harness codex 仍被角色使用：dev。')
+  expect((await f.view()).harnesses.map(h => h.id)).toEqual(['extra'])
+  // stale 的 ghost 早就不在了，不是这次改动造成的
+  expect((await f.patch({ roles: { pm: { harness: 'mock' } } })).status).toBe(200)
 })
 
 it('prepare 在落盘前运行，激活在落盘后；遮盖配置可原样往返且审计只记键名', async () => {

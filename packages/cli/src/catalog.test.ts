@@ -33,13 +33,13 @@ async function fixture() {
   return { stores, context, available, load, validate, catalog, setTime: (value: number) => { time = value }, setMtime: (value: number) => { modified = value } }
 }
 
-it('并发 models 请求只加载校验一次，零探测；keyPresent 每次读取环境变量', async () => {
+it('并发 models 请求只加载一次，不做 harness 校验、零探测；keyPresent 每次读取环境变量', async () => {
   const f = await fixture()
   vi.stubEnv('TAKT_CACHE_TEST_KEY', '')
   const rows = await Promise.all(Array.from({ length: 8 }, () => f.catalog.getModels(f.stores)))
   expect(rows[0]).toEqual([expect.objectContaining({ alias: 'fast', keyPresent: false })])
   expect(f.load).toHaveBeenCalledTimes(1)
-  expect(f.validate).toHaveBeenCalledTimes(1)
+  expect(f.validate).not.toHaveBeenCalled()
   expect(f.available).not.toHaveBeenCalled()
   vi.stubEnv('TAKT_CACHE_TEST_KEY', 'synthetic-cache-secret')
   expect(await f.catalog.getModels(f.stores)).toEqual([expect.objectContaining({ keyPresent: true })])
@@ -88,16 +88,29 @@ it('60 秒 TTL 和配置 mtime 分别使 runtime 与探测缓存失效', async (
   expect(f.available).toHaveBeenCalledTimes(3)
 })
 
-it.each(['load', 'validate'] as const)('%s 失败的并发请求共享失败，下次请求立即重试', async (boundary) => {
+it('load 失败的并发请求共享失败，下次请求立即重试', async () => {
   const f = await fixture()
-  if (boundary === 'load') f.load.mockRejectedValueOnce(new Error('load failed'))
-  else f.validate.mockImplementationOnce(() => { throw new Error('validate failed') })
+  f.load.mockRejectedValueOnce(new Error('load failed'))
   const results = await Promise.allSettled([f.catalog.getModels(f.stores), f.catalog.getHarnesses(f.stores)])
   expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected'])
   expect(f.load).toHaveBeenCalledTimes(1)
   expect(f.available).not.toHaveBeenCalled()
   expect(await f.catalog.getCatalog(f.stores)).toMatchObject({ harnesses: [{ available: true }] })
   expect(f.load).toHaveBeenCalledTimes(2)
+  expect(f.available).toHaveBeenCalledTimes(1)
+})
+
+it('validate 失败只阻断 harness 目录，models 仍可返回配置清单；下次 harness 请求立即重试校验', async () => {
+  const f = await fixture()
+  f.validate.mockImplementationOnce(() => { throw new Error('validate failed') })
+  const results = await Promise.allSettled([f.catalog.getModels(f.stores), f.catalog.getHarnesses(f.stores)])
+  expect(results.map((result) => result.status)).toEqual(['fulfilled', 'rejected'])
+  expect(results[0]!.value).toEqual([expect.objectContaining({ alias: 'fast' })])
+  expect(f.load).toHaveBeenCalledTimes(1)
+  expect(f.available).not.toHaveBeenCalled()
+  expect(await f.catalog.getCatalog(f.stores)).toMatchObject({ harnesses: [{ available: true }] })
+  expect(f.load).toHaveBeenCalledTimes(1)
+  expect(f.validate).toHaveBeenCalledTimes(2)
   expect(f.available).toHaveBeenCalledTimes(1)
 })
 
