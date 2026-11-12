@@ -36,6 +36,8 @@ export class ModelCache<T> {
     private readonly now: () => number = Date.now) {}
 
   async get(fingerprint: string, load: (previous?: T) => Promise<T>, refresh = false): Promise<CacheResult<T>> {
+    // 强制刷新时同一项正在拉就直接共用：先去读盘的话，可能读到它写盘前的旧缓存，等它结束再拿旧列表比对，下线标记就丢了
+    if (refresh && this.pending?.fingerprint === fingerprint) return this.pending.promise
     let previous: Entry<T> | undefined
     try {
       const entry = JSON.parse(await readFile(this.file, 'utf8')) as Entry<T>
