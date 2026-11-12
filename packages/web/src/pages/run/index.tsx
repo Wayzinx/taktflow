@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Background, BackgroundVariant, Controls, MiniMap, Panel, ReactFlow, type ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Crosshair, Fingerprint, GanttChartSquare, Map as MapIcon, Maximize2, OctagonX, Play, RotateCw, Square, Unplug, Workflow } from 'lucide-react'
-import type { RunDetail } from '@taktflow/core'
+import { Crosshair, Fingerprint, GanttChartSquare, History, Map as MapIcon, Maximize2, OctagonX, Play, RotateCw, Square, Unplug, Workflow } from 'lucide-react'
+import type { RunDetail, RunSummary } from '@taktflow/core'
+import { supersededBy } from './run-context'
 import { useAsync, useSource } from '../../api'
 import { DeliveryButton } from '../../components/delivery-button'
 import { useCrumbs } from '../../components/layout'
 import { StageRail } from '../../components/stage-rail'
-import { CountUp, ErrorState, Segmented, Skeleton, StatusBadge, SuggestionChips, toast, useStewardSuggestions } from '../../components/ui'
+import { CountUp, Dialog, ErrorState, Segmented, Skeleton, StatusBadge, SuggestionChips, toast, useStewardSuggestions } from '../../components/ui'
 import { fmtCost, fmtDate, fmtDuration, fmtTokens, totalTokens } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
-import { NODE_STATUS, runStatusMeta } from '../../lib/status'
+import { NODE_STATUS, RUN_STATUS, runStatusMeta } from '../../lib/status'
 import { useIsDark } from '../../lib/theme'
 import { layoutRun, type FlowNode } from './dag-layout'
 import { decorate, useCompletionPulses, useReplay } from './canvas-motion'
@@ -106,21 +107,22 @@ export function RunPage({ runId }: { runId: string }) {
   const audit = useAsync((s) => s.audit(runId), [runId])
   const [liveTick, setLiveTick] = useState(0)
   // 头部用量取 server 的 RunSummary.usage（与运行列表、需求页同一口径），web 不自己累加。
-  // 过渡做法：RunDetail 还没有 usage（已提协议变更请求），先从该需求的运行列表里取；协议加上后删掉这段。
+  // 同时取需求的运行历史，识别旧运行是否被后来的流水线取代。
   const reqId = q.data?.run.requirementId
-  const summary = useAsync((s) => (reqId ? s.runs(reqId).then((rs) => rs.find((r) => r.runId === runId)) : Promise.resolve(undefined)), [runId, reqId])
-  const reload = useRef({ run: q.reload, usage: summary.reload })
-  reload.current = { run: q.reload, usage: summary.reload }
+  const runs = useAsync((s) => (reqId ? s.requirement(reqId) : Promise.resolve(undefined)), [runId, reqId])
+  const summary = runs.data?.runs.find((r) => r.runId === runId)
+  const reload = useRef({ run: q.reload, usage: runs.reload })
+  reload.current = { run: q.reload, usage: runs.reload }
 
   // SSE：每来一条事件，节流刷新运行图；抽屉按 liveTick 刷新。已结束的运行不再订阅，免得空占一条长连接。
-  // server 的运行用量只累加 node.finished，所以只有这类事件之后才重拉用量（它要读整个需求的事件日志）。
+  // 用量或节点状态变化后重拉需求摘要，节点进度和 Token 都沿用服务端口径。
   const live = q.data ? q.data.run.status === 'running' || q.data.run.status === 'waiting_human' : false
   useEffect(() => {
     if (!live) return
     let timer: ReturnType<typeof setTimeout> | undefined
     let usageDirty = false
     const off = ds.subscribe(runId, (e) => {
-      if (e.type === 'node.finished') usageDirty = true
+      if (['harness.usage', 'node.finished', 'node.failed', 'node.started', 'dag.expanded', 'run.finished', 'run.started'].includes(e.type)) usageDirty = true
       if (timer) return
       timer = setTimeout(() => {
         timer = undefined
@@ -170,12 +172,11 @@ export function RunPage({ runId }: { runId: string }) {
 
   const counts = d
     ? {
-        done: d.graph.nodes.filter((n) => n.status === 'succeeded' || n.status === 'skipped').length,
-        total: d.graph.nodes.length,
-        failed: d.graph.nodes.filter((n) => n.status === 'failed' || n.status === 'blocked').length,
-        usage: summary.data?.usage,
+        progress: summary?.progress,
+        usage: summary?.usage,
       }
     : undefined
+  const newer = d && runs.data ? supersededBy(runs.data.runs, d.run) : undefined
 
   return (
     <div className="run-page">
@@ -197,10 +198,10 @@ export function RunPage({ runId }: { runId: string }) {
                 <span className="mono num">{fmtDuration((d.run.endedAt ? Date.parse(d.run.endedAt) : now) - Date.parse(d.run.startedAt))}</span>
               </span>
               <span>
-                <label>节点</label>
+                <label>已实例化节点</label>
                 <span className="mono num">
-                  <CountUp value={counts.done} />/{counts.total}
-                  {counts.failed > 0 && <b style={{ color: 'var(--st-failed)' }}> · {counts.failed} 失败</b>}
+                  {counts.progress ? <><CountUp value={counts.progress.done} />/{counts.progress.total}</> : '—'}
+                  {!!counts.progress?.failed && <b style={{ color: 'var(--st-failed)' }}> · {counts.progress.failed} 失败</b>}
                 </span>
               </span>
               <span>
@@ -221,9 +222,11 @@ export function RunPage({ runId }: { runId: string }) {
           )}
           {d && <DeliveryButton runId={runId} />}
         </div>
-        {d && (d.interrupted || d.run.status === 'failed') && <RecoveryBar detail={d} onDone={q.reload} />}
+        {/* 等运行列表到了再画：先画红色"重试"再换成"已被取代"，正好是误点的时候 */}
+        {d && (d.interrupted || d.run.status === 'failed') && (runs.data || runs.error) && <RecoveryBar detail={d} newer={newer} delivered={runs.data?.status === 'delivered'} historyUnknown={!!runs.error} onDone={q.reload} />}
         <div className="run-stage-row">
           {d ? <StageRail size="sm" stages={stages} empty="这个流程没有划分阶段" onStage={(id) => setQuery({ stage: id === stageFocus ? undefined : id })} activeId={stageFocus} /> : <Skeleton h={26} />}
+          {d && <span className="faint">阶段与画布：流程图共 {d.graph.nodes.length} 个节点（含尚未实例化节点）；进度与需求运行列表一致。</span>}
         </div>
         {d && suggestions.length > 0 && <SuggestionChips className="run-suggest" items={suggestions} context={[{ type: 'run', id: runId, label: runId }]} />}
       </header>
@@ -254,10 +257,12 @@ export function RunPage({ runId }: { runId: string }) {
  * 运行停住了时的恢复条：
  * - 中断（状态还是 running，但没有进程在执行，serve 重启或崩溃留下的）→ 继续运行（run.resume）
  * - 失败 → 列出失败 / 阻塞的节点和原因，重试这些节点（run.retry），不必整个运行从头来
+ * - 之后已经有更新的运行（newer）→ 改成信息条，指向新运行；继续 / 重试降为次要按钮，并先确认（会再消耗 token、可能改动后来的产物）
  */
-function RecoveryBar({ detail, onDone }: { detail: RunDetail; onDone: () => void }) {
+function RecoveryBar({ detail, newer, delivered, historyUnknown, onDone }: { detail: RunDetail; newer?: RunSummary; delivered?: boolean; historyUnknown?: boolean; onDone: () => void }) {
   const ds = useSource()
   const [busy, setBusy] = useState(false)
+  const [confirm, setConfirm] = useState(false)
   const runId = detail.run.runId
   const nodes = Object.values(detail.run.nodes)
   const mode = detail.interrupted ? 'interrupted' : 'failed'
@@ -280,6 +285,57 @@ function RecoveryBar({ detail, onDone }: { detail: RunDetail; onDone: () => void
     }
   }
   const Icon = mode === 'interrupted' ? Unplug : OctagonX
+  const actLabel = busy ? (mode === 'interrupted' ? '继续中…' : '重试中…') : mode === 'interrupted' ? '继续运行' : '重试失败的节点'
+  if (newer || delivered || historyUnknown)
+    return (
+      <div className="run-recover" data-mode="superseded" role="status">
+        <History aria-hidden />
+        <span className="run-recover-text">
+          {newer ? <><b>这次运行已被取代</b>：之后的运行 <Link to={`/run/${newer.runId}`} className="mono">{newer.runId}</Link>
+            {newer.status === 'succeeded' ? ' 已完成' : `（${runStatusMeta(newer.status, newer.interrupted).label}）`}，需求的进展以它为准。</>
+            : <b>{delivered ? '需求已交付，请先查看需求进展再重跑旧运行。' : '无法读取需求的运行历史，重试前请确认是否已有更新的运行。'}</b>}
+          {delivered && newer && ' 需求已交付。'}
+          <span className="run-recover-error">
+            {' '}
+            这次{mode === 'interrupted' ? '停在' : '失败在'} <span className="mono">{targets.join('、') || '—'}</span>
+            {firstError ? ` · ${firstError}` : ''}
+          </span>
+        </span>
+        <Link to={newer ? `/run/${newer.runId}` : `/req/${detail.run.requirementId}`} className="btn btn-sm btn-primary">
+          {newer ? '去最新运行' : '去需求页'}
+        </Link>
+        {(mode === 'interrupted' || targets.length > 0) && (
+          <button type="button" className="btn btn-sm btn-ghost" disabled={busy} onClick={() => setConfirm(true)}>
+            {mode === 'interrupted' ? <Play aria-hidden /> : <RotateCw aria-hidden />}
+            {mode === 'interrupted' ? '仍要继续…' : '仍要重试…'}
+          </button>
+        )}
+        <Dialog
+          open={confirm}
+          onClose={() => setConfirm(false)}
+          size="sm"
+          title={mode === 'interrupted' ? '继续这次旧运行？' : '重试这次旧运行？'}
+          description={`${newer ? `之后已经有运行 ${newer.runId}（${RUN_STATUS[newer.status].label}）。` : delivered ? '需求已经交付。' : '当前无法确认这次运行是否已被取代。'}${mode === 'interrupted' ? '继续' : '重试'}会重新调用 Agent、再消耗 token，并可能改写公共产物。`}
+          footer={
+            <>
+              <button type="button" className="btn" onClick={() => setConfirm(false)} data-autofocus>
+                取消
+              </button>
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => (setConfirm(false), void act())}>
+                {actLabel}
+              </button>
+            </>
+          }
+        >
+          {targets.length > 0 && (
+            <p className="run-recover-confirm">
+              {mode === 'interrupted' ? '从这些节点继续：' : '重跑这些节点：'}
+              <span className="mono">{targets.join('、')}</span>
+            </p>
+          )}
+        </Dialog>
+      </div>
+    )
   return (
     <div className="run-recover" data-mode={mode} role="status">
       <Icon aria-hidden />
@@ -309,7 +365,7 @@ function RecoveryBar({ detail, onDone }: { detail: RunDetail; onDone: () => void
       {(mode === 'interrupted' || targets.length > 0) && (
         <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void act()}>
           {mode === 'interrupted' ? <Play aria-hidden /> : <RotateCw aria-hidden />}
-          {busy ? (mode === 'interrupted' ? '继续中…' : '重试中…') : mode === 'interrupted' ? '继续运行' : '重试失败的节点'}
+          {actLabel}
         </button>
       )}
     </div>
@@ -382,6 +438,8 @@ function RunCanvas({ detail, selected, stageFocus }: { detail: RunDetail; select
         elementsSelectable={false}
         minZoom={0.2}
         maxZoom={1.6}
+        // 层级完全按 dag-layout 给的 zIndex：默认模式会把连着循环组子节点的边抬到子节点之上，边从卡片上穿过去
+        zIndexMode="manual"
         proOptions={{ hideAttribution: true }}
         panOnScroll
         zoomOnDoubleClick={false}
@@ -468,4 +526,3 @@ function RunFootnote({ detail }: { detail: RunDetail }) {
     </div>
   )
 }
-
