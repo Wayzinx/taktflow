@@ -72,7 +72,7 @@ export function requestUser(request: IncomingMessage): string | undefined {
   return (Array.isArray(value) ? value[0] : value)?.trim() || undefined
 }
 
-const firstOwner = (stores?: Pick<ProjectStores, 'config'>) => stores?.config.members?.find((member) => member.role === 'owner')?.id
+const firstOwner = (stores?: Pick<ProjectStores, 'config'>) => stores?.config.members?.find((member) => member.role === 'owner' && member.id !== 'web')?.id
 
 export function actor(request: IncomingMessage, stores?: Pick<ProjectStores, 'config'>): Actor {
   return { type: 'human', id: requestUser(request) || firstOwner(stores) || 'web' }
@@ -92,7 +92,7 @@ export function globalActor(request: IncomingMessage, fallback?: ProjectStores):
 
 export function viewer(request: IncomingMessage, stores: ProjectStores): Viewer {
   const id = (actor(request, stores) as Extract<Actor, { type: 'human' }>).id
-  const member = stores.config.members?.length ? stores.config.members.find((member) => member.id === id)
+  const member = id === 'web' && (stores.config.members?.length || requestUser(request)) ? undefined : stores.config.members?.length ? stores.config.members.find((member) => member.id === id)
     : { id, name: id, role: 'owner' as const }
   return { id, name: member?.name ?? id, member }
 }
@@ -106,6 +106,8 @@ export function roleDenied(stores: Pick<ProjectStores, 'config'>, by: Actor, min
 
 export function authorize(request: IncomingMessage, stores: ProjectStores, minRole: SpaceMember['role'] = 'member', what = '修改'): void {
   const by = actor(request, stores)
+  // 没配置成员的旧式本地项目保持开放；有成员表时匿名身份没有权限。显式 web 由写请求入口统一拒绝。
+  if (by.type === 'human' && by.id === 'web' && (stores.config.members?.length || requestUser(request))) throw new HttpError(403, '匿名身份 web 不能修改空间，请选择真实成员身份')
   try { requireRole(stores, by, minRole, what) } catch { throw roleDenied(stores, by, minRole, what) }
 }
 
@@ -126,6 +128,7 @@ export const routeRole = (handler: object) => routeRoles.get(handler)
 
 export function validateWriteRequest(request: IncomingMessage): void {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '')) return
+  if (requestUser(request) === 'web') throw new HttpError(403, '匿名身份 web 不能执行写操作，请选择真实成员身份')
   const origin = request.headers.origin
   const sameOrigin = `http://${request.headers.host}`
   if (origin && origin !== sameOrigin && origin !== 'http://localhost:5173') throw new HttpError(403, '请求来源不允许')

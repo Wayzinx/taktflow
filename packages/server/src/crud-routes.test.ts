@@ -112,6 +112,13 @@ it('workflow 转换 dryRun 不写源码，保存后有修订和审计，命令�
   expect((await post({ dryRun: true })).reason).toBe('已是可编辑写法')
 }, 15000)
 
+it('空根目录没有可推断的创建者时拒绝创建，不能生成匿名开放空间', async () => {
+  const { server } = await setup()
+  const response = await fetch(`${server.url}/api/spaces`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'anonymous', name: '匿名空间', template: 'blank' }) })
+  expect(response.status).toBe(403)
+  expect((await response.json()).error).toContain('创建者身份')
+})
+
 it('没选"我是"时全局空间接口按被操作的空间推断操作者：能复制自己是 owner 的空间，新空间不多出 web', async () => {
   const root = await mkdtemp(join(tmpdir(), 'takt-crud-actor-')); roots.push(root)
   for (const [id, members] of [['source', [{ id: 'demo-owner', name: '示例负责人', role: 'owner' }, { id: 'reader', name: 'reader', role: 'viewer' }]], ['team', [{ id: 'demo-owner', name: '示例负责人', role: 'owner' }, { id: 'wazinx', name: 'wazinx', role: 'maintainer' }]]] as const) {
@@ -125,6 +132,8 @@ it('没选"我是"时全局空间接口按被操作的空间推断操作者：�
   }
   const membersOf = async (id: string) => (await openProject(join(root, id))).config.members
   const creator = [{ id: 'demo-owner', name: '示例负责人', role: 'owner' }]
+  expect((await request('/spaces', 'POST', { id: 'web-created', name: '匿名空间', template: 'blank' }, 'web')).status).toBe(403)
+  expect((await request('/spaces', 'POST', { id: 'web-member', name: '匿名成员', template: 'blank', members: [{ id: 'web', name: 'web', role: 'owner' }] }, undefined)).status).toBe(400)
   // 向导：未选身份，第 3 步显示的创建者放在 members 里
   for (const from of ['source', 'team']) {
     const copied = await request('/spaces', 'POST', { id: `copy-${from}`, name: `复制-${from}`, template: { copyFrom: from, parts: ['agents', 'workflows'] }, members: creator }, undefined)

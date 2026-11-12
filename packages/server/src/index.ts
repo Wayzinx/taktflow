@@ -176,8 +176,14 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         attachLessons(fresh)
         attachCrudServices(fresh)
         rememberStores(fresh)
+        // 命令与路由预览有独立角色校验，但也不能信任历史配置里的匿名 owner。
+        const by = actor(request, fresh)
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && fresh.config.members?.length && by.type === 'human' && by.id === 'web') authorize(request, fresh)
         // 兜底：写操作至少 member；路由用 requires 声明了更高角色时按它校验，提示里写出真正需要的角色
-        const declared = routeRole(matched.handler)
+        const declared = url.pathname === '/api/space/files' && url.searchParams.get('kind') === 'agent'
+          ? { role: 'owner' as const, what: '编辑角色档案' }
+          : routeRole(matched.handler) ?? (['runtime', 'agents', 'automations', 'channels'].some((part) => url.pathname === `/api/space/${part}` || url.pathname.startsWith(`/api/space/${part}/`)) || url.pathname.startsWith('/api/secrets/')
+            ? { role: 'owner' as const, what: '修改空间设置' } : undefined)
         if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname) && url.pathname !== '/api/route/preview') authorize(request, fresh, declared?.role, declared?.what)
         const result = await matched.handler({ stores: fresh, request, response, url, params: matched.params })
         if (url.pathname === '/api/space' && request.method === 'GET') {

@@ -208,6 +208,7 @@ function adminRole(
   operation: string,
 ): Actor {
   const by = who(author, stores) ?? ANONYMOUS
+  if (by.type === 'human' && by.id === 'web') throw new HttpError(403, '匿名身份 web 不能管理空间，请选择真实成员身份')
   try {
     requireRole(stores, by, role, operation)
   } catch {
@@ -287,6 +288,8 @@ export async function createSpace(
   reason = spaceCreateReason(input, reason)
   if (typeof author !== 'function' && author.type !== 'human')
     throw new HttpError(403, '新建空间必须由人确认')
+  if (typeof author !== 'function' && author.type === 'human' && author.id === 'web')
+    throw new HttpError(403, '匿名身份 web 不能创建空间，请选择真实成员身份')
   return spaceLock(join(root, '.takt/space-admin'), async () => {
     const id = validId(input.id),
       spaces = await active(root)
@@ -319,12 +322,14 @@ export async function createSpace(
     if (typeof template === 'object' && !source) throw new HttpError(404, '复制来源空间不存在')
     if (source) adminRole(source, author, 'maintainer', '复制这个空间')
     // 创建者：明确身份就是它；没选身份时取请求成员里的第一个 owner（向导第 3 步显示的"创建者"），
-    // 其次复制来源 / 缺省空间的 owner。都没有就不加 owner，绝不把兜底的 'web' 写成成员。
+    // 其次复制来源 / 缺省空间的 owner。都没有就拒绝创建，绝不留下匿名开放空间。
     const requested = input.members === undefined ? [] : members(input.members)
+    if (requested.some((member) => member.id === 'web')) throw new HttpError(400, 'web 是匿名身份，不能添加为空间成员')
     const resolved =
       who(author, { config: { members: requested } } as Pick<ProjectStores, 'config'>) ??
       who(author, source)
     const creator = resolved?.type === 'human' ? resolved : undefined
+    if (!creator || creator.id === 'web') throw new HttpError(403, '无法确定创建者身份，请选择真实成员身份后创建空间')
     const mine = requested.find((member) => member.id === creator?.id)
     const assigned = [
       ...requested.filter((member) => member !== mine),
@@ -384,7 +389,7 @@ export async function createSpace(
           ? assigned
           : [
               ...new Map(
-                [...(stores.config.members ?? []), ...assigned].map((member) => [
+                [...(stores.config.members ?? []).filter((member) => member.id !== 'web'), ...assigned].map((member) => [
                   member.id,
                   member,
                 ]),
