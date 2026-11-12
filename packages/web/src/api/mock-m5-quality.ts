@@ -15,13 +15,14 @@ export function createMockQuality(db: MockDb): QualityApi {
   const seeded = db.requirements.length > 0
   const now = () => new Date().toISOString()
   const cursors = Object.fromEntries([...db.runs.values()].map((r) => [r.state.runId, Math.max(0, r.events.length - (r.state.status === 'running' ? 6 : 0))]))
+  const lastSeq = Object.fromEntries([...db.runs.values()].map((r) => [r.state.runId, r.events.length]))
   // 演示"链完整、锚点落后"：可以修复锚点；?mockQuality=broken 演示链被篡改（不给修复）
   const broken = typeof location !== 'undefined' && new URLSearchParams(location.search).get('mockQuality') === 'broken'
   const status: QualityStatus = !seeded
-    ? { ok: true, entries: 0, cursors: {}, importedM3: false }
+    ? { ok: true, entries: 0, cursors: {}, lastSeq: {}, importedM3: false }
     : broken
-      ? { ok: false, entries: 412, anchor: { seq: 412, hash: '5d2e91b0c7a34f6e5d2e91b0c7a34f6e5d2e91b0c7a34f6e5d2e91b0c7a34f6e' }, brokenAt: 287, cursors, lastSyncAt: new Date(Date.now() - 41 * 60_000).toISOString(), importedM3: true }
-      : { ok: true, entries: 412, anchor: { seq: 398, hash: 'a1f0c3d9e27b4c18a1f0c3d9e27b4c18a1f0c3d9e27b4c18a1f0c3d9e27b4c18' }, anchorBehind: true, cursors, lastSyncAt: new Date(Date.now() - 3 * 60_000).toISOString(), importedM3: true }
+      ? { ok: false, entries: 412, anchor: { seq: 412, hash: '5d2e91b0c7a34f6e5d2e91b0c7a34f6e5d2e91b0c7a34f6e5d2e91b0c7a34f6e' }, brokenAt: 287, cursors, lastSeq, lastSyncAt: new Date(Date.now() - 41 * 60_000).toISOString(), importedM3: true }
+      : { ok: true, entries: 412, anchor: { seq: 398, hash: 'a1f0c3d9e27b4c18a1f0c3d9e27b4c18a1f0c3d9e27b4c18a1f0c3d9e27b4c18' }, anchorBehind: true, cursors, lastSeq, lastSyncAt: new Date(Date.now() - 3 * 60_000).toISOString(), importedM3: true }
   const needReason = (reason: string) => (reason.trim() ? undefined : fail('需要写原因'))
 
   return {

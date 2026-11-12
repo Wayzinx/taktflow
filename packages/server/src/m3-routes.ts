@@ -32,7 +32,7 @@ export function commandExecutor(options: M3Callbacks = {}) {
   }
   const execute = async (stores: ProjectStores, request: Parameters<typeof actor>[0], id: string, input: Record<string, unknown>, reason?: string) => {
     const result = await (await commands(stores, id)).run(id, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)), { actor: actor(request, stores), reason })
-    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|已改变|冲突|已存在|还没有可用的流水线|没有支持 T\d 的流水线/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
+    if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|已改变|冲突|已存在|还没有流水线|没有支持 T\d 的流水线/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
     return result.result
   }
   return { commands, execute }

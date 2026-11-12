@@ -22,6 +22,11 @@ describe('子进程加载校验', () => {
     const second = await validate(workflowFixture.replace("prompt: 'first'", "prompt: 'changed'"))
     expect(second.snapshot?.nodes[0]?.prompt).toBe('changed')
   })
+  it('快照保留节点的适用档位', async () => {
+    const result = await validate(workflowFixture.replace("prompt: 'first',", "prompt: 'first', tiers: ['T1'],"))
+    expect(result.diagnostics).toEqual([])
+    expect(result.snapshot?.nodes[0]?.tiers).toEqual(['T1'])
+  })
   it('保留相对导入，stdout 日志不干扰结果', async () => {
     await writeFile(join(dir, 'hooks.ts'), "export const prompt = 'from hooks'\n")
     const result = await validate("import { prompt } from './hooks.js'\nconsole.log('not JSON')\n" + workflowFixture.replace("prompt: 'first'", 'prompt'))
