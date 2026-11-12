@@ -2,7 +2,7 @@ import { join } from 'node:path'
 import { collectSecrets, createRedactor, resolveSecret, sha256, type CatalogList, type CatalogModel, type HarnessAdapter, type TaktConfig } from '@taktflow/core'
 import { providerConfig, PROVIDER_PRESETS } from '@taktflow/harness'
 import { ModelCache, modelDeadline } from './model-cache.js'
-import { createModelsDev, enrichModel, modelKind, modelMetadata, modelObject, reasoningDefaults, type ModelsDevData } from './model-metadata.js'
+import { createModelsDev, enrichModel, modelKey, modelKind, modelMetadata, modelObject, reasoningDefaults, unionEfforts, type ModelsDevData } from './model-metadata.js'
 import { listProviderModels } from './provider-request.js'
 
 export interface ProviderModels { models: CatalogList; embeddings: CatalogModel[] }
@@ -37,6 +37,11 @@ function mergeModels(...groups: CatalogModel[][]): CatalogModel[] {
 export class ModelCatalog {
   private readonly providers = new Map<string, ModelCache<Discovered>>()
   private readonly harnesses = new Map<string, ModelCache<CatalogModel[]>>()
+  /**
+   * 各 harness 自带列表报过的推理档（按 modelKey，多个 harness 取并集）。网关列出的模型不带推理元数据，
+   * 同名模型借这里的档位，不再一律猜低 / 中 / 高；推理强度随请求发给模型，档位是模型的属性，不分 harness。
+   */
+  private readonly known = new Map<string, Pick<CatalogModel, 'efforts' | 'defaultEffort'>>()
   readonly metadata: ReturnType<typeof createModelsDev>
 
   constructor(private readonly taktDir: string, private readonly fetcher: typeof fetch = fetch, private readonly now: () => number = Date.now) {
@@ -99,7 +104,8 @@ export class ModelCatalog {
     const enrich = (models: CatalogModel[], overrides: CatalogModel[]) => models.map(model => {
       const override = overrides.find(m => m.id === model.id)
       const fields = override ? modelMetadata(config.models![override.alias!]!) : {}
-      return reasoningDefaults({ ...enrichModel(model, provider, id, data), ...fields })
+      const known = model.efforts?.length ? undefined : this.known.get(modelKey(model.id))
+      return reasoningDefaults({ ...enrichModel(known ? { ...model, reasoning: true, ...known } : model, provider, id, data), ...fields })
     })
     return { models: { ...result.models, models: enrich(result.models.models, manual.models) }, embeddings: enrich(result.embeddings, manual.embeddings) }
   }
@@ -120,6 +126,13 @@ export class ModelCatalog {
       catch (error) { throw new Error(redact(error instanceof Error ? error.message : '获取自带模型失败').replace(/\s+/g, ' ')) }
     }, refresh)
     const { value, ...status } = result
+    for (const model of value ?? []) if (model.efforts?.length) this.learn(model)
     return JSON.parse(redact(JSON.stringify({ ...status, models: value ?? [] }))) as CatalogList
+  }
+
+  private learn(model: CatalogModel): void {
+    const key = modelKey(model.id)
+    const seen = this.known.get(key)
+    this.known.set(key, { efforts: unionEfforts(seen?.efforts ?? [], model.efforts!), defaultEffort: seen?.defaultEffort ?? model.defaultEffort })
   }
 }

@@ -201,3 +201,22 @@ it('harness 缓存命中、过期后台去重、强制刷新、错误脱敏和 2
   await vi.advanceTimersByTimeAsync(20_000)
   expect((await pending).error).toBe('获取模型超过 20 秒')
 })
+
+it('网关模型不带推理档时，借 harness 自带列表里同名模型报的档（多个 harness 取并集），[1m] 后缀与大小写不算区别', async () => {
+  const fetcher = vi.fn<typeof fetch>(async () => json({ data: [{ id: 'GPT-6-Astra[1m]' }, { id: 'gpt-6-astra' }, { id: 'mystery-model' }, { id: 'own-levels', efforts: ['low'] }] }))
+  const { catalog } = await fixture(fetcher)
+  const cfg = config({ preset: undefined, baseURL: 'https://gateway.example.invalid/v1' })
+  const listed = (id: string, efforts: Array<'low' | 'medium' | 'high' | 'xhigh' | 'max'>, defaultEffort?: 'medium') =>
+    ({ id: 'h', displayName: 'H', available: async () => ({ ok: true }), run: async () => ({ ok: true, finalText: '' }),
+      listModels: async () => [{ id, label: id, origin: 'harness' as const, reasoning: true, efforts, ...(defaultEffort ? { defaultEffort } : {}) }] }) satisfies HarnessAdapter
+  await catalog.harness(cfg, { ...listed('GPT-6-Astra', ['low', 'medium', 'high', 'xhigh'], 'medium'), id: 'trae' })
+  await catalog.harness(cfg, { ...listed('gpt-6-astra', ['low', 'max']), id: 'codex' })
+  await catalog.harness(cfg, { ...listed('own-levels', ['low', 'medium', 'high', 'max']), id: 'other' })
+  const models = catalog.enrich(cfg, 'ds', await catalog.provider(cfg, 'ds')).models.models
+  const byId = (id: string) => models.find(m => m.id === id)
+  expect(byId('GPT-6-Astra[1m]')).toMatchObject({ efforts: ['low', 'medium', 'high', 'xhigh', 'max'], defaultEffort: 'medium' })
+  expect(byId('gpt-6-astra')?.efforts).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+  // 上游自己报了档就用上游的；谁都没报过的不编造
+  expect(byId('own-levels')?.efforts).toEqual(['low'])
+  expect(byId('mystery-model')?.efforts).toBeUndefined()
+})

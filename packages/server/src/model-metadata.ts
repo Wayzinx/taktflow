@@ -31,6 +31,12 @@ export function modelMetadata(raw: unknown): Partial<CatalogModel> {
   return Object.fromEntries(Object.entries(result).filter(([, value]) => value !== undefined))
 }
 
+/** 同一个模型在不同来源里的写法：大小写、`[1m]` 这类上下文档后缀、`openai/` 这类前缀都不算区别。 */
+export const modelKey = (id: string): string => id.toLowerCase().replace(/\[[^\]]*\]$/, '').replace(/^.*\//, '')
+
+/** 两个来源报的推理档取并集，按强度排序。 */
+export const unionEfforts = (a: Effort[], b: Effort[]): Effort[] => efforts.filter(e => a.includes(e) || b.includes(e))
+
 export function reasoningDefaults(model: CatalogModel): CatalogModel {
   if (!model.reasoning || model.efforts !== undefined) return model
   return { ...model, efforts: ['low', 'medium', 'high'], defaultEffort: model.defaultEffort ?? 'medium' }
