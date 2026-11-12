@@ -26,6 +26,6 @@ export function harnessSplit(nodes: GraphNode[], total: number) {
   const known = recorded.reduce((s, [, u]) => s + totalTokens(u), 0)
   const unrecorded = Math.max(0, total - known)
   const rows: Array<{ key: string; tokens: number; unknown?: boolean }> = recorded.map(([key, u]) => ({ key, tokens: totalTokens(u) }))
-  if (known > 0 && unrecorded > 0) rows.push({ key: '未记录 harness', tokens: unrecorded, unknown: true })
+  if (unrecorded > 0) rows.push({ key: '未记录 harness', tokens: unrecorded, unknown: true })
   return { rows, known, denominator: Math.max(total, known) }
 }

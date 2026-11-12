@@ -72,4 +72,8 @@ it('退化判定要求前后两组都有至少 3 次执行；样本不足只标�
   expect(computeRiskSnapshot({ requirements: [], runs: [], attention: [], scorecards: await scorecards(stores, { by: 'node' }) }, 'space', new Date())).toEqual([])
   await execute('old', true); await execute('old', true)
   for (const regression of await views()) expect(regression).toMatchObject({ suspected: true, reason: expect.stringContaining('100% → 25%') })
+  stores.config.eval = { gate: { minSamples: 5 } }
+  for (const regression of await views()) expect(regression).toMatchObject({ suspected: false, exploratory: true, reason: expect.stringContaining('每组至少 5 次执行') })
+  await execute('old', true); await execute('old', true); await execute('new', false)
+  for (const regression of await views()) expect(regression).toMatchObject({ suspected: true })
 })

@@ -151,7 +151,7 @@ export function MetricsTab({ id, quality }: { id: string; quality?: QualityMetri
             )}
           </div>
           <div className="card-pad">
-            {byHarness.known === 0 ? (
+            {byHarness.rows.length === 0 ? (
               <p className="faint metrics-empty">运行图节点没有记录 harness，暂时无法按 harness 拆分。</p>
             ) : (
             <>

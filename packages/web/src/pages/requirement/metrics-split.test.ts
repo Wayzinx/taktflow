@@ -11,8 +11,8 @@ describe('harnessSplit', () => {
     expect(split).toMatchObject({ known: 2450, denominator: 10_800 })
     expect(Math.round((split.rows[0]!.tokens / split.denominator) * 100)).toBe(18)
   })
-  it('一个 harness 都没记录时不拆分；节点合计大于需求总量时以节点合计为分母', () => {
-    expect(harnessSplit([node('review', 100)], 100)).toEqual({ rows: [], known: 0, denominator: 100 })
+  it('一个 harness 都没记录时全归未记录；节点合计大于需求总量时以节点合计为分母', () => {
+    expect(harnessSplit([node('review', 100)], 100)).toEqual({ rows: [{ key: '未记录 harness', tokens: 100, unknown: true }], known: 0, denominator: 100 })
     expect(harnessSplit([node('a', 120, 'codex')], 100)).toEqual({ rows: [{ key: 'codex', tokens: 120 }], known: 120, denominator: 120 })
   })
 })
