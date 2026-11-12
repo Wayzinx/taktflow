@@ -1,14 +1,14 @@
 import { QualityConflictError, RewindConflictError, requireRole, type SpaceMember } from '@taktflow/core'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { assertArtifactPath, assertNodeId, assertRequirementId, assertRunId, type Actor, type ProjectStores, type Viewer } from '@taktflow/core'
+import { sendBody } from './static.js'
 
 export class HttpError extends Error {
   constructor(readonly status: number, message: string) { super(message) }
 }
 
 export function json(response: ServerResponse, value: unknown, status = 200): void {
-  response.writeHead(status, { 'content-type': 'application/json; charset=utf-8' })
-  response.end(JSON.stringify(value))
+  sendBody(response, status, { 'content-type': 'application/json; charset=utf-8' }, JSON.stringify(value) ?? '')
 }
 
 export function fail(response: ServerResponse, error: unknown): void {
