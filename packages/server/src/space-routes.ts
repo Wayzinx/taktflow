@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { spaceLock } from './space-lock.js'
 import { systemWrite } from '@taktflow/core'
 import { access } from 'node:fs/promises'
-import { assertTaskResendable, TaskResendConflictError, listReviews, type RepoBinding, type RoomMember, type RoomMessage } from '@taktflow/core'
+import { assertTaskResendable, LeadTurnError, TaskResendConflictError, listReviews, type RepoBinding, type RoomMember, type RoomMessage } from '@taktflow/core'
 import { authorize, actor, body, jsonBody, HttpError, integer, requires, text } from './http.js'
 import { atomicWrite, auditSpace, changeConfig, checkRepoSource, members, recordRepoSync, repoBinding, repoManager, spaceDetail, spaceFile } from './space.js'
 import { GitCommandError, repoWorktrees } from '@taktflow/sandbox'
@@ -171,6 +171,8 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
     const message = await stores.chat.post(params.id!, { text: content, kind: 'text', author: actor(request, stores), mentions,
       ...(input.replyTo === undefined ? {} : { replyTo: text(input.replyTo, 'replyTo') }) })
     if (mentions.includes('lead') && onLeadMention) void Promise.resolve().then(() => onLeadMention(params.id!, message)).catch(async (error: unknown) => {
+      // Lead 已经把自己那一条可操作说明写进群聊，这里再包一层只会出现两条重复报错。
+      if (error instanceof LeadTurnError && error.reported) return
       await stores.chat.post(params.id!, { kind: 'system', author: { type: 'system', id: 'server' }, replyTo: message.id, text: `Lead 回调失败：${error instanceof Error ? error.message : String(error)}` })
     }).catch(() => {})
     return message
