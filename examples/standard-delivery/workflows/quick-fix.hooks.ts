@@ -5,6 +5,14 @@ import { join } from 'node:path'
 import { openProject, type NodeContext } from '@taktflow/core'
 
 const execute = promisify(execFile)
+async function given(ctx: NodeContext, directory: string, pattern: RegExp): Promise<boolean> {
+  try { return (await readdir(join(ctx.workspaceDir, directory), { withFileTypes: true })).some((entry) => entry.isFile() && pattern.test(entry.name)) }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false; throw error }
+}
+// T0 跳过简短需求说明的前提是 spec 与用例已经给定；没给就照常写，否则实现和交付校验必然缺少必需输入。
+export async function needsSpec(ctx: NodeContext) {
+  return ctx.args.tier !== 'T0' || !(await given(ctx, 'spec', /\.md$/) && await given(ctx, 'cases', /\.json$/))
+}
 export async function runQuickTests(ctx: NodeContext) {
   const stores = await openProject(ctx.projectDir)
   const state = await stores.runs.get(ctx.runId)

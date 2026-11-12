@@ -28,3 +28,5 @@ export interface LeadRuntimeOptions {
 export type TaskRunState = RunState & Pick<RunSummary, 'kind' | 'origin'>
 export interface LeadTurnResult { run: TaskRunState; results: LeadActionResult[] }
 export const errorText = (error: unknown): string => error instanceof Error ? error.message : String(error)
+/** Lead 回合失败，原因已经发到群里：调用方看到 reported 就不要再写一条失败消息。 */
+export class LeadTurnError extends Error { readonly reported = true }

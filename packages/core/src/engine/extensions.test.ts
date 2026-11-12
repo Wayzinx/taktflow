@@ -190,7 +190,7 @@ it('无 resume 的循环新会话在调用前带上一轮产物，schema 不透�
   expect(await stores.events.verify(state.runId)).toEqual({ ok: true })
 })
 
-it('支持 resume 时恢复 session；fallback 不复用前一个 harness 的用量', async () => {
+it('支持 resume 时恢复 session；fallback 不串用 session，节点累计本轮各调用用量', async () => {
   const { stores, requirementId, deps, harness, profile } = await fixture()
   const calls: HarnessRequest[] = []
   harness.capabilities = { resume: true, usage: true }
@@ -214,7 +214,7 @@ it('支持 resume 时恢复 session；fallback 不复用前一个 harness 的用
   const resumed = await createEngine(deps).resume(state.runId, def)
   expect(resumed.status).toBe('succeeded')
   expect(resumed.nodes.a!.usage!.inputTokens).not.toBe(777)
-  expect(resumed.nodes.a!.usage!.outputTokens).toBe(estimateTokens('fallback'))
+  expect(resumed.nodes.a!.usage!.outputTokens).toBe(777 + estimateTokens('fallback'))
   expect((await stores.events.read(state.runId, { types: ['harness.usage'] })).at(-1)?.data).toMatchObject({ note: 'estimated' })
 })
 

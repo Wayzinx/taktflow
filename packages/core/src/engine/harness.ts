@@ -22,6 +22,7 @@ import { harnessSelectors, resolveHarnessSelector, selectHarness } from './selec
 import { intersectWriteScopes } from './scope.js'
 import { completionPrompt, completionSchema, checkCompletion, completionErrors, resultSummary } from './completion.js'
 import { FailureError } from './fingerprint.js'
+import { harnessEnvFailure, withEnvHint } from './harness-failure.js'
 import { extractJsonBlock } from '../util/json-block.js'
 import { workingDirectory, sandboxCall, cwdGuard, saveWorktreeDiff } from './execution.js'
 
@@ -124,12 +125,15 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
       : ((await stores.events.read(host.state.runId, { nodeId: node.id, types: ['node.finished'] })).at(-1)?.data as EventPayloads['node.finished'] | undefined)?.outputs ?? []
     const chain = harnessSelectors(base)
     let previous = ''
+    // 整条链都没接住时把每一环的原因都报出来：只报最后一个"不可用"会盖住真正的根因（例如首选登录过期）。
+    const skipped: string[] = []
+    delete ns.usage
     for (const [index, selector] of chain.entries()) {
       host.signal.throwIfAborted()
       if (index) await host.emit('log', { level: 'warn', message: `切换 harness → ${selector.harness}：${previous}` }, node.id)
       const { harness, model, provider, modelConfig, pairing } = resolveHarnessSelector(selector, stores.config, harnesses, host.deps.bridge)
       const available = await harness.available().catch((error: unknown) => ({ ok: false, reason: String(error) }))
-      if (!available.ok) { previous = available.reason ?? `${selector.harness} unavailable`; continue }
+      if (!available.ok) { previous = available.reason ?? `${selector.harness} unavailable`; skipped.push(previous); continue }
       const resume = node.session === 'resume' && harness.capabilities?.resume
       const history = node.session === 'resume' && !resume
         ? `该 harness 不支持续聊，本次使用新会话。上一轮产物清单：\n${priorOutputs.length ? priorOutputs.map((ref) => `${ref.workspace}/${ref.path} (version ${ref.version ?? 'latest'})`).join('\n') : '（无已登记产物）'}` : ''
@@ -141,7 +145,6 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         await stores.runs.saveContext(host.state.runId, resumedContext)
         await host.emit('context.assembled', resumedContext, node.id)
       }
-      delete ns.usage
       const writeScope = intersectWriteScopes(profile.writeScope, node.writeScope)
       const actor: Actor = { type: 'agent', role: node.role, harness: harness.id, model }
       const request: HarnessRequest = { prompt: requestPrompt, cwd, model, effort: selector.effort, provider,
@@ -154,6 +157,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         signal: node.timeoutMs ? AbortSignal.any([host.signal, AbortSignal.timeout(node.timeoutMs)]) : host.signal,
       }
       let repairStarted = false
+      let callFailure: unknown
       const invokeOnce = async (request: HarnessRequest, repair = 0): Promise<HarnessResult> => {
         repairStarted ||= repair > 0
         const requestPrompt = request.prompt
@@ -275,7 +279,8 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           if (failure || !result?.ok) {
             previous = failure instanceof Error ? failure.message : String(failure ?? result?.error ?? 'harness failed')
             invocationFailure = previous
-            throw failure instanceof Error ? failure : new Error(previous)
+            callFailure = failure instanceof Error ? failure : new Error(previous)
+            throw callFailure
           }
           if (result.sessionId) ns.sessionRef = { harness: harness.id, sessionId: result.sessionId }
           if (harness.capabilities?.usage && result.usage) {
@@ -323,12 +328,19 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
         }
         return { data, actor }
       } catch (error) {
-        previous = error instanceof Error ? error.message : String(error)
-        if (!repairStarted && !(error instanceof FailureError) && !(error instanceof BlockedError) && /429|503|401|sign in|timeout/i.test(previous) && index < chain.length - 1) continue
-        throw error
+        const message = error instanceof Error ? error.message : String(error)
+        // 只有调用期的环境类失败（登录、额度、服务、进程）才换 harness；完成标准、越界、修正后的结构失败照常算节点失败。
+        const kind = error === callFailure && !host.signal.aborted && !repairStarted && !(error instanceof FailureError) && !(error instanceof BlockedError) ? harnessEnvFailure(message) : undefined
+        if (!kind) throw error
+        previous = `${harness.id} ${kind}：${message}`
+        skipped.push(previous)
+        if (index < chain.length - 1) continue
+        throw new Error(withEnvHint(skipped.join('；'), kind))
       }
     }
-    throw new Error(previous || '没有可用 harness')
+    const message = skipped.join('；') || '没有可用 harness'
+    const kind = harnessEnvFailure(message)
+    throw new Error(kind ? withEnvHint(message, kind) : message)
   }
   return acquireSlot ? host.semaphore.use(invoke) : invoke()
 }
