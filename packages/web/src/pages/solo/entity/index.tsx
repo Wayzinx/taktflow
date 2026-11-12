@@ -52,6 +52,9 @@ export function EntityBlockView({ block }: { block: EntityBlock }) {
   )
 }
 
+/** 模型写的 why 常把状态又写一遍（「作者版标准交付示例 · 已交付」）：去掉与状态相同的那段。 */
+const pickWhy = (c: PickBlock['items'][number]) => c.why?.split(' · ').filter((part) => part && part !== c.snapshot.status).join(' · ')
+
 /** pick：说的是哪一个？点一张就带着它接着问。 */
 export function PickBlockView({ block, onPick }: { block: PickBlock; onPick?: (text: string, ctx: StewardContextRef[]) => void }) {
   return (
@@ -61,7 +64,8 @@ export function PickBlockView({ block, onPick }: { block: PickBlock; onPick?: (t
         {block.items.map((c) => (
           <button key={`${c.ref.spaceId}/${c.ref.id}`} type="button" className="ent ent-mini pressable" disabled={!onPick} onClick={() => onPick?.(`就是 ${c.ref.label ?? c.ref.id}`, [c.ref])}>
             <span className="ent-head">
-              {c.ref.spaceId && <span className="ent-space">{c.ref.spaceId}</span>}
+              {/* 空间候选的 id 就是空间号，不再重复一次 */}
+              {c.ref.spaceId && c.ref.type !== 'space' && <span className="ent-space">{c.ref.spaceId}</span>}
               <span className="ent-id mono">{c.ref.id}</span>
               <span className="ent-gap" />
               <TonePill tone={c.snapshot.tone} />
@@ -70,7 +74,7 @@ export function PickBlockView({ block, onPick }: { block: PickBlock; onPick?: (t
             {c.snapshot.stages && c.snapshot.stages.length > 0 && <LaneTrack size="sm" cells={c.snapshot.stages.map((s, i) => ({ key: `${i}`, label: s.label, status: s.status }))} animate={false} />}
             <span className="ent-note truncate">
               {c.snapshot.status}
-              {c.why && c.why !== c.snapshot.status ? ` · ${c.why}` : ''}
+              {pickWhy(c) ? ` · ${pickWhy(c)}` : ''}
             </span>
             <CornerDownRight className="ent-pick-go" aria-hidden />
           </button>

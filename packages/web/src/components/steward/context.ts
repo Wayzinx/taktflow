@@ -35,8 +35,8 @@ export function usePageStewardContext(): StewardContextRef[] {
   return out
 }
 
-/** 当前路由对应的建议页键（GET /steward/suggestions?page=&id=）。 */
-export function pageKeyOf(path: string): { page: string; id?: string } {
+/** 当前路由对应的建议页键（GET /steward/suggestions?page=&id=）。设置页按标签细分，和页头建议同一口径（settings-<tab>）。 */
+export function pageKeyOf(path: string, query?: URLSearchParams): { page: string; id?: string } {
   const rules: Array<[string, string]> = [
     ['/req/:id', 'requirement'],
     ['/run/:id', 'run'],
@@ -48,6 +48,11 @@ export function pageKeyOf(path: string): { page: string; id?: string } {
     if (m) return { page, id: m.id }
   }
   const first = path.split('/').filter(Boolean)[0]
+  if (first === 'settings') {
+    const raw = query?.get('tab') || path.split('/').filter(Boolean)[1]
+    const tab = raw && ['members', 'repos', 'skills', 'agents', 'shared', 'workflows', 'knowledge', 'lessons', 'runtime', 'quality'].includes(raw) ? raw : 'members'
+    return { page: `settings-${tab === 'runtime' ? 'models' : tab}` }
+  }
   const pages: Record<string, string> = { requirements: 'requirements', attention: 'attention', workflows: 'workflows', knowledge: 'knowledge', settings: 'settings', eval: 'eval', spaces: 'spaces', steward: 'steward', solo: 'steward' }
   return { page: first ? (pages[first] ?? first) : 'overview' }
 }

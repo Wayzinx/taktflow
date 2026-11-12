@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
 import type { StewardFeedItem } from '@taktflow/core'
-import { useAsync } from '../../api'
+import { invalidate, useAsync } from '../../api'
 import { focusAnchor } from '../../components/steward/jump'
 import { navigate, setQuery, useLocation } from '../../lib/router'
 import { StewardSidebar } from '../steward/sidebar'
@@ -28,7 +28,8 @@ export default function SoloRail({ collapsed }: { collapsed: boolean }) {
   }, [replying])
   const changed = (deletedId?: string) => {
     if (deletedId && deletedId === threadId) navigate('/solo')
-    threads.reload()
+    // 重命名 / 置顶 / 归档之后，Solo 页头读的会话也要跟着刷新，不只是这一栏
+    invalidate()
   }
   const pick = (id: string | undefined) => setQuery({ thread: id, focus: undefined }, { replace: false })
   const fresh = () => navigate('/solo')

@@ -32,8 +32,8 @@ function Brief({ onAsk }: { onAsk: (t: string) => void }) {
 
 /** 停靠面板的空状态：问候 + 空间读数（点了直接问）+ 本页短建议 + 最近会话（同名只留最新）。 */
 function DockWelcome({ onAsk, onResume }: { onAsk: (t: string) => void; onResume: (id: string) => void }) {
-  const { path } = useLocation()
-  const page = pageKeyOf(path)
+  const { path, query } = useLocation()
+  const page = pageKeyOf(path, query)
   const suggestions = useStewardSuggestions(page.page, page.id)
   // ux-audit: ok 最近会话是欢迎页的可选一节，没有会话时整节不显示
   const threads = useAsync((ds) => ds.stewardThreads(), [])
@@ -93,6 +93,7 @@ export function StewardDock() {
   const pageCtx = usePageStewardContext()
   const [ctx, setCtx] = useState(pageCtx)
   const [draft, setDraft] = useState('')
+  const [ask, setAsk] = useState<{ text: string; context: StewardContextRef[]; key: number }>()
   const [threadId, setThreadId] = useState<string>()
   const [history, setHistory] = useState(false)
   const historyBtn = useRef<HTMLButtonElement>(null)
@@ -106,7 +107,8 @@ export function StewardDock() {
     setCtx([...pageCtx, ...extra])
     if (dock.threadId) setThreadId(dock.threadId)
     else if (dock.prefill) setThreadId(undefined)
-    if (dock.prefill) setDraft(dock.prefill)
+    if (dock.prefill && dock.send) setAsk({ text: dock.prefill, context: [...pageCtx, ...extra], key: dock.nonce })
+    else if (dock.prefill) setDraft(dock.prefill)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dock.open, dock.nonce])
   // 面板开着时换页：上下文跟着换（保留调用方额外带的）
@@ -119,6 +121,7 @@ export function StewardDock() {
   const fresh = () => {
     setThreadId(undefined)
     setDraft('')
+    setAsk(undefined)
   }
 
   return (
@@ -162,7 +165,9 @@ export function StewardDock() {
         context={ctx}
         onContext={setCtx}
         autoFocus={dock.open}
-        empty={(ask) => <DockWelcome onAsk={ask} onResume={setThreadId} />}
+        ask={ask}
+        onAskConsumed={() => setAsk(undefined)}
+        empty={(send) => <DockWelcome onAsk={send} onResume={setThreadId} />}
       />
     </Drawer>
   )

@@ -39,17 +39,19 @@ export interface StewardDockState {
   context?: StewardContextRef[]
   /** 直接打开某个会话。 */
   threadId?: string
+  /** prefill 直接发出（⌘K「问管家：…」选项本身就是动作），而不是只填进输入框等人再按回车。 */
+  send?: boolean
   /** 每次 openSteward 自增：同样的 prefill 再次点击也能被面板识别为新请求。 */
   nonce: number
 }
 
 const dock = createStore<StewardDockState>({ open: false, nonce: 0 })
 
-export function openSteward(opts: { prefill?: string; context?: StewardContextRef[]; threadId?: string } = {}) {
-  dock.set((s) => ({ open: true, prefill: opts.prefill, context: opts.context, threadId: opts.threadId, nonce: s.nonce + 1 }))
+export function openSteward(opts: { prefill?: string; context?: StewardContextRef[]; threadId?: string; send?: boolean } = {}) {
+  dock.set((s) => ({ open: true, prefill: opts.prefill, context: opts.context, threadId: opts.threadId, send: opts.send, nonce: s.nonce + 1 }))
 }
-/** 让管家回答 / 代办一件事：打开停靠面板并预填问题。 */
-export const askSteward = (text: string, context?: StewardContextRef[]) => openSteward({ prefill: text, context })
+/** 让管家回答 / 代办一件事：打开停靠面板并预填问题；send 时直接发出。 */
+export const askSteward = (text: string, context?: StewardContextRef[], opts: { send?: boolean } = {}) => openSteward({ prefill: text, context, send: opts.send })
 export const closeSteward = () => dock.set((s) => ({ ...s, open: false }))
 export const toggleSteward = () => (dock.get().open ? closeSteward() : openSteward())
 export const useStewardDock = () => useStore(dock)
