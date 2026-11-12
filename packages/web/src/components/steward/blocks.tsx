@@ -157,7 +157,8 @@ export function StewardBlocks({ blocks, onAsk }: { blocks: StewardBlock[]; onAsk
         const bare = b.type === 'actions' || b.type === 'callout' || b.type === 'stats' || b.type === 'entity' || b.type === 'pick'
         return (
           <section key={i} className={`vb${bare ? ' vb-bare' : ''}`} data-type={b.type} style={{ '--i': i } as CSSProperties} aria-label={title}>
-            {title && <div className="vb-title">{title}</div>}
+            {/* pick 的标题就是问句，PickBlockView 自己排版，这里不再重复一行 */}
+            {title && b.type !== 'pick' && <div className="vb-title">{title}</div>}
             <Body block={b} onAsk={onAsk} />
           </section>
         )

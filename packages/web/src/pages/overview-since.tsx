@@ -3,23 +3,23 @@ import { ChevronDown, X } from 'lucide-react'
 import type { Digest } from '@taktflow/core'
 import { useAsync, useSource } from '../api'
 import { fmtRelative } from '../lib/format'
-import { Link } from '../lib/router'
+import { Link, useLocation } from '../lib/router'
 import { openSteward } from '../lib/ui-store'
 import { markDigestSeen, peekDigest } from '../components/steward/digest-session'
 import { StewardMark } from '../components/identity'
 
 const SEEN_KEY = 'taktflow.digest.seen'
 
-function readSeen(): string | undefined {
+function readSeen(space: string): string | undefined {
   try {
-    return window.localStorage.getItem(SEEN_KEY) ?? undefined
+    return window.localStorage.getItem(`${SEEN_KEY}:${space}`) ?? undefined
   } catch {
     return undefined
   }
 }
-function writeSeen(id: string) {
+function writeSeen(space: string, id: string) {
   try {
-    window.localStorage.setItem(SEEN_KEY, id)
+    window.localStorage.setItem(`${SEEN_KEY}:${space}`, id)
   } catch {
     /* 隐私模式：下次打开还会显示，不影响使用 */
   }
@@ -37,12 +37,18 @@ const PROGRESS_WORD: Record<Digest['progress'][number]['kind'], string> = {
 /**
  * 总览顶部"自上次以来"横幅（D 组；docs/design/22 §1.6）：管家汇报的入口。
  * 收起时一句摘要 + 三个计数；展开（grid-template-rows 0fr → 1fr）按"需要你处理 → 新风险 → 进展"三列列出，
- * 每项都能直接跳过去。"知道了"只在本机记住这份汇报，下次有新汇报再出现。
+ * 每项都能直接跳过去。只汇报当前空间（别的空间的进展在管家页的全局汇报里看）；
+ * "知道了"只在本机记住这个空间的这份汇报，下次有新汇报再出现。
  */
 export function SinceBanner() {
   const ds = useSource()
-  const q = useAsync((d) => peekDigest(d), [])
-  const [seen, setSeen] = useState(readSeen)
+  const { spaceId: prefix } = useLocation()
+  // 默认空间的地址不带 /s/ 前缀：用当前空间的真实 id
+  const sq = useAsync((d) => (prefix ? Promise.resolve(prefix) : d.space().then((s) => s.id)), [prefix ?? ''])
+  const space = sq.data ?? ''
+  const q = useAsync((d) => (space ? peekDigest(d, space) : Promise.resolve(undefined)), [space])
+  const [seenBy, setSeen] = useState<Record<string, string | undefined>>({})
+  const seen = space in seenBy ? seenBy[space] : readSeen(space)
   const [open, setOpen] = useState(false)
   const d = q.data
   const total = d ? d.attention.length + d.risks.length + d.progress.length : 0
@@ -52,9 +58,9 @@ export function SinceBanner() {
   const click = (what: string) => void ds.reportProductEvent({ type: 'digest.click', feature: 'steward.digest', detail: { what } }).catch(() => undefined)
   // 用户看了（展开 / 知道了）才标已读；digest.open 由服务端在标已读时记，页面不重复上报
   const dismiss = () => {
-    markDigestSeen(ds, d.id)
-    writeSeen(d.id)
-    setSeen(d.id)
+    markDigestSeen(ds, d.id, space)
+    writeSeen(space, d.id)
+    setSeen((cur) => ({ ...cur, [space]: d.id }))
   }
   const high = d.risks.filter((r) => r.level === 'high').length
   return (
@@ -74,7 +80,7 @@ export function SinceBanner() {
           {d.progress.length > 0 && <span className="since-count"><b className="num">{d.progress.length}</b> 项进展</span>}
         </div>
         <div className="since-actions">
-          <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={() => (setOpen((v) => !v), click('expand'), markDigestSeen(ds, d.id))}>
+          <button type="button" className="btn btn-sm btn-ghost" aria-expanded={open} onClick={() => (setOpen((v) => !v), click('expand'), markDigestSeen(ds, d.id, space))}>
             {open ? '收起' : '展开'}
             <ChevronDown className={`since-chevron${open ? ' up' : ''}`} aria-hidden />
           </button>

@@ -3,6 +3,7 @@ export const stewardLinks = {
   home: '/solo',
   spaces: '/spaces',
   overview: (space: string) => `/s/${e(space)}`,
+  requirements: (space: string) => `/s/${e(space)}/requirements`,
   requirement: (space: string, id: string, tab?: string) =>
     `/s/${e(space)}/req/${e(id)}${tab ? `?tab=${e(tab)}` : ''}`,
   run: (space: string, id: string, node?: string) =>

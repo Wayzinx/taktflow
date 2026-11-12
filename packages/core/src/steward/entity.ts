@@ -62,7 +62,7 @@ export async function entitySnapshot(space: StewardSpace, ref: StewardContextRef
   if (ref.type === 'run' || ref.type === 'node') {
     if (ref.type === 'node' && !ref.parent) throw new StewardError(400, '节点引用缺少 parent 运行编号，请补齐后重试')
     const detail = await entityRun(space, ref.type === 'run' ? ref.id : ref.parent!)
-    if (ref.type === 'run') return { title: `${detail.workflow.title} · ${ref.id.slice(-12)}`, status: runStatus(detail), tone: detail.graph.nodes.some(node => node.status === 'waiting_human') ? 'waiting' : stateTone(detail.run.status), stages: detail.stages.map(stage => ({ label: stage.title, status: stageStatus(stage.status) })), at }
+    if (ref.type === 'run') return { title: `${detail.workflow.title} · ${ref.id}`, status: runStatus(detail), tone: detail.graph.nodes.some(node => node.status === 'waiting_human') ? 'waiting' : stateTone(detail.run.status), stages: detail.stages.map(stage => ({ label: stage.title, status: stageStatus(stage.status) })), at }
     const node = detail.graph.nodes.find(node => node.id === ref.id)
     if (!node) throw new StewardError(404, '节点不在该运行图中，请刷新后重新选择节点')
     return { title: node.title, status: await nodeStatus(space, detail.run, node, at), tone: stateTone(node.status), at }

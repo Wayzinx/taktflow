@@ -16,7 +16,9 @@ export function threadMetadata(thread: StewardThread, messages: StewardMessage[]
     spaces.set(space, (spaces.get(space) ?? 0) + 1)
     if (ref.type !== 'requirement') continue
     const key = JSON.stringify([space, ref.id]), previous = requirements.get(key)
-    requirements.set(key, { ref: { ...ref, spaceId: space, label: ref.label ?? previous?.ref.label }, count: (previous?.count ?? 0) + 1 })
+    // 页面自动带的上下文标签就是编号本身（REQ-001），不能当标题：留空让存储层去查真实标题
+    const label = ref.label && ref.label !== ref.id ? ref.label : undefined
+    requirements.set(key, { ref: { ...ref, spaceId: space, label: label ?? previous?.ref.label }, count: (previous?.count ?? 0) + 1 })
   }
   const top = [...requirements.values()].sort((a, b) => b.count - a.count)[0]?.ref
   return { messageCount: messages.length,

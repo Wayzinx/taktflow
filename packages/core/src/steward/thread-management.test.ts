@@ -105,3 +105,21 @@ it('重启中断、回复失败、重试清理状态，按会话选择运行配�
     expect((await store.thread(thread.id)).runtime).toBeUndefined()
   } finally { agent.close() }
 })
+it('标题超过 20 字带省略号；摘要去掉 Markdown；上下文标签只是编号时去查真实标题', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-threads-')); roots.push(root)
+  const store = new StewardStore(join(root, 'steward/alice'), async (space, id) => (space === 'std' && id === 'REQ-001' ? '问候语支持空名字' : undefined))
+  expect((await store.createThread('standard-delivery 有哪些需求？各自什么状态', '2026-11-01T00:00:00Z')).title).toBe('standard-delivery 有哪…')
+  const thread = await store.createThread('短\n标题', '2026-11-01T00:00:00Z', [{ type: 'requirement', spaceId: 'std', id: 'REQ-001', label: 'REQ-001' }])
+  expect(thread).toMatchObject({ title: '短 标题', requirementId: 'REQ-001', requirementTitle: '问候语支持空名字' })
+  const text = '失败在 **clarify（需求澄清）** 节点 [1]，可以[重新生成「交付 Agent」提案](/steward?thread=2b4e)。\n\n| 编号 | 状态 |\n| --- | --- |\n| REQ-1 | 已交付 |\n\n```json\n{"a":1}\n```'
+  await store.saveMessage({ id: 's', threadId: thread.id, role: 'steward', at: thread.createdAt, text })
+  expect((await store.thread(thread.id)).lastMessage).toBe('失败在 clarify（需求澄清） 节点 [1]，可以重新生成「交付 Agent」提案。 编号 状态 REQ-1 已交付 {"a":1}')
+})
+
+it('已补过消息数的历史会话仍能回填真实需求标题，不把编号重复当标题', async () => {
+  const { store, thread } = await fixture()
+  await store.write(`threads/${thread.id}.json`, { ...thread, messageCount: 2, spaceId: 'shop', requirementId: 'REQ-001', requirementTitle: 'REQ-001' })
+  const hydrated = new StewardStore(store.dir, async () => '问候语支持空名字')
+  expect(await hydrated.thread(thread.id)).toMatchObject({ requirementId: 'REQ-001', requirementTitle: '问候语支持空名字', messageCount: 2 })
+  expect(await hydrated.read(`threads/${thread.id}.json`)).toMatchObject({ requirementTitle: '问候语支持空名字' })
+})

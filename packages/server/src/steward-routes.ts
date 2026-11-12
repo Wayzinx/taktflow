@@ -1,6 +1,7 @@
 import { validateStewardRuntime } from '@taktflow/core'
 import { StewardMcp } from './steward-mcp.js'
 import { stewardRuntime } from './steward-runtime.js'
+import { stewardConfigPatch } from './steward-config-patch.js'
 import { dirname, join, resolve } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { applyEdits } from '@taktflow/workflow-source'
@@ -118,6 +119,21 @@ export function createStewardDeps(options: StewardRouteDeps, userId: string): St
       const commands: CommandRegistry = {
         list: () => local.list(),
         run: async (commandId, input, context) => {
+          if (commandId === 'config.patch' && typeof input.baseHash === 'string') {
+            requireRole(stores, context.actor, 'maintainer', commandId)
+            if (!context.reason?.trim()) throw new StewardError(400, '写操作必须说明原因')
+            const audit = (phase: 'requested' | 'finished', response?: unknown) => auditSpace(stores, context.actor, context.reason!, JSON.stringify({ id: commandId, input, ...context, phase, response }))
+            await audit('requested')
+            try {
+              const result = await stewardConfigPatch(stores, input, context.actor, context.reason)
+              const response = { ok: true, message: '修改配置已执行', result }
+              await audit('finished', response)
+              return response
+            } catch (error) {
+              await audit('finished', { ok: false, message: error instanceof Error ? error.message : String(error) })
+              throw error
+            }
+          }
           const runtime =
             options.commands && /^(run\.|task\.)/.test(commandId)
               ? await options.commands(stores)
@@ -407,9 +423,12 @@ export function registerStewardRoutes(
       url.searchParams.get('since') ?? undefined,
       true,
       url.searchParams.get('peek') === '1',
+      url.searchParams.get('space') ? stewardId(url.searchParams.get('space')!) : undefined,
     ),
   )
   route('GET', '/feed', async (_, { store }) => store.lines<StewardFeedItem>('feed.jsonl'))
+  // 导轨角标只要一个数：整份动态能有几百 KB
+  route('GET', '/unread', async (_, { store }) => ({ count: await unreadFeed(store) }))
   route('GET', '/prefs', async (_, { store }) => store.prefs())
   route('PUT', '/prefs', async ({ request }, { store, by }) => {
     const input = prefs(await body(request))

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Proposal, StewardContextRef, StewardMessage, StewardPostRequest, StewardRuntime, StewardStreamEvent, StewardThread } from '@taktflow/core'
-import { useSource } from '../../api'
+import { invalidate, useSource } from '../../api'
 import { applyStreamEvent, mergeDetail, settleLocal } from './thread-reducer'
 import { onTabReturn } from '../../lib/visible'
 
@@ -88,6 +88,8 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
     const on = (e: StewardStreamEvent) => {
       if ((e.type === 'message' && e.message.role !== 'user') || e.type === 'error') setWaiting(false)
       if (e.type === 'proposal') setProposals((cur) => ({ ...cur, [e.proposal.id]: e.proposal }))
+      // 低风险自动执行的提案没经过卡片上的批准按钮：同样让页面重新取数
+      if (e.type === 'proposal' && e.proposal.auto && e.proposal.status === 'applied') invalidate()
       setMessages((cur) => applyStreamEvent(cur, e))
     }
     return ds.subscribeSteward(threadId, on)

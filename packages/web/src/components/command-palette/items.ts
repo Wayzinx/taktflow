@@ -181,7 +181,7 @@ export function hiddenCommandMatches(items: Item[], q: string): number {
 function withAsk(list: Item[], q: string): Item[] {
   const text = q.trim()
   if (!text) return list
-  return [...list, { id: 'ask:steward', group: '管家', label: `问管家：${text}`, icon: BeeGlyph, keywords: text, run: () => askSteward(text) }]
+  return [...list, { id: 'ask:steward', group: '管家', label: `问管家：${text}`, icon: BeeGlyph, keywords: text, run: () => askSteward(text, undefined, { send: true }) }]
 }
 
 function rankItems(items: Item[], q: string): Item[] {

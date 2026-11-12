@@ -24,6 +24,9 @@ export interface ThreadViewProps {
   /** @ 引用跨全部空间找（Solo）。 */
   globalMentions?: boolean
   placeholder?: string
+  /** 外面要直接发出的一句话（⌘K「问管家：…」）：key 变了就发一次；context 缺省用输入框上方的上下文。 */
+  ask?: { text: string; context?: StewardContextRef[]; key: number }
+  onAskConsumed?: () => void
 }
 
 function ThreadSkeleton() {
@@ -43,7 +46,7 @@ function ThreadSkeleton() {
 }
 
 /** 会话：消息列表（贴底自动滚动，用户往上翻时不打扰）+ 输入框。整页与停靠面板共用。 */
-export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context, onContext, empty, autoFocus, className, hero, globalMentions, placeholder }: ThreadViewProps) {
+export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context, onContext, empty, autoFocus, className, hero, globalMentions, placeholder, ask, onAskConsumed }: ThreadViewProps) {
   const t = useStewardThread(threadId, onThreadCreated)
   // 新会话还没有 id：选的 runtime 先记在这里，第一条消息带上（docs/design/30 §2）
   const [draftRuntime, setDraftRuntime] = useState<StewardRuntime>()
@@ -83,12 +86,22 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
     stick.current = true
     return t.send(text, { context: extra.context.length ? extra.context : undefined, attachments: extra.attachments.length ? extra.attachments : undefined, runtime: draftRuntime })
   }
+  const askedKey = useRef<number>(undefined)
+  useEffect(() => {
+    if (!ask || askedKey.current === ask.key) return
+    askedKey.current = ask.key
+    onAskConsumed?.()
+    onDraft('')
+    void send(ask.text, { context: ask.context ?? context, attachments: [] }).then((sent) => { if (!sent) onDraft(ask.text) })
+    // 只在新请求到来时发一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ask?.key])
   const showEmpty = !threadId && t.messages.length === 0
   const busy = !!t.streamingId || t.waiting
   const stop = () => void t.stop().catch((e: Error) => toast('没停下来', { tone: 'failed', body: e.message }))
-  // 最后一条回复失败或被停下：重发它前面那条提问（带原来的上下文）
+  // 最后一条回复失败或被停下：重试；正常写完的：重新生成。都是重发它前面那条提问（带原来的上下文）
   const last = t.messages.at(-1)
-  const asked = last?.role === 'steward' && (last.status === 'error' || last.status === 'stopped') ? [...t.messages].reverse().find((m) => m.role === 'user') : undefined
+  const asked = last?.role === 'steward' && last.status !== 'streaming' ? [...t.messages].reverse().find((m) => m.role === 'user') : undefined
   const retry = asked && !busy ? () => void send(asked.text, { context: asked.context ?? [], attachments: [] }) : undefined
   const composer = <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={busy} onStop={threadId && busy ? stop : undefined} autoFocus={autoFocus} globalMentions={globalMentions} placeholder={placeholder} tools={<RuntimePicker value={runtime} onChange={changeRuntime} />} />
   const emptyBody = typeof empty === 'function' ? empty((text, c) => void send(text, { context: c ?? context, attachments: [] })) : empty

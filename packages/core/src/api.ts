@@ -1679,6 +1679,8 @@ export interface ProductMetric {
   trend?: number[]
   /** 迭代信号：这个数说明该改什么。 */
   hint?: string
+  /** 窗口内参与计算的样本数；0 表示没有数据，页面显示「—」而不是 0。 */
+  samples?: number
 }
 
 // ------------------------------------------------------------ 知识库（docs/design/23）

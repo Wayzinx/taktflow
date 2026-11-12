@@ -8,6 +8,7 @@ import { canonicalJson, sha256 } from '../util/hash.js'
 import { StewardError, stewardActor, stewardId, timestamp, type StewardDeps, type StewardSpace } from './contracts.js'
 import { StewardStore } from './store.js'
 import { readStewardFile, stewardFile } from './files.js'
+import { configPatchPreview, mergeConfigPatch, patchedConfig } from './config-patch.js'
 import type { NodeKind } from '../types.js'
 
 interface UndoRecord {
@@ -267,6 +268,11 @@ export class StewardProposals {
         }
         if (step.commandId === 'workflow.edit')
           throw new StewardError(400, 'workflow 编辑请使用 workflow 步骤，以便校验基线和预览')
+        if (step.commandId === 'config.patch' && step.spaceId) {
+          const body = configPatchPreview((await this.deps.open(step.spaceId)).stores.config, step.input.patch)
+          previews.push(body ? { kind: 'diff', title: info.title, body } : { kind: 'text', title: info.title, body: '和当前配置相同，批准后不会有变化' })
+          continue
+        }
         previews.push({
           kind: 'form',
           title: info.title,
@@ -326,6 +332,11 @@ export class StewardProposals {
     const result = structuredClone(steps)
     const expected = new Map<string, string>()
     for (const step of result) {
+      // config.patch 记下补丁碰到的那部分配置：成员这类数组是整组替换，批准前别人改过就不能照旧覆盖
+      if (commandId(step) === 'config.patch' && step.kind === 'command' && step.spaceId) {
+        step.input.baseHash = hash(patchedConfig(await this.snapshot(step), step.input.patch))
+        continue
+      }
       if (commandId(step) !== 'file.write') continue
       const key = `${step.spaceId ?? ''}:${this.input(step).path}`
       const current = expected.get(key) ?? sha256(String((await this.snapshot(step)) ?? ''))
@@ -478,7 +489,7 @@ export class StewardProposals {
     }
     return null
   }
-  private async checkBaseline(step: ProposalStep): Promise<void> {
+  private async checkBaseline(step: ProposalStep, expectedConfig?: unknown): Promise<void> {
     if (step.kind === 'workflow' && (await this.snapshot(step)) !== step.baseRev)
       throw new StewardError(409, 'workflow 已有新修订，请重新生成提案')
     const input = this.input(step)
@@ -488,6 +499,13 @@ export class StewardProposals {
       sha256(String((await this.snapshot(step)) ?? '')) !== input.baseHash
     )
       throw new StewardError(409, '文件已被修改，请重新生成提案')
+    if (commandId(step) === 'config.patch') {
+      if (typeof input.baseHash !== 'string')
+        throw new StewardError(409, '旧配置提案缺少基线，请基于最新配置重新生成提案')
+      const baseline = expectedConfig === undefined ? input.baseHash : hash(patchedConfig(expectedConfig, input.patch))
+      if (hash(patchedConfig(await this.snapshot(step), input.patch)) !== baseline)
+        throw new StewardError(409, `空间配置的 ${Object.keys(record(input.patch)).join('、')} 在提案生成后被修改过，请让管家基于最新配置重新生成提案`)
+    }
   }
   private async execute(step: ProposalStep, by: Actor, reason: string): Promise<unknown> {
     if (this.profile(step) && step.kind === 'file') {
@@ -502,7 +520,7 @@ export class StewardProposals {
       return { path: 'profile.md' }
     }
     const context = { actor: by, reason, onBehalfOf: 'steward' }
-    const result = await (await this.registry(step)).run(commandId(step), this.input(step), context)
+    const result = await (await this.registry(step)).run(commandId(step), structuredClone(this.input(step)), context)
     if (!result.ok) throw new Error(result.message)
     return result.result
   }
@@ -533,7 +551,11 @@ export class StewardProposals {
         content: item.before,
         baseHash: sha256(String((await this.snapshot(step)) ?? '')),
       }
-    } else if (id === 'config.patch') undoInput = { patch: inversePatch(item.before, input.patch) }
+    } else if (id === 'config.patch') {
+      const patch = inversePatch(item.before, input.patch)
+      undoInput = { patch, baseHash: hash(patchedConfig(mergeConfigPatch(item.before, input.patch), patch)) }
+      await this.checkBaseline({ kind: 'command', spaceId: step.spaceId, commandId: id, input: undoInput })
+    }
     else if (id === 'requirement.create') {
       undoId = 'requirement.archive'
       undoInput = { requirementId: record(out.requirement).id ?? out.id ?? input.id }
@@ -578,6 +600,16 @@ export class StewardProposals {
         throw new StewardError(409, '提案 hash 不一致，请重新预览后批准')
       if (proposalHash(proposal.steps) !== proposal.hash)
         throw new StewardError(409, '提案内容与 hash 不一致，请重新生成提案')
+      // 编辑参数也必须先核对原提案，不能拿批准时的最新配置给旧成员数组补一份新基线。
+      try {
+        for (const step of proposal.steps)
+          if (commandId(step) === 'config.patch') await this.checkBaseline(step)
+      } catch (error) {
+        proposal.status = 'stale'
+        proposal.error = error instanceof Error ? error.message : String(error)
+        await this.store.saveProposal(proposal)
+        throw error
+      }
       if (decision.steps) {
         decision.steps = await this.baselines(validateStepShapes(decision.steps))
         Object.assign(proposal, await this.validate(decision.steps), {
@@ -629,11 +661,18 @@ export class StewardProposals {
       proposal.error = '执行中断，请核对执行记录后处理'
       await this.store.saveProposal(proposal)
       try {
+        const expectedConfigs = new Map<string, unknown>()
         for (const step of proposal.steps) {
-          await this.checkBaseline(step)
+          const expectedConfig = expectedConfigs.get(step.spaceId ?? '')
+          await this.checkBaseline(step, expectedConfig)
+          const executionStep = commandId(step) === 'config.patch' && step.kind === 'command' && expectedConfig !== undefined
+            ? { ...step, input: { ...step.input, baseHash: hash(patchedConfig(expectedConfig, step.input.patch)) } }
+            : step
           const before = structuredClone(await this.snapshot(step)),
             reversible = await this.canUndo(step)
-          const result = structuredClone(await this.execute(step, by, reason))
+          if (commandId(step) === 'config.patch')
+            expectedConfigs.set(step.spaceId!, mergeConfigPatch(before, this.input(step).patch))
+          const result = structuredClone(await this.execute(executionStep, by, reason))
           const item: UndoRecord = { step, before, reversible, result, after: '' }
           done.push(item)
           item.after = hash(await this.snapshot(step, result))

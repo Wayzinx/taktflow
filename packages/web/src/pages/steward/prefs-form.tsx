@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react'
 import { Bell, BellOff, Eye, Plus } from 'lucide-react'
-import type { HarnessInfo, ModelInfo, SpaceSummary, StewardPrefs } from '@taktflow/core'
+import type { SpaceSummary, StewardPrefs, StewardRuntimeChoice } from '@taktflow/core'
 import { Chips, Segmented, toast } from '../../components/ui'
 
 type Watch = 'watch' | 'normal' | 'mute'
@@ -17,8 +17,15 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
+/** 管家能用的 harness：按 runtime-choices 归并，任一组合可用就算可用，不可用时带上原因。 */
+function harnessOptions(choices: StewardRuntimeChoice[]) {
+  const byId = new Map<string, StewardRuntimeChoice[]>()
+  for (const c of choices) byId.set(c.harness, [...(byId.get(c.harness) ?? []), c])
+  return [...byId].map(([id, cs]) => ({ id, label: cs[0]!.harnessLabel, available: cs.some((c) => c.available), reason: cs.find((c) => !c.available && c.reason)?.reason }))
+}
+
 /** 管家偏好表单（docs/design/22 §1.7）：值由父组件持有，改动即时反映，保存在抽屉底部。 */
-export function PrefsForm({ prefs, onChange, spaces, harnesses, models }: { prefs: StewardPrefs; onChange: (p: StewardPrefs) => void; spaces: SpaceSummary[]; harnesses: HarnessInfo[]; models: ModelInfo[] }) {
+export function PrefsForm({ prefs, onChange, spaces, choices }: { prefs: StewardPrefs; onChange: (p: StewardPrefs) => void; spaces: SpaceSummary[]; choices: StewardRuntimeChoice[] }) {
   const [time, setTime] = useState('17:30')
   const set = (patch: Partial<StewardPrefs>) => onChange({ ...prefs, ...patch })
   const watchOf = (id: string): Watch => (prefs.watchedSpaces?.includes(id) ? 'watch' : prefs.mutedSpaces?.includes(id) ? 'mute' : 'normal')
@@ -38,7 +45,11 @@ export function PrefsForm({ prefs, onChange, spaces, harnesses, models }: { pref
     }
     set({ browserNotifications: on })
   }
-  const harness = prefs.harness?.harness ?? 'native'
+  const def = choices.find((c) => c.isDefault)
+  const harness = prefs.harness?.harness ?? def?.harness ?? 'native'
+  const model = prefs.harness ? prefs.harness.model : def?.model
+  const harnesses = harnessOptions(choices)
+  const models = choices.filter((c) => c.harness === harness && c.model)
 
   return (
     <div className="stwp-form">
@@ -118,22 +129,28 @@ export function PrefsForm({ prefs, onChange, spaces, harnesses, models }: { pref
 
       <Field label="管家用的 harness 与模型">
         <div className="stwp-row">
-          <select className="select" value={harness} onChange={(e) => set({ harness: { harness: e.target.value, model: prefs.harness?.model } })} aria-label="harness">
-            {(harnesses.length ? harnesses : [{ id: 'native', displayName: 'native', available: true } as HarnessInfo]).map((h) => (
-              <option key={h.id} value={h.id} disabled={!h.available}>
-                {h.displayName}
-                {h.available ? '' : '（不可用）'}
+          <select className="select" value={harness} onChange={(e) => set({ harness: { harness: e.target.value } })} aria-label="harness">
+            {(harnesses.length ? harnesses : [{ id: 'native', label: '内置', available: true, reason: undefined }]).map((h) => (
+              // 不可用的也能看到原因；当前选中的不禁用，免得显示成空白
+              <option key={h.id} value={h.id} disabled={!h.available && h.id !== harness} title={h.reason}>
+                {h.label}
+                {h.available ? '' : `（不可用${h.reason ? `：${h.reason}` : ''}）`}
               </option>
             ))}
           </select>
-          <select className="select" value={prefs.harness?.model ?? ''} onChange={(e) => set({ harness: { harness, model: e.target.value || undefined } })} aria-label="模型">
+          <select className="select" value={model ?? ''} onChange={(e) => {
+            const selected = models.find((m) => m.model === e.target.value)
+            set({ harness: { harness, model: e.target.value || undefined, ...(selected?.provider ? { provider: selected.provider } : {}) } })
+          }} aria-label="模型">
             <option value="">harness 默认</option>
             {models.map((m) => (
-              <option key={m.alias} value={m.alias}>
-                {m.alias} · {m.provider}
+              <option key={`${m.provider ?? ''}/${m.model}`} value={m.model} disabled={!m.available && m.model !== model} title={m.reason}>
+                {m.modelLabel ?? m.model}
+                {m.provider ? ` · ${m.provider}` : ''}
+                {m.available ? '' : '（不可用）'}
               </option>
             ))}
-            {prefs.harness?.model && !models.some((m) => m.alias === prefs.harness?.model) && <option value={prefs.harness.model}>{prefs.harness.model}</option>}
+            {model && !models.some((m) => m.model === model) && <option value={model}>{model}</option>}
           </select>
         </div>
       </Field>

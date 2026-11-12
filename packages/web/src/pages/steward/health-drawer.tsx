@@ -15,6 +15,60 @@ const FEATURE: Record<string, string> = {
   knowledge: '知识库',
 }
 
+/** 指标键 → 人话（服务端 steward/metrics.ts 的 metric 键）；原始键放在悬停提示里。 */
+const METRIC: Record<string, string> = {
+  completion_ms: '填写到提交的用时',
+  submissions: '提交数',
+  submit_rate: '打开后提交的比例',
+  started_within_5m: '5 分钟内开始运行',
+  route_override: '人工改流程的比例',
+  criteria_adopted: '验收标准建议采纳率',
+  first_token_ms: '首字延迟',
+  tools_avg: '每次回答调用工具数',
+  citation_coverage: '事实带来源的比例',
+  tool_error_rate: '工具出错率',
+  down_rate: '点踩比例',
+  down_wrong: '点踩：答错了',
+  down_missed: '点踩：没答到点',
+  down_verbose: '点踩：太啰嗦',
+  down_bad_action: '点踩：操作不对',
+  applied_rate: '批准执行的比例',
+  edited_rate: '改过再批准的比例',
+  rejected_rate: '被拒绝的比例',
+  failed_rate: '执行失败的比例',
+  reverted_rate: '执行后撤销的比例',
+  decision_ms: '从提案到决定的用时',
+  click_rate: '汇报点击率',
+  snoozed_rate: '风险被推迟的比例',
+  ignored_rate: '风险被忽略的比例',
+  resolution_ms: '风险处理用时',
+  lint_error_rate: '保存后校验失败的比例',
+  conflict_rate: '保存冲突的比例',
+  template_blank: '选空白模板的比例',
+  template_standard: '选标准模板的比例',
+  template_quick: '选快速模板的比例',
+  first_requirement_ms: '建空间到第一个需求的用时',
+  hit_rate: '检索有结果的比例',
+  recall10: '召回率（前 10 条）',
+  citation_rate: '检索结果被引用的比例',
+}
+/** 带前缀的键：config.patch.applied_rate → 「config.patch · 批准执行的比例」，waiting-human.resolution_rate → 该类风险提醒后处理的比例。 */
+function metricLabel(key: string): string {
+  if (METRIC[key]) return METRIC[key]
+  const dot = key.lastIndexOf('.')
+  const scope = key.slice(0, dot), base = key.slice(dot + 1)
+  if (dot > 0 && base === 'resolution_rate') return `${scope} 风险提醒后处理的比例`
+  if (dot > 0 && METRIC[base]) return `${scope} · ${METRIC[base]}`
+  return key
+}
+/** 有明确目标线的指标：超出时数字标红。 */
+const TARGET: Record<string, { max?: number; min?: number; text: string }> = {
+  first_token_ms: { max: 5000, text: '目标 < 5 秒' },
+  citation_coverage: { min: 80, text: '目标 ≥ 80%' },
+  tool_error_rate: { max: 10, text: '目标 ≤ 10%' },
+  down_rate: { max: 20, text: '目标 ≤ 20%' },
+}
+
 const fmt = (m: ProductMetric) => (v: number) => {
   const n = m.unit === 'ms' || m.unit === 'count' || m.unit === 's' ? Math.round(v).toLocaleString() : `${Math.round(v)}`
   return m.unit === '%' ? `${n}%` : m.unit === 'ms' ? `${n}ms` : m.unit === 's' ? `${n} 秒` : n
@@ -39,16 +93,20 @@ function Spark({ data }: { data: number[] }) {
 }
 
 function MetricRow({ m, style, className }: { m: ProductMetric; style?: CSSProperties; className?: string }) {
+  // 没有样本时 0 / 0% 是假数（比例的分母为 0）：显示「—」
+  const empty = m.samples === 0
   const first = m.trend?.[0]
-  const delta = first !== undefined ? m.value - first : undefined
+  const delta = first !== undefined && !empty ? m.value - first : undefined
+  const target = TARGET[m.metric]
+  const bad = !empty && !!target && ((target.max !== undefined && m.value > target.max) || (target.min !== undefined && m.value < target.min))
   return (
-    <li className={`stwp-metric ${className ?? ''}`} style={style}>
+    <li className={`stwp-metric ${className ?? ''}`} style={style} data-bad={bad || undefined}>
       <div className="stwp-metric-top">
-        <span className="stwp-metric-name">{m.metric}</span>
-        <span className="faint">{m.window}</span>
+        <span className="stwp-metric-name" title={m.metric}>{metricLabel(m.metric)}</span>
+        <span className="faint">{target ? `${target.text} · ` : ''}{m.window}</span>
       </div>
       <div className="stwp-metric-mid">
-        <CountUp className="stwp-metric-value" value={m.value} format={fmt(m)} />
+        {empty ? <span className="stwp-metric-value faint" title="还没有样本">—</span> : <CountUp className="stwp-metric-value" value={m.value} format={fmt(m)} />}
         {delta !== undefined && delta !== 0 && (
           <span className="faint num">
             {delta > 0 ? '+' : ''}
@@ -56,7 +114,7 @@ function MetricRow({ m, style, className }: { m: ProductMetric; style?: CSSPrope
           </span>
         )}
         <span style={{ flex: 1 }} />
-        {m.trend && <Spark data={m.trend} />}
+        {m.trend && !empty && <Spark data={m.trend} />}
       </div>
       {m.hint && (
         <button type="button" className="stwp-metric-hint pressable" title="让管家据此提一个改进" onClick={() => askSteward(`根据这个信号提一个改进：${m.hint}`)}>

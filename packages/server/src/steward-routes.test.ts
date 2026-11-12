@@ -36,6 +36,7 @@ it('实现协议中的管家路由与重发，用户会话/提案/偏好/反馈�
   const created = await response.json() as { thread: { id: string } }
   expect(await (await f.request('/threads', 'bob')).json()).toEqual([])
   expect((await f.request(`/threads/${created.thread.id}`, 'bob')).status).toBe(404)
+  await f.registration.agents.get('alice')!.drain()
   await vi.waitFor(async () => {
     const detail = await (await f.request(`/threads/${created.thread.id}`)).json() as { messages: StewardMessage[] }
     expect(detail.messages.some((m) => m.role === 'steward' && m.status === 'done')).toBe(true)
@@ -70,7 +71,8 @@ it('路径穿越、坏请求、非法来源和未授权空间不会进入工具'
 })
 it('SSE 能在回复完成后重放持久化消息，断开会清理连接', async () => {
   const f = await fixture(), created = await (await f.request('/threads', 'alice', 'POST', { text: '你好' })).json() as { thread: { id: string } }
-  await vi.waitFor(async () => expect((await f.registration.agents.get('alice')!.store.messages(created.thread.id)).some((m) => m.status === 'done' && m.role === 'steward')).toBe(true))
+  await f.registration.agents.get('alice')!.drain()
+  expect((await f.registration.agents.get('alice')!.store.messages(created.thread.id)).some((m) => m.status === 'done' && m.role === 'steward')).toBe(true)
   const controller = new AbortController()
   const response = await fetch(`${f.base}/api/steward/threads/${created.thread.id}/stream`, { headers: { 'x-takt-user': 'alice' }, signal: controller.signal })
   expect(response.headers.get('content-type')).toContain('text/event-stream')
@@ -104,6 +106,21 @@ it('真实命令表创建需求并撤销；新文件撤销后恢复不存在状�
   expect(await readFile(join(f.root, 'agents/new.md'), 'utf8')).toBe('new')
   expect(await (await f.request(`/proposals/${file.id}/undo`, 'alice', 'POST', {})).json()).toMatchObject({ status: 'reverted' })
   await expect(readFile(join(f.root, 'agents/new.md'))).rejects.toMatchObject({ code: 'ENOENT' })
+})
+it('真实 config.patch：待批期间成员被人改过就 409 stale，不覆盖别人加的成员；未读数接口只回一个数', async () => {
+  const f = await fixture(), file = join(f.root, 'takt.config.json')
+  const config = { ...JSON.parse(await readFile(file, 'utf8')), members: [{ id: 'alice', name: 'Alice', role: 'owner' }] }
+  await writeFile(file, JSON.stringify(config))
+  const created = await (await f.request('/threads', 'alice', 'POST', { text: '你好' })).json() as { thread: { id: string } }
+  const agent = f.registration.agents.get('alice')!, space = (await agent.deps.spaces())[0]!
+  const p = await agent.proposals.create(created.thread.id, '添加成员 bob', '测试', [{ kind: 'command', spaceId: space.id, commandId: 'config.patch', input: { patch: { members: [...config.members, { id: 'bob', name: 'bob', role: 'member' }] } } }])
+  expect(p.previews?.[0]?.body).toContain('+ bob · member')
+  await writeFile(file, JSON.stringify({ ...config, members: [...config.members, { id: 'carol', name: 'carol', role: 'viewer' }] }))
+  expect((await f.request(`/proposals/${p.id}/approve`, 'alice', 'POST', { hash: p.hash })).status).toBe(409)
+  expect(JSON.parse(await readFile(file, 'utf8')).members.map((m: { id: string }) => m.id)).toEqual(['alice', 'carol'])
+  expect(await (await f.request('/proposals?status=stale')).json()).toMatchObject([{ id: p.id }])
+  expect(await (await f.request('/unread')).json()).toEqual({ count: expect.any(Number) })
+  expect(await (await f.request(`/digest?peek=1&space=${space.id}`)).json()).toMatchObject({ summary: expect.any(String) })
 })
 
 it('M5 重发路由按用户隔离并保留理由，返回正式 replied 回执', async () => {
@@ -233,4 +250,25 @@ it('新建会话与 PATCH 共用 runtime 校验，不可用时不落会话，已
   await agent.drain()
   expect(selected).toEqual([runtime, runtime])
   expect((await agent.store.thread(created.thread.id)).runtime).toEqual(runtime)
+})
+
+it('真实 config.patch 多步执行、撤销保留 hash 与批准人审计', async () => {
+  const f = await fixture()
+  const created = await (await f.request('/threads', 'alice', 'POST', { text: '你好' })).json() as { thread: { id: string } }
+  const agent = f.registration.agents.get('alice')!
+  await agent.drain()
+  const space = (await agent.deps.spaces())[0]!
+  const p = await agent.proposals.create(created.thread.id, '两步预算', '测试', [
+    { kind: 'command', spaceId: space.id, commandId: 'config.patch', input: { patch: { budget: { tokens: 123 } } } },
+    { kind: 'command', spaceId: space.id, commandId: 'config.patch', input: { patch: { budget: { tokens: 456 } } } },
+  ])
+  expect(await (await f.request(`/proposals/${p.id}/approve`, 'alice', 'POST', { hash: p.hash })).json()).toMatchObject({ status: 'applied', hash: p.hash })
+  expect(JSON.parse(await readFile(join(f.root, 'takt.config.json'), 'utf8')).budget.tokens).toBe(456)
+  expect(await (await f.request(`/proposals/${p.id}/undo`, 'alice', 'POST', {})).json()).toMatchObject({ status: 'reverted' })
+  expect(JSON.parse(await readFile(join(f.root, 'takt.config.json'), 'utf8')).budget).toBeUndefined()
+  const events = (await readFile(join(f.root, '.takt/space-events.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+  expect(events.every(e => e.actor.type === 'human' && e.actor.id === 'alice')).toBe(true)
+  const audits = events.map(e => String(e.data.message))
+  expect(audits.some(message => message.includes('requested') && message.includes('onBehalfOf') && message.includes('alice'))).toBe(true)
+  expect(audits.some(message => message.includes('finished') && message.includes('config.patch'))).toBe(true)
 })

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Ban, Check, CircleAlert, Hourglass, RotateCcw, Shield, ShieldAlert, ShieldCheck, Undo2, X } from 'lucide-react'
 import type { Proposal, ProposalStep } from '@taktflow/core'
-import { useSource } from '../../api'
+import { invalidate, useSource } from '../../api'
 import { toast } from '../ui'
 import { askSteward, previewWorkflowProposal } from '../../lib/ui-store'
 import { confirmTargetOf, previewFor, ProposalStepView } from './proposal-step'
@@ -88,6 +88,8 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
       onChange(next)
       setJustApplied(true)
       clearGhost()
+      // 改的可能正是旁边页面上的数据（设置页成员、需求列表）：让页面重新取数，新出现的行会闪一下
+      if (next.status === 'applied') invalidate()
       toast(`已执行：${p.title}`, { tone: 'success', body: next.results?.map((r) => r.message).join('；'), undo: next.undoUntil ? () => void undo(next) : undefined })
     } catch (e) {
       const err = e as Error & { status?: number }
@@ -115,6 +117,7 @@ export function ProposalCard({ proposal, onChange, animate }: { proposal: Propos
     try {
       onChange(await ds.undoProposal(target.id, '撤销管家提案'))
       setJustApplied(false)
+      invalidate()
       toast(`已撤销：${target.title}`, { tone: 'success' })
     } catch (e) {
       toast('撤销失败', { tone: 'failed', body: (e as Error).message })

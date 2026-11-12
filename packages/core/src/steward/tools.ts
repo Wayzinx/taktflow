@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { DEFAULT_RECEIPT_TIMEOUT_MINUTES } from '../lead/receipts.js'
-import type { StewardBlock, StewardCitation, StewardContextRef, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
+import type { Risk, StewardBlock, StewardCitation, StewardContextRef, StewardDelegation, ProposalStep, WorkflowDocument } from '../api.js'
 import type { ToolSpec, RoomMessage, NodeKind, SnapshotNode, RunState, Usage, EventEnvelope } from '../types.js'
 import { stageProgress } from '../insights/graph.js'
 import { isObject, readArtifactData } from '../insights/artifacts.js'
@@ -333,9 +333,9 @@ export class StewardTools {
         { spaceId: str, workflowId: str, includeSource: bool },
         ['spaceId', 'workflowId'],
       ],
-      ['get_config', '读取已脱敏的空间配置', { spaceId: str }, ['spaceId']],
+      ['get_config', '读取空间配置（已脱敏）：成员与角色（members）、代码仓库（repos）、模型与 harness 路由、预算、知识库绑定等。问「有几个成员 / 谁是什么角色」就用它', { spaceId: str }, ['spaceId']],
       ['eval_scorecards', '查询成绩单与退化', { spaceId: str }, ['spaceId']],
-      ['list_commands', '列出命令及参数格式', { spaceId: str }, []],
+      ['list_commands', '列出可用命令及参数格式。给 spaceId 时同时返回该空间的命令和 scope=server 的空间管理命令（space.create / space.archive / space.restore / space.delete 等）', { spaceId: str }, []],
       [
         'read_file',
         '读取空间内非敏感文件，最多 64KB',
@@ -442,7 +442,7 @@ export class StewardTools {
       case 'resolve_requirement': {
         const requirements = await space!.stores.workspaces.listRequirements()
         data = this.resolveRequirement(String(input.name), requirements)
-        cite('需求列表', links.overview(spaceId!), 'requirement')
+        cite('需求列表', links.requirements(spaceId!), 'requirement')
         break
       }
       case 'list_requirements':
@@ -451,7 +451,7 @@ export class StewardTools {
         )
         if (typeof input.query === 'string' && input.query.trim())
           data = this.matchRequirements(input.query, data as Array<{ id: string; title: string }>)
-        cite('需求列表', links.overview(spaceId!), 'space')
+        cite('需求列表', links.requirements(spaceId!), 'requirement')
         break
       case 'requirement_status': {
         const req = await space!.stores.workspaces.getRequirement(reqId!)
@@ -488,6 +488,7 @@ export class StewardTools {
             : undefined,
         }
         cite(req.title, links.requirement(spaceId!, req.id), 'requirement')
+        if (run) this.citeNodes(spaceId!, run, nodeTitles, cite)
         break
       }
       case 'run_status': {
@@ -495,6 +496,7 @@ export class StewardTools {
         if (!run) throw new StewardError(404, '运行不存在，请检查引用')
         data = { run, delivery: await this.delivery(space!, spaceId!, run, cite), events: (await space!.stores.events.read(run.runId)).slice(-20) }
         cite(run.runId, links.run(spaceId!, run.runId), 'run')
+        this.citeNodes(spaceId!, run, new Map(((await space!.stores.runs.getWorkflow(run.runId))?.nodes ?? []).map((n) => [n.id, n.title ?? n.id])), cite)
         break
       }
       case 'list_attention': {
@@ -550,12 +552,15 @@ export class StewardTools {
         data = await scorecards(space!.stores, { by: 'node' })
         cite('成绩单', `${links.overview(spaceId!)}/eval`)
         break
-      case 'list_commands':
-        data = (space ? space.commands.list() : (this.deps.serverCommands?.list() ?? [])).filter(
+      case 'list_commands': {
+        // 空间管理命令（归档 / 删除空间）不在空间命令表里：一并列出并标 scope，否则管家会以为没有删除空间的办法
+        const server = (this.deps.serverCommands?.list() ?? []).map((c) => ({ ...c, scope: 'server' as const }))
+        data = [...(space ? space.commands.list().map((c) => ({ ...c, scope: 'space' as const })) : []), ...server].filter(
           (c) => !c.id.startsWith('steward.'),
         )
         cite('命令', links.home)
         break
+      }
       case 'read_file': {
         const content = await readStewardFile(space!.dir, String(input.path))
         if (content === undefined) {
@@ -597,7 +602,12 @@ export class StewardTools {
             } else if (presetInput.preset === 'attention' && presetSpaceId) {
               cite('待办', links.attention(presetSpaceId), 'attention')
             } else if (presetInput.preset === 'risks') {
-              cite('风险列表', presetSpaceId ? links.overview(presetSpaceId) : links.home, 'risk')
+              // 每条风险引用到它自己的证据（需求 / 运行节点），不再都指向空间总览
+              const risks = await this.openRisks(presetSpaceId)
+              for (const risk of risks) for (const evidence of risk.evidence) cite(evidence.label, evidence.href, 'risk')
+              if (!risks.length) cite('风险列表', links.home, 'risk')
+              generated.push(...this.riskBlocks(risks))
+              continue
             } else if (presetSpaceId) {
               const presetSpace = await this.deps.open(presetSpaceId)
               cite(presetSpace.name, links.overview(presetSpaceId), 'space')
@@ -618,9 +628,10 @@ export class StewardTools {
           commandExists: (commandId) => this.commandExists(commandId),
         })
         for (const block of normalized.blocks) {
-          const refs = block.type === 'entity' ? [{ ref: block.ref, snapshot: block.snapshot }] : block.type === 'pick' ? block.items : []
-          for (const { ref, snapshot } of refs) {
-            const href = ref.type === 'requirement' ? links.requirement(ref.spaceId!, ref.id) : ref.type === 'run' ? links.run(ref.spaceId!, ref.id) : ref.type === 'node' ? links.run(ref.spaceId!, ref.parent!, ref.id) : ref.type === 'workflow' ? links.workflow(ref.spaceId!, ref.id) : ref.type === 'knowledge' ? links.knowledge(ref.spaceId!, ref.id) : links.overview(ref.spaceId!)
+          const refs = block.type === 'entity' ? [{ ref: block.ref, snapshot: block.snapshot, focus: block.focus }] : block.type === 'pick' ? block.items : []
+          for (const { ref, snapshot, ...rest } of refs) {
+            // 运行图聚焦了某个节点（比如失败的那个）：引用也定位到它
+            const href = ref.type === 'requirement' ? links.requirement(ref.spaceId!, ref.id) : ref.type === 'run' ? links.run(ref.spaceId!, ref.id, 'focus' in rest ? rest.focus : undefined) : ref.type === 'node' ? links.run(ref.spaceId!, ref.parent!, ref.id) : ref.type === 'workflow' ? links.workflow(ref.spaceId!, ref.id) : ref.type === 'knowledge' ? links.knowledge(ref.spaceId!, ref.id) : links.overview(ref.spaceId!)
             cite(snapshot.title, href, ref.type)
           }
         }
@@ -705,7 +716,7 @@ export class StewardTools {
       if (!spaceId || typeof input.requirementId !== 'string') return []
       return this.requirementProgressBlocks(spaceId, stewardId(input.requirementId))
     }
-    if (preset === 'risks') return this.riskBlocks(spaceId)
+    if (preset === 'risks') return this.riskBlocks(await this.openRisks(spaceId))
     if (preset === 'attention') return this.attentionBlocks(spaceId)
     return []
   }
@@ -762,8 +773,10 @@ export class StewardTools {
       blocks.push({ type: 'timeline', title: '最近动态', items: events.map(({ event, run, item }) => ({ at: event.ts, ...item!, ref: { type: 'run', spaceId, id: run.runId, label: run.runId } })) })
     return blocks
   }
-  private async riskBlocks(spaceId?: string): Promise<StewardBlock[]> {
-    const risks = (await refreshRisks(this.deps, this.store)).filter((risk) => risk.state === 'open' && (!spaceId || risk.spaceId === spaceId))
+  private async openRisks(spaceId?: string) {
+    return (await refreshRisks(this.deps, this.store)).filter((risk) => risk.state === 'open' && (!spaceId || risk.spaceId === spaceId))
+  }
+  private riskBlocks(risks: Risk[]): StewardBlock[] {
     if (!risks.length) return [{ type: 'callout', tone: 'success', title: '暂无风险', body: '没有需要你处理的风险。' }]
     return [{ type: 'table', title: '当前风险', columns: [{ key: 'risk', label: '风险' }, { key: 'level', label: '级别' }, { key: 'requirement', label: '需求', mono: true }, { key: 'suggestion', label: '建议' }], rows: risks.map((risk) => ({ risk: risk.title, level: RISK_LEVEL[risk.level] ?? risk.level, requirement: risk.requirementId ?? null, suggestion: risk.actions[0]?.label ?? risk.detail })), refs: risks.map((risk) => risk.requirementId ? { type: 'requirement', spaceId: risk.spaceId, id: risk.requirementId, label: risk.requirementId } : { type: 'space', id: risk.spaceId, label: risk.spaceId }) }]
   }
@@ -783,6 +796,12 @@ export class StewardTools {
     let usage: Usage = { inputTokens: 0, outputTokens: 0 }
     for (const run of runs) usage = addUsage(usage, await this.runUsage(space, run))
     return { row: { title, ref, stages: detail?.stages.map(stage => ({ label: stage.title, status: stageStatus(stage.status) })) ?? [], note: attention[0] ? `等你：${attention[0].ask}` : detail ? undefined : '尚未运行', tone: attention.length ? 'waiting' : detail ? stateTone(detail.run.status) : stateTone(stored) }, status, waiting: attention.length, usage }
+  }
+  /** 失败 / 卡住 / 等人 / 在跑的节点各给一条引用：「失败在哪、为什么」这句能直接定位到那个节点。 */
+  private citeNodes(spaceId: string, run: RunState, titles: Map<string, string>, cite: (label: string, href: string, kind?: StewardCitation['kind']) => void): void {
+    for (const node of Object.values(run.nodes))
+      if (['failed', 'blocked', 'waiting_human', 'running'].includes(node.status))
+        cite(`${titles.get(node.id) ?? node.id}（${run.runId}）`, links.run(spaceId, run.runId, node.id), 'node')
   }
   /** 运行做出来的东西：集成分支、是否已合进默认分支、能直接打开的网页（带预览链接，并列进引用）。 */
   private async delivery(space: StewardSpace, spaceId: string, run: RunState, cite: (label: string, href: string, kind?: StewardCitation['kind']) => void) {
