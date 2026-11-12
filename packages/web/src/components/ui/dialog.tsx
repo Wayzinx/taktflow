@@ -18,10 +18,14 @@ export function trapKeys(e: ReactKeyboardEvent<HTMLElement>, onEscape: () => voi
   }
   if (e.key !== 'Tab') return
   const nodes = focusables(e.currentTarget)
-  if (!nodes.length) return
+  if (!nodes.length) {
+    e.preventDefault()
+    e.currentTarget.focus()
+    return
+  }
   const first = nodes[0]!
   const last = nodes[nodes.length - 1]!
-  if (e.shiftKey && document.activeElement === first) {
+  if (e.shiftKey && (document.activeElement === first || document.activeElement === e.currentTarget)) {
     e.preventDefault()
     last.focus()
   } else if (!e.shiftKey && document.activeElement === last) {
@@ -37,7 +41,7 @@ const modals: Array<RefObject<HTMLElement | null>> = []
 
 /**
  * 焦点掉到 body 上时（例如获得焦点的按钮被禁用、被移除）面板自己的 onKeyDown 收不到按键：
- * 在 document 上兜底，最上层的模态浮层仍能 Esc 关闭，Tab 把焦点拉回面板里。焦点在别处（面板内、弹出菜单里）时不管。
+ * 在 document 上兜底，最上层的模态浮层仍能 Esc 关闭，Tab 把焦点拉回面板里；菜单已处理的按键不重复接管。
  */
 export function useModalKeys(open: boolean, panel: RefObject<HTMLElement | null>, onEscape: () => void) {
   const escape = useRef(onEscape)
@@ -47,7 +51,7 @@ export function useModalKeys(open: boolean, panel: RefObject<HTMLElement | null>
     modals.push(panel)
     const onKey = (e: KeyboardEvent) => {
       const el = panel.current
-      if (e.defaultPrevented || modals[modals.length - 1] !== panel || !el || !lost()) return
+      if (e.defaultPrevented || modals[modals.length - 1] !== panel || !el || el.contains(document.activeElement)) return
       if (e.key === 'Escape') {
         e.preventDefault()
         escape.current()

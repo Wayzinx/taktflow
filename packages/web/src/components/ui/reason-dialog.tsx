@@ -66,12 +66,14 @@ export function ReasonDialog({
   const [error, setError] = useState<string>()
   // 防重：同一帧里连点两次时 state 里的 busy 还是 false，用 ref 在提交开头同步置位
   const pending = useRef(false)
+  const session = useRef({ open, nonce: 0 })
+  if (session.current.open !== open) session.current = { open, nonce: session.current.nonce + 1 }
   const errorRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return
     setReason('')
     setError(undefined)
-    setBusy(false)
+    setBusy(pending.current)
   }, [open])
   // 失败后焦点要留在框里：万一已经掉到 body（按钮被别处禁用、重绘），落到报错上
   useEffect(() => {
@@ -81,13 +83,15 @@ export function ReasonDialog({
   const submit = async () => {
     if (!reasonOk(reason) || pending.current) return
     pending.current = true
+    const nonce = session.current.nonce
+    const current = () => session.current.open && session.current.nonce === nonce
     setBusy(true)
     setError(undefined)
     try {
       await onSubmit(reason.trim())
-      onClose()
+      if (current()) onClose()
     } catch (e) {
-      setError((e as Error).message)
+      if (current()) setError((e as Error).message)
     } finally {
       pending.current = false
       setBusy(false)
