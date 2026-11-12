@@ -13,7 +13,7 @@ import { snapshotWorkflow } from '../store/snapshot.js'
 import { actionSchemas } from './schema.js'
 import { recordTaskImpact } from './task-impact.js'
 import type { AttentionItem, Engine } from '../interfaces.js'
-import type { Actor, AgentProfile, EventEnvelope, LeadActionResult, LeadTurn, RoomMessage, RunState, WorkflowDefinition } from '../types.js'
+import type { Actor, AgentProfile, EventEnvelope, EventPayloads, LeadActionResult, LeadTurn, RoomMessage, RunState, WorkflowDefinition } from '../types.js'
 import { stageProgress } from '../insights/graph.js'
 import { sha256 } from '../util/hash.js'
 import { readJsonFile, writeFileAtomic } from '../store/fs-utils.js'
@@ -23,17 +23,22 @@ import { createLeadEngine } from './engine.js'
 import { leadContext } from './context.js'
 import { LEAD_TURN_SCHEMA, validateAction } from './schema.js'
 import { taskWorkflow } from './task.js'
-import { errorText, type LeadRuntimeOptions, type LeadTurnResult, type TaskRunState } from './contracts.js'
+import { errorText, LeadTurnError, type LeadRuntimeOptions, type LeadTurnResult, type TaskRunState } from './contracts.js'
 import { briefError } from '../util/brief.js'
+import { runEndText } from '../engine/chat-events.js'
+import { envFailureOf } from '../engine/harness-failure.js'
 
 export type { LeadRuntimeOptions, LeadTurnResult, TaskRunState, LeadWorkflowAccess } from './contracts.js'
 export { taskWorkflow } from './task.js'
+export { LeadTurnError } from './contracts.js'
 export { assertTaskResendable, TaskResendConflictError } from './delegation.js'
 export { DEFAULT_RECEIPT_TIMEOUT_MINUTES, expireTaskReceipts, recoverTaskReceipts } from './receipts.js'
 
 interface Proposal { requestId: string; workflowId: string; description: string; baseRev: string; source?: string }
 const system: Actor = { type: 'system', id: 'lead' }
 const finished = (state: RunState) => ['succeeded', 'failed', 'cancelled'].includes(state.status)
+const ACTION_LABEL: Partial<Record<LeadActionResult['action'], string>> = { start_run: '启动运行', resume_run: '继续运行', retry_run: '重试运行', cancel_run: '取消运行',
+  dispatch_task: '派发任务', request_human: '发起待办', propose_workflow_change: '提议修改流程', update_notes: '更新备忘', command: '完成查询', reply: '回复' }
 
 export function createLeadRuntime(options: LeadRuntimeOptions) {
   const { stores } = options
@@ -47,9 +52,12 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
   const engines = new Map<string, Engine>()
   const presence = new Map<string, LeadPresence>()
   const thinking = new Set<string>()
+  // 最近一回合失败的原因：空闲时挂在 presence.detail 上，下一回合成功后清掉。
+  const failures = new Map<string, string>()
   async function setPresence(id: string, state: LeadPresence['state']) {
-    if (presence.get(id)?.state === state) return
-    const value = { state, since: new Date().toISOString() }
+    const detail = state === 'idle' ? failures.get(id) : undefined
+    if (presence.get(id)?.state === state && presence.get(id)?.detail === detail) return
+    const value = { state, since: new Date().toISOString(), ...(detail ? { detail } : {}) }
     presence.set(id, value)
     await options.onPresence?.(id, value)
   }
@@ -101,7 +109,10 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
         return
       }
       let text: string | undefined
-      if (event.type === 'run.finished') text = `运行结束：${(event.data as { status: string }).status}`
+      if (event.type === 'run.finished') {
+        const { status } = event.data as EventPayloads['run.finished']
+        text = status === 'failed' || status === 'waiting_human' ? runEndText(state, status).text : `运行结束：${status}`
+      }
       else if (event.type === 'human.requested') { const data = event.data as { ask: string; requestId: string }; text = `需要人工处理：${data.ask}` }
       else if (event.type === 'review.exhausted') text = `评审轮次已耗尽：${event.nodeId}`
       else if (event.type === 'budget.warning') text = '预算用量已达到告警线'
@@ -314,9 +325,15 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
     const state = await engine.start({ workflow, requirementId }) as TaskRunState
     engines.delete(state.runId)
     if (state.status !== 'succeeded') {
-      await post(requirementId, { author: system, kind: 'system', replyTo: message.id, refs: { runId: state.runId }, text: `Lead 回合失败：${briefError(state.nodes.lead?.error ?? state.status)}` })
-      throw new Error(`Lead 回合失败：${state.nodes.lead?.error ?? state.status}`)
+      const error = state.nodes.lead?.error ?? state.status
+      const env = envFailureOf(error)
+      failures.set(requirementId, `上一回合失败：${env.kind ?? briefError(env.cause, 60)}`)
+      await post(requirementId, { author: system, kind: 'system', replyTo: message.id, refs: { runId: state.runId },
+        text: env.kind ? `Lead 回合失败：${env.kind}。${env.hint}。\n原因：${briefError(env.cause)}` : `Lead 回合失败：${briefError(error)}` })
+      // 调用方（server）可能把 message 再写一条到群里：只放中文摘要，原文已由上面那条说明带上。
+      throw new LeadTurnError(`Lead 回合失败：${env.kind ?? briefError(env.cause, 160)}`)
     }
+    failures.delete(requirementId)
     const result = state.nodes.lead!.result as LeadTurn
     await post(requirementId, { author, kind: 'text', text: result.reply, receipt: { status: 'replied' }, replyTo: message.id, refs: { runId: state.runId } })
     const results: LeadActionResult[] = []
@@ -325,7 +342,8 @@ export function createLeadRuntime(options: LeadRuntimeOptions) {
       if (value.type === 'propose_workflow_change') executed.action = value.type
       results.push(executed)
       await audit(state.runId, { kind: 'lead.action-result', result: executed, onBehalfOf: message.author })
-      if (!executed.ok || value.type === 'command') await post(requirementId, { author: system, kind: 'system', text: `${executed.action}：${executed.ok ? '成功' : '失败'}；${executed.message}`, replyTo: message.id, refs: executed.refs })
+      if (!executed.ok || value.type === 'command') await post(requirementId, { author: system, kind: 'system', replyTo: message.id, refs: executed.refs,
+        text: executed.ok ? `${executed.action}：成功；${executed.message}` : `Lead ${ACTION_LABEL[executed.action] ?? `动作 ${executed.action} `}失败：${executed.message}` })
     }
     return { run: state, results }
   }
