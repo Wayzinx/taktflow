@@ -25,7 +25,8 @@ afterEach(() => vi.unstubAllEnvs())
 
 function configs(): string[] {
   const args = vi.mocked(runProcess).mock.calls[0]![1]
-  return args.flatMap((value, index) => value === '-c' ? [args[index + 1]!] : [])
+  // 关掉个人记忆的开关每次都带（codex.test.ts 覆盖），这里只看 provider 相关配置
+  return args.flatMap((value, index) => value === '-c' && args[index + 1] !== 'features.memories=false' ? [args[index + 1]!] : [])
 }
 
 describe('existing adapter provider configuration', () => {

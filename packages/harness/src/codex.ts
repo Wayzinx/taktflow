@@ -123,6 +123,9 @@ function createCodexFamilyHarness(id: string, displayName: string, command: stri
         }
       }
       if (req.mcpServers?.length) args.push('-c', 'features.shell_tool=false')
+      // 不读也不写使用者自己的跨会话记忆：每轮会注入几千 token 的个人记忆摘要，模型还会去读整份 MEMORY.md
+      // （超过 CLI 单次读取上限就每轮报错一次）；takt 的经验和知识库另有来源，运行记录也不该混进个人记忆
+      args.push('-c', 'features.memories=false')
       if (req.modelConfig?.contextWindow !== undefined) args.push('-c', `model_context_window=${req.modelConfig.contextWindow}`)
       if (req.model) args.push('-m', req.model)
       if (req.effort) args.push('-c', `model_reasoning_effort="${req.effort}"`)

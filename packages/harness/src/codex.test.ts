@@ -139,17 +139,17 @@ describe('Codex adapter', () => {
     const request = { ...req, model: 'gpt', effort: 'high' as const, sessionId, systemAppend: 'role instructions' }
     const result = await createCodexHarness({ bin: '/custom/codex' }).run(request, () => {})
     expect(runProcess).toHaveBeenCalledWith('/custom/codex', [
-      'exec', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access', '-C', req.cwd,
+      'exec', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access', '-C', req.cwd, '-c', 'features.memories=false',
       '-m', 'gpt', '-c', 'model_reasoning_effort="high"', ...(sessionId ? ['resume', sessionId] : []), '-',
     ], request, { stdin: `role instructions\n\n${req.prompt}`, onLine: expect.any(Function) })
     expect(result.sessionId).toBe('thread-1')
   })
 
-  it('默认命令只使用必需参数，原样透传 stdin、取消及环境', async () => {
+  it('默认命令只使用必需参数（关掉个人记忆），原样透传 stdin、取消及环境', async () => {
     mockOutput(fixture)
     const request = { ...req, signal: new AbortController().signal, env: { TEST: '1' } }
     await createCodexHarness().run(request, () => {})
-    expect(runProcess).toHaveBeenCalledWith('codex', ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access', '-C', req.cwd, '-'],
+    expect(runProcess).toHaveBeenCalledWith('codex', ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'danger-full-access', '-C', req.cwd, '-c', 'features.memories=false', '-'],
       request, { stdin: req.prompt, onLine: expect.any(Function) })
   })
 
