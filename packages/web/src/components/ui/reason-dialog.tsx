@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Eye, PenLine, ShieldAlert, type LucideIcon } from 'lucide-react'
 import type { CommandInfo } from '@taktflow/core'
 import { Dialog } from './dialog'
@@ -64,15 +64,23 @@ export function ReasonDialog({
   const [reason, setReason] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  // 防重：同一帧里连点两次时 state 里的 busy 还是 false，用 ref 在提交开头同步置位
+  const pending = useRef(false)
+  const errorRef = useRef<HTMLSpanElement>(null)
   useEffect(() => {
     if (!open) return
     setReason('')
     setError(undefined)
     setBusy(false)
   }, [open])
+  // 失败后焦点要留在框里：万一已经掉到 body（按钮被别处禁用、重绘），落到报错上
+  useEffect(() => {
+    if (error && (!document.activeElement || document.activeElement === document.body)) errorRef.current?.focus()
+  }, [error])
 
   const submit = async () => {
-    if (!reasonOk(reason) || busy) return
+    if (!reasonOk(reason) || pending.current) return
+    pending.current = true
     setBusy(true)
     setError(undefined)
     try {
@@ -81,6 +89,7 @@ export function ReasonDialog({
     } catch (e) {
       setError((e as Error).message)
     } finally {
+      pending.current = false
       setBusy(false)
     }
   }
@@ -96,11 +105,16 @@ export function ReasonDialog({
       dismissible={!reason.trim()}
       footer={
         <>
-          {error && <span className="ov-error">{error}</span>}
+          {error && (
+            <span ref={errorRef} className="ov-error" role="alert" tabIndex={-1}>
+              {error}
+            </span>
+          )}
           <button type="button" className="btn btn-sm" onClick={onClose}>
             取消
           </button>
-          <button type="button" className={`btn btn-sm ${risk === 'dangerous' ? 'btn-danger' : 'btn-primary'}`} disabled={!reasonOk(reason) || busy} onClick={submit}>
+          {/* 提交中不用 disabled：获得焦点的按钮被禁用后焦点会掉到 body，Esc / Tab 都失灵；aria-disabled 保留焦点，点击由 pending 挡掉 */}
+          <button type="button" className={`btn btn-sm ${risk === 'dangerous' ? 'btn-danger' : 'btn-primary'}`} disabled={!reasonOk(reason)} aria-disabled={busy || undefined} onClick={submit}>
             {busy ? '提交中…' : confirmLabel}
           </button>
         </>
