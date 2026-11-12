@@ -1,6 +1,6 @@
 import { useState, type CSSProperties } from 'react'
 import { Activity, CircleCheckBig, Coins, Inbox, OctagonAlert, TriangleAlert } from 'lucide-react'
-import type { ProjectOverview, RequirementSummary, SpaceMember } from '@taktflow/core'
+import type { ProjectOverview, QualityStatus, RequirementSummary, SpaceMember } from '@taktflow/core'
 import { useAsync } from '../api'
 import { AttentionCard } from '../components/attention-card'
 import { useCrumbs } from '../components/layout'
@@ -33,7 +33,7 @@ function TokenShare({ reqs }: { reqs: RequirementSummary[] }) {
 }
 
 /** 读数：进行中 / 阻塞 / 风险 / 已交付可点（筛选下方泳道），Token 与质量只读。数字只在表达状态时着色。 */
-function tilesOf(p: ProjectOverview, risks: SpaceRisks, filter: Filter, onFilter: (f: Filter) => void): Tile[] {
+function tilesOf(p: ProjectOverview, risks: SpaceRisks, filter: Filter, onFilter: (f: Filter) => void, quality?: QualityStatus): Tile[] {
   const running = p.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length
   const waiting = p.requirements.filter((r) => r.stages.some((s) => s.status === 'waiting_human')).length
   const stuck = p.requirements.filter(isStuck).length
@@ -85,7 +85,7 @@ function tilesOf(p: ProjectOverview, risks: SpaceRisks, filter: Filter, onFilter
       children: <TokenShare reqs={p.requirements} />,
       title: '色段为各需求占比',
     },
-    qualityTile(p.totals, p.requirements),
+    qualityTile(p.totals, p.requirements, quality),
   ]
 }
 
@@ -117,6 +117,8 @@ export function OverviewPage() {
   const q = useAsync((ds) => ds.project(), [])
   const risks = useSpaceRisks()
   const space = useAsync((ds) => ds.space(), [])
+  // 质量日志状态读不到时不阻塞总览，只是这一格不显示告警
+  const quality = useAsync((ds) => ds.qualityStatus().catch(() => undefined), [])
   const suggestions = useStewardSuggestions('overview')
   const [filter, setFilter] = useState<Filter>('all')
   useCrumbs([{ label: q.data?.name ?? '项目' }, { label: '总览' }], [q.data?.name])
@@ -152,7 +154,7 @@ export function OverviewPage() {
       ) : (
         <>
           <SinceBanner />
-          <StatTiles label="项目读数" tiles={tilesOf(p, risks, filter, setFilter)} />
+          <StatTiles label="项目读数" tiles={tilesOf(p, risks, filter, setFilter, quality.data)} />
           <div className="ov-main">
             <section className="card ov-lanes">
               <div className="card-head">

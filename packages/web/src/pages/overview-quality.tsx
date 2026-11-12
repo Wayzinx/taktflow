@@ -1,8 +1,9 @@
-import { ShieldCheck } from 'lucide-react'
-import type { ProjectOverview, QualityMetrics, RequirementSummary } from '@taktflow/core'
+import { ShieldAlert, ShieldCheck } from 'lucide-react'
+import type { ProjectOverview, QualityMetrics, QualityStatus, RequirementSummary } from '@taktflow/core'
 import { CountUp } from '../components/ui'
 import type { Tile } from '../components/viz'
 import { navigate } from '../lib/router'
+import { qualityAlertOf } from './overview-quality-alert'
 
 type Source = keyof QualityMetrics['interceptedBy']
 
@@ -33,32 +34,39 @@ function breakdown(items: Array<[string, number]>): string {
  * 总览读数"校验 · 拦截"：两个数单位不同（校验按检查项 / 评审轮计，拦截按问题条数计），分开写明单位，不写成分数。
  * 拦截按来源拆分取各需求的 quality 合计（totals 只有总数）；色段宽度是静态 flex 比例。点开是按拦截数排序的需求列表。
  */
-export function qualityTile(totals: ProjectOverview['totals'], requirements: RequirementSummary[]): Tile {
+export function qualityTile(totals: ProjectOverview['totals'], requirements: RequirementSummary[], quality?: QualityStatus): Tile {
   const by = sumBy(requirements)
   const parts = INTERCEPT_SOURCES.filter((s) => by[s.key] > 0)
   const total = parts.reduce((n, s) => n + by[s.key], 0)
   const verified = totals.verified ?? 0
   const intercepted = totals.intercepted ?? 0
+  // 链断了/锚点落后时，这个格子的数字与拦截拆分都不可信：改成告警并指向质量日志页
+  const alert = qualityAlertOf(quality)
   return {
     key: 'quality',
     label: '校验 · 拦截',
-    icon: <ShieldCheck />,
+    icon: alert ? <ShieldAlert /> : <ShieldCheck />,
+    tone: alert?.tone,
     value: <CountUp value={verified} from0 />,
     unit: '项已校验',
-    hint: (
+    hint: alert ? (
+      alert.hint
+    ) : (
       <>
         拦下 <b>{intercepted}</b> 个问题{parts.length ? ` · ${breakdown(parts.map((s) => [s.label, by[s.key]]))}` : ''}
       </>
     ),
     children:
-      total > 0 ? (
+      !alert && total > 0 ? (
         <div className="share-bar" aria-label="拦截按来源拆分">
           {parts.map((s) => (
             <span key={s.key} title={`${s.label}（${s.hint}）· ${by[s.key]}`} style={{ flex: by[s.key] / total, background: s.color }} />
           ))}
         </div>
       ) : undefined,
-    onClick: () => navigate('/requirements?sort=intercepted'),
-    title: `已校验 ${verified} 项：通过的门禁检查项 + 通过的评审轮。\n拦下 ${intercepted} 个问题：未通过的门禁检查项、未通过评审轮里的 blocker / major 意见、判为代码缺陷的失败、未满足的完成标准、被抑制的重复重试。\n两个数单位不同，不是比例。点开按拦截数看各需求。`,
+    onClick: () => navigate(alert?.to ?? '/requirements?sort=intercepted'),
+    title: alert
+      ? `${alert.title}。\n已校验 ${verified} 项、拦下 ${intercepted} 个问题的统计可能不可信。`
+      : `已校验 ${verified} 项：通过的门禁检查项 + 通过的评审轮。\n拦下 ${intercepted} 个问题：未通过的门禁检查项、未通过评审轮里的 blocker / major 意见、判为代码缺陷的失败、未满足的完成标准、被抑制的重复重试。\n两个数单位不同，不是比例。点开按拦截数看各需求。`,
   }
 }
