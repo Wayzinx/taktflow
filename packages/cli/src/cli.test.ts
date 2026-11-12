@@ -202,6 +202,33 @@ it('failed / cancelled 运行返回非零；audit 拒绝篡改', async () => {
   expect(await json(dir, ['audit', 'verify', run.runId], 1)).toMatchObject({ ok: false, brokenAt: 1 })
 }, 30000)
 
+it('runs compact：dry-run 只报数；正式压缩后 audit verify 通过、写空间审计；运行中拒绝', async () => {
+  const dir = await runtimeProject(`[{ id: 'bad', kind: 'script', title: '失败', run: async () => { throw new Error('expected failure') } }]`)
+  const run = await json<State>(dir, ['run', 'custom.workflow.ts', '--req', 'REQ-001'], 1)
+  const stores = await openProject(dir)
+  for (let n = 1; n <= 30; n++) await stores.events.append(run.runId, { type: 'harness.message', actor: { type: 'agent', role: 'pm', harness: 'claude-code' },
+    data: { role: 'system', text: JSON.stringify({ type: 'system', subtype: 'thinking_tokens', estimated_tokens: n }) } })
+  await stores.events.append(run.runId, { type: 'log', actor: { type: 'system', id: 'test' }, data: { level: 'info', message: '结束' } })
+  const log = join(dir, '.takt/runs', run.runId, 'events.jsonl')
+  const before = await readFile(log)
+  const dry = await json(dir, ['runs', 'compact', run.runId, '--dry-run'])
+  expect(dry).toMatchObject({ dryRun: true, dropped: 30, byRule: { thinking_tokens: 30 } })
+  expect(await readFile(log)).toEqual(before)
+  expect((await cli(dir, ['runs', 'compact', run.runId, '--rule', 'nope'])).code).toBe(2)
+  const done = await json(dir, ['runs', 'compact', run.runId, '--reason', '日志太大'])
+  expect(done).toMatchObject({ dropped: 30, record: { archive: 'events.archive.1.jsonl.gz', rule: ['thinking_tokens'], dropped: 30 }, verify: { ok: true } })
+  expect(done.keptBytes).toBeLessThan(before.length)
+  expect(await json(dir, ['audit', 'verify', run.runId])).toMatchObject({ ok: true })
+  const audit = await readFile(join(dir, '.takt/space-events.jsonl'), 'utf8')
+  expect(audit).toContain(`run.events.compacted:${run.runId}:events.archive.1.jsonl.gz`)
+  expect(audit).toContain('日志太大')
+  const text = await cli(dir, ['runs', 'compact', run.runId, '--rule', 'thinking_tokens,acp-thought-chunks'])
+  expect(text.code).toBe(0)
+  expect(text.stdout.toString()).toContain('没有可归档的行')
+  await stores.runs.save({ ...run, status: 'running' })
+  expect((await json(dir, ['runs', 'compact', run.runId], 1)).error).toContain('还在跑')
+}, 60000)
+
 it('serve HTTP 回答后在进程内恢复 direct workflow 和保存的 mock', async () => {
   const dir = await runtimeProject(`[${human}, ${agent}]`)
   const mock = await mockFile(dir)

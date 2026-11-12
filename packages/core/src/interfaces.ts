@@ -98,8 +98,8 @@ export interface EventStore {
   read(runId: RunId, opts?: { afterSeq?: number; nodeId?: NodeId; types?: EventType[] }): Promise<EventEnvelope[]>
   /** 实时订阅（server 的 SSE 用）。返回取消订阅函数。 */
   subscribe(runId: RunId, onEvent: (e: EventEnvelope) => void): () => void
-  /** 校验哈希链；返回第一处断链的 seq。 */
-  verify(runId: RunId): Promise<{ ok: boolean; brokenAt?: number }>
+  /** 校验哈希链；返回第一处断链的 seq。reason：压缩过的日志归档缺失 / 被改动等，说明为什么不完整。 */
+  verify(runId: RunId): Promise<{ ok: boolean; brokenAt?: number; reason?: string }>
 }
 
 export interface RunStore {

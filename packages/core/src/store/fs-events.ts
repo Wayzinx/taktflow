@@ -1,6 +1,8 @@
-import { type Stats } from 'node:fs'
+import { closeSync, createReadStream, fstatSync, openSync, readSync, type Stats } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
-import { open, stat, type FileHandle } from 'node:fs/promises'
+import { open, readFile, stat, type FileHandle } from 'node:fs/promises'
+import { createGunzip } from 'node:zlib'
 import { subscribeJsonLines } from './jsonl-tail.js'
 import type { EventStore } from '../interfaces.js'
 import type { EventEnvelope, EventPayloads, EventType } from '../types.js'
@@ -67,7 +69,11 @@ interface ReadTail extends FileStamp, Checkpoint {
   events?: EventEnvelope[]
   eventBytes?: number
 }
-interface VerifyTail extends FileStamp { offset: number; seq: number; hash: string }
+interface VerifyTail extends FileStamp {
+  offset: number; seq: number; hash: string
+  /** 压缩过的日志：校验时各归档的签名；归档被换、被删或多了一次压缩就整链重验 */
+  archives?: string
+}
 // 三种状态独立取文件签名：append 只在签名完全相同时复用；read（含检查点）和 verify
 // 仅在同 inode 变长或签名未变时复用。任何一方都不能把另一方尚未处理的前缀标为已处理。
 const fileTails = new Map<string, { append?: AppendTail; read?: ReadTail; verify?: VerifyTail }>()
@@ -139,17 +145,29 @@ async function scanLines(handle: FileHandle, size: number, offset: number, runId
   if (partial.length) visit(partial.toString('utf8'), size, false)
 }
 
-async function verifyFile(file: string, runId: string): Promise<{ ok: boolean; brokenAt?: number }> {
+export interface EventVerifyResult { ok: boolean; brokenAt?: number; reason?: string }
+
+async function verifyFile(file: string, runId: string): Promise<EventVerifyResult> {
   let handle
   try { handle = await open(file, 'r') } catch (error) {
     if (!isEnoent(error)) throw error
     fileTails.delete(file)
+    if ((await readCompactions(file)).length) return { ok: false, brokenAt: 1, reason: '事件日志缺失，但有压缩记录' }
     return { ok: true }
   }
   try {
     const info = await handle.stat(), state = currentTails(file, info)
+    // 压缩过的日志 seq 有空洞：把归档按 seq 并回来整链校验一次，之后归档没变就只校验新追加的部分
+    const records = await readCompactions(file)
+    const archives = records.length ? await archiveStamp(file, records) : undefined
+    if (state.verify?.archives !== archives) delete state.verify
+    if (archives && !state.verify) {
+      const merged = await verifyCompacted(file, info.size, records, runId)
+      if (!merged.ok) return { ok: false, brokenAt: merged.brokenAt, ...(merged.reason ? { reason: merged.reason } : {}) }
+      state.verify = { ...fileStamp(info), offset: merged.offset, seq: merged.seq, hash: merged.hash, archives }
+    }
     const prefix: VerifyTail = { ...fileStamp(info), offset: state.verify?.offset ?? 0,
-      seq: state.verify?.seq ?? 0, hash: state.verify?.hash ?? ZERO_HASH }
+      seq: state.verify?.seq ?? 0, hash: state.verify?.hash ?? ZERO_HASH, ...(archives ? { archives } : {}) }
     let brokenAt: number | undefined
     await scanLines(handle, info.size, prefix.offset, runId, (line, end, complete) => {
       if (line.trim()) {
@@ -167,6 +185,206 @@ async function verifyFile(file: string, runId: string): Promise<{ ok: boolean; b
     state.verify = prefix
     return brokenAt === undefined ? { ok: true } : { ok: false, brokenAt }
   } finally { await handle.close() }
+}
+
+/**
+ * 事件日志压缩（event-compaction.ts）留下的记录：被归档的行原样移进 gzip 归档，主日志里的 seq、hash 都不变，
+ * 只是有空洞。每次压缩追加一条，归档文件名在记录里，和 events.jsonl 同目录。
+ */
+export interface EventCompactionRecord {
+  version: 1
+  at: string
+  by: EventEnvelope['actor']
+  rule: string[]
+  /** 归档文件名（同目录），内容是被移走的原行，按 seq 升序 */
+  archive: string
+  /** 归档的行数 */
+  dropped: number
+  /** 归档里最小 / 最大的 seq */
+  firstSeq: number
+  lastSeq: number
+  /** 压缩前主日志的字节数和 sha256 */
+  originalBytes: number
+  originalSha256: string
+  /** 归档文件（gzip 后）的字节数和 sha256，校验时比对 */
+  archiveBytes: number
+  archiveSha256: string
+  /** 压缩后主日志的字节数 */
+  keptBytes: number
+}
+
+export const EVENT_COMPACTION_FILE = 'events.compaction.json'
+
+export async function readCompactions(file: string): Promise<EventCompactionRecord[]> {
+  let text: string
+  try { text = await readFile(path.join(path.dirname(file), EVENT_COMPACTION_FILE), 'utf8') } catch (error) {
+    if (isEnoent(error)) return []
+    throw error
+  }
+  const records: unknown = JSON.parse(text)
+  if (!Array.isArray(records) || records.some(r => !isRecord(r) || typeof r.archive !== 'string' || path.basename(r.archive) !== r.archive
+    || typeof r.archiveSha256 !== 'string' || !Number.isSafeInteger(r.dropped))) throw new Error(`压缩记录格式不对：${EVENT_COMPACTION_FILE}`)
+  return records as EventCompactionRecord[]
+}
+
+/** 按字节切行（UTF-8 只在行边界解码）；end 是这一行（含换行）结束处在流里的字节偏移。 */
+export async function* streamLines(chunks: AsyncIterable<Buffer> | Iterable<Buffer>): AsyncGenerator<{ line: Buffer; end: number; complete: boolean }> {
+  let partial = Buffer.alloc(0), offset = 0
+  for await (const chunk of chunks) {
+    const bytes = partial.length ? Buffer.concat([partial, chunk]) : chunk
+    let start = 0
+    for (let end = bytes.indexOf(10); end !== -1; end = bytes.indexOf(10, start)) {
+      offset += end - start + 1
+      yield { line: bytes.subarray(start, end), end: offset, complete: true }
+      start = end + 1
+    }
+    partial = Buffer.from(bytes.subarray(start))
+  }
+  if (partial.length) yield { line: partial, end: offset + partial.length, complete: false }
+}
+
+async function archiveStamp(file: string, records: EventCompactionRecord[]): Promise<string> {
+  const parts: string[] = []
+  for (const record of records) {
+    try {
+      const info = await stat(path.join(path.dirname(file), record.archive))
+      parts.push(`${record.archive}:${record.archiveSha256}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`)
+    } catch (error) {
+      if (!isEnoent(error)) throw error
+      parts.push(`${record.archive}:missing`)
+    }
+  }
+  return parts.join('|')
+}
+
+export async function fileSha256(file: string): Promise<string> {
+  const digest = createHash('sha256')
+  for await (const chunk of createReadStream(file)) digest.update(chunk as Buffer)
+  return digest.digest('hex')
+}
+
+interface Head { seq: number; text: string; value: EventEnvelope; end: number; complete: boolean }
+type Source = { next(): Promise<Head | undefined>; name?: string }
+
+/**
+ * 主日志和各次压缩的归档按 seq 归并后整链校验，结果与压缩前的原文件逐行校验一致。归档缺失、哈希不对、
+ * 行数不对都算失败并写明原因。同一 seq 两边都有且原样相同（压缩写完归档、没来得及换主文件就中断）只计一次。
+ * 返回主日志里校验过的完整行结束处，verifyFile 从这里接着做增量校验。
+ */
+export async function verifyCompacted(file: string, size: number, records: EventCompactionRecord[], runId: string,
+  archivesDir = path.dirname(file)): Promise<EventVerifyResult & { offset: number; seq: number; hash: string }> {
+  const prefix = { offset: 0, seq: 0, hash: ZERO_HASH }
+  const fail = (brokenAt: number, reason?: string) => ({ ok: false, brokenAt, ...(reason ? { reason } : {}), ...prefix })
+  for (const record of records) {
+    const archive = path.join(archivesDir, record.archive)
+    let digest: string
+    try { digest = await fileSha256(archive) } catch (error) {
+      if (!isEnoent(error)) throw error
+      return fail(record.firstSeq, `归档缺失：${record.archive}`)
+    }
+    if (digest !== record.archiveSha256) return fail(record.firstSeq, `归档被改动：${record.archive}`)
+  }
+  const source = (chunks: AsyncIterable<Buffer> | Iterable<Buffer>, name?: string): Source & { count: number; bad?: string } => {
+    const lines = streamLines(chunks)
+    const self = {
+      name, count: 0, bad: undefined as string | undefined,
+      async next(): Promise<Head | undefined> {
+        for (;;) {
+          const item = await lines.next()
+          if (item.done) return undefined
+          const text = item.value.line.toString('utf8')
+          if (!text.trim()) continue
+          let value: unknown
+          try { value = JSON.parse(text) } catch { self.bad = text; return undefined }
+          if (!isEnvelope(value, runId)) { self.bad = text; return undefined }
+          self.count++
+          return { seq: value.seq, text, value, end: item.value.end, complete: item.value.complete }
+        }
+      },
+    }
+    return self
+  }
+  // 提前返回时把还没读完的流都关掉，不留文件句柄
+  const streams: { destroy(): void }[] = []
+  const opened = <T extends { destroy(): void }>(stream: T) => { streams.push(stream); return stream }
+  try {
+    const main = source(size ? opened(createReadStream(file, { start: 0, end: size - 1 })) as AsyncIterable<Buffer> : [])
+    const archives = records.map(record => {
+      const raw = opened(createReadStream(path.join(archivesDir, record.archive)))
+      return { record, src: source(raw.pipe(opened(createGunzip())), record.archive) }
+    })
+    const all = [main, ...archives.map(a => a.src)]
+    const heads = await Promise.all(all.map(s => s.next()))
+    for (;;) {
+      let pick = -1
+      for (const [i, head] of heads.entries()) if (head && (pick < 0 || head.seq < heads[pick]!.seq)) pick = i
+      // 坏行不知道自己的 seq：别处没有补上下一条时，就把它当作下一条报断链
+      const bad = all.find(s => s.bad !== undefined)
+      if (bad && (pick < 0 || heads[pick]!.seq !== prefix.seq + 1)) return bad === main ? fail(prefix.seq + 1) : fail(prefix.seq + 1, `归档被改动：${bad.name}`)
+      if (pick < 0) break
+      const head = heads[pick]!
+      // 同一 seq 出现在多处：内容原样相同才算重复，一起前进
+      for (const [i, other] of heads.entries()) {
+        if (i === pick || !other || other.seq !== head.seq) continue
+        if (other.text !== head.text) return fail(head.seq, `归档与主日志在 seq ${head.seq} 内容不一致`)
+        if (i === 0) { if (other.complete) prefix.offset = other.end; heads[0] = await main.next() }
+        else heads[i] = await all[i]!.next()
+      }
+      const value = head.value
+      if (value.seq !== prefix.seq + 1 || value.prevHash !== prefix.hash || value.hash !== chainHash(value, hashPayload(value))) return fail(prefix.seq + 1)
+      // 没有末尾换行的半行只校验，不计入前缀（和 verifyFile 一样）
+      if (pick !== 0 || head.complete) { prefix.seq = value.seq; prefix.hash = value.hash }
+      if (pick === 0 && head.complete) prefix.offset = head.end
+      heads[pick] = await all[pick]!.next()
+    }
+    for (const { record, src } of archives) if (src.count !== record.dropped) return fail(record.firstSeq, `归档被改动：${record.archive}（行数 ${src.count}，记录 ${record.dropped}）`)
+    return { ok: true, ...prefix }
+  } finally { for (const stream of streams) stream.destroy() }
+}
+
+/** 一组完整行是否接在 from 后面连成链（压缩换文件前补上期间追加的事件用）；断了返回 undefined。 */
+export function continueChain(lines: string[], from: { seq: number; hash: string }, runId: string): { seq: number; hash: string } | undefined {
+  let tail = from
+  for (const line of lines) {
+    if (!line.trim()) continue
+    let value: unknown
+    try { value = JSON.parse(line) } catch { return undefined }
+    if (!isEnvelope(value, runId) || value.seq !== tail.seq + 1 || value.prevHash !== tail.hash
+      || value.hash !== chainHash(value, hashPayload(value))) return undefined
+    tail = { seq: value.seq, hash: value.hash }
+  }
+  return tail
+}
+
+/** 最后一个完整行的 seq（只往回找两个换行，再读行首几十个字节）；没有或认不出时为 0。 */
+function tailSeqSync(file: string): number {
+  let fd: number
+  try { fd = openSync(file, 'r') } catch (error) {
+    if (isEnoent(error)) return 0
+    throw error
+  }
+  try {
+    const newlines: number[] = []
+    const chunk = Buffer.alloc(64 * 1024)
+    let position = fstatSync(fd).size
+    while (position > 0 && newlines.length < 2) {
+      const length = Math.min(chunk.length, position)
+      position -= length
+      readSync(fd, chunk, 0, length, position)
+      for (let i = length - 1; i >= 0 && newlines.length < 2; i--) if (chunk[i] === 10) newlines.push(position + i)
+    }
+    if (!newlines.length) return 0
+    const head = Buffer.alloc(32)
+    const read = readSync(fd, head, 0, head.length, newlines.length > 1 ? newlines[1]! + 1 : 0)
+    const match = /^\{"seq":(\d+),/.exec(head.subarray(0, read).toString('utf8'))
+    return match ? Number(match[1]) : 0
+  } finally { closeSync(fd) }
+}
+
+/** 压缩换掉主日志后丢掉本进程里关于它的缓存（签名变了也会自动失效，这里只是不等下次 stat）。 */
+export function forgetEventFile(file: string): void {
+  fileTails.delete(file)
+  cachedEventBytes.delete(file)
 }
 
 function checkpointBefore(checkpoints: Checkpoint[], seq: number): Checkpoint | undefined {
@@ -292,11 +510,18 @@ export class FsEventStore implements EventStore {
   }
 
   subscribe(runId: string, onEvent: (e: EventEnvelope) => void): () => void {
-    return subscribeJsonLines(eventsFile(this.taktDir, runId), onEvent)
+    const file = eventsFile(this.taktDir, runId)
+    // 文件被整份换掉（压缩）时 tail 会从头重读：订阅时已在文件里的、已经推过的事件不再推第二遍
+    let last = tailSeqSync(file)
+    return subscribeJsonLines<EventEnvelope>(file, (e) => {
+      if (e.seq <= last) return
+      last = e.seq
+      onEvent(e)
+    })
   }
 
-  /** 校验哈希链；返回第一处断链的 seq（损坏行按它应有的 seq 报）。 */
-  async verify(runId: string): Promise<{ ok: boolean; brokenAt?: number }> {
+  /** 校验哈希链；返回第一处断链的 seq（损坏行按它应有的 seq 报）。压缩过的日志连同归档一起校验。 */
+  async verify(runId: string): Promise<EventVerifyResult> {
     return verifyFile(path.resolve(eventsFile(this.taktDir, runId)), runId)
   }
 
@@ -362,7 +587,7 @@ export class FsEventStore implements EventStore {
  * 哈希链校验照常逐行计入。按旧解析器写出的 data 前缀精确匹配，真实事件不会命中。
  */
 const LEGACY_THINKING = '"data":{"role":"system","text":"{\\"type\\":\\"system\\",\\"subtype\\":\\"thinking_tokens\\"'
-function legacyThinkingSeq(line: string): number | undefined {
+export function legacyThinkingSeq(line: string): number | undefined {
   if (!line.includes(LEGACY_THINKING) || !line.includes('"type":"harness.message"')) return undefined
   const match = /^\{"seq":(\d+),/.exec(line)
   return match ? Number(match[1]) : undefined

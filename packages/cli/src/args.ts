@@ -23,6 +23,7 @@ export interface CliOptions {
   off?: boolean
   start?: boolean
   dryRun?: boolean
+  rule?: string[]
   by?: string
   workflow?: string
   target?: string
@@ -104,6 +105,8 @@ export const HELP = `用法：takt <命令> [选项]
   status [--req <REQ>]
   trace <REQ>
   audit verify <runId>
+  runs compact <runId> [--rule thinking_tokens|acp-thought-chunks]... [--dry-run] [--reason <r>]
+                                                把噪声事件原样移进归档（seq / hash 不变），默认只去旧版 thinking_tokens
   kb query "<text>" [--intent <i>]
   harness ls                                    列出 harness、能力和可用性
   models ls                                     列出模型与密钥配置状态
@@ -167,7 +170,7 @@ const EXTRA_COMMANDS: Record<string, string[]> = {
   'desc-file': ['req'], due: ['req'], owner: ['req'], start: ['req'], template: ['space'], from: ['space'],
   parts: ['space'], color: ['space'], confirm: ['space', 'steward', 'req'], thread: ['steward'], space: ['steward'],
   hash: ['steward'], config: ['kb'], base: ['kb'], top: ['kb'], wait: ['kb'], force: ['kb'], off: ['kb'],
-  'dry-run': ['kb', 'workflow'],
+  'dry-run': ['kb', 'workflow', 'runs'], rule: ['runs'],
 }
 const OPTIONS = {
   'desc-file': { type: 'string' }, due: { type: 'string' }, owner: { type: 'string' },
@@ -176,6 +179,7 @@ const OPTIONS = {
   config: { type: 'string' }, base: { type: 'string', multiple: true }, top: { type: 'string' },
   wait: { type: 'boolean' }, force: { type: 'boolean' }, off: { type: 'boolean' }, start: { type: 'boolean' },
   'dry-run': { type: 'boolean' },
+  rule: { type: 'string', multiple: true },
   by: { type: 'string' }, workflow: { type: 'string' }, target: { type: 'string' }, defects: { type: 'boolean' },
   repeats: { type: 'string' },
   node: { type: 'string', multiple: true },
@@ -236,6 +240,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     ...(values.node === undefined ? {} : { node: values.node }),
     ...(values.variant === undefined ? {} : { variant: values.variant }),
     noResume: values['no-resume'] === true,
+    ...(values.rule === undefined ? {} : { rule: values.rule }),
     link: values.link?.[0], links: values.link, ac: values.ac, evidence: values.evidence,
   }
   for (const key of ['repeats', 'by', 'workflow', 'target', 'judge', 'title', 'desc', 'severity', 'note', 'hint', 'tier', 'input', 'state', 'project', 'name', 'kind', 'reason', 'version', 'harness', 'mock', 'answer', 'choice', 'req', 'intent', 'port', 'host', 'spaces', 'layout', 'edits', 'branch', 'url', 'purpose', 'role'] as const) {

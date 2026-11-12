@@ -14,6 +14,7 @@ import { runWorkflow, resumeWorkflow } from './commands/run.js'
 import { runAnswer } from './commands/answer.js'
 import { runStatus, runTrace } from './commands/status.js'
 import { runAuditVerify } from './commands/audit.js'
+import { runRunsCompact } from './commands/runs.js'
 import { runStewardCommand } from './commands/steward.js'
 import { runKbQuery, runKbCommand, type KbCliOptions } from './commands/kb.js'
 import { runSpaceCommand, runSpaceServer } from './commands/space.js'
@@ -152,6 +153,11 @@ async function dispatch(cli: ParsedCli): Promise<number> {
       if (args[0] !== 'verify') throw new UsageError('audit 子命令：verify')
       expectPositionals('audit verify', args.slice(1), 1, 1)
       return await runAuditVerify(options.project, args[1]!, options.json) ? 0 : 1
+    }
+    case 'runs': {
+      if (args[0] !== 'compact') throw new UsageError('runs 子命令：compact')
+      expectPositionals('runs compact', args.slice(1), 1, 1)
+      return runRunsCompact(args[1]!, options)
     }
     case 'steward':
       return runStewardCommand(cli)
