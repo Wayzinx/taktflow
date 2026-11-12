@@ -26,7 +26,7 @@ function useDebouncedEstimate(text: string, workflows?: WorkflowSummary[]) {
       }
       if (text.trim().length < 4) return done(undefined)
       ds.routePreviewDraft({ text })
-        .then((r) => done({ tier: r.tier, workflowId: r.workflowId, workflowTitle: workflows?.find((w) => w.id === r.workflowId)?.title, reason: r.reason }))
+        .then((r) => done({ tier: r.tier, workflowId: r.workflowId, workflowTitle: workflows?.find((w) => w.id === r.workflowId)?.title, reason: r.reason, source: 'server' }))
         .catch(() => done(local()))
     }, 600)
     return () => {
@@ -79,7 +79,9 @@ export function RouteTag({ text, workflows, value, onChange }: { text: string; w
                 <p className={`rc-route-reason${pending ? ' shimmer-text' : ''}`}>{est.reason}</p>
                 <p className="rc-pop-foot">
                   <Info aria-hidden className="rc-inline-icon" />
-                  按关键词的本地预估，不是路由器结论；创建时由服务端路由器决定（结果在创建提示里）。
+                  {est.source === 'server'
+                    ? '服务端路由器的预估，创建时以实际路由结果为准（结果在创建提示里）。'
+                    : '按关键词的本地预估，不是路由器结论；创建时由服务端路由器决定（结果在创建提示里）。'}
                 </p>
               </>
             ) : (
