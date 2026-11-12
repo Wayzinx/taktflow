@@ -50,7 +50,7 @@ const fmtMs = (ms?: number) => (ms === undefined ? '' : ms >= 1000 ? `${(ms / 10
  * 动作清单里的一行：图标（运行中带节拍光环）· 动作 · 耗时 · 展开箭头。
  * 有 children 时可点开看原始输入 / 输出（grid-template-rows 展开，不量高度）。
  */
-export function ActionRow({ action, count, state, ms, open, onToggle, animate, children }: { action: Action; count?: number; state: 'running' | 'done' | 'failed'; ms?: number; open?: boolean; onToggle?: () => void; animate?: boolean; children?: ReactNode }) {
+export function ActionRow({ action, count, state, ms, open, onToggle, animate, children }: { action: Action; count?: number; state: 'running' | 'done' | 'failed' | 'stopped'; ms?: number; open?: boolean; onToggle?: () => void; animate?: boolean; children?: ReactNode }) {
   const Icon = actionIcon(action)
   const expandable = !!children && state !== 'running'
   return (
@@ -62,7 +62,7 @@ export function ActionRow({ action, count, state, ms, open, onToggle, animate, c
         <span className={state === 'running' ? 'act-live shimmer-text' : 'act-live'}>
           <ActionText action={action} count={count} />
         </span>
-        {state !== 'running' && ms !== undefined && <span className="act-ms num">{fmtMs(ms)}</span>}
+        {state === 'stopped' ? <span className="act-ms">没做完</span> : state !== 'running' && ms !== undefined && <span className="act-ms num">{fmtMs(ms)}</span>}
         {expandable && <ChevronRight className="act-chev" aria-hidden />}
       </button>
       {expandable && (

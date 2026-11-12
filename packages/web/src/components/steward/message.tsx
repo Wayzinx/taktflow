@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brain, ChevronRight, CircleAlert, Copy, CornerDownRight, Forward, ThumbsDown, ThumbsUp } from 'lucide-react'
+import { Brain, ChevronRight, CircleAlert, CircleStop, Copy, CornerDownRight, Forward, RotateCcw, ThumbsDown, ThumbsUp } from 'lucide-react'
 import type { Proposal, StewardContextRef, StewardDelegation, StewardMessage } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Bee } from '../mascot'
@@ -64,21 +64,15 @@ function Feedback({ m, onPatch }: { m: StewardMessage; onPatch: (patch: Partial<
 }
 
 /** 思考摘要：流式且还没正文时扫光显示；之后默认折叠。 */
+/** 思考摘要（折叠）；进行中的状态统一由底部的 LiveStatus 显示，这里不再扫光。 */
 function Thinking({ text, live }: { text?: string; live: boolean }) {
   const [open, setOpen] = useState(false)
-  if (live && !text)
-    return (
-      <div className="stw-thinking">
-        <Brain aria-hidden />
-        <span className="shimmer-text">正在思考</span>
-      </div>
-    )
   if (!text) return null
   return (
     <div className="stw-thinking-wrap">
       <button type="button" className="stw-thinking pressable" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <Brain aria-hidden />
-        <span className={live ? 'shimmer-text' : undefined}>{live ? '正在思考' : '思考摘要'}</span>
+        <span>{live ? '思考过程' : '思考摘要'}</span>
         <ChevronRight className="stw-chev" aria-hidden />
       </button>
       <div className="expand" data-open={open}>
@@ -108,6 +102,7 @@ function LiveStatus({ m }: { m: StewardMessage }) {
   const secs = Math.max(0, Math.round((now - Date.parse(m.at)) / 1000))
   return (
     <div className="stw-live" role="status">
+      <span className="stw-live-glyph" aria-hidden />
       <span className="shimmer-text truncate">{label}</span>
       <span className="num">{secs < 60 ? `${secs}s` : `${Math.floor(secs / 60)}m ${secs % 60}s`}</span>
     </div>
@@ -125,6 +120,8 @@ export interface MessageViewProps {
   onPatch: (patch: Partial<StewardMessage>) => void
   /** 追问；ctx 给了就用它作这条消息的上下文（候选块点选）。 */
   onSuggest: (text: string, ctx?: StewardContextRef[]) => void
+  /** 只给最后一条、失败或被停下的回复：重发前面那条提问。 */
+  onRetry?: () => void
 }
 
 /**
@@ -168,7 +165,7 @@ function Delegation({ d: initial }: { d: StewardDelegation }) {
 }
 
 /** 一条消息：用户气泡；管家回复依次是思考 → 工具卡 → 正文（[n] 引用）→ 提案卡 → 最多 3 条后续建议。 */
-export function MessageView({ m, proposals, animate, showSuggestions, onProposal, onPatch, onSuggest }: MessageViewProps) {
+export function MessageView({ m, proposals, animate, showSuggestions, onProposal, onPatch, onSuggest, onRetry }: MessageViewProps) {
   if (m.role === 'user')
     return (
       <div className={`stw-msg stw-msg-user${animate ? ' stw-in' : ''}`} data-steward-anchor={m.id}>
@@ -193,25 +190,39 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
           <span className="faint num">{hm(m.at)}</span>
           {m.offline && <span className="stw-tag">规则回复</span>}
         </div>
-        {/* 有了工具、正文或思考摘要之后，进行中的状态交给底部那一行，这里不再扫光 */}
-        <Thinking text={m.thinking} live={live && !m.text && !m.thinking && !(m.tools ?? []).length} />
+        <Thinking text={m.thinking} live={live} />
         {(m.tools ?? []).length > 0 && (
-          <ToolList tools={m.tools!} animate={live} />
+          <ToolList tools={m.tools!} live={live} />
         )}
         {m.text && <StewardText text={m.text} citations={m.citations} streaming={live} />}
         {(m.blocks ?? []).length > 0 && <StewardBlocks blocks={m.blocks!} onAsk={onSuggest} />}
-        {m.status === 'error' && (
-          <p className="stw-msg-err">
-            <CircleAlert aria-hidden />
-            {m.error ?? '回复中断了'}
-          </p>
+        {(m.status === 'error' || m.status === 'stopped') && (
+          <div className="stw-msg-end">
+            {m.status === 'error' ? (
+              <p className="stw-msg-err">
+                <CircleAlert aria-hidden />
+                {m.error ?? '回复中断了'}
+              </p>
+            ) : (
+              <p className="stw-msg-stopped">
+                <CircleStop aria-hidden />
+                {m.error ? `已停止：${m.error}` : '已停止'}
+              </p>
+            )}
+            {onRetry && (
+              <button type="button" className="btn btn-sm" onClick={onRetry}>
+                <RotateCcw aria-hidden />
+                重试
+              </button>
+            )}
+          </div>
         )}
         {delegations.map((d) => (
           <Delegation key={d.messageId} d={d} />
         ))}
         {(m.proposalIds ?? []).map((id) => (proposals[id] ? <ProposalCard key={id} proposal={proposals[id]!} onChange={onProposal} animate={live || animate} /> : null))}
-        {live && ((m.tools ?? []).length > 0 || !!m.text || !!m.thinking) && <LiveStatus m={m} />}
-        {!live && m.status !== 'error' && (
+        {live && <LiveStatus m={m} />}
+        {(!m.status || m.status === 'done') && (
           <div className="stw-msg-foot">
             <Feedback m={m} onPatch={onPatch} />
           </div>

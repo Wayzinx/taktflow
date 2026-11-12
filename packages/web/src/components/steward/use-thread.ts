@@ -25,6 +25,8 @@ export interface ThreadState {
   send(text: string, opts?: { context?: StewardContextRef[]; attachments?: StewardPostRequest['attachments']; runtime?: StewardRuntime }): Promise<boolean>
   /** 已有会话换 harness × 模型（null 回到默认）；失败抛错，调用方提示。 */
   setRuntime(runtime: StewardRuntime | null): Promise<void>
+  /** 停下正在写的回复；服务端说没有在写（页面状态落后了）就补拉一次详情。 */
+  stop(): Promise<void>
   upsertProposal(p: Proposal): void
   patchMessage(id: string, patch: Partial<StewardMessage>): void
   reload(): void
@@ -170,6 +172,10 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
       },
       [ds, threadId],
     ),
+    stop: useCallback(async () => {
+      if (!threadId) return
+      if (!(await ds.stopStewardThread(threadId)).stopped) setTick((t) => t + 1)
+    }, [ds, threadId]),
     upsertProposal: useCallback((p: Proposal) => setProposals((cur) => ({ ...cur, [p.id]: p })), []),
     patchMessage: useCallback((id: string, patch: Partial<StewardMessage>) => setMessages((cur) => cur.map((m) => (m.id === id ? { ...m, ...patch } : m))), []),
     reload: useCallback(() => setTick((t) => t + 1), []),

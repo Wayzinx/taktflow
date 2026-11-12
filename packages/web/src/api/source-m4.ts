@@ -44,6 +44,8 @@ export interface StewardSource {
   patchStewardThread(id: string, patch: StewardThreadPatch): Promise<StewardThread>
   /** 还有待决定的提案时 409。 */
   deleteStewardThread(id: string): Promise<void>
+  /** 停下会话里正在写的回复；那条消息变成「已停止」，留下写出的部分。 */
+  stopStewardThread(id: string): Promise<{ stopped: boolean }>
   /** 管家能搭配的 harness × 模型。 */
   stewardRuntimeChoices(): Promise<StewardRuntimeChoice[]>
   /** 新会话 + 第一条消息；管家的回复走 subscribeSteward。 */

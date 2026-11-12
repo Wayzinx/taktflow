@@ -43,17 +43,18 @@ function Raw({ tool }: { tool: StewardToolCall }) {
  * 管家动作清单（docs/design/25 §1）：一行一个动作"动词 + 对象 + 结果"，连续调用同一个工具合并成 ×N；
  * 进行中的那行图标带节拍光环、文字扫光；点开看原始输入 / 输出。
  */
-export function ToolList({ tools, animate }: { tools: StewardToolCall[]; animate?: boolean }) {
+export function ToolList({ tools, live }: { tools: StewardToolCall[]; live?: boolean }) {
   const [open, setOpen] = useState<string | undefined>()
   const groups = groupActions(tools, stewardAction, (t) => t.tool)
   return (
     <ul className="act-list stw-tools" aria-label="管家查了什么">
       {groups.map(({ action, items }) => {
-        const state = items.some((t) => t.ok === undefined) ? 'running' : action.ok === false ? 'failed' : 'done'
+        // 回复已经结束（停下或失败）还没回结果的调用是「没做完」，不能一直扫光
+        const state = items.some((t) => t.ok === undefined) ? (live ? 'running' : 'stopped') : action.ok === false ? 'failed' : 'done'
         const ms = items.reduce((n, t) => n + (t.ms ?? 0), 0)
         const id = items[0]!.id
         return (
-          <ActionRow key={id} action={action} count={items.length} state={state} ms={ms} animate={animate} open={open === id} onToggle={() => setOpen((v) => (v === id ? undefined : id))}>
+          <ActionRow key={id} action={action} count={items.length} state={state} ms={ms} animate={live} open={open === id} onToggle={() => setOpen((v) => (v === id ? undefined : id))}>
             {items.map((t) => (
               <Raw key={t.id} tool={t} />
             ))}

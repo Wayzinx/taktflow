@@ -97,7 +97,8 @@ export function applyStreamEvent(cur: StewardMessage[], e: StewardStreamEvent): 
         return { ...m, delegations: i < 0 ? [...list, e.delegation] : list.map((d, j) => (j === i ? e.delegation : d)) }
       })
     case 'done':
-      return patch(e.messageId, (m) => ({ ...m, status: 'done' }))
+      // done 只表示流结束：失败、停止的状态已经由 error / message 事件带到，不能被盖成「完成」
+      return patch(e.messageId, (m) => (m.status === 'streaming' ? { ...m, status: 'done' } : m))
     case 'error':
       return patch(e.messageId, (m) => ({ ...m, status: 'error', error: e.error }))
     default:

@@ -1409,3 +1409,35 @@ it('M8：只给需求编号的引用补全真实标题，删除会话后迟到�
   expect(await f.agent.store.read(`threads/${thread.id}.json`)).toBeUndefined()
   expect(await f.agent.store.lines('feed.jsonl')).toContainEqual(expect.objectContaining({ type: 'delegation', threadId: thread.id }))
 })
+
+it('停止正在写的回复：harness 收到中止信号，消息是「已停止」并留下写出的部分，会话不算出错', async () => {
+  const f = await fixture()
+  let started!: () => void
+  const running = new Promise<void>((resolve) => { started = resolve })
+  const agent = new StewardAgent({ ...f.deps, resolveRuntime: async () => ({ run: async (turn) => {
+    turn.onEvent({ type: 'message', role: 'assistant', text: '先看一下' })
+    started()
+    await new Promise((_, reject) => turn.signal.addEventListener('abort', () => reject(new Error('aborted'))))
+    return ''
+  } }) }, 'alice')
+  agents.push(agent)
+  const { thread, done } = await agent.post({ text: '帮我看看进度' })
+  await running
+  expect(agent.stop(thread.id)).toBe(true)
+  const message = await done
+  expect(message).toMatchObject({ status: 'stopped', text: '先看一下' })
+  expect(message.error).toBeUndefined()
+  expect((await agent.store.thread(thread.id)).status).toBeUndefined()
+  expect(agent.stop(thread.id)).toBe(false)
+})
+
+it('服务重启：上次没写完的回复标成已停止，页面不会一直显示它在跑', async () => {
+  const f = await fixture()
+  await f.agent.store.saveMessage({ id: 'm1', threadId: f.thread.id, role: 'steward', at: '2026-11-06T10:00:00Z', text: '写了一半', status: 'streaming' })
+  await f.agent.store.setStatus(f.thread.id, 'replying')
+  const restarted = new StewardAgent(f.deps, 'alice')
+  agents.push(restarted)
+  await restarted.ready
+  expect((await restarted.store.messages(f.thread.id)).find((m) => m.id === 'm1')).toMatchObject({ status: 'stopped', text: '写了一半', error: '服务重启时这条回复还没写完' })
+  expect((await restarted.store.thread(f.thread.id)).status).toBe('interrupted')
+})

@@ -20,6 +20,16 @@ describe('thread reducer', () => {
     list = applyStreamEvent(list, { type: 'message', message: server })
     expect(list.map((m) => m.id)).toEqual(['s1', 'u-uuid'])
   })
+  it('done only ends the stream: a failed or stopped reply keeps its final status (server sends error → message → done)', () => {
+    let list = applyStreamEvent([], { type: 'message', message: msg('s9', 'steward', '', { status: 'streaming' }) })
+    list = applyStreamEvent(list, { type: 'error', messageId: 's9', error: '上游太忙' })
+    list = applyStreamEvent(list, { type: 'message', message: msg('s9', 'steward', '', { status: 'error', error: '上游太忙' }) })
+    list = applyStreamEvent(list, { type: 'done', messageId: 's9' })
+    expect(list[0]).toMatchObject({ status: 'error', error: '上游太忙' })
+    list = applyStreamEvent(list, { type: 'message', message: msg('s9', 'steward', '写了一半', { status: 'stopped' }) })
+    list = applyStreamEvent(list, { type: 'done', messageId: 's9' })
+    expect(list[0]).toMatchObject({ status: 'stopped', text: '写了一半' })
+  })
   it('detail reload drops locals the server already has', () => {
     expect(mergeDetail([local], [server]).map((m) => m.id)).toEqual(['u-uuid'])
   })

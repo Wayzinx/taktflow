@@ -1433,7 +1433,9 @@ export interface StewardMessage {
   delegations?: StewardDelegation[]
   context?: StewardContextRef[]
   feedback?: { rating: 'up' | 'down'; reason?: 'wrong' | 'missed' | 'verbose' | 'bad_action' | (string & {}); at: string }
-  status?: 'streaming' | 'done' | 'error'
+  /** stopped：人点了停止，或服务重启时还没回完；正文是停下前写出的部分。 */
+  status?: 'streaming' | 'done' | 'error' | 'stopped'
+  /** 失败或中断的可读原因。 */
   error?: string
   /** 未配置模型时的规则回复。 */
   offline?: boolean

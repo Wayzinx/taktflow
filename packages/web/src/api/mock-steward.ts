@@ -262,34 +262,66 @@ export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewar
     }
   }
 
+  /** 正在回复的会话；停止时记一笔，reply 每走一步看一次。 */
+  const replying = new Set<string>()
+  const stopping = new Set<string>()
+  const STOP = Symbol('stop')
+
   async function reply(threadId: string, userText: string) {
+    replying.add(threadId)
+    try {
+      await answer(threadId, userText)
+    } finally {
+      replying.delete(threadId)
+      stopping.delete(threadId)
+    }
+  }
+
+  async function answer(threadId: string, userText: string) {
     await sleep(420)
     const p = plan(userText, lastReq(threadId))
     const msg: StewardMessage = { id: nid('m'), threadId, role: 'steward', at: now(), author: STEWARD, text: '', status: 'streaming', tools: [], citations: p.citations, suggestions: undefined }
     messages.push(msg)
     emit(threadId, { type: 'message', message: msg })
-    await sleep(260)
+    const step = async (ms: number) => {
+      await sleep(ms)
+      if (stopping.has(threadId)) throw STOP
+    }
+    try {
+      await steps(msg, p, step)
+    } catch (e) {
+      if (e !== STOP) throw e
+      msg.status = 'stopped'
+      emit(threadId, { type: 'message', message: msg })
+      emit(threadId, { type: 'done', messageId: msg.id })
+      touch(threadId, msg.text)
+    }
+  }
+
+  async function steps(msg: StewardMessage, p: ReturnType<typeof plan>, step: (ms: number) => Promise<void>) {
+    const threadId = msg.threadId
+    await step(260)
     msg.thinking = p.thinking
     emit(threadId, { type: 'thinking', messageId: msg.id, text: p.thinking })
     for (const t of p.tools) {
-      await sleep(520)
+      await step(520)
       const running: StewardToolCall = { id: nid('t'), tool: t.tool, input: t.input }
       msg.tools!.push(running)
       emit(threadId, { type: 'tool', messageId: msg.id, tool: running })
-      await sleep(Math.max(240, (t.ms ?? 40) * 6))
+      await step(Math.max(240, (t.ms ?? 40) * 6))
       Object.assign(running, t)
       emit(threadId, { type: 'tool', messageId: msg.id, tool: running })
     }
-    await sleep(240)
+    await step(240)
     for (let i = 0; i < p.text.length; i += 2) {
       const chunk = p.text.slice(i, i + 2)
       msg.text += chunk
       emit(threadId, { type: 'delta', messageId: msg.id, text: chunk })
-      await sleep(26)
+      await step(26)
     }
     // 可视化块逐块送达：每次发全量，界面按序号"组装"入场
     for (let i = 1; i <= (p.blocks?.length ?? 0); i++) {
-      await sleep(i === 1 ? 160 : 90)
+      await step(i === 1 ? 160 : 90)
       msg.blocks = clone(p.blocks!.slice(0, i))
       emit(threadId, { type: 'blocks', messageId: msg.id, blocks: msg.blocks })
     }
@@ -336,6 +368,11 @@ export function createMockSteward(): Omit<StewardSource, 'stewardFind' | 'stewar
       if (patch.archived !== undefined) t.archivedAt = patch.archived ? now() : undefined
       if (patch.runtime !== undefined) t.runtime = patch.runtime ?? undefined
       return delay(t, 120)
+    },
+    stopStewardThread(id) {
+      const running = replying.has(id)
+      if (running) stopping.add(id)
+      return delay({ stopped: running }, 80)
     },
     deleteStewardThread(id) {
       const t = threads.find((x) => x.id === id)

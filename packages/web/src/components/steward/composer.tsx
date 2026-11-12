@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { ArrowUp, AtSign, FileText, Paperclip, SquareSlash, X } from 'lucide-react'
+import { ArrowUp, AtSign, FileText, Paperclip, Square, SquareSlash, X } from 'lucide-react'
 import type { StewardContextRef, StewardPostRequest } from '@taktflow/core'
 import { useSource } from '../../api'
 import { Chips, Popover, SkeletonRows, toast } from '../ui'
@@ -18,6 +18,8 @@ export interface ComposerProps {
   /** 返回 false 表示没发出去，草稿保留。 */
   onSend: (text: string, extra: { context: StewardContextRef[]; attachments: Attachment[] }) => Promise<boolean> | boolean
   busy?: boolean
+  /** 管家正在回复时给：发送键换成停止键，Esc 也能停。 */
+  onStop?: () => void
   placeholder?: string
   autoFocus?: boolean
   /** @ 跨全部空间找（服务端 find 排序）；否则只列当前空间的对象。 */
@@ -46,7 +48,7 @@ function useFoundMentions(q: string | undefined): PickItem[] | undefined {
  * 管家输入框（docs/design/22 §1.3）：@ 引用对象、/ 选命令、附件（按钮或拖入，文本文件）、Enter 发送、Shift+Enter 换行。
  * 上下文标签在输入框上方，可删；@ 选中的对象会加进上下文。
  */
-export function Composer({ draft, onDraft, context, onContext, onSend, busy, placeholder = '问管家，或让它帮你做点什么', autoFocus, globalMentions, tools }: ComposerProps) {
+export function Composer({ draft, onDraft, context, onContext, onSend, busy, onStop, placeholder = '问管家，或让它帮你做点什么', autoFocus, globalMentions, tools }: ComposerProps) {
   const ds = useSource()
   const box = useRef<HTMLDivElement>(null)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -121,6 +123,10 @@ export function Composer({ draft, onDraft, context, onContext, onSend, busy, pla
         return setDismissed(trig!.start)
       }
     }
+    if (e.key === 'Escape' && onStop) {
+      e.preventDefault()
+      return onStop()
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       void send()
@@ -162,6 +168,7 @@ export function Composer({ draft, onDraft, context, onContext, onSend, busy, pla
       ref={box}
       className="stw-composer"
       data-drag={drag || undefined}
+      data-busy={onStop ? true : undefined}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes('Files')) return
         e.preventDefault()
@@ -213,10 +220,16 @@ export function Composer({ draft, onDraft, context, onContext, onSend, busy, pla
         </button>
         <input ref={file} type="file" multiple hidden accept=".md,.txt,.json,.ts,.tsx,.js,.yaml,.yml,.csv,.log,text/*" onChange={(e) => void addFiles(e.target.files).then(() => (e.target.value = ''))} />
         {tools}
-        <span className="stw-composer-hint faint">Enter 发送 · Shift+Enter 换行</span>
-        <button type="button" className="btn btn-primary btn-icon btn-sm stw-send" title="发送（Enter）" aria-label="发送" disabled={!draft.trim() || busy} onClick={() => void send()}>
-          <ArrowUp />
-        </button>
+        <span className="stw-composer-hint faint">{onStop ? '管家正在回复 · Esc 停止' : 'Enter 发送 · Shift+Enter 换行'}</span>
+        {onStop ? (
+          <button type="button" className="btn btn-icon btn-sm stw-send stw-stop" title="停止（Esc）" aria-label="停止回复" onClick={onStop}>
+            <Square />
+          </button>
+        ) : (
+          <button type="button" className="btn btn-primary btn-icon btn-sm stw-send" title="发送（Enter）" aria-label="发送" disabled={!draft.trim() || busy} onClick={() => void send()}>
+            <ArrowUp />
+          </button>
+        )}
       </div>
       {drag && <div className="stw-drop">松开即可添加附件</div>}
       <Popover open={pickerOpen} onClose={() => setDismissed(trig?.start)} anchor={box} placement="top-start" matchWidth className="stw-picker" role="listbox" ariaLabel={trig?.kind === '@' ? '引用' : '命令'}>

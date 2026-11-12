@@ -84,7 +84,13 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
     return t.send(text, { context: extra.context.length ? extra.context : undefined, attachments: extra.attachments.length ? extra.attachments : undefined, runtime: draftRuntime })
   }
   const showEmpty = !threadId && t.messages.length === 0
-  const composer = <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={!!t.streamingId || t.waiting} autoFocus={autoFocus} globalMentions={globalMentions} placeholder={placeholder} tools={<RuntimePicker value={runtime} onChange={changeRuntime} />} />
+  const busy = !!t.streamingId || t.waiting
+  const stop = () => void t.stop().catch((e: Error) => toast('没停下来', { tone: 'failed', body: e.message }))
+  // 最后一条回复失败或被停下：重发它前面那条提问（带原来的上下文）
+  const last = t.messages.at(-1)
+  const asked = last?.role === 'steward' && (last.status === 'error' || last.status === 'stopped') ? [...t.messages].reverse().find((m) => m.role === 'user') : undefined
+  const retry = asked && !busy ? () => void send(asked.text, { context: asked.context ?? [], attachments: [] }) : undefined
+  const composer = <Composer draft={draft} onDraft={onDraft} context={context} onContext={onContext} onSend={send} busy={busy} onStop={threadId && busy ? stop : undefined} autoFocus={autoFocus} globalMentions={globalMentions} placeholder={placeholder} tools={<RuntimePicker value={runtime} onChange={changeRuntime} />} />
   const emptyBody = typeof empty === 'function' ? empty((text, c) => void send(text, { context: c ?? context, attachments: [] })) : empty
 
   if (showEmpty && hero !== undefined)
@@ -127,6 +133,7 @@ export function ThreadView({ threadId, onThreadCreated, draft, onDraft, context,
                 onProposal={t.upsertProposal}
                 onPatch={(patch) => t.patchMessage(m.id, patch)}
                 onSuggest={(s, c) => void send(s, { context: c ?? context, attachments: [] })}
+                onRetry={m.id === last?.id ? retry : undefined}
               />
             ))}
             {t.waiting && (

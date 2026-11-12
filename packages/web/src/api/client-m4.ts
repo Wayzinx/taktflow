@@ -38,6 +38,7 @@ export function createM4Http({ req, get, url, stream, stewardStream }: Http): Cr
     stewardThreads: (opts) => get(`/steward/threads${qs({ archived: opts?.archived ? 1 : undefined })}`),
     patchStewardThread: (id, patch) => req('PATCH', `/steward/threads/${enc(id)}`, patch),
     deleteStewardThread: (id) => req<void>('DELETE', `/steward/threads/${enc(id)}`),
+    stopStewardThread: (id) => req('POST', `/steward/threads/${enc(id)}/stop`),
     stewardRuntimeChoices: () => get('/steward/runtime-choices'),
     createStewardThread: (body) => req('POST', '/steward/threads', body),
     stewardThread: (id) => get(`/steward/threads/${enc(id)}`),

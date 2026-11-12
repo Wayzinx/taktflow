@@ -33,6 +33,8 @@ export interface StewardDeps {
       specs: ToolSpec[]
       call(name: string, input: Record<string, unknown>): Promise<unknown>
       onEvent(event: HarnessEvent): void
+      /** 人点了停止：harness 进程要随之结束。 */
+      signal: AbortSignal
     }) => Promise<string>
   }>
   now?: () => Date

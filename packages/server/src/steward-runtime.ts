@@ -96,7 +96,7 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
           }
           const result = await adapter.run({ prompt: history, systemAppend: turn.messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n'),
             cwd: stores.projectDir, model: modelId, modelConfig, effort: selected.effort, provider: connection, ...(route ? { env: route.env } : {}),
-            readOnly: true, timeoutMs: STEWARD_TIMEOUT_MS,
+            readOnly: true, timeoutMs: STEWARD_TIMEOUT_MS, signal: turn.signal,
             mcpServers: [{ name: 'takt', url: url(), headers: { Authorization: `Bearer ${grant.token}` } }],
           }, turn.onEvent)
           if (result.ok) return result.finalText
@@ -116,9 +116,13 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
 export const STEWARD_TIMEOUT_MS = 600_000
 const isTimeout = (error?: string) => !!error && /Process timeout after/.test(error)
 
-/** CLI 报错给人看：超时就说超时和怎么办；其余去掉 CLI 的日志行、进程信号，只留第一句。 */
+/** 上游模型排队满、限流或过载：不是配置问题，等一会儿重试或换模型。 */
+const BUSY = /queue size is exceed|overloaded|rate.?limit|too many requests|\b(429|503|529)\b|try again later|server is busy/i
+
+/** CLI 报错给人看：超时、上游繁忙分别说清怎么办；其余去掉 CLI 的日志行、进程信号，只留第一句。 */
 export function failureText(name: string, reason: string): string {
   if (isTimeout(reason)) return `${name} ${STEWARD_TIMEOUT_MS / 60_000} 分钟内没有写完回复，已停止。可以调低推理强度、换个更快的模型，或把问题问得具体一些再试`
+  if (BUSY.test(reason)) return `${name} 的上游模型现在太忙（排队已满或被限流），这一轮没写完。等一会儿点「重试」，或换一个模型`
   const lines = reason.split('\n').map((line) => line.trim()).filter(Boolean)
   const line = lines.find((l) => !/^\d{4}-\d\d-\d\dT\S+\s+(ERROR|WARN|INFO|DEBUG)\b/.test(l) && !/^Process (terminated|exited)/.test(l)) ?? lines[0] ?? reason
   return `${name} 回复失败：${line.length > 200 ? `${line.slice(0, 200)}…` : line}；请检查配置后重试`

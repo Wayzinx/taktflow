@@ -209,6 +209,8 @@ it('CLI 报错给人看：超时说清楚和怎么办，其余去掉日志行和
     .toBe('TRAE CLI 10 分钟内没有写完回复，已停止。可以调低推理强度、换个更快的模型，或把问题问得具体一些再试')
   expect(failureText('Codex', '2026-11-10T15:38:24.574545Z ERROR codex_memories_write::phase2: Phase 2 no changes\nunexpected status 401 Unauthorized\nProcess exited with code 1'))
     .toBe('Codex 回复失败：unexpected status 401 Unauthorized；请检查配置后重试')
+  expect(failureText('TRAE CLI', '{"type":"error","message":"stream disconnected before completion: We\'re sorry, the request queue size is exceed. Please wait and try again later."}'))
+    .toBe('TRAE CLI 的上游模型现在太忙（排队已满或被限流），这一轮没写完。等一会儿点「重试」，或换一个模型')
 })
 
 it('回复已写出、进程超时没退出：交回写好的内容并注明可能不完整，不判失败', async () => {

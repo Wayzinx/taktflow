@@ -199,17 +199,60 @@
 
 /* 思考 */
 /* 回复进行中的状态行（扫光 + 已用时） */
+/* 进行中的那一行：轮换的星形字符 + 扫光的动作 + 已用时（参照 Claude Code / Codex 的"正在做"行） */
 .stw-live {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: var(--text-meta);
+  font-size: var(--text-ui);
   color: var(--text-3);
 }
 .stw-live .shimmer-text {
-  --shimmer-base: var(--text-2);
+  --shimmer-base: var(--text);
   min-width: 0;
+  font-weight: 500;
+}
+.stw-live-glyph {
+  flex: none;
+  width: 1em;
+  text-align: center;
+  color: var(--accent);
+  font-weight: 600;
+}
+.stw-live-glyph::before {
+  content: '✻';
+}
+@keyframes stw-glyph {
+  0% { content: '·'; }
+  17% { content: '✢'; }
+  33% { content: '✳'; }
+  50% { content: '✶'; }
+  67% { content: '✻'; }
+  83% { content: '✽'; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stw-live-glyph::before {
+    animation: stw-glyph 1.2s steps(1, end) infinite;
+  }
+}
+/* 回复结束在失败或停止上：原因 + 重试 */
+.stw-msg-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.stw-msg-stopped {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-meta);
+  color: var(--text-2);
+}
+.stw-msg-stopped svg {
+  width: 13px;
+  height: 13px;
 }
 .stw-thinking {
   display: inline-flex;
@@ -356,6 +399,36 @@ button.stw-thinking:hover {
 .stw-send {
   margin-left: auto;
   border-radius: var(--r-sm);
+}
+/* 停止键：实心深色方块，和发送键同位置 */
+.stw-stop {
+  background: var(--text);
+  color: var(--surface);
+}
+.stw-stop svg {
+  fill: currentColor;
+  width: 11px;
+  height: 11px;
+}
+/* 回复进行中：输入框上沿有一道光从左扫到右 */
+.stw-composer[data-busy]::before {
+  content: '';
+  position: absolute;
+  inset: -1px -1px auto;
+  height: 2px;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent) 0 0 / 40% 100% no-repeat;
+  background-color: color-mix(in oklch, var(--accent) 18%, transparent);
+  pointer-events: none;
+}
+@keyframes stw-sweep {
+  from { background-position: -60% 0; }
+  to { background-position: 160% 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .stw-composer[data-busy]::before {
+    animation: stw-sweep calc(var(--takt) * 2) linear infinite;
+  }
 }
 /* 窄输入框（Solo 对话栏、停靠面板）：快捷键提示让位给模型名 */
 @container composer (max-width: 480px) {

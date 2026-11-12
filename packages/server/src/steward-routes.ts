@@ -327,6 +327,10 @@ export function registerStewardRoutes(
       (await agent.post((await body(request)) as unknown as StewardPostRequest, params.id!))
         .message,
   )
+  route('POST', '/threads/:id/stop', async ({ params }, { agent, store }) => {
+    await store.thread(params.id!)
+    return { stopped: agent.stop(params.id!) }
+  })
   route('GET', '/threads/:id/stream', async ({ response, params }, { store }) => {
     await store.thread(params.id!)
     liveStream<StewardStreamEvent>(response, connections, (send, fail) => {

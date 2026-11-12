@@ -46,6 +46,8 @@ export class StewardAgent {
   readonly tools: StewardTools
   readonly ready: Promise<void>
   private readonly jobs = new Map<string, Promise<StewardMessage>>()
+  /** 每个会话正在写的那条回复：停止时中止模型请求或 harness 进程。 */
+  private readonly replies = new Map<string, AbortController>()
   constructor(
     readonly deps: StewardDeps,
     readonly userId: string,
@@ -135,6 +137,12 @@ export class StewardAgent {
       .catch(() => {})
     return { ...initial, done: job }
   }
+  /** 停下会话里正在写的回复；没有在写的返回 false。 */
+  stop(threadId: string): boolean {
+    const reply = this.replies.get(stewardId(threadId))
+    reply?.abort()
+    return !!reply
+  }
   async ask(input: StewardPostRequest, threadId?: string): Promise<StewardMessage> {
     return (await this.post(input, threadId)).done
   }
@@ -217,6 +225,8 @@ export class StewardAgent {
         this.store.emit(message.threadId, { type: 'delegation', messageId: message.id, delegation })
       },
     }
+    const abort = new AbortController()
+    this.replies.set(user.threadId, abort)
     await this.store.setStatus(user.threadId, 'replying')
     await this.store.saveMessage(message)
     this.store.emit(user.threadId, { type: 'message', message })
@@ -288,7 +298,7 @@ export class StewardAgent {
         let afterTool = false
         if (runtime.run) {
           try {
-            message.text = await runtime.run({ threadId: thread.id, messages, specs: await this.tools.specs(),
+            message.text = await runtime.run({ threadId: thread.id, messages, specs: await this.tools.specs(), signal: abort.signal,
               call: async (name, input) => {
                 const result = await call(name, input)
                 return { ...result, citations: result.citations.map((citation, i) => ({ ...citation, n: result.numbers[i] })) }
@@ -337,7 +347,7 @@ export class StewardAgent {
           for (let round = 0; round < maxToolRounds; round++) {
             let streamed = false
             const response = await chat!(
-              { model: runtime.model ?? '', messages, tools: await this.tools.specs() },
+              { model: runtime.model ?? '', messages, tools: await this.tools.specs(), signal: abort.signal },
               (chunk) => {
                 streamed = true
                 delta(chunk)
@@ -360,6 +370,7 @@ export class StewardAgent {
             }
             let shouldStop = false
             for (const tool of response.message.toolCalls) {
+              abort.signal.throwIfAborted()
               try {
                 const result = await call(
                   tool.name,
@@ -423,11 +434,16 @@ export class StewardAgent {
             .slice(0, 3)
       message.status = 'done'
     } catch (error) {
-      message.status = 'error'
-      const reason = error instanceof Error ? error.message : String(error)
-      message.error = reason.includes('请') ? reason : `回复失败：${reason}；请检查管家配置后重试`
       Object.assign(message, normalizeCitations(message.text, citations))
-      this.store.emit(user.threadId, { type: 'error', messageId: message.id, error: message.error })
+      if (abort.signal.aborted) message.status = 'stopped'
+      else {
+        message.status = 'error'
+        const reason = error instanceof Error ? error.message : String(error)
+        message.error = reason.includes('请') ? reason : `回复失败：${reason}；请检查管家配置后重试`
+        this.store.emit(user.threadId, { type: 'error', messageId: message.id, error: message.error })
+      }
+    } finally {
+      if (this.replies.get(user.threadId) === abort) this.replies.delete(user.threadId)
     }
     await this.store.saveMessage(message)
     await this.store.setStatus(user.threadId, message.status === 'error' ? 'error' : undefined, message.error)

@@ -137,10 +137,15 @@ export class StewardStore {
       await this.write(`threads/${thread.id}.json`, { ...thread, status, error })
     })
   }
+  /** 服务重启：上次没回完的回复标成中断，否则页面会一直显示它在跑。 */
   async interruptReplies(): Promise<void> {
     await this.serial(async () => {
-      for (const thread of await this.list<StewardThread>('threads'))
-        if (thread.status === 'replying') await this.setStatus(thread.id, 'interrupted')
+      for (const thread of await this.list<StewardThread>('threads')) {
+        if (thread.status !== 'replying') continue
+        for (const message of await this.messages(thread.id))
+          if (message.status === 'streaming') await this.saveMessage({ ...message, status: 'stopped', error: '服务重启时这条回复还没写完' })
+        await this.setStatus(thread.id, 'interrupted')
+      }
     })
   }
   async deleteThread(id: string): Promise<void> {
