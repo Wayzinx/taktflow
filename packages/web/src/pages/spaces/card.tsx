@@ -8,7 +8,7 @@ import { Link, navigate } from '../../lib/router'
 import { spacePath } from '../../lib/space'
 import { openCreateSpace } from '../../lib/ui-store'
 
-/** 一张空间卡片：颜色方块、名称与 id、四个数字、最近活动；右上角菜单：编辑 / 复制为新空间 / 设置 / 归档。 */
+/** 一张空间卡片：颜色方块、名称与 id、五个数字、最近活动；右上角菜单：编辑 / 复制为新空间 / 设置 / 归档。 */
 export function SpaceCard({
   s,
   current,
@@ -26,9 +26,11 @@ export function SpaceCard({
 }) {
   const [menu, setMenu] = useState(false)
   const btn = useRef<HTMLButtonElement>(null)
+  // 与总览同口径：阻塞 = 总览"阻塞"格，风险 = 空间全部未处理风险（含不挂需求的）
   const stats: Array<{ label: string; v: number; tone?: 'running' | 'waiting' | 'failed' }> = [
     { label: '需求', v: s.requirements },
     { label: '进行中', v: s.active, tone: s.active ? 'running' : undefined },
+    { label: '阻塞', v: s.blocked ?? 0, tone: s.blocked ? 'failed' : undefined },
     { label: '待办', v: s.pendingAttention ?? 0, tone: s.pendingAttention ? 'waiting' : undefined },
     { label: '风险', v: s.risks ?? 0, tone: s.risks ? 'failed' : undefined },
   ]
@@ -70,7 +72,7 @@ export function SpaceCard({
         />
       </header>
       <p className={`sp-card-desc${s.description ? '' : ' faint'}`}>{s.description || '还没有描述'}</p>
-      <dl className="sp-stats">
+      <dl className="sp-stats" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
         {stats.map((x) => (
           <div key={x.label} className={`sp-stat${x.tone ? ` tone-${x.tone}` : ''}`}>
             <dt>{x.label}</dt>

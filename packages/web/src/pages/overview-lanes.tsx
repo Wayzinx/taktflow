@@ -3,13 +3,17 @@ import { useMemberName } from '../api'
 import { Avatar, StatusDot, useFlashRows, useStagger, vtName } from '../components/ui'
 import { TierGlyph, TIER_LABEL } from '../components/tier-glyph'
 import { LANE_LABEL, LaneTrack, RunBars, cellsOf, currentCell } from '../components/viz'
-import { fmtRelative, fmtTokens, totalTokens } from '../lib/format'
+import { fmtDateTime, fmtRelative, fmtTokens, totalTokens } from '../lib/format'
 import { navigate } from '../lib/router'
 import { REQ_STATUS } from '../lib/status'
 import { RiskMark, type RiskIndex } from './requirements-risk'
 
-/** 当前格的一句话：等人优先说"等你"，全部完成说"已完成"，没跑过说"尚未运行"。 */
+/**
+ * 当前格的一句话：等人优先说"等你"，全部完成说"已完成"，没跑过说"尚未运行"。
+ * 最近一次运行是人终止的：说"已取消，可重新启动"，不说"失败"（停下是人的决定，下一步是重新启动）。
+ */
 export function currentText(r: RequirementSummary): { text: string; tone?: 'waiting' | 'running' | 'failed' | 'success' } {
+  if (r.recentRuns?.find((x) => x.runId === r.latestRunId)?.status === 'cancelled') return { text: '已取消，可重新启动' }
   if (!r.stages.length) return { text: r.latestRunId ? '未分阶段' : '尚未运行' }
   const cells = cellsOf(r.stages)
   const cur = currentCell(cells)
@@ -83,7 +87,7 @@ export function RequirementLanes({ rows, risks }: { rows: RequirementSummary[]; 
                       <span className="truncate">{nameOf(r.owner)}</span>
                     </span>
                   )}
-                  <span title={r.updatedAt}>{fmtRelative(r.updatedAt)}</span>
+                  <span title={fmtDateTime(r.updatedAt)}>{fmtRelative(r.updatedAt)}</span>
                 </span>
               </span>
               <span className="rl-progress">

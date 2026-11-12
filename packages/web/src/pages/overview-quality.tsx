@@ -2,6 +2,7 @@ import { ShieldCheck } from 'lucide-react'
 import type { ProjectOverview, QualityMetrics, RequirementSummary } from '@taktflow/core'
 import { CountUp } from '../components/ui'
 import type { Tile } from '../components/viz'
+import { navigate } from '../lib/router'
 
 type Source = keyof QualityMetrics['interceptedBy']
 
@@ -29,23 +30,26 @@ function breakdown(items: Array<[string, number]>): string {
 }
 
 /**
- * 总览读数"已校验 / 拦截"：拦截按来源拆分取各需求的 quality 合计（totals 只有总数）；色段宽度是静态 flex 比例。
+ * 总览读数"校验 · 拦截"：两个数单位不同（校验按检查项 / 评审轮计，拦截按问题条数计），分开写明单位，不写成分数。
+ * 拦截按来源拆分取各需求的 quality 合计（totals 只有总数）；色段宽度是静态 flex 比例。点开是按拦截数排序的需求列表。
  */
 export function qualityTile(totals: ProjectOverview['totals'], requirements: RequirementSummary[]): Tile {
   const by = sumBy(requirements)
   const parts = INTERCEPT_SOURCES.filter((s) => by[s.key] > 0)
   const total = parts.reduce((n, s) => n + by[s.key], 0)
+  const verified = totals.verified ?? 0
+  const intercepted = totals.intercepted ?? 0
   return {
     key: 'quality',
-    label: '已校验 / 拦截',
+    label: '校验 · 拦截',
     icon: <ShieldCheck />,
-    value: <CountUp value={totals.verified ?? 0} from0 />,
-    unit: (
+    value: <CountUp value={verified} from0 />,
+    unit: '项已校验',
+    hint: (
       <>
-        / <CountUp value={totals.intercepted ?? 0} from0 /> 拦截
+        拦下 <b>{intercepted}</b> 个问题{parts.length ? ` · ${breakdown(parts.map((s) => [s.label, by[s.key]]))}` : ''}
       </>
     ),
-    hint: parts.length ? breakdown(parts.map((s) => [s.label, by[s.key]])) : '交付前被拦下的问题',
     children:
       total > 0 ? (
         <div className="share-bar" aria-label="拦截按来源拆分">
@@ -54,5 +58,7 @@ export function qualityTile(totals: ProjectOverview['totals'], requirements: Req
           ))}
         </div>
       ) : undefined,
+    onClick: () => navigate('/requirements?sort=intercepted'),
+    title: `已校验 ${verified} 项：通过的门禁检查项 + 通过的评审轮。\n拦下 ${intercepted} 个问题：未通过的门禁检查项、未通过评审轮里的 blocker / major 意见、判为代码缺陷的失败、未满足的完成标准、被抑制的重复重试。\n两个数单位不同，不是比例。点开按拦截数看各需求。`,
   }
 }
