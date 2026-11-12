@@ -6,6 +6,7 @@ import {
   lstat,
   mkdir,
   readdir,
+  readFile,
   rename,
   rm,
   symlink,
@@ -83,35 +84,7 @@ export async function initSpace(
             'quick-fix.workflow.ts',
             ...(options.includeLegacyWorkflow ? ['sdlc.workflow.ts'] : []),
           ]
-  if (template !== 'blank') {
-    await workflowModuleScope(stores.paths.workflows)
-    const quickRoles = new Set([
-      'pm.md',
-      'dev.md',
-      'reviewer.md',
-      'verifier.md',
-      'lead.md',
-      'wiki-writer.md',
-    ])
-    for (const entry of await readdir(join(templatesDir, 'agents'))) {
-      if (
-        !entry.endsWith('.md') ||
-        entry === 'steward.md' ||
-        (template === 'quick' && !quickRoles.has(entry))
-      )
-        continue
-      await copyAbsent(join(templatesDir, 'agents', entry), join(stores.paths.agents, entry))
-    }
-    // 模板内的相对 import 依赖同目录辅助文件，不能只拷 workflow 主文件。
-    for (const entry of await readdir(join(templatesDir, 'workflows'))) {
-      if (entry.endsWith('.workflow.ts') && !files.includes(entry)) continue
-      if (entry.endsWith('.ts'))
-        await copyAbsent(
-          join(templatesDir, 'workflows', entry),
-          join(stores.paths.workflows, entry),
-        )
-    }
-  }
+  if (template !== 'blank') await copyTemplateAssets(stores, template, files)
   const registered = files.map((file) =>
     relative(stores.projectDir, join(stores.paths.workflows, file)),
   )
@@ -124,7 +97,54 @@ export async function initSpace(
   )
   return stores
 }
-async function workflowModuleScope(dir: string): Promise<void> {
+/** 模板角色、workflow 辅助文件（被相对 import 的 hooks 等）和指定的 workflow 主文件；空间里已有的不覆盖。 */
+async function copyTemplateAssets(
+  stores: ProjectStores,
+  template: 'standard' | 'quick',
+  workflows: string[],
+): Promise<void> {
+  await workflowModuleScope(stores.paths.workflows)
+  const quickRoles = new Set([
+    'pm.md',
+    'dev.md',
+    'reviewer.md',
+    'verifier.md',
+    'lead.md',
+    'wiki-writer.md',
+  ])
+  for (const entry of await readdir(join(templatesDir, 'agents'))) {
+    if (
+      !entry.endsWith('.md') ||
+      entry === 'steward.md' ||
+      (template === 'quick' && !quickRoles.has(entry))
+    )
+      continue
+    await copyAbsent(join(templatesDir, 'agents', entry), join(stores.paths.agents, entry))
+  }
+  // 模板内的相对 import 依赖同目录辅助文件，不能只拷 workflow 主文件。
+  for (const entry of await readdir(join(templatesDir, 'workflows'))) {
+    if (entry.endsWith('.workflow.ts') && !workflows.includes(entry)) continue
+    if (entry.endsWith('.ts'))
+      await copyAbsent(join(templatesDir, 'workflows', entry), join(stores.paths.workflows, entry))
+  }
+}
+/** 空间里新建流水线可选的模板（与新建空间的 standard / quick 起点同一份文件）。 */
+export const workflowTemplates = {
+  'taktflow-standard': { title: '标准交付流水线', roles: 'standard' },
+  'quick-fix': { title: '轻量改动交付', roles: 'quick' },
+} as const
+/**
+ * 准备从模板新建流水线：补齐模板用到的角色和辅助文件（已有的不覆盖），返回模板主文件源码。
+ * 主文件由调用方改好 id 再写入，所以这里不复制它。
+ */
+export async function workflowTemplateSource(
+  stores: ProjectStores,
+  template: keyof typeof workflowTemplates,
+): Promise<string> {
+  await copyTemplateAssets(stores, workflowTemplates[template].roles, [])
+  return readFile(join(templatesDir, 'workflows', `${template}.workflow.ts`), 'utf8')
+}
+export async function workflowModuleScope(dir: string): Promise<void> {
   // 运行时模板由当前 CLI 提供；仓库外空间也能解析同一份 core，无需安装依赖。
   const modules = join(dir, 'node_modules/@taktflow')
   await mkdir(modules, { recursive: true })
