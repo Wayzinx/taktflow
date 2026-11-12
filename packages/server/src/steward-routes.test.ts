@@ -106,6 +106,36 @@ it('真实命令表创建需求并撤销；新文件撤销后恢复不存在状�
   await expect(readFile(join(f.root, 'agents/new.md'))).rejects.toMatchObject({ code: 'ENOENT' })
 })
 
+it('管家提案新建 workflow：带 edits 一次建好节点并预览，批准后登记、可撤销；不存在的 workflow 提示改用 workflow.create', async () => {
+  const f = await fixture(), created = await (await f.request('/threads', 'alice', 'POST', { text: '你好' })).json() as { thread: { id: string } }
+  const agent = f.registration.agents.get('alice')!, space = (await agent.deps.spaces())[0]!, thread = created.thread.id
+  const literal = (value: unknown) => ({ kind: 'literal' as const, value })
+  const edits = [
+    { op: 'setStages' as const, stages: [{ id: 'design', title: '策划' }, { id: 'build', title: '制作' }] },
+    { op: 'addNode' as const, kind: 'agent' as const, after: null, props: { id: literal('plan'), title: literal('玩法策划'), stage: literal('design'), role: literal('pm') } },
+    { op: 'addNode' as const, kind: 'human' as const, after: 'plan', props: { id: literal('approve-plan'), title: literal('确认策划'), stage: literal('design'), needs: literal(['plan']), ask: literal('策划可以吗？') } },
+  ]
+  await expect(agent.proposals.create(thread, '改流程', '测试', [{ kind: 'workflow', spaceId: space.id, workflowId: 'game', baseRev: 'x', edits }])).rejects.toThrow('新建用 command workflow.create')
+  await expect(agent.proposals.create(thread, '写源码', '测试', [{ kind: 'file', spaceId: space.id, path: 'workflows/game.workflow.ts', content: 'x' }])).rejects.toThrow('新建用 command workflow.create')
+  await expect(agent.proposals.create(thread, '坏 edits', '测试', [{ kind: 'command', spaceId: space.id, commandId: 'workflow.create', input: { workflowId: 'game', edits: [{ op: 'setNeeds', id: 'nope', needs: [] }] } }])).rejects.toThrow('workflow 无法新建')
+  const p = await agent.proposals.create(thread, '新建游戏流程', '测试', [{ kind: 'command', spaceId: space.id, commandId: 'workflow.create', input: { workflowId: 'game', title: '游戏制作', edits } }])
+  expect(p).toMatchObject({ status: 'pending', risk: 'medium', previews: [{ kind: 'diff', title: '新建 workflows/game.workflow.ts' }] })
+  expect(p.previews![0]!.body).toContain('确认策划')
+  await expect(readFile(join(f.root, 'workflows/game.workflow.ts'))).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(await (await f.request(`/proposals/${p.id}/approve`, 'alice', 'POST', { hash: p.hash })).json()).toMatchObject({ status: 'applied', undoUntil: expect.any(String) })
+  const workflows = (await agent.deps.open(space.id)).workflows
+  expect((await workflows.get('game')).model.nodes.map((node) => node.id)).toEqual(['plan', 'approve-plan'])
+  expect(JSON.parse(await readFile(join(f.root, 'takt.config.json'), 'utf8')).workflows).toContain('workflows/game.workflow.ts')
+  await expect(agent.proposals.create(thread, '重复', '测试', [{ kind: 'command', spaceId: space.id, commandId: 'workflow.create', input: { workflowId: 'game' } }])).rejects.toThrow('已存在')
+  expect(await (await f.request(`/proposals/${p.id}/undo`, 'alice', 'POST', {})).json()).toMatchObject({ status: 'reverted' })
+  await expect(readFile(join(f.root, 'workflows/game.workflow.ts'))).rejects.toMatchObject({ code: 'ENOENT' })
+  expect(JSON.parse(await readFile(join(f.root, 'takt.config.json'), 'utf8')).workflows).not.toContain('workflows/game.workflow.ts')
+  const quick = await agent.proposals.create(thread, '从模板新建', '测试', [{ kind: 'command', spaceId: space.id, commandId: 'workflow.create', input: { workflowId: 'hotfix', template: 'quick-fix' } }])
+  expect(quick.previews).toMatchObject([{ kind: 'text', title: '新建 workflows/hotfix.workflow.ts' }])
+  expect(await (await f.request(`/proposals/${quick.id}/approve`, 'alice', 'POST', { hash: quick.hash })).json()).toMatchObject({ status: 'applied' })
+  expect((await workflows.get('hotfix')).model.meta.id).toBe('hotfix')
+  await readFile(join(f.root, 'agents/dev.md'))
+}, 60_000)
 it('M5 重发路由按用户隔离并保留理由，返回正式 replied 回执', async () => {
   const { openProject, sha256 } = await import('@taktflow/core')
   const f = await fixture(async (dir, id, message) => {

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { bindCrudServices, systemWrite, type CommandHandlers, type EngineDeps, type TaktConfig as Config } from '@taktflow/core'
 import { projectCommands as baseProjectCommands } from './commands.js'
-import { convertWorkflow } from './workflow-routes.js'
+import { convertWorkflow, createWorkflow, discardWorkflow, draftWorkflow } from './workflow-routes.js'
 import { spaceLock } from './space-lock.js'
 import { randomUUID } from 'node:crypto'
 import { FsEventStore, listSkills, loadProfiles, openProject, type Actor, type ProjectStores, type RepoBinding, type SpaceDetail, type SpaceFile, type SpaceMember, type SpaceSummary, type TaktConfig } from '@taktflow/core'
@@ -142,6 +142,9 @@ export function attachCrudServices(stores: ProjectStores): void {
       return result
     },
     workflowConvert: (id, context) => convertWorkflow(stores, id, { reason: context.reason! }, context.actor),
+    workflowCreate: ({ workflowId, ...rest }, context) => createWorkflow(stores, { id: workflowId, ...rest }, context.actor, context.reason!),
+    workflowDraft: ({ workflowId, ...rest }) => draftWorkflow(stores, { id: workflowId, ...rest }),
+    workflowDiscard: (id, context) => discardWorkflow(stores, id, context.actor, context.reason!),
     configPatch: (patch, context) => patchConfig(stores, patch, context.actor, context.reason!),
   })
 }

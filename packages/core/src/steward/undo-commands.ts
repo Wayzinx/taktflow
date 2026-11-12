@@ -8,6 +8,7 @@ import { withFileLock } from '../store/file-lock.js'
 import { readFileIfExists, writeFileAtomic } from '../store/fs-utils.js'
 import { sha256 } from '../util/hash.js'
 import { stewardFile } from './files.js'
+import { crudServices } from '../commands/crud-commands.js'
 
 // 仅供撤销调用；公开提案仍使用原命令表的写入口。
 export function stewardUndoCommands(
@@ -41,6 +42,18 @@ export function stewardUndoCommands(
           },
         ]
       : []),
+    ...(crudServices(stores)?.workflowDiscard
+      ? [
+          {
+            id: 'steward.workflow.remove',
+            title: '撤销新建 workflow',
+            kind: 'command' as const,
+            risk: 'dangerous' as const,
+            minRole: 'maintainer' as const,
+            input: { type: 'object', required: ['workflowId'], properties: { workflowId: text } },
+          },
+        ]
+      : []),
   ]
   return {
     list: () => [...commands.list(), ...inverses],
@@ -53,6 +66,8 @@ export function stewardUndoCommands(
         if (!context.reason?.trim()) throw new Error('撤销必须说明原因，请重新提交')
         if (id === 'steward.knowledge.remove')
           await stores.kb!.remove(String(input.id), context.actor, context.reason)
+        else if (id === 'steward.workflow.remove')
+          await crudServices(stores)!.workflowDiscard!(String(input.workflowId), context)
         else {
           if (input.content !== null && typeof input.content !== 'string')
             throw new Error('原文件内容不合法，请核对撤销记录')
@@ -73,7 +88,7 @@ export function stewardUndoCommands(
         await audit(
           context.actor,
           context.reason,
-          JSON.stringify({ action: id, path: input.path, id: input.id, phase: 'finished' }),
+          JSON.stringify({ action: id, path: input.path, id: input.id, workflowId: input.workflowId, phase: 'finished' }),
         )
         return { ok: true, message: `${spec.title}已执行` }
       } catch (error) {

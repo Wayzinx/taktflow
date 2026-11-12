@@ -19,7 +19,7 @@ async function setup() {
 }
 it('提供完整命令目录，返回副本不能篡改权限与 schema', async () => {
   const { registry } = await setup()
-  expect(registry.list()).toHaveLength(29)
+  expect(registry.list()).toHaveLength(30)
   const cancel = registry.list().find((command) => command.id === 'run.cancel')!
   expect(cancel).toMatchObject({ risk: 'dangerous', minRole: 'maintainer' })
   cancel.minRole = 'viewer'; cancel.input.required = []

@@ -11,13 +11,21 @@ import { assertNoSymlinks, readFileIfExists, writeFileAtomic } from '../store/fs
 import { withFileLock } from '../store/file-lock.js'
 import { sha256 } from '../util/hash.js'
 
+export interface WorkflowCreateInput { workflowId: string; title?: string; template?: string; edits?: WorkflowEdit[] }
 export interface CrudServices {
   workflowEdit(id: string, baseRev: string, edits: WorkflowEdit[], context: CommandContext): Promise<unknown>
   workflowConvert(id: string, context: CommandContext): Promise<unknown>
   configPatch(patch: Record<string, unknown>, context: CommandContext): Promise<unknown>
+  /** 新建流水线，可带 edits 一次建好节点；draft 只算出要写的源码（管家预览用），discard 是新建的撤销。 */
+  workflowCreate?(input: WorkflowCreateInput, context: CommandContext): Promise<unknown>
+  workflowDraft?(input: WorkflowCreateInput): Promise<{ file: string; template: string; base: string; source: string }>
+  workflowDiscard?(id: string, context: CommandContext): Promise<unknown>
 }
 const services = new WeakMap<ProjectStores, CrudServices>()
 export function bindCrudServices(stores: ProjectStores, value: CrudServices): void { services.set(stores, value) }
+export const crudServices = (stores: ProjectStores): CrudServices | undefined => services.get(stores)
+/** 新建流水线可选的起点，和服务端模板表一致。 */
+export const workflowCreateTemplates = ['blank', 'taktflow-standard', 'quick-fix'] as const
 export class RequirementConflictError extends Error { readonly status = 409 }
 
 export function requirementCreateReason(input: Pick<RequirementCreateRequest, 'title' | 'reason'>, reason?: string): string {
@@ -111,6 +119,7 @@ export function crudCommandSpecs(deps: CommandDeps): CommandSpec[] {
     define('requirement.archive', '归档需求', objectSchema({ requirementId: text }, ['requirementId']), (input) => archiveRequirement(deps.stores, input.requirementId as string)),
     define('requirement.restore', '恢复需求', objectSchema({ requirementId: text }, ['requirementId']), (input) => restoreRequirement(deps.stores, input.requirementId as string)),
     define('workflow.edit', '编辑流程', objectSchema({ workflowId: text, baseRev: text, edits: { type: 'array' } }, ['workflowId', 'baseRev', 'edits']), (input, context) => service().workflowEdit(input.workflowId as string, input.baseRev as string, input.edits as WorkflowEdit[], context), true),
+    define('workflow.create', '新建流程', objectSchema({ workflowId: text, title: text, template: { type: 'string', enum: [...workflowCreateTemplates] }, edits: { type: 'array' } }, ['workflowId']), (input, context) => { const create = service().workflowCreate; if (!create) throw new Error('新建流程尚未接入'); return create(input as unknown as WorkflowCreateInput, context) }, true),
     define('workflow.convert', '转换流程', objectSchema({ workflowId: text }, ['workflowId']), (input, context) => service().workflowConvert(input.workflowId as string, context), true),
     define('file.write', '写入文件', objectSchema({ path: text, content: text, baseHash: text }, ['path', 'content']), (input) => writeSpaceFile(deps.stores, input as { path: string; content: string; baseHash?: string }), true),
     define('config.patch', '修改配置', objectSchema({ patch: { type: 'object' } }, ['patch']), (input, context) => service().configPatch(input.patch as Record<string, unknown>, context), true),

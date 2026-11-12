@@ -128,6 +128,7 @@
    - `requirement.update`、`requirement.archive`、`requirement.restore`：`write`。
    - `workflow.edit`：输入 `workflowId, baseRev, edits`，走 workflow store 的 edit；`write`，`maintainer`。
    - `workflow.convert`：输入 `workflowId`；`write`，`maintainer`。
+   - `workflow.create`：输入 `workflowId, title?, template?(blank|taktflow-standard|quick-fix), edits?`，写 `workflows/<id>.workflow.ts` 并登记到 `config.workflows`，校验不过就撤回；`write`，`maintainer`。管家撤销走内部命令 `steward.workflow.remove`。
    - `file.write`：写空间内文件。
      - 输入 `path, content, baseHash?`；
      - 只允许写 `agents/**`、`skills/**`、`knowledge/**/*.{md,json}`、`workflows/*.layout.json`；

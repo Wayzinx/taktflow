@@ -31,6 +31,8 @@ export async function stewardFile(root: string, file: string, write = false): Pr
     throw new StewardError(400, '文件路径不允许，请选择空间内的非敏感文件')
   }
   if (write && !writableProjectFile(file)) {
+    if (/^workflows\/[^/]+\.workflow\.ts$/.test(file))
+      throw new StewardError(400, 'workflow 源码不能当文件写：新建用 command workflow.create（可带 edits 一次建好节点），修改已有的用 kind=workflow')
     throw new StewardError(400, '文件不可写，请选择角色、技能、知识文档或 workflow 布局')
   }
   const target = resolve(root, file)

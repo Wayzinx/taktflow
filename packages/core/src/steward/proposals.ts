@@ -8,6 +8,7 @@ import { canonicalJson, sha256 } from '../util/hash.js'
 import { StewardError, stewardActor, stewardId, timestamp, type StewardDeps, type StewardSpace } from './contracts.js'
 import { StewardStore } from './store.js'
 import { readStewardFile, stewardFile } from './files.js'
+import { crudServices } from '../commands/crud-commands.js'
 import type { NodeKind } from '../types.js'
 
 interface UndoRecord {
@@ -47,6 +48,9 @@ function example(kind: ProposalStep['kind']): string {
   if (kind === 'command') return JSON.stringify({ kind: 'command', spaceId: 'standard-delivery', commandId: 'requirement.create', input: { title: '新需求', start: false } })
   if (kind === 'file') return JSON.stringify({ kind: 'file', spaceId: 'standard-delivery', path: 'agents/steward.md', content: '...' })
   return JSON.stringify({ kind: 'workflow', spaceId: 'standard-delivery', workflowId: 'taktflow-standard', baseRev: '<workflow_get.rev>', edits: [{ op: 'addNode', kind: 'human', after: 'review-code', props: { id: literal('prelaunch-confirm'), title: literal('上线前人工确认'), needs: literal(['review-code']) } }, { op: 'setNeeds', id: 'acceptance', needs: ['prelaunch-confirm'] }] })
+}
+function createExample(workflowId: string): string {
+  return JSON.stringify({ kind: 'command', spaceId: 'standard-delivery', commandId: 'workflow.create', input: { workflowId, title: '新流程', template: 'blank', edits: [{ op: 'setStages', stages: [{ id: 'build', title: '制作' }] }, { op: 'addNode', kind: 'agent', after: null, props: { id: literal('design'), title: literal('策划'), stage: literal('build'), role: literal('pm') } }] } })
 }
 function fieldError(index: number, field: string, expected: string, got: unknown, kind?: ProposalStep['kind']): StewardError {
   const received = got === undefined ? 'undefined' : JSON.stringify(got)
@@ -230,9 +234,10 @@ export class StewardProposals {
       if (step.kind === 'workflow') {
         if (!step.spaceId || !this.deps.applyWorkflowEdits)
           throw new StewardError(400, 'workflow 预览尚未接入，请指定空间并接入源码编辑器')
-        const doc = await (
-          await this.deps.open(step.spaceId)
-        ).workflows.get(stewardId(step.workflowId))
+        const doc = await (await this.deps.open(step.spaceId)).workflows.get(stewardId(step.workflowId)).catch((error: unknown) => {
+          if (!/workflow 不存在/.test(String(error))) throw error
+          throw new StewardError(400, `steps[${index}].workflowId：workflow ${step.workflowId} 不存在，kind=workflow 只能改已有的。新建用 command workflow.create，edits 写法相同，可一次建好节点：${createExample(step.workflowId)}`)
+        })
         this.validateWorkflowTargets(index, step, doc)
         let result: ReturnType<NonNullable<StewardDeps['applyWorkflowEdits']>>
         try {
@@ -261,6 +266,10 @@ export class StewardProposals {
           ),
         })
       } else {
+        if (step.commandId === 'workflow.create') {
+          previews.push(await this.createPreview(index, step))
+          continue
+        }
         if (step.commandId === 'file.write') {
           if (!step.spaceId) throw new StewardError(400, '请指定文件所属空间')
           await stewardFile((await this.deps.open(step.spaceId)).dir, String(step.input.path), true)
@@ -347,6 +356,23 @@ export class StewardProposals {
     else visit(doc.model.nodes)
     return ids
   }
+  /** 新建 workflow 的预览：空白的列出整份源码，从模板复制的只列出 edits 改了模板哪里。 */
+  private async createPreview(index: number, step: Extract<ProposalStep, { kind: 'command' }>): Promise<NonNullable<Proposal['previews']>[number]> {
+    if (!step.spaceId) throw new StewardError(400, `steps[${index}].spaceId：新建 workflow 要指定空间`)
+    const edits = step.input.edits
+    if (Array.isArray(edits)) edits.forEach((edit, editIndex) => validateWorkflowEdit(index, edit, editIndex))
+    const draft = crudServices((await this.deps.open(step.spaceId)).stores)?.workflowDraft
+    if (!draft) throw new StewardError(400, '新建 workflow 尚未接入，请联系管理员')
+    let result: Awaited<ReturnType<typeof draft>>
+    try {
+      result = await draft(step.input as { workflowId: string })
+    } catch (error) {
+      throw new StewardError(400, `steps[${index}].input：workflow 无法新建：${error instanceof Error ? error.message : String(error)}。正确示例：${createExample(String(step.input.workflowId))}`)
+    }
+    if (result.template === 'blank') return { kind: 'diff', title: `新建 ${result.file}`, body: await diff(result.file, '', result.source) }
+    const body = await diff(result.file, result.base, result.source)
+    return body ? { kind: 'diff', title: `新建 ${result.file}（从模板 ${result.template} 复制后修改）`, body } : { kind: 'text', title: `新建 ${result.file}`, body: `从模板 ${result.template} 原样复制，模板用到的角色和辅助文件缺的会补上` }
+  }
   private validateWorkflowTargets(index: number, step: Extract<ProposalStep, { kind: 'workflow' }>, doc: Awaited<ReturnType<StewardSpace['workflows']['get']>>): void {
     const existingIds = new Set(this.workflowNodeIds(doc)),
       ids = new Set(existingIds),
@@ -424,6 +450,7 @@ export class StewardProposals {
       'knowledge.update': 'knowledge.update',
       'config.patch': 'config.patch',
       'knowledge.create': 'steward.knowledge.remove',
+      'workflow.create': 'steward.workflow.remove',
     }
     if (id === 'requirement.create' && this.input(step).start !== false) return false
     if (id === 'requirement.update' || id === 'knowledge.update') {
@@ -455,6 +482,11 @@ export class StewardProposals {
       out = record(result)
     if (id === 'file.write') return (await readStewardFile(space!.dir, String(input.path))) ?? null
     if (id === 'config.patch') return structuredClone(space!.stores.config)
+    if (id === 'workflow.create')
+      return space!.workflows.get(String(input.workflowId)).then((doc) => doc.rev, (error: unknown) => {
+        if (/workflow 不存在/.test(String(error))) return null
+        throw error
+      })
     if (id.startsWith('requirement.')) {
       const reqId = input.requirementId ?? input.id ?? record(out.requirement).id ?? out.id
       if (!reqId) return null
@@ -540,6 +572,9 @@ export class StewardProposals {
     } else if (id === 'space.create') {
       undoId = 'space.archive'
       undoInput = { id: out.id ?? record(out.space).id ?? input.id }
+    } else if (id === 'workflow.create') {
+      undoId = 'steward.workflow.remove'
+      undoInput = { workflowId: input.workflowId }
     } else if (id === 'knowledge.create') {
       undoId = 'steward.knowledge.remove'
       undoInput = { id: out.id ?? record(out.base).id ?? input.id }

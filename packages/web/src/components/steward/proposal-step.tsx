@@ -87,9 +87,10 @@ export function ProposalStepView({ index, step, original, preview, proposalId, t
         {target !== title && <span className="stw-step-target mono truncate">{target}</span>}
       </div>
       <div className="stw-step-body">
-        {step.kind === 'command' && <ParamForm input={step.input} original={original?.kind === 'command' ? original.input : step.input} editable={editable} onChange={(input) => onChange({ ...step, input })} />}
+        {/* 命令带了配置差异（config.patch）就只看差异，整段补丁 JSON 读不出改了谁 */}
+        {step.kind === 'command' && preview?.kind !== 'diff' && <ParamForm input={step.input} original={original?.kind === 'command' ? original.input : step.input} editable={editable} onChange={(input) => onChange({ ...step, input })} />}
         {step.kind === 'command' && preview?.kind === 'text' && <p className="stw-step-note">{preview.body}</p>}
-        {step.kind !== 'command' && preview?.kind === 'diff' && <DiffView diff={preview.body} />}
+        {preview?.kind === 'diff' && <DiffView diff={preview.body} />}
         {step.kind === 'file' && !preview && <DiffView diff={step.content.split('\n').map((l) => `+${l}`).join('\n')} />}
         {preview?.kind === 'text' && step.kind !== 'command' && <p className="stw-step-note">{preview.body}</p>}
         {step.kind === 'workflow' && (

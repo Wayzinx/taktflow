@@ -1,9 +1,12 @@
-import type { WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from '@taktflow/core'
-import { convertWorkflowSource, sourceDiff } from '@taktflow/workflow-source'
-import { requireRole, systemWrite, type Actor, type ProjectStores, type WorkflowConvertResult } from '@taktflow/core'
+import type { WorkflowEdit, WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from '@taktflow/core'
+import { applyEdits, convertWorkflowSource, parseWorkflowSource, sourceDiff } from '@taktflow/workflow-source'
+import { requireRole, systemWrite, type Actor, type ProjectStores, type WorkflowConvertResult, type WorkflowDocument } from '@taktflow/core'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 import { actor, body, HttpError, json, safeId, text } from './http.js'
-import { auditSpace, workflowStore, workflowWritePaths } from './space.js'
+import { auditSpace, changeConfig, workflowSource, workflowStore, workflowWritePaths } from './space.js'
+import { templatesDir, workflowModuleScope, workflowTemplates, workflowTemplateSource } from './space-admin.js'
+import { readFile, rm, writeFile } from 'node:fs/promises'
+import { join, relative } from 'node:path'
 import { STREAMING, type Handler } from './routes.js'
 import { liveStream } from './live-stream.js'
 
@@ -23,6 +26,10 @@ export function workflowRoutes(register: (method: string, path: string, handler:
     const input = await body(request)
     if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') throw new HttpError(400, 'dryRun 必须是布尔值')
     return guarded(stores, () => convertWorkflow(stores, safeId(params.id!), { dryRun: input.dryRun as boolean | undefined, baseRev: input.baseRev as string | undefined, reason: input.reason as string | undefined }, actor(request, stores), getStore(stores)))
+  })
+  add('POST', '/api/workflows', async ({ stores, request }) => {
+    const input = await body(request)
+    return createWorkflow(stores, { id: input.id, template: input.template, title: input.title, edits: input.edits }, actor(request, stores), text(input.reason, 'reason'), getStore(stores))
   })
   add('GET', '/api/workflows', async ({ stores }) => {
     const runs = await stores.runs.list()
@@ -95,4 +102,88 @@ export async function convertWorkflow(stores: ProjectStores, id: string, input: 
   if ('error' in result) throw new HttpError(result.error === 'conflict' ? 409 : 400, JSON.stringify(result))
   await auditSpace(stores, author, reason, `workflow.convert ${id}`)
   return { ok: true, source, diff, document: result }
+}
+
+export interface WorkflowDraft { id: string; file: string; template: string; base: string; source: string }
+/**
+ * 新建流水线要写的源码，不落盘：空白（一个阶段、没有节点）或模板主文件改好 id，再套上 edits。
+ * 管家提案用它预览，新建时用它生成，两边看到的是同一份源码。
+ */
+export async function draftWorkflow(stores: ProjectStores, input: { id: unknown; template?: unknown; title?: unknown; edits?: unknown }, store = workflowStore(stores)): Promise<WorkflowDraft> {
+  const id = safeId(text(input.id, 'id'))
+  const template = input.template ?? 'blank'
+  if (template !== 'blank' && !Object.hasOwn(workflowTemplates, template as string)) throw new HttpError(400, `模板不存在：${String(template)}，可选 blank、${Object.keys(workflowTemplates).join('、')}`)
+  const title = input.title === undefined ? undefined : text(input.title, 'title').trim()
+  if (input.edits !== undefined && !Array.isArray(input.edits)) throw new HttpError(400, 'edits 必须是数组')
+  if ((await store.list({ record: false })).some((item) => item.id === id)) throw new HttpError(409, `流水线 ${id} 已存在，换一个 id`)
+  const file = join(stores.paths.workflows, `${id}.workflow.ts`)
+  let base: string
+  if (template === 'blank') {
+    // 画布加节点不会补 import：先把各类节点的构造函数都引进来
+    base = `import { agent, defineWorkflow, gate, human, judge, loop, planner, review, script, subflow } from '@taktflow/core'\n\nexport default defineWorkflow({\n  id: ${JSON.stringify(id)}, title: ${JSON.stringify(title || id)}, version: '0.1.0',\n  stages: [{ id: 'main', title: '主流程' }],\n  nodes: [],\n})\n`
+  } else {
+    base = (await readFile(join(templatesDir, 'workflows', `${template as string}.workflow.ts`), 'utf8')).replace(/(defineWorkflow\(\{\s*id:\s*)(['"])[^'"]*\2/, `$1${JSON.stringify(id)}`)
+    if (title) base = applyEdits(base, [{ op: 'setMeta', key: 'title', value: title }]).source
+  }
+  if (parseWorkflowSource(base, file).model.meta.id !== id) throw new Error(`模板 ${String(template)} 的写法无法改 id`)
+  let source = base
+  if (input.edits?.length) {
+    let result: ReturnType<typeof applyEdits>
+    try { result = applyEdits(base, input.edits as WorkflowEdit[]) } catch (error) { throw new HttpError(400, `edits 套不上新建的流水线：${error instanceof Error ? error.message : String(error)}`) }
+    const errors = result.diagnostics.filter((item) => item.severity === 'error')
+    if (errors.length) throw new HttpError(400, `edits 套上后没通过校验：${errors.map((item) => item.message).join('；')}`)
+    source = result.source
+  }
+  return { id, file: relative(stores.projectDir, file), template: String(template), base, source }
+}
+
+/**
+ * 新建流水线：空白或从模板复制（补齐模板用到的角色和辅助文件，已有的不覆盖），可带 edits 一次建好节点。
+ * 写入 workflows/<id>.workflow.ts 并登记到 config.workflows；源码校验不过就撤回，不留半成品。
+ */
+// 写入已包在 systemWrite 里，store 要用不自带守卫的那份，带守卫的会在同一把锁上等自己。
+export async function createWorkflow(stores: ProjectStores, input: { id: unknown; template?: unknown; title?: unknown; edits?: unknown }, author: Actor, reason: string, store: WorkflowStore = workflowSource(stores)): Promise<WorkflowDocument> {
+  try { requireRole(stores, author, 'maintainer', 'workflow.create') }
+  catch (error) { throw new HttpError(403, error instanceof Error ? error.message : String(error)) }
+  text(reason, 'reason')
+  const draft = await draftWorkflow(stores, input, store)
+  const file = join(stores.projectDir, draft.file)
+  const paths = [...workflowWritePaths(stores), 'takt.config.json*', `${relative(stores.projectDir, stores.paths.agents)}/**`]
+  return systemWrite(stores.projectDir, paths, async () => {
+    if (draft.template === 'blank') await workflowModuleScope(stores.paths.workflows)
+    else await workflowTemplateSource(stores, draft.template as keyof typeof workflowTemplates)
+    try { await writeFile(file, draft.source, { flag: 'wx' }) } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new HttpError(409, `文件 ${draft.file} 已存在，换一个 id`)
+      throw error
+    }
+    try {
+      const document = await store.get(draft.id, { record: true })
+      const errors = document.diagnostics.filter((item) => item.severity === 'error')
+      if (errors.length) throw new HttpError(400, `新建的流水线没通过校验：${errors.map((item) => item.message).join('；')}`)
+      await changeConfig(stores, author, reason, `workflow.create ${draft.id}${draft.template === 'blank' ? '' : ` from ${draft.template}`}`, (config) => {
+        if (!config.workflows.includes(draft.file)) config.workflows = [...config.workflows, draft.file]
+      })
+      return document
+    } catch (error) {
+      await rm(file, { force: true })
+      throw error
+    }
+  })
+}
+
+/** 撤销新建：删掉主文件和布局、取消登记。跑过的流水线留着，模板带进来的角色和辅助文件可能已被别处用到，也留着。 */
+export async function discardWorkflow(stores: ProjectStores, id: string, author: Actor, reason: string, store = workflowStore(stores)): Promise<{ removed: string }> {
+  try { requireRole(stores, author, 'maintainer', 'workflow.discard') }
+  catch (error) { throw new HttpError(403, error instanceof Error ? error.message : String(error)) }
+  text(reason, 'reason')
+  const current = await store.get(safeId(id))
+  if ((await stores.runs.list()).some((run) => run.workflowId === current.id)) throw new HttpError(409, `流水线 ${current.id} 已经跑过，不能撤销新建；不再用的话从设置里停用`)
+  return systemWrite(stores.projectDir, [...workflowWritePaths(stores), 'takt.config.json*'], async () => {
+    await changeConfig(stores, author, reason, `workflow.discard ${current.id}`, (config) => {
+      config.workflows = config.workflows.filter((entry) => entry !== current.file)
+    })
+    await rm(join(stores.projectDir, current.file), { force: true })
+    await rm(join(stores.paths.workflows, `${current.id}.layout.json`), { force: true })
+    return { removed: current.id }
+  })
 }
