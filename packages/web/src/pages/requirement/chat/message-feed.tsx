@@ -3,6 +3,7 @@ import { ArrowDown } from 'lucide-react'
 import { LeadMark } from '../../../components/identity'
 import type { RoomMessage } from '@taktflow/core'
 import { TaktRuler } from '../../../components/takt'
+import { attachLeadReceipts, isRedundantLeadFailure } from './lead-receipts'
 import { MessageItem, type MessageCtx } from './message-item'
 
 const GROUP_GAP = 5 * 60_000
@@ -58,12 +59,17 @@ export interface FeedApi {
   jumpTo(messageId: string): boolean
 }
 
-/** 把消息 id 映射到它所在的行（同一任务的多条 task 消息合并在第一条的行里）。 */
+/** 把消息 id 映射到它所在的行（同一任务的多条 task 消息合并在第一条的行里；动作回执挂在 Lead 回复的行里）。 */
 function rowKeyOf(messages: RoomMessage[], id: string): string | undefined {
   const m = messages.find((x) => x.id === id)
   if (!m) return undefined
   const t = m.kind === 'task' ? m.refs?.taskRunId : undefined
-  return t ? messages.find((x) => x.kind === 'task' && x.refs?.taskRunId === t)!.id : m.id
+  if (t) return messages.find((x) => x.kind === 'task' && x.refs?.taskRunId === t)!.id
+  if (m.kind === 'system' && m.replyTo) {
+    const lead = messages.find((x) => x.author.type === 'agent' && x.author.role === 'lead' && x.kind === 'text' && x.replyTo === m.replyTo)
+    if (lead) return lead.id
+  }
+  return m.id
 }
 
 export function MessageFeed({ messages, ctx, leadThinking, apiRef }: { messages: RoomMessage[]; ctx: MessageCtx; leadThinking: boolean; apiRef?: Ref<FeedApi> }) {
@@ -72,7 +78,9 @@ export function MessageFeed({ messages, ctx, leadThinking, apiRef }: { messages:
   const seen = useRef(messages.length)
   // 首屏已有的消息不做入场动画，之后到达的才做
   const initial = useRef(new Set(messages.map((m) => m.id)))
-  const rows = collapseTasks(messages)
+  // server 会把 Lead 回合失败再包一层写成"Lead 回调失败"，只留原文；动作回执挂到 Lead 气泡下
+  const visible = messages.filter((m) => !isRedundantLeadFailure(m, messages))
+  const { rows, receipts } = attachLeadReceipts(collapseTasks(visible))
   const [unread, setUnread] = useState(0)
 
   const toBottom = (smooth: boolean) => {
@@ -143,7 +151,7 @@ export function MessageFeed({ messages, ctx, leadThinking, apiRef }: { messages:
                     <span>{dayLabel(m.at)}</span>
                   </div>
                 )}
-                <MessageItem m={m} grouped={!newDay && grouped(prev, m)} ctx={ctx} />
+                <MessageItem m={m} grouped={!newDay && grouped(prev, m)} ctx={ctx} receipts={receipts.get(m.id)} />
               </div>
             )
           })}

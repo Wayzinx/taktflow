@@ -188,6 +188,45 @@
   margin-top: 2px;
 }
 
+/* ---- Lead 动作回执：挂在触发它的 Lead 气泡下，成功 / 失败带不同徽标 */
+.chat-receipts {
+  display: grid;
+  gap: 4px;
+  margin-top: 6px;
+}
+.chat-receipt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 560px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--st-success-soft);
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+.chat-receipt > svg {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--st-success);
+}
+.chat-receipt.is-failed {
+  background: var(--st-failed-soft);
+}
+.chat-receipt.is-failed > svg {
+  color: var(--st-failed);
+}
+.chat-receipt-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.chat-receipt .chat-refs {
+  margin: 0;
+}
+
 /* ---- 待办卡片 */
 .chat-attn {
   margin-top: 4px;

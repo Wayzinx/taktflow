@@ -12,27 +12,29 @@ function since(ts: string): string {
 }
 
 /**
- * Lead 状态灯：working 随节拍脉动；waiting 琥珀慢闪；idle 暗呼吸；thinking 扫光。
+ * Lead 状态灯：working 随节拍脉动；waiting 琥珀慢闪；idle 暗呼吸；thinking 扫光；failed 显示红色"失败"。
  * 显示在成员栏与群头，悬停（或键盘聚焦）显示 presence.detail。showLabel 时在灯旁显示状态文字。
  * 颜色永远配文字（showLabel 时可见，否则读屏 + 悬停提示），不单靠颜色传达状态。
  */
-export function LeadLight({ presence, showLabel = false }: { presence?: LeadPresence; showLabel?: boolean }) {
-  if (!presence) return null
-  const label = LEAD_STATE_LABEL[presence.state]
-  const tip = `Lead ${label}${presence.detail ? `：${presence.detail}` : ''}${presence.since ? ` · ${since(presence.since)}` : ''}`
+export function LeadLight({ presence, showLabel = false, failed }: { presence?: LeadPresence; showLabel?: boolean; failed?: string }) {
+  if (!presence && !failed) return null
+  const state = failed ? 'failed' : presence!.state
+  const label = failed ? '失败' : LEAD_STATE_LABEL[presence!.state]
+  const detail = failed ?? presence?.detail
+  const tip = `Lead ${label}${detail ? `：${detail}` : ''}${!failed && presence?.since ? ` · ${since(presence.since)}` : ''}`
   return (
-    <span className={showLabel ? 'lead-light with-label' : 'lead-light'} data-state={presence.state} title={showLabel ? undefined : tip} tabIndex={showLabel ? 0 : undefined} aria-label={showLabel ? tip : undefined}>
+    <span className={showLabel ? 'lead-light with-label' : 'lead-light'} data-state={state} title={showLabel ? undefined : tip} tabIndex={showLabel ? 0 : undefined} aria-label={showLabel ? tip : undefined}>
       <span className="lead-light-dot" aria-hidden="true" />
       {showLabel ? (
         <>
           {/* key 换了就重播一次短促淡入：状态切换看得见，但不跳 */}
-          <span key={presence.state} className={presence.state === 'thinking' ? 'lead-light-label shimmer-text' : 'lead-light-label'} aria-hidden="true">
+          <span key={state} className={state === 'thinking' ? 'lead-light-label shimmer-text' : 'lead-light-label'} aria-hidden="true">
             {label}
           </span>
-          {presence.detail && (
+          {detail && (
             <span className="lead-light-tip" role="tooltip" aria-hidden="true">
               <span className="lead-light-tip-state">{label}</span>
-              {presence.detail}
+              {detail}
             </span>
           )}
         </>

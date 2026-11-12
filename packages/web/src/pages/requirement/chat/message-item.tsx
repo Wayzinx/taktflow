@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, Cog, CornerUpLeft, Info } from 'lucide-react'
+import { Activity, CircleAlert, CircleCheck, Cog, CornerUpLeft, Info } from 'lucide-react'
 import type { AttentionItem, RoomMember, RoomMessage } from '@taktflow/core'
 import { AgentMark } from '../../../components/agent-mark'
 import { LeadMark } from '../../../components/identity'
@@ -8,6 +8,7 @@ import { Avatar } from '../../../components/ui'
 import { fmtTime, tidyText } from '../../../lib/format'
 import { AttentionMessage } from './attention-message'
 import { hasLeadMarks, LeadText } from './lead-text'
+import { receiptFailed } from './lead-receipts'
 import { MessageRefs } from './message-refs'
 import { MentionText, StreamingText } from './streaming-text'
 import { TaskCard } from './task-card'
@@ -65,8 +66,8 @@ function SystemLine({ m }: { m: RoomMessage }) {
   )
 }
 
-/** 一条消息；grouped 时与上一条同作者，省掉头像和名字。 */
-export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: boolean; ctx: MessageCtx }) {
+/** 一条消息；grouped 时与上一条同作者，省掉头像和名字。receipts：挂在这条 Lead 回复下的动作回执。 */
+export function MessageItem({ m, grouped, ctx, receipts }: { m: RoomMessage; grouped: boolean; ctx: MessageCtx; receipts?: RoomMessage[] }) {
   const [streamDone, setStreamDone] = useState(false)
   if (m.kind === 'system') return <SystemLine m={m} />
   const member = findMember(ctx.members, m.author)
@@ -138,6 +139,20 @@ export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: bool
           </button>
         )}
         {body}
+        {receipts?.length ? (
+          <div className="chat-receipts">
+            {receipts.map((r) => {
+              const failed = receiptFailed(r.text)
+              return (
+                <div key={r.id} className={`chat-receipt${failed ? ' is-failed' : ''}`} title={tidyText(r.text)}>
+                  {failed ? <CircleAlert aria-hidden /> : <CircleCheck aria-hidden />}
+                  <span className="chat-receipt-text">{tidyText(r.text)}</span>
+                  <MessageRefs m={r} />
+                </div>
+              )
+            })}
+          </div>
+        ) : null}
         <MessageRefs m={m} />
       </div>
       {m.kind !== 'attention' && m.kind !== 'task' && (
