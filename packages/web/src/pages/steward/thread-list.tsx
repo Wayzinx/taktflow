@@ -3,14 +3,11 @@ import { Archive, ArchiveRestore, ChevronRight, Hourglass, ListFilter, MoreHoriz
 import type { StewardThread } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { StewardMark } from '../../components/identity'
-import { stripCitations } from '../../components/steward/cite-text'
+import { plainSummary } from '../../components/steward/cite-text'
 import { Dialog, EmptyState, HoverCard, Menu, SkeletonRows, toast, useFlashRows, useHoverCard, useStagger, type MenuItem } from '../../components/ui'
 import { fmtRelative, fmtTime } from '../../lib/format'
 import { Link } from '../../lib/router'
 import { groupThreads, type GroupBy } from './thread-groups'
-
-/** 列表预览用纯文本：去掉 Markdown 链接 / 粗体 / 行内代码与 [n] 引用标记。 */
-const plain = (t: string) => stripCitations(t.replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1').replace(/\*\*|`/g, ''))
 
 const GROUPS: Array<{ id: GroupBy; label: string }> = [
   { id: 'time', label: '按最近对话' },
@@ -158,7 +155,7 @@ function ThreadRow({ t, current, onPick, onChanged, spaceName, rowClass, rowStyl
   const body = (
     <>
       {head}
-      {t.lastMessage && <span className="stwp-item-last truncate">{plain(t.lastMessage)}</span>}
+      {t.lastMessage && <span className="stwp-item-last truncate">{plainSummary(t.lastMessage)}</span>}
       {tags.length > 0 && (
         <span className="stwp-tags">
           {tags.map((g) => (
@@ -254,7 +251,8 @@ export function ThreadList({ threads, current, onPick, onChanged }: { threads: S
   const [by, setBy] = useState<GroupBy>(readGroup)
   const [groupMenu, setGroupMenu] = useState(false)
   const groupBtn = useRef<HTMLButtonElement>(null)
-  const spaces = useAsync((ds) => (by === 'space' ? ds.spaces() : Promise.resolve([])), [by === 'space'])
+  const named = by === 'space' || by === 'requirement'
+  const spaces = useAsync((ds) => (named ? ds.spaces() : Promise.resolve([])), [named])
   const spaceName = (id: string) => spaces.data?.find((s) => s.id === id)?.name
   const list = useMemo(() => threads.filter((t) => !q.trim() || t.title.toLowerCase().includes(q.trim().toLowerCase())), [threads, q])
   const groups = groupThreads(list, by, spaceName)

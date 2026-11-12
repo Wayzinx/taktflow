@@ -4,7 +4,19 @@ import './markdown.css'
 /**
  * 轻量 Markdown 渲染：标题、段落、列表（可嵌套）、代码块（diff 着色）、表格、引用、分隔线、
  * 行内代码、粗体、斜体、链接。直接生成 React 元素，不拼 HTML，天然防注入。
+ * 管家正文也用它：行内换成自己的渲染（[n] 引用、站内跳转），段内换行保留，代码块外面加复制按钮。
  */
+
+/** 行内渲染：文本 → React 节点；key 作为子节点 key 的前缀。 */
+export type InlineRenderer = (text: string, key: string) => ReactNode[]
+export interface MarkdownProps {
+  source: string
+  inline?: InlineRenderer
+  /** 段落里的单个换行渲染成 <br>（对话正文）；默认按 Markdown 折成空格（文档）。 */
+  breaks?: boolean
+  /** 自定义代码块外观；默认 CodeBlock。 */
+  code?: (lang: string, code: string, key: string) => ReactNode
+}
 
 const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\[[^\]]+\]\([^)\s]+\))|(\*[^*\s][^*]*\*)/g
 
@@ -78,11 +90,11 @@ function parseList(lines: string[]): ListNode {
   return node
 }
 
-function renderList(node: ListNode, key: string): ReactNode {
+function renderList(node: ListNode, key: string, render: InlineRenderer): ReactNode {
   const items = node.items.map((it, i) => (
     <li key={i}>
-      {inline(it.text.join(' '), `${key}-${i}`)}
-      {it.children && renderList(it.children, `${key}-${i}-c`)}
+      {render(it.text.join(' '), `${key}-${i}`)}
+      {it.children && renderList(it.children, `${key}-${i}-c`, render)}
     </li>
   ))
   return node.ordered ? (
@@ -101,7 +113,7 @@ const splitRow = (line: string) =>
     .split('|')
     .map((c) => c.trim())
 
-function CodeBlock({ lang, code }: { lang: string; code: string }) {
+export function CodeBlock({ lang, code }: { lang: string; code: string }) {
   if (lang === 'diff') {
     return (
       <pre className="md-code md-diff">
@@ -121,7 +133,7 @@ function CodeBlock({ lang, code }: { lang: string; code: string }) {
   )
 }
 
-export function Markdown({ source }: { source: string }) {
+export function Markdown({ source, inline: render = inline, breaks, code }: MarkdownProps) {
   const lines = source.replace(/\r\n/g, '\n').split('\n')
   const blocks: ReactNode[] = []
   let i = 0
@@ -139,13 +151,13 @@ export function Markdown({ source }: { source: string }) {
       i++
       while (i < lines.length && !lines[i]!.startsWith('```')) body.push(lines[i++]!)
       i++
-      blocks.push(<CodeBlock key={key} lang={fence[1] ?? ''} code={body.join('\n')} />)
+      blocks.push(code ? <Fragment key={key}>{code(fence[1] ?? '', body.join('\n'), key)}</Fragment> : <CodeBlock key={key} lang={fence[1] ?? ''} code={body.join('\n')} />)
       continue
     }
     const h = /^(#{1,4})\s+(.*)$/.exec(line)
     if (h) {
       const level = h[1]!.length
-      const content = inline(h[2]!, key)
+      const content = render(h[2]!, key)
       blocks.push(level === 1 ? <h1 key={key}>{content}</h1> : level === 2 ? <h2 key={key}>{content}</h2> : level === 3 ? <h3 key={key}>{content}</h3> : <h4 key={key}>{content}</h4>)
       i++
       continue
@@ -160,7 +172,7 @@ export function Markdown({ source }: { source: string }) {
       while (i < lines.length && lines[i]!.startsWith('>')) body.push(lines[i++]!.replace(/^>\s?/, ''))
       blocks.push(
         <blockquote key={key}>
-          <Markdown source={body.join('\n')} />
+          <Markdown source={body.join('\n')} inline={render} breaks={breaks} code={code} />
         </blockquote>,
       )
       continue
@@ -178,7 +190,7 @@ export function Markdown({ source }: { source: string }) {
               <tr>
                 {head.map((c, j) => (
                   <th key={j} style={{ textAlign: align[j] }}>
-                    {inline(c, `${key}h${j}`)}
+                    {render(c, `${key}h${j}`)}
                   </th>
                 ))}
               </tr>
@@ -188,7 +200,7 @@ export function Markdown({ source }: { source: string }) {
                 <tr key={ri}>
                   {head.map((_, j) => (
                     <td key={j} style={{ textAlign: align[j] }}>
-                      {inline(r[j] ?? '', `${key}r${ri}c${j}`)}
+                      {render(r[j] ?? '', `${key}r${ri}c${j}`)}
                     </td>
                   ))}
                 </tr>
@@ -202,13 +214,24 @@ export function Markdown({ source }: { source: string }) {
     if (LIST_RE.test(line)) {
       const body: string[] = []
       while (i < lines.length && (LIST_RE.test(lines[i]!) || (/^\s{2,}\S/.test(lines[i]!) && body.length > 0))) body.push(lines[i++]!)
-      blocks.push(renderList(parseList(body), key))
+      blocks.push(renderList(parseList(body), key, render))
       continue
     }
     const para: string[] = []
     while (i < lines.length && lines[i]!.trim() && !/^(#{1,4}\s|```|>|\s*([-*+]|\d+\.)\s)/.test(lines[i]!)) para.push(lines[i++]!)
     if (para.length === 0) para.push(lines[i++]!)
-    blocks.push(<p key={key}>{inline(para.join(' '), key)}</p>)
+    blocks.push(
+      <p key={key}>
+        {breaks
+          ? para.map((l, li) => (
+              <Fragment key={li}>
+                {li > 0 && <br />}
+                {render(l, `${key}-${li}`)}
+              </Fragment>
+            ))
+          : render(para.join(' '), key)}
+      </p>,
+    )
   }
   return <div className="md">{blocks.map((b, j) => <Fragment key={j}>{b}</Fragment>)}</div>
 }

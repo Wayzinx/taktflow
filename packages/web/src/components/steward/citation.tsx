@@ -1,7 +1,8 @@
 import { Fragment, useCallback, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, BookOpen, CircleAlert, FileText, FolderKanban, Inbox, ListChecks, PlayCircle, Radio, Workflow, type LucideIcon } from 'lucide-react'
+import { ArrowUpRight, BookOpen, CircleAlert, Copy, FileText, FolderKanban, Inbox, ListChecks, PlayCircle, Radio, Workflow, type LucideIcon } from 'lucide-react'
 import type { StewardCitation } from '@taktflow/core'
-import { Popover } from '../ui'
+import { Popover, toast } from '../ui'
+import { CodeBlock, Markdown } from '../../lib/markdown'
 import { jumpTo } from './jump'
 import { filePagePath, fileFocusOf, useEntityFocus } from './focus'
 import { href as routeHref, useLocation } from '../../lib/router'
@@ -147,34 +148,35 @@ function inline(text: string, cites: StewardCitation[] | undefined, key: string,
   return out
 }
 
-/** 管家正文：段落、行首 "- " 列表、粗体、行内代码、链接、[n] 引用；流式时最后一段末尾带光标。 */
+/** 代码块右上角带复制：管家给的代码（HTML、配置）常要原样拿去用。 */
+function StewardCode({ lang, code }: { lang: string; code: string }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(code)
+      toast('已复制代码', { tone: 'success', duration: 2000 })
+    } catch {
+      toast('浏览器不允许复制', { tone: 'failed' })
+    }
+  }
+  return (
+    <div className="stw-code">
+      <CodeBlock lang={lang} code={code} />
+      <button type="button" className="btn btn-ghost btn-icon btn-sm stw-code-copy" title="复制代码" aria-label="复制代码" onClick={() => void copy()}>
+        <Copy />
+      </button>
+    </div>
+  )
+}
+
+/**
+ * 管家正文：用 lib/markdown 渲染标题、列表（含有序）、表格、代码块、引用；行内是粗体、行内代码、链接、[n] 引用；
+ * 段内换行保留。流式时还没闭合的代码围栏先按代码块显示，最后一段末尾带光标（样式见 steward.css）。
+ */
 export function StewardText({ text, citations, streaming }: { text: string; citations?: StewardCitation[]; streaming?: boolean }) {
   const opener = useLinkOpener()
-  const blocks = text.split(/\n{2,}/)
   return (
-    <div className="stw-text">
-      {blocks.map((b, bi) => {
-        const last = bi === blocks.length - 1
-        const lines = b.split('\n')
-        if (lines.every((l) => /^\s*[-*] /.test(l)))
-          return (
-            <ul key={bi}>
-              {lines.map((l, li) => (
-                <li key={li} className={streaming && last && li === lines.length - 1 ? 'stream-caret' : undefined}>{inline(l.replace(/^\s*[-*] /, ''), citations, `${bi}-${li}`, opener)}</li>
-              ))}
-            </ul>
-          )
-        return (
-          <p key={bi} className={streaming && last ? 'stream-caret' : undefined}>
-            {lines.map((l, li) => (
-              <Fragment key={li}>
-                {li > 0 && <br />}
-                {inline(l, citations, `${bi}-${li}`, opener)}
-              </Fragment>
-            ))}
-          </p>
-        )
-      })}
+    <div className="stw-text" data-streaming={streaming || undefined}>
+      <Markdown source={text} breaks inline={(t, key) => inline(t, citations, key, opener)} code={(lang, code) => <StewardCode lang={lang} code={code} />} />
     </div>
   )
 }
