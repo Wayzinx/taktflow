@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { usePresence } from '../lib/motion'
-import { BookOpen, Boxes, ChevronRight, FlaskConical, Inbox, LayoutDashboard, ListTodo, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, Sun, Workflow, X, Zap } from 'lucide-react'
+import { Boxes, ChevronRight, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun, TriangleAlert, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
 import { spacePath } from '../lib/space'
@@ -17,16 +17,17 @@ import { GlideMark, SkeletonRows, StatusDot, useGlide } from './ui'
 import { Bee } from './mascot'
 import './layout.css'
 import './topbar.css'
-import { usePulse } from './pulse'
+import { setTitleContext, usePulse } from './pulse'
 import { BeeGlyph } from './identity'
 import { onTabReturn } from '../lib/visible'
+import { useOnline } from '../lib/connection'
+import { SPACE_NAV } from '../lib/nav'
+import { nodeText, withSpaceCrumb, type Crumb } from '../lib/page-title'
+import { termTitle } from '../lib/glossary'
 
-// ---------------------------------------------------------------- 面包屑：页面声明，顶栏渲染
+// ---------------------------------------------------------------- 面包屑：页面声明自己那几级，顶栏统一在前面加上空间名（lib/page-title）
 
-export interface Crumb {
-  label: ReactNode
-  to?: string
-}
+export type { Crumb }
 let crumbs: Crumb[] = []
 const crumbSubs = new Set<() => void>()
 export function useCrumbs(next: Crumb[], deps: unknown[]) {
@@ -174,22 +175,44 @@ function Sidebar({ open, onClose, mode }: { open: boolean; onClose: () => void; 
   )
 }
 
+/**
+ * 先校验空间列表，已存在返回 null；不存在返回 { archived }，加载与网络错误由路由层处理。
+ * 路由层据此换成"空间不存在"页，侧栏收起空间导航（TF-057）。
+ */
+export function useMissingSpace(spaceId: string | undefined) {
+  const q = useAsync(
+    (ds) =>
+      spaceId
+        ? ds.spaces().then(async (live) => (live.some((s) => s.id === spaceId) ? null : { archived: (await ds.spaces({ archived: true })).some((s) => s.id === spaceId || s.id.startsWith(`${spaceId}@`)) }))
+        : Promise.resolve(null),
+    [spaceId],
+  )
+  return q
+}
+
 function SpaceRail({ collapsed }: { collapsed: boolean }) {
-  const { path } = useLocation()
-  const project = useAsync((ds) => ds.project(), [])
+  const ds = useSource()
+  const { path, spaceId } = useLocation()
+  const access = useMissingSpace(spaceId)
+  const missing = access.data
+  const project = useAsync((ds) => ds.project(), [spaceId])
   const pending = project.data?.attention.length ?? 0
-  const items = [
-    { to: '/', label: '总览', icon: LayoutDashboard, motion: 'tiles', active: path === '/' },
-    { to: '/requirements', label: '需求', icon: ListTodo, motion: 'drop', active: path.startsWith('/req') || path.startsWith('/run'), count: project.data?.totals.requirements, create: true },
-    { to: '/attention', label: '待办', icon: Inbox, motion: 'pop', active: path === '/attention', badge: pending },
-    { to: '/knowledge', label: '知识库', icon: BookOpen, motion: 'open', active: path.startsWith('/knowledge') },
-    { to: '/workflows', label: '流水线', icon: Workflow, motion: 'shift', active: path.startsWith('/workflows') },
-    { to: '/eval', label: '评测', icon: FlaskConical, motion: 'swing', active: path === '/eval' },
-    { to: '/automations', label: '自动化', icon: Zap, motion: 'jolt', active: path === '/automations' },
-    { to: '/settings', label: '空间设置', icon: Settings, motion: 'turn', active: path.startsWith('/settings') },
-  ]
+  const items = SPACE_NAV.map((n) => ({
+    ...n,
+    active: n.active(path),
+    count: n.to === '/requirements' ? project.data?.totals.requirements : undefined,
+    badge: n.to === '/attention' ? pending : undefined,
+    create: n.to === '/requirements',
+  }))
   const recent = project.data?.requirements.slice(0, 6) ?? []
   const [navRef, glide] = useGlide<HTMLElement>('.sb-item.active')
+  // 空间不存在：只留切换器（去别的空间），导航都指向不存在的空间，收起来
+  if (missing || (spaceId && ((access.loading && access.data === undefined) || access.error)))
+    return (
+      <div className="sb-space">
+        <SpaceSwitcher fallbackName="选择空间" />
+      </div>
+    )
   return (
     <>
       <div className="sb-space">
@@ -206,7 +229,7 @@ function SpaceRail({ collapsed }: { collapsed: boolean }) {
               {count !== undefined && !badge ? <span className="sb-count num">{count}</span> : null}
             </Link>
             {create && (
-              <button type="button" className="sb-create" onClick={() => openCreateRequirement()} title={tip('新建需求', SHORTCUTS.createRequirement)} aria-label="新建需求">
+              <button type="button" className="sb-create" disabled={ds.mock} onClick={() => openCreateRequirement()} title={ds.mock ? '演示数据只读，不能新建需求' : tip('新建需求', SHORTCUTS.createRequirement)} aria-label="新建需求">
                 <Plus aria-hidden />
               </button>
             )}
@@ -229,11 +252,22 @@ function SpaceRail({ collapsed }: { collapsed: boolean }) {
   )
 }
 
+/** 全局页：不属于某个空间，面包屑和标题不带空间名，也不显示空间的节拍指示。 */
+const GLOBAL_PATHS = new Set(['/spaces', '/solo'])
+
 function Topbar({ onMenu }: { onMenu: () => void }) {
-  const items = useCrumbState()
+  const declared = useCrumbState()
   const ds = useSource()
-  const project = useAsync((d) => d.project(), [])
-  const running = project.data?.requirements.filter((r) => r.stages.some((s) => s.status === 'running')).length ?? 0
+  const { path, spaceId } = useLocation()
+  const online = useOnline()
+  const project = useAsync((d) => d.project(), [spaceId])
+  const running = project.data?.requirements.filter((r) => r.stages.some((s) => s.status === 'running')) ?? []
+  const global = GLOBAL_PATHS.has(path)
+  const workflows = useAsync((d) => global ? Promise.resolve([]) : d.workflows(), [spaceId, global])
+  const space = global ? undefined : project.data?.name
+  const items = withSpaceCrumb(declared, space)
+  const page = nodeText(items[items.length - 1]?.label)
+  useEffect(() => setTitleContext(page || undefined, space), [page, space])
   // 分隔线只在内容滚到顶栏下面时出现（docs/design/30 §1）；滚动容器是外壳的工作区面板
   const bar = useRef<HTMLElement>(null)
   const [scrolled, setScrolled] = useState(false)
@@ -268,11 +302,15 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
       </nav>
       <span className="topbar-spacer" />
       {ds.mock && (
-        <span className="demo-badge" title="后端 API 不可达或指定了 ?mock=1，当前展示内置演示数据；写操作只保存在本页内存里">
-          演示数据
+        <span className="demo-badge" title={termTitle('演示数据')}>
+          演示数据 · 只读
         </span>
       )}
-      {project.data && <TaktBeat count={running} />}
+      {!online ? (
+        <TaktBeat count={0} offline onRetry={invalidate} />
+      ) : (
+        project.data && !global && !!workflows.data?.length && <TaktBeat count={running.length} to={running.length === 1 ? `/req/${running[0]!.id}` : '/requirements'} />
+      )}
       <button className="btn btn-sm topbar-search" onClick={() => setPaletteOpen(true)} aria-label="打开命令面板" title={tip("搜索或跳转", SHORTCUTS.palette)}>
         <Search aria-hidden />
         <span className="kbd">{isMac ? '⌘K' : 'Ctrl K'}</span>
@@ -289,6 +327,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   lastHref[mode] = mode === 'solo' ? `/solo${qs ? `?${qs}` : ''}` : `${spaceId ? spacePath(spaceId, path) : path}${qs ? `?${qs}` : ''}`
   const collapsed = useSidebarCollapsed()
   const dockOpen = useStewardDock().open
+  const ds = useSource()
   useStewardUnreadSync()
   usePulse()
   useEffect(() => setNavOpen(false), [path])
@@ -305,12 +344,36 @@ export function AppShell({ children }: { children: ReactNode }) {
       <Sidebar open={navOpen} onClose={() => setNavOpen(false)} mode={mode} />
       <NavScrim open={navOpen} onClose={() => setNavOpen(false)} />
       <div className="shell-main">
+        {ds.mock && <DemoBanner />}
         <Topbar onMenu={() => setNavOpen(true)} />
-        <main className="shell-content" id="main">
+        {/* tabIndex=-1：浮层关闭时触发处已不在页面上，焦点退回这里（components/ui/dialog useRestoreFocus），不掉到 body */}
+        <main className="shell-content" id="main" tabIndex={-1}>
           <PageTransition routeKey={`${spaceId ?? ''}${path}`}>{children}</PageTransition>
         </main>
       </div>
       <CommandPalette />
+    </div>
+  )
+}
+
+/**
+ * 演示数据横幅（TF-001）：只在显式 ?mock= / VITE_MOCK 时出现，说清这不是你的数据、能不能改；地址里带 mock 时给一个回到真实服务的出口。
+ */
+function DemoBanner() {
+  const real = new URL(location.href)
+  const fromUrl = real.searchParams.has('mock')
+  real.searchParams.delete('mock')
+  return (
+    <div className="demo-banner" role="status">
+      <TriangleAlert aria-hidden />
+      <span>
+        <strong>演示数据</strong>：这里是内置的示例空间和需求，不是你的 takt serve 数据。写操作已禁用。
+      </span>
+      {fromUrl && (
+        <a className="demo-banner-exit" href={real.pathname + real.search + real.hash}>
+          连接真实服务
+        </a>
+      )}
     </div>
   )
 }

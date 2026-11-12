@@ -1,16 +1,17 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { lazy, Suspense, useEffect, type ReactNode } from 'react'
+import { RotateCw } from 'lucide-react'
 import { DataProvider } from './api'
-import { AppShell } from './components/layout'
+import { AppShell, useMissingSpace } from './components/layout'
 import { RequirementCreateDialog } from './components/requirement-create'
 import { SpaceCreateDialog } from './components/space-create'
 import { TaktLoader } from './components/takt'
-import { Skeleton, SkeletonGrid, Toaster } from './components/ui'
+import { EmptyState, ErrorState, Skeleton, SkeletonGrid, Toaster } from './components/ui'
 import { matchPath, useLocation } from './lib/router'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import './lib/theme'
 import { openCreateRequirement, openCreateSpace, openSteward, useStewardDock } from './lib/ui-store'
 import { OverviewPage } from './pages/overview'
-import { NotFoundPage } from './pages/placeholder'
+import { NotFoundPage, SpaceNotFoundPage } from './pages/placeholder'
 import { RequirementsPage } from './pages/requirements'
 
 // 按需加载（docs/design/22 §3.5：首屏 JS 增量 ≤ 60KB）：Solo、停靠面板、知识库页
@@ -57,6 +58,13 @@ function usePrefetchPages() {
 
 function Routes() {
   const { path, spaceId } = useLocation()
+  const access = useMissingSpace(spaceId)
+  const missing = access.data
+  const local = path !== '/spaces' && path !== '/solo'
+  if (spaceId && local && access.loading && access.data === undefined) return <RouteFallback />
+  if (spaceId && local && access.error) return <ErrorState error={access.error} onRetry={access.reload} />
+  // 地址里的空间不存在 / 已归档：空间内页面都换成说明页（全局页照常，"全部空间"就是出口）
+  if (missing && local) return <SpaceNotFoundPage key={spaceId} id={spaceId!} archived={missing.archived} />
   return <SpaceRoutes key={spaceId ?? ''} path={path} />
 }
 
@@ -136,24 +144,57 @@ function GlobalMounts() {
   )
 }
 
-/** 首屏：导轨先占位，工作区放节拍加载。 */
-function Boot() {
+/** 首屏：导轨先占位，工作区放节拍加载；服务慢、正在退避重试时说清楚。 */
+function Boot({ children }: { children: ReactNode }) {
   return (
     <div className="shell">
       <aside className="sidebar" aria-hidden />
       <div className="shell-main">
         <div className="topbar" />
-        <main className="shell-content">
-          <TaktLoader label="正在连接 taktflow" />
-        </main>
+        <main className="shell-content">{children}</main>
       </div>
     </div>
   )
 }
 
+/** 重试用尽仍连不上：明确报错并给重试，不静默换成演示数据（演示数据只作为一个显式的去处）。 */
+function ConnectFailed({ retry }: { retry: () => void }) {
+  const demo = new URL(location.href)
+  demo.searchParams.set('mock', '1')
+  return (
+    <Boot>
+      <div role="alert" className="card" style={{ maxWidth: 640, margin: '40px auto' }}>
+        <EmptyState
+          mascot="ask"
+          title="连不上 takt serve"
+          body="等了十几秒仍没有响应：服务可能没启动、已经退出，或者正忙。确认服务在运行后点重试。"
+          action={
+            <>
+              <button type="button" className="btn btn-primary" onClick={retry}>
+                <RotateCw aria-hidden />
+                重试
+              </button>
+              <a className="btn" href={demo.pathname + demo.search}>
+                看演示数据（只读）
+              </a>
+            </>
+          }
+        />
+      </div>
+    </Boot>
+  )
+}
+
 export function App() {
   return (
-    <DataProvider fallback={<Boot />}>
+    <DataProvider
+      fallback={(attempt) => (
+        <Boot>
+          <TaktLoader label={attempt ? `服务响应较慢，正在重试（第 ${attempt} 次）` : '正在连接 taktflow'} />
+        </Boot>
+      )}
+      failed={(retry) => <ConnectFailed retry={retry} />}
+    >
       <AppShell>
         <Suspense fallback={<RouteFallback />}>
           <Routes />
