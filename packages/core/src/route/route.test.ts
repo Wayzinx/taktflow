@@ -57,7 +57,7 @@ it('路由模型漏报改动面也不能把跨前端、接口、数据的补丁�
       model: async () => ({ tier, reason: '单面', surfaces: [] }) })).resolves.toMatchObject({ tier: 'T2', workflowId: 'taktflow-standard' })
   }
 })
-it('路由模型给出的 T0 / T1 和人工改档都不能绕过补丁与改动面校验', async () => {
+it('路由模型给出的 T0 / T1 不能绕过补丁与改动面校验，人工改档按人的判断走', async () => {
   const input = await setup()
   const surfaces = [{ id: 'frontend', paths: [] }, { id: 'api', paths: [] }, { id: 'data', paths: [] }]
   const wide = await routeRequirement({ ...input, model: async () => ({ tier: 'T0', reason: '已写死', surfaces }) })
@@ -65,9 +65,9 @@ it('路由模型给出的 T0 / T1 和人工改档都不能绕过补丁与改动�
   const unpatched = await routeRequirement({ ...input, model: async () => ({ tier: 'T0', reason: '已写死', surfaces: [] }) })
   expect(unpatched).toMatchObject({ tier: 'T1', workflowId: 'quick-fix', adjustments: ['需求里没有给出单文件小补丁，T0 改为 T1'] })
   await expect(routeRequirement({ ...input, model: async () => ({ tier: 'T1', reason: '单面', surfaces: surfaces.slice(0, 2) }) })).resolves.toMatchObject({ tier: 'T2' })
-  await expect(routeRequirement({ ...input, override: { tier: 'T0', reason: '补丁已在评审系统里过审' } })).resolves.toMatchObject({ tier: 'T1', workflowId: 'quick-fix' })
+  await expect(routeRequirement({ ...input, override: { tier: 'T0', reason: '补丁已在评审系统里过审' } })).resolves.toMatchObject({ tier: 'T0', workflowId: 'quick-fix', reason: '补丁已在评审系统里过审' })
   await expect(routeRequirement({ ...input, model: async () => ({ tier: 'T2', reason: '多面', surfaces }),
-    override: { tier: 'T0', reason: '强制轻量' } })).resolves.toMatchObject({ tier: 'T2' })
+    override: { tier: 'T0', reason: '强制轻量' } })).resolves.toMatchObject({ tier: 'T0' })
 })
 it('草稿路由与关键词改动面一致，关键词并行不能证明 T3', async () => {
   const input = await setup()

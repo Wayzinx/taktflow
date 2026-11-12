@@ -118,13 +118,13 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
     if (!tiers.includes(input.override.tier) || !input.override.reason.trim()) throw new Error('改档必须提供合法档位和原因')
     tier = input.override.tier
   }
-  // 模型漏报改动面时，文本里确定识别出的多面仍然约束轻量流程；人工改档也不能绕过。
+  // 模型漏报改动面时，文本里确定识别出的多面仍然约束自动判档的轻量流程。人工改档已留痕，按人的判断走。
   const surfaceCount = Math.max(proposal.surfaces.length, observed.surfaces.length)
-  if ((tier === 'T0' || tier === 'T1') && surfaceCount >= 2) {
+  if (!input.override && (tier === 'T0' || tier === 'T1') && surfaceCount >= 2) {
     adjustments.push(`${tier} 只适用于单一改动面，这次涉及 ${surfaceCount} 个，改为 T2`)
     tier = 'T2'
   }
-  if (tier === 'T0' && !hasSmallPatch(text)) {
+  if (!input.override && tier === 'T0' && !hasSmallPatch(text)) {
     adjustments.push('需求里没有给出单文件小补丁，T0 改为 T1')
     tier = 'T1'
   }
