@@ -2,8 +2,10 @@
 @import './feedback.css';
 
 /* ---------------------------------------------------------------- 页头 */
+/* 窄屏放不下时操作区整体换到标题下面一行，标题不被挤成一字一行（TF-018） */
 .page-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--sp-4);
   margin-bottom: var(--sp-6);
@@ -24,8 +26,8 @@
   height: 18px;
 }
 .page-header-main {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: min(240px, 100%);
 }
 .page-eyebrow {
   margin-bottom: var(--sp-1);
@@ -47,9 +49,11 @@
 }
 .page-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--sp-2);
   align-items: center;
   flex: none;
+  max-width: 100%;
   padding-top: 2px;
 }
 
