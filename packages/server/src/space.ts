@@ -8,7 +8,7 @@ import { projectCommands as baseProjectCommands } from './commands.js'
 import { convertWorkflow } from './workflow-routes.js'
 import { spaceLock } from './space-lock.js'
 import { randomUUID } from 'node:crypto'
-import { FsEventStore, listSkills, loadProfiles, openProject, type Actor, type ProjectStores, type RepoBinding, type SpaceDetail, type SpaceFile, type SpaceMember, type SpaceSummary, type TaktConfig } from '@taktflow/core'
+import { assertRequirementId, FsEventStore, listSkills, loadProfiles, openProject, type Actor, type ProjectStores, type RepoBinding, type SpaceDetail, type SpaceFile, type SpaceMember, type SpaceSummary, type TaktConfig } from '@taktflow/core'
 import { createRepoManager } from '@taktflow/sandbox'
 import { createWorkflowStore, type WorkflowStore } from '@taktflow/workflow-source'
 import { HttpError, safeId, text } from './http.js'
@@ -85,8 +85,12 @@ export async function spaceDetail(stores: ProjectStores): Promise<SpaceDetail> {
 
 export { auditKnowledge as auditSpace, changeKnowledgeConfig as changeConfig, writeFileAtomic as atomicWrite } from '@taktflow/core'
 import { auditKnowledge as auditSpace, changeKnowledgeConfig as changeConfig, writeFileAtomic as atomicWrite } from '@taktflow/core'
+const validId = (id: string) => { try { assertRequirementId(id); return true } catch { return false } }
 export function members(value: unknown): SpaceMember[] {
   if (!Array.isArray(value)) throw new HttpError(400, 'members 必须是数组')
+  // 成员 ID 和需求 ID 同一套字符规则（会进请求头、审计和路径）；报成员自己的错，一次列出全部不合规的，免得逐个试
+  const invalid = value.map((member: Record<string, unknown> | null) => member?.id).filter((id): id is string => typeof id === 'string' && id.trim() !== '' && !validId(id))
+  if (invalid.length) throw new HttpError(400, `非法成员 ID：${invalid.join('、')}。成员 ID 只能用字母、数字和 . _ -，并以字母或数字开头；中文名请写在显示名（name）里`)
   const result = value.map((member: Record<string, unknown>) => {
     if (!member || typeof member !== 'object' || !['owner', 'maintainer', 'member', 'viewer'].includes(String(member.role))) throw new HttpError(400, '成员角色不合法')
     return { id: safeId(text(member.id, 'id')), name: text(member.name, 'name'), role: member.role as SpaceMember['role'],
