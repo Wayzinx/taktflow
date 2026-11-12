@@ -59,6 +59,13 @@ function splitPatches(text: string): { prose: string; files: string[] } {
   })
   return { prose, files }
 }
+// 给了补丁时，补丁文件的目录和描述里的关键词说的往往是同一处改动（"修复按钮文案" + 改 src/app.ts），
+// 有路径的面与只有关键词的面取大不相加；描述里自己点名多个改动面（前端 + 接口 + 数据）时仍按多面处理。
+function surfaceCountOf(surfaces: Array<{ paths: string[] }>, patched: boolean): number {
+  if (!patched) return surfaces.length
+  const keywordOnly = surfaces.filter((surface) => !surface.paths.length).length
+  return Math.max(surfaces.length - keywordOnly, keywordOnly)
+}
 function heuristic(raw: string, repos: string[]): Pick<RouteDecision, 'tier' | 'surfaces' | 'reason'> {
   const patched = hasSmallPatch(raw)
   const { prose: text, files } = splitPatches(raw)
@@ -72,7 +79,7 @@ function heuristic(raw: string, repos: string[]): Pick<RouteDecision, 'tier' | '
   const byId = [...new Map(surfaces.map((surface) => [surface.id, surface])).values()]
   const labels = byId.map((surface) => 'label' in surface ? surface.label : surface.id)
   let tier: Tier
-  if (patched && byId.length <= 1) tier = 'T0'
+  if (patched && surfaceCountOf(byId, patched) <= 1) tier = 'T0'
   else if (small.test(text) && byId.length <= 1) tier = 'T1'
   else if (parallel.test(text) && roots.size >= 2 && byId.length === roots.size) tier = 'T3'
   else if (byId.length >= 2) tier = 'T2'
@@ -119,7 +126,7 @@ export async function routeRequirement(input: RouteInput): Promise<RouteDecision
     tier = input.override.tier
   }
   // 模型漏报改动面时，文本里确定识别出的多面仍然约束自动判档的轻量流程。人工改档已留痕，按人的判断走。
-  const surfaceCount = Math.max(proposal.surfaces.length, observed.surfaces.length)
+  const surfaceCount = Math.max(surfaceCountOf(proposal.surfaces, hasSmallPatch(text)), surfaceCountOf(observed.surfaces, hasSmallPatch(text)))
   if (!input.override && (tier === 'T0' || tier === 'T1') && surfaceCount >= 2) {
     adjustments.push(`${tier} 只适用于单一改动面，这次涉及 ${surfaceCount} 个，改为 T2`)
     tier = 'T2'

@@ -10,7 +10,7 @@ const FEATURE: Record<string, string> = {
   'steward.answer': '管家回答',
   'steward.proposal': '变更提案',
   'steward.digest': '主动汇报',
-  'workflow.edit': 'workflow 编辑',
+  'workflow.edit': '流水线编辑',
   'space.create': '新建空间',
   knowledge: '知识库',
 }

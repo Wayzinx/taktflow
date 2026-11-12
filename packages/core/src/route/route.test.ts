@@ -39,6 +39,8 @@ it('T0 只认给定的补丁：补丁里的文件算改动面，+/- 行的词不
   await expect(draft('前端页面和后端接口一起改', '```diff\n--- a/src/a.ts\n+++ b/src/a.ts\n```')).resolves.toMatchObject({ tier: 'T2' })
   await expect(draft('diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n-a\n+b')).resolves.toMatchObject({ tier: 'T0' })
   await expect(draft('调整代码', 'diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n-a\n+b\n前端页面和后端接口一起改')).resolves.toMatchObject({ tier: 'T2' })
+  // 描述里的“按钮”与补丁改的 src 是同一处改动，不能算成两个改动面
+  await expect(draft('修复按钮文案', '```diff\n--- a/src/app.ts\n+++ b/src/app.ts\n@@ -1 +1 @@\n-const label = "Sumbit"\n+const label = "Submit"\n```')).resolves.toMatchObject({ tier: 'T0', workflowId: 'quick-fix' })
 })
 it('空补丁标记、过大的补丁和同目录多个文件的补丁不能跳过需求说明与代码评审', async () => {
   const input = await setup()
