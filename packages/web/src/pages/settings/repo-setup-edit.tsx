@@ -14,6 +14,7 @@ export function RepoSetupEdit({ repo, onDone }: { repo: Repo; onDone: (changed: 
   const [share, setShare] = useState((repo.share ?? []).join(', '))
   const [busy, setBusy] = useState(false)
   const [asking, setAsking] = useState(false)
+  const shareError = splitList(share).some((path) => path.startsWith('/') || path.includes('\\') || path.split('/').includes('..')) ? '共享目录必须是仓库内相对路径，不能包含 .. 或反斜线' : undefined
   // 清空不能传 undefined（JSON 会丢掉，服务端合并后旧值留下）：共享目录传空数组（服务端已支持），
   // 引导命令传 null（约定 null = 删除该键，服务端待支持，见协议变更请求；不支持时 400 的消息会留在原因对话框里）
   async function save(reason: string) {
@@ -33,7 +34,7 @@ export function RepoSetupEdit({ repo, onDone }: { repo: Repo; onDone: (changed: 
       className="repo-add repo-setup-edit"
       onSubmit={(e) => {
         e.preventDefault()
-        setAsking(true)
+        if (!shareError) setAsking(true)
       }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') onDone(false)
@@ -45,9 +46,10 @@ export function RepoSetupEdit({ repo, onDone }: { repo: Repo; onDone: (changed: 
       </label>
       <label className="grow">
         <span className="field-label">共享目录（逗号分隔）</span>
-        <input className="input mono" placeholder="node_modules, .cache" value={share} onChange={(e) => setShare(e.target.value)} />
+        <input className="input mono" placeholder="node_modules, .cache" value={share} aria-invalid={!!shareError} onChange={(e) => setShare(e.target.value)} />
+        {shareError && <span className="ov-error">{shareError}</span>}
       </label>
-      <button className="btn btn-sm btn-primary" type="submit" disabled={busy}>
+      <button className="btn btn-sm btn-primary" type="submit" disabled={busy || !!shareError}>
         保存
       </button>
       <button className="btn btn-sm" type="button" onClick={() => onDone(false)}>
