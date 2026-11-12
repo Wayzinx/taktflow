@@ -1,12 +1,19 @@
-import { access, mkdir, realpath, lstat } from 'node:fs/promises'
+import { access, mkdir, readdir, realpath, lstat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { assertNodeId, assertRunId, sha256, withLock, type RepoBinding, type RepoManager } from '@taktflow/core'
 import { collect, launch } from './runtime.js'
 import { bootstrapWorktree } from './bootstrap.js'
 
+/** git 退出码不符合预期；stderr 单独带着（可能含仓库地址），由调用方脱敏后给人看。 */
+export class GitCommandError extends Error {
+  constructor(readonly command: string, readonly code: number, readonly stderr: string, cwd: string) {
+    super(`git ${command} failed in ${cwd} (exit ${code})`)
+  }
+}
+
 async function git(cwd: string, args: string[], allowed = [0]): Promise<string> {
   const result = await collect(launch('git', ['-C', cwd, ...args]), undefined, 120_000)
-  if (!allowed.includes(result.code)) throw new Error(`git ${args[0]} failed in ${cwd} (exit ${result.code})`)
+  if (!allowed.includes(result.code)) throw new GitCommandError(args[0]!, result.code, result.stderr, cwd)
   return result.stdout
 }
 
@@ -46,6 +53,8 @@ export function createRepoManager(options: { projectDir: string; taktDir: string
         await mkdir(dirname(dir), { recursive: true })
         await git(options.projectDir, ['clone', '--mirror', '--', repo.url, dir])
       }
+      // 绑定的地址改过（PATCH、解绑后重新绑定同名仓库）时，已有镜像要跟着换远程，不能继续拉旧地址
+      await git(dir, ['remote', 'set-url', '--', 'origin', repo.url])
       // 只更新远程 heads；不能用 mirror refspec 删除正在使用的 takt 分支。
       await git(dir, ['fetch', '--prune', 'origin', '+refs/heads/*:refs/remotes/origin/*'])
     }
@@ -141,4 +150,25 @@ export function createRepoManager(options: { projectDir: string; taktDir: string
       })
     },
   }
+}
+
+/**
+ * 这个仓库开出、仍在 .takt/worktrees/<runId>/ 下的工作区（按 git 公共目录归属，只看给定的运行）。
+ * 解绑前用来确认没有进行中的任务还在用它；镜像或本地仓库已经不存在时不可能有工作区。
+ */
+export async function repoWorktrees(options: { projectDir: string; taktDir: string }, repo: RepoBinding, runIds: string[]): Promise<Array<{ runId: string; path: string }>> {
+  const dir = repo.url ? resolve(options.taktDir, 'repos', repo.id) : resolve(options.projectDir, repo.path)
+  let common: string
+  try { common = await realpath(repo.url ? dir : (await git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()) } catch { return [] }
+  const found: Array<{ runId: string; path: string }> = []
+  for (const runId of runIds) {
+    const runDir = join(resolve(options.taktDir, 'worktrees'), assertRunId(runId))
+    let nodes: string[]
+    try { nodes = await readdir(runDir) } catch { continue }
+    for (const node of nodes) {
+      const path = join(runDir, node)
+      try { if (await realpath((await git(path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])).trim()) === common) found.push({ runId, path }) } catch { /* 不是 git 工作区 */ }
+    }
+  }
+  return found
 }

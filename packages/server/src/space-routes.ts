@@ -3,15 +3,32 @@ import { join } from 'node:path'
 import { spaceLock } from './space-lock.js'
 import { systemWrite } from '@taktflow/core'
 import { access } from 'node:fs/promises'
-import { assertTaskResendable, TaskResendConflictError, listReviews, type RoomMember, type RoomMessage } from '@taktflow/core'
+import { assertTaskResendable, TaskResendConflictError, listReviews, type RepoBinding, type RoomMember, type RoomMessage } from '@taktflow/core'
 import { authorize, actor, body, jsonBody, HttpError, integer, requires, text } from './http.js'
-import { atomicWrite, auditSpace, changeConfig, members, repoBinding, repoManager, spaceDetail, spaceFile } from './space.js'
+import { atomicWrite, auditSpace, changeConfig, checkRepoSource, members, recordRepoSync, repoBinding, repoManager, spaceDetail, spaceFile } from './space.js'
+import { GitCommandError, repoWorktrees } from '@taktflow/sandbox'
 import { requirement } from './read-model.js'
 import { stream } from './stream.js'
 import type { M3Callbacks } from './m3-routes.js'
 import { STREAMING, type Handler } from './routes.js'
 
 export type LeadMention = (requirementId: string, message: RoomMessage) => void | Promise<void>
+
+/**
+ * 同步失败给人看的原因：git stderr 里最后一行 fatal / error（去掉地址里的账号口令），或超时。
+ * 不是 git 本身的失败（例如配置损坏）返回 undefined，按内部错误处理。
+ */
+export function syncFailure(error: unknown, repo: RepoBinding): string | undefined {
+  if (error instanceof Error && /timed out/.test(error.message)) return `同步失败：git 超过 2 分钟没有完成，请检查网络或仓库大小后重试`
+  if (!(error instanceof GitCommandError)) return undefined
+  if (error.command === 'rev-parse') return `同步失败：仓库里没有默认分支 ${repo.defaultBranch}，请检查分支名`
+  const redact = (text: string) => text.replace(/(\/\/)[^/@\s]+@/g, '$1***@')
+  const lines = error.stderr.split('\n').map((line) => line.trim()).filter(Boolean).reverse()
+  const line = lines.find((item) => /^(fatal|error):/i.test(item)) ?? lines[0]
+  const detail = line ? redact(line.replace(/^(fatal|error):\s*/i, '')).slice(0, 300) : `退出码 ${error.code}`
+  const step = error.command === 'clone' ? `克隆 ${redact(repo.url ?? repo.path)}` : error.command === 'fetch' ? '拉取远程' : `git ${error.command}`
+  return `同步失败（${step}）：${detail}`
+}
 export function spaceRoutes(add: (method: string, path: string, handler: Handler) => void, connections: Set<() => void>, onLeadMention?: LeadMention, options: M3Callbacks = {}) {
   add('POST', '/api/requirements/:id/room/tasks/:messageId/resend', async ({ stores, params, request }) => {
     await requirement(stores, params.id!)
@@ -46,7 +63,10 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
   add('POST', '/api/space/repos', requires('maintainer', '绑定代码仓库', async ({ stores, request }) => {
     const input = await body(request)
     const repo = repoBinding(input)
-    await changeConfig(stores, actor(request, stores), text(input.reason, 'reason'), `绑定仓库 ${repo.id}`, (config) => {
+    const reason = text(input.reason, 'reason')
+    if (stores.config.repos?.some((item) => item.id === repo.id)) throw new HttpError(409, '仓库已绑定')
+    await checkRepoSource(stores, repo)
+    await changeConfig(stores, actor(request, stores), reason, `绑定仓库 ${repo.id}`, (config) => {
       if (config.repos?.some((item) => item.id === repo.id)) throw new HttpError(409, '仓库已绑定')
       config.repos = [...config.repos ?? [], repo]
     })
@@ -55,21 +75,47 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
   add('PATCH', '/api/space/repos/:repoId', requires('maintainer', '修改代码仓库', async ({ stores, request, params }) => {
     const input = await body(request)
     const reason = text(input.reason, 'reason')
+    const current = stores.config.repos?.find((repo) => repo.id === params.repoId)
+    if (current && typeof input.url === 'string') await checkRepoSource(stores, repoBinding({ ...current, ...input, id: params.repoId }))
     await changeConfig(stores, actor(request, stores), reason, `更新仓库 ${params.repoId}`, (config) => {
       const index = config.repos?.findIndex((repo) => repo.id === params.repoId) ?? -1
       if (index < 0) throw new HttpError(404, '仓库不存在')
       const merged = { ...config.repos![index], ...input, id: params.repoId }
       config.repos![index] = repoBinding(Object.fromEntries(Object.entries(merged).filter(([, value]) => value !== null)))
     })
+    // 地址改了，上次同步失败的原因不再适用
+    if (input.url !== undefined) await recordRepoSync(stores, params.repoId!)
     return spaceDetail(stores)
   }))
   add('POST', '/api/space/repos/:repoId/sync', requires('maintainer', '同步代码仓库', async ({ stores, request, params }) => {
     const input = await body(request)
     const reason = text(input.reason, 'reason')
     if (!stores.config.repos?.some((repo) => repo.id === params.repoId)) throw new HttpError(404, '仓库不存在')
-    const result = await repoManager(stores).sync(params.repoId!)
+    let result: { head: string }
+    try { result = await repoManager(stores).sync(params.repoId!) } catch (error) {
+      const why = syncFailure(error, stores.config.repos.find((repo) => repo.id === params.repoId)!)
+      if (!why) throw error
+      await recordRepoSync(stores, params.repoId!, why)
+      await auditSpace(stores, actor(request, stores), reason, `同步仓库 ${params.repoId} 失败：${why}`)
+      throw new HttpError(502, why)
+    }
+    await recordRepoSync(stores, params.repoId!)
     await auditSpace(stores, actor(request, stores), reason, `同步仓库 ${params.repoId}：${result.head}`)
     return result
+  }))
+  add('DELETE', '/api/space/repos/:repoId', requires('maintainer', '解绑代码仓库', async ({ stores, request, params }) => {
+    const reason = text((await body(request)).reason, 'reason')
+    const repo = stores.config.repos?.find((item) => item.id === params.repoId)
+    if (!repo) throw new HttpError(404, '仓库不存在')
+    const active = (await stores.runs.list()).filter((run) => ['running', 'waiting_human'].includes(run.status)).map((run) => run.runId)
+    const busy = [...new Set((await repoWorktrees(stores, repo, active)).map((tree) => tree.runId))]
+    if (busy.length) throw new HttpError(409, `还有运行中的任务在用 ${repo.id} 的工作区：${busy.join('、')}；请等它们结束或先取消运行再解绑`)
+    // 只从配置里摘掉绑定：本地目录、镜像（.takt/repos/<id>，历史运行的工作区还引用它）都不删
+    await changeConfig(stores, actor(request, stores), reason, `解绑仓库 ${repo.id}`, (config) => {
+      config.repos = config.repos?.filter((item) => item.id !== repo.id)
+    })
+    await recordRepoSync(stores, repo.id)
+    return spaceDetail(stores)
   }))
   add('GET', '/api/space/files', async ({ stores, url }) => {
     const file = await spaceFile(stores, url.searchParams.get('kind'), url.searchParams.get('name'))

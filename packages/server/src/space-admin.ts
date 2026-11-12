@@ -32,6 +32,7 @@ import {
   auditSpace,
   atomicWrite,
   changeConfig,
+  checkRepoSource,
   discoverSpaces,
   members,
   repoBinding,
@@ -365,13 +366,7 @@ export async function createSpace(
           path: repo.path ?? `.takt/repos/${repo.id ?? `repo-${index + 1}`}`,
           defaultBranch: repo.defaultBranch ?? 'main',
         })
-        if (!binding.url) {
-          try {
-            await access(resolve(root, id, binding.path))
-          } catch {
-            throw new HttpError(400, '本地仓库路径不存在，请检查路径')
-          }
-        }
+        await checkRepoSource({ projectDir: join(root, id) }, binding)
         return binding
       }),
     )

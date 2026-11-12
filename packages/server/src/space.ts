@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { access, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { access, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { bindCrudServices, systemWrite, type CommandHandlers, type EngineDeps, type TaktConfig as Config } from '@taktflow/core'
@@ -64,17 +64,24 @@ export async function spaceSummary(stores: ProjectStores): Promise<SpaceSummary>
   const pendingAttention = (await stores.attention.list({ pending: true })).filter((item) => requirements.some((req) => req.id === item.requirementId)).length
   return { pendingAttention, lastActivityAt, id: spaceId(stores), ...stores.config.project, requirements: requirements.length, active: requirements.filter((req) => req.status === 'active').length }
 }
+const syncErrorFile = (stores: ProjectStores, id: string) => join(stores.taktDir, 'repos', `${id}.sync-error.json`)
+/** 记下最近一次同步失败的原因（message 为空表示成功，清掉）；列表据此显示"同步失败"和原因，刷新后也还在。 */
+export async function recordRepoSync(stores: ProjectStores, id: string, message?: string): Promise<void> {
+  if (message) await atomicWrite(syncErrorFile(stores, id), JSON.stringify({ at: new Date().toISOString(), message }) + '\n')
+  else await rm(syncErrorFile(stores, id), { force: true })
+}
 export async function spaceDetail(stores: ProjectStores): Promise<SpaceDetail> {
   const profiles = await loadProfiles(stores.paths)
   const repos = await Promise.all((stores.config.repos ?? []).map(async (repo) => {
     const path = repo.url ? join(stores.taktDir, 'repos', repo.id) : resolve(stores.projectDir, repo.path)
+    const failed = await readFile(syncErrorFile(stores, repo.id), 'utf8').then((text) => (JSON.parse(text) as { message: string }).message, () => undefined)
     const ready = await access(path).then(() => true, () => false)
-    if (!ready) return { ...repo, status: 'missing' as const }
+    if (!ready) return failed ? { ...repo, status: 'error' as const, message: failed } : { ...repo, status: 'missing' as const }
     try {
       const ref = `${repo.url ? 'refs/remotes/origin/' : 'refs/heads/'}${repo.defaultBranch}^{commit}`
       const { stdout } = await execute('git', ['rev-parse', '--verify', '--end-of-options', ref], { cwd: path })
-      return { ...repo, status: 'ready' as const, head: stdout.trim() }
-    } catch { return { ...repo, status: 'error' as const, message: '仓库或默认分支不可读取，请同步仓库' } }
+      return { ...repo, status: failed ? 'error' as const : 'ready' as const, head: stdout.trim(), ...(failed ? { message: failed } : {}) }
+    } catch { return { ...repo, status: 'error' as const, message: failed ?? '仓库或默认分支不可读取，请同步仓库' } }
   }))
   const runs = await stores.runs.list()
   return { ...await spaceSummary(stores), members: stores.config.members ?? [], repos, skills: await listSkills(stores.paths.skills),
@@ -100,9 +107,28 @@ export function members(value: unknown): SpaceMember[] {
   if (new Set(result.map((member) => member.id)).size !== result.length) throw new HttpError(400, '成员 ID 重复')
   return result
 }
+/** 前端绑定表单用同一条规则（repos-tab.tsx 的 REPO_ID）。 */
+const REPO_ID = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+// 远程地址的形态：https / ssh / git / file 协议、scp 写法 user@host:path，或本机已有仓库的绝对路径（镜像它）
+const REMOTE = /^(?:(?:https?|ssh|git|file):\/\/\S+|[\w.-]+@[\w.-]+:\S+|\/.+)$/
+function remoteUrl(url: string): void {
+  if (!REMOTE.test(url)) throw new HttpError(400, `远程地址不合法：${url}。请填 https://、ssh://、git://、file:// 开头的地址或 git@主机:路径；本机已有的仓库请改用"本地目录"`)
+}
+/**
+ * 新绑定或改了地址的仓库在写入前检查：远程地址只看形态（可达性要联网，同步时会报出具体原因）；
+ * 本地目录必须是已有 git 仓库的根目录，并且有默认分支。
+ */
+export async function checkRepoSource(stores: Pick<ProjectStores, 'projectDir'>, repo: RepoBinding): Promise<void> {
+  if (repo.url !== undefined) return remoteUrl(repo.url)
+  const dir = resolve(stores.projectDir, repo.path)
+  let top: string
+  try { top = (await execute('git', ['rev-parse', '--show-toplevel'], { cwd: dir })).stdout.trim() } catch { throw new HttpError(400, `本地目录不存在或不是 git 仓库：${repo.path}`) }
+  if (resolve(top) !== await realpath(dir)) throw new HttpError(400, `${repo.path} 在另一个 git 仓库里，请填仓库根目录：${top}`)
+  try { await execute('git', ['rev-parse', '--verify', '--end-of-options', `refs/heads/${repo.defaultBranch}^{commit}`], { cwd: dir }) } catch { throw new HttpError(400, `本地仓库没有默认分支 ${repo.defaultBranch}，请检查分支名`) }
+}
 export function repoBinding(value: Record<string, unknown>): RepoBinding {
   const id = text(value.id, 'id')
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(id)) throw new HttpError(400, 'repo id 不合法')
+  if (!REPO_ID.test(id)) throw new HttpError(400, `仓库 id 不合法：${id}。只能用字母、数字、短横线和下划线，并以字母或数字开头`)
   const repo: RepoBinding = { id, path: text(value.path, 'path'), defaultBranch: text(value.defaultBranch, 'defaultBranch') }
   if (repo.defaultBranch.startsWith('-') || /[\s~^:?*\[\\]/.test(repo.defaultBranch) || repo.defaultBranch.includes('..')) throw new HttpError(400, 'defaultBranch 不合法')
   for (const key of ['url', 'purpose', 'description', 'bootstrap'] as const) if (value[key] !== undefined) repo[key] = text(value[key], key)
@@ -174,6 +200,8 @@ export async function patchConfig(stores: ProjectStores, patch: Record<string, u
     if (next.repos !== undefined) {
       if (!Array.isArray(next.repos)) throw new HttpError(400, 'repos 必须是数组')
       next.repos = next.repos.map((value) => repoBinding(value as unknown as Record<string, unknown>))
+      // 只查新增或改了地址的，已有的旧绑定不因为规则变严就挡住其他配置修改
+      for (const repo of next.repos) if (repo.url !== undefined && repo.url !== config.repos?.find((item) => item.id === repo.id)?.url) remoteUrl(repo.url)
       if (new Set(next.repos.map((repo) => repo.id)).size !== next.repos.length) throw new HttpError(400, '仓库 ID 重复')
     }
     for (const key of Object.keys(config)) delete (config as unknown as Record<string, unknown>)[key]
