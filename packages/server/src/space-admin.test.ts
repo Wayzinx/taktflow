@@ -58,6 +58,13 @@ it('归档、恢复、删除、权限、审计哈希链', async () => {
   await expect(deleteSpace(deps, archived.id, 'wrong', author, reason)).rejects.toMatchObject({ status: 409 })
   await expect(deleteSpace(deps, archived.id, archived.id, { type: 'human', id: 'bob' }, reason)).rejects.toThrow('权限不足')
   expect(await deleteSpace(deps, archived.id, archived.id, author, reason)).toEqual({ deleted: archived.id })
+  // 早期空间没写 space.id，ID 来自目录名；归档后目录名带 @时间戳，列表和恢复都得认回原 ID
+  await createSpace(deps, { id: 'legacy', name: '老空间', template: 'blank', reason }, author)
+  const legacy = join(spacesDir, 'legacy/takt.config.json'), config = JSON.parse(await readFile(legacy, 'utf8'))
+  delete config.space; await writeFile(legacy, JSON.stringify(config))
+  const old = await archiveSpace(deps, 'legacy', author, reason)
+  expect(await listSpaces(deps, true)).toMatchObject([{ id: old.id, name: '老空间', archived: true }])
+  expect((await restoreSpace(deps, old.id, author, reason)).id).toBe('legacy')
   const audit = join(spacesDir, '.takt/space-admin.jsonl'), scratch = await root()
   await mkdir(join(scratch, 'runs/space'), { recursive: true }); await copyFile(audit, join(scratch, 'runs/space/events.jsonl'))
   expect(await new FsEventStore(scratch).verify('space')).toEqual({ ok: true })

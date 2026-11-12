@@ -35,7 +35,8 @@ export async function discoverSpaces(dir: string): Promise<ProjectStores[]> {
   if (new Set(ids).size !== ids.length) throw new Error('空间 ID 重复')
   return spaces
 }
-export const spaceId = (stores: ProjectStores): string => safeId(stores.config.space?.id ?? basename(stores.projectDir))
+// 归档目录名带 @时间戳；没写 space.id 的老空间按原目录名算 ID，否则归档列表和恢复都会被这个 @ 挡住。
+export const spaceId = (stores: ProjectStores): string => safeId(stores.config.space?.id ?? basename(stores.projectDir).replace(/@\d{8}-\d{6}$/, ''))
 export const workflowWritePaths = (stores: ProjectStores) => [`${relative(stores.projectDir, stores.paths.workflows)}/**`, '.takt/workflow-revisions/**', '.takt/space-events.jsonl*']
 const workflowWrite = (stores: ProjectStores) => <T>(fn: () => Promise<T>) => systemWrite(stores.projectDir, workflowWritePaths(stores), fn)
 /** 编辑器路由用：调用方自己包 systemWrite，只有订阅轮询由 store 内部受控。 */
