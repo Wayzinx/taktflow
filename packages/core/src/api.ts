@@ -1710,6 +1710,10 @@ export interface KnowledgeDoc {
   bytes: number
   updatedAt: string
   indexed: boolean
+  /** 构建之后内容又变了（或源文件已删除），运行查到的可能是旧内容。 */
+  stale?: boolean
+  /** 上次构建时在、现在源文件已经没了。 */
+  deleted?: boolean
 }
 
 export interface KnowledgeEvalSet {

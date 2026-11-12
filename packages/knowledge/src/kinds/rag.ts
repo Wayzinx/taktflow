@@ -156,11 +156,13 @@ export const ragKind: KnowledgeKind = {
       .slice(0, 50)
     const weights = retrieval.hybrid ?? { bm25: 1, vector: 1 }
     const merged = new Map<number, { rrf: number; bm25?: number; vector?: number }>()
-    for (const [name, list, weight] of [
-      ['bm25', lexical, weights.bm25],
-      ['vector', semantic, vectors.length ? weights.vector : 0],
-    ] as const) {
-      if (weight <= 0) continue
+    const routes = (
+      [
+        ['bm25', lexical, weights.bm25],
+        ['vector', semantic, vectors.length ? weights.vector : 0],
+      ] as const
+    ).filter(([, list, weight]) => weight > 0 && list.length)
+    for (const [name, list, weight] of routes) {
       const max = list[0]?.score ?? 1
       list.forEach((value5, rank) => {
         const scores = merged.get(value5.i) ?? { rrf: 0 }
@@ -170,6 +172,8 @@ export const ragKind: KnowledgeKind = {
       })
     }
     const denominator = (weights.bm25 + (vectors.length ? weights.vector : 0)) / 61 || 1
+    // 只有一路有结果时 RRF 只剩名次（1.00 / 0.98 / 0.97…），总分直接用这一路归一化后的相关度；两路都有才用融合名次分
+    const single = routes.length === 1 ? routes[0]![0] : undefined
     const hits = [...merged]
       .sort((left2, right2) => right2[1].rrf - left2[1].rrf)
       .map(([index6, scores]): KnowledgeHit => {
@@ -180,7 +184,7 @@ export const ragKind: KnowledgeKind = {
           title: chunk.title,
           snippet: chunk.content,
           content: chunk.content,
-          score: scores.rrf / denominator,
+          score: single ? scores[single]! : scores.rrf / denominator,
           scores,
           evidenceLevel: 'derived',
         }

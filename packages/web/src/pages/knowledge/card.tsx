@@ -83,9 +83,9 @@ export function KnowledgeCard({ base, className, style, onBuildEnd }: { base: Kn
           <span className="kb-stat-v num">{hasUsage ? <CountUp value={u.queries} /> : '—'}</span>
           <span className="kb-stat-k">7 天查询</span>
         </div>
-        <div className="kb-stat">
+        <div className="kb-stat" title="查到本库结果的查询占比，不代表结果相关；相关性看 Recall@10">
           <span className="kb-stat-v num">{hasUsage ? <CountUp value={u.hitRate} format={(v) => pct(v)} /> : '—'}</span>
-          <span className="kb-stat-k">命中率</span>
+          <span className="kb-stat-k">有结果率</span>
         </div>
         <div className="kb-stat">
           {base.lastEval ? (
