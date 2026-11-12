@@ -182,7 +182,8 @@ export function stream<T>(url: string, on: (v: T) => void, named?: Record<string
 /** 真实 API 是否可达（1.5 秒超时）。 */
 export async function probeApi(base = '/api'): Promise<boolean> {
   const ctrl = new AbortController()
-  const timer = setTimeout(() => ctrl.abort(), 1500)
+  // 没有后端时（静态托管 404、代理连不上）会很快失败；这里只防挂死。给太短的话机器一忙，真实空间会被悄悄换成演示数据
+  const timer = setTimeout(() => ctrl.abort(), 8000)
   try {
     const res = await fetch(`${base}/project`, { signal: ctrl.signal })
     if (!res.ok) return false
