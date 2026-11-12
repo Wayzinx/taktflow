@@ -46,9 +46,14 @@ const KnowledgeDetailPage = lazy(() => PAGES.knowledgeDetail().then((m) => ({ de
 const UiGalleryPage = lazy(() => PAGES.uiGallery().then((m) => ({ default: m.UiGalleryPage })))
 const AutomationsPage = lazy(() => PAGES.automations().then((m) => ({ default: m.AutomationsPage })))
 
-/** 首屏之后空闲时把各页面分包预取进缓存，切页时不再等下载。 */
+/**
+ * 首屏之后空闲时把各页面分包预取进缓存，切页时不再等下载；
+ * 省流量模式、2G 和手机窄屏不预取，别让首屏流量花在用户可能不去的页面上（TF-064）。
+ */
 function usePrefetchPages() {
   useEffect(() => {
+    const net = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+    if (net?.saveData || /^(slow-)?2g$/.test(net?.effectiveType ?? '') || window.matchMedia?.('(max-width: 640px)').matches) return
     const idle = window.requestIdleCallback ?? ((f: () => void) => window.setTimeout(f, 1200))
     const cancel = window.cancelIdleCallback ?? window.clearTimeout
     const id = idle(() => Object.values(PAGES).forEach((load) => void load().catch(() => undefined)))
