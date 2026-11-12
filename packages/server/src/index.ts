@@ -18,7 +18,7 @@ import type { Handler } from './routes.js'
 import { attachCrudServices, discoverSpaces, spaceSummary, spaceId } from './space.js'
 import type { LeadMention } from './space-routes.js'
 import type { CatalogCallbacks } from './catalog.js'
-import { actor, authorize, validateWriteRequest, fail, HttpError, json } from './http.js'
+import { actor, authorize, routeRole, validateWriteRequest, fail, HttpError, json } from './http.js'
 import { routes, STREAMING } from './routes.js'
 import { createPreviewServer } from './preview.js'
 import { attachLessons } from './commands.js'
@@ -176,7 +176,9 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         attachLessons(fresh)
         attachCrudServices(fresh)
         rememberStores(fresh)
-        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname) && url.pathname !== '/api/route/preview') authorize(request, fresh)
+        // 兜底：写操作至少 member；路由用 requires 声明了更高角色时按它校验，提示里写出真正需要的角色
+        const declared = routeRole(matched.handler)
+        if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method ?? '') && !url.pathname.startsWith('/api/commands/') && !/^\/api\/requirements\/[^/]+\/route$/.test(url.pathname) && url.pathname !== '/api/route/preview') authorize(request, fresh, declared?.role, declared?.what)
         const result = await matched.handler({ stores: fresh, request, response, url, params: matched.params })
         if (url.pathname === '/api/space' && request.method === 'GET') {
           const { deps, store } = userService(request)

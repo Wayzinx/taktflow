@@ -38,7 +38,7 @@ import {
   spaceSummary,
 } from './space.js'
 import { spaceLock } from './space-lock.js'
-import { HttpError, text } from './http.js'
+import { HttpError, roleDenied, text } from './http.js'
 
 export interface ServerCommandDeps {
   spacesDir?: string
@@ -193,17 +193,27 @@ async function archives(root: string): Promise<string[]> {
     throw error
   }
 }
+/**
+ * 空间管理的操作者。命令表（管家提案）总是带明确身份；全局 HTTP 接口没选"我是"时传函数（http.ts 的 globalActor），
+ * 按被操作的空间推断成它的第一个 owner，和空间内接口一致；推断不出时为 undefined，不冒充成员、不写进新空间。
+ */
+export type SpaceAuthor = Actor | ((space?: Pick<ProjectStores, 'config'>) => Actor | undefined)
+const ANONYMOUS: Actor = { type: 'human', id: 'web' }
+const who = (author: SpaceAuthor, space?: Pick<ProjectStores, 'config'>) =>
+  typeof author === 'function' ? author(space) : author
 function adminRole(
   stores: ProjectStores,
-  author: Actor,
+  author: SpaceAuthor,
   role: 'maintainer' | 'owner',
   operation: string,
-): void {
+): Actor {
+  const by = who(author, stores) ?? ANONYMOUS
   try {
-    requireRole(stores, author, role, operation)
-  } catch (error) {
-    throw new HttpError(403, error instanceof Error ? error.message : String(error))
+    requireRole(stores, by, role, operation)
+  } catch {
+    throw roleDenied(stores, by, role, operation, `「${stores.config.project.name}」`)
   }
+  return by
 }
 async function checkedDir(root: string, id: string): Promise<string> {
   const dir = join(root, id)
@@ -270,12 +280,13 @@ function spaceCreateReason(
 export async function createSpace(
   deps: ServerCommandDeps,
   input: SpaceCreateRequest,
-  author: Actor,
+  author: SpaceAuthor,
   reason?: string,
 ): Promise<SpaceSummary> {
   const root = rootOf(deps)
   reason = spaceCreateReason(input, reason)
-  if (author.type !== 'human') throw new HttpError(403, '新建空间必须由人确认')
+  if (typeof author !== 'function' && author.type !== 'human')
+    throw new HttpError(403, '新建空间必须由人确认')
   return spaceLock(join(root, '.takt/space-admin'), async () => {
     const id = validId(input.id),
       spaces = await active(root)
@@ -306,12 +317,20 @@ export async function createSpace(
         ? spaces.find((item) => spaceId(item) === template.copyFrom)
         : undefined
     if (typeof template === 'object' && !source) throw new HttpError(404, '复制来源空间不存在')
-    if (source) adminRole(source, author, 'maintainer', 'space.copy')
+    if (source) adminRole(source, author, 'maintainer', '复制这个空间')
+    // 创建者：明确身份就是它；没选身份时取请求成员里的第一个 owner（向导第 3 步显示的"创建者"），
+    // 其次复制来源 / 缺省空间的 owner。都没有就不加 owner，绝不把兜底的 'web' 写成成员。
+    const requested = input.members === undefined ? [] : members(input.members)
+    const resolved =
+      who(author, { config: { members: requested } } as Pick<ProjectStores, 'config'>) ??
+      who(author, source)
+    const creator = resolved?.type === 'human' ? resolved : undefined
+    const mine = requested.find((member) => member.id === creator?.id)
     const assigned = [
-      ...(input.members === undefined ? [] : members(input.members)).filter(
-        (member) => member.id !== author.id,
-      ),
-      { id: author.id, name: author.id, role: 'owner' as const },
+      ...requested.filter((member) => member !== mine),
+      ...(creator
+        ? [{ ...mine, id: creator.id, name: mine?.name ?? creator.id, role: 'owner' as const }]
+        : []),
     ]
     const repos = await Promise.all(
       (input.repos ?? []).map(async (repo, index) => {
@@ -376,7 +395,7 @@ export async function createSpace(
         join(dir, 'takt.config.json'),
         JSON.stringify(stores.config, null, 2) + '\n',
       )
-      await adminAudit(root, author, reason, `space.create ${id}`)
+      await adminAudit(root, creator ?? ANONYMOUS, reason, `space.create ${id}`)
       await deps.onChange?.()
       return spaceSummary(stores)
     } catch (error) {
@@ -389,7 +408,7 @@ export async function updateSpace(
   deps: ServerCommandDeps,
   id: string,
   input: SpaceUpdateRequest,
-  author: Actor,
+  author: SpaceAuthor,
 ): Promise<SpaceSummary> {
   text(input.reason, 'reason')
   const root = deps.spacesDir ? rootOf(deps) : resolve(deps.projectDir ?? process.cwd())
@@ -397,14 +416,14 @@ export async function updateSpace(
     const spaces = deps.spacesDir ? await active(root) : [await openProject(root)],
       stores = spaces.find((item) => spaceId(item) === id)
     if (!stores) throw new HttpError(404, '空间不存在')
-    adminRole(stores, author, 'maintainer', 'space.update')
+    const by = adminRole(stores, author, 'maintainer', '修改空间信息')
     const name = input.name === undefined ? undefined : uniqueName(spaces, input.name, id)
-    await changeConfig(stores, author, input.reason, `space.update ${id}`, (config) => {
+    await changeConfig(stores, by, input.reason, `space.update ${id}`, (config) => {
       for (const key of ['description', 'color'] as const)
         if (input[key] !== undefined) config.project[key] = text(input[key], key, true)
       if (name !== undefined) config.project.name = name
     })
-    if (deps.spacesDir) await adminAudit(root, author, input.reason, `space.update ${id}`)
+    if (deps.spacesDir) await adminAudit(root, by, input.reason, `space.update ${id}`)
     await deps.onChange?.()
     return spaceSummary(stores)
   })
@@ -433,7 +452,7 @@ export async function listSpaces(
 export async function archiveSpace(
   deps: ServerCommandDeps,
   id: string,
-  author: Actor,
+  author: SpaceAuthor,
   reason: string,
 ): Promise<SpaceSummary> {
   const root = rootOf(deps)
@@ -441,7 +460,7 @@ export async function archiveSpace(
   return spaceLock(join(root, '.takt/space-admin'), async () => {
     const stores = (await active(root)).find((item) => spaceId(item) === id)
     if (!stores) throw new HttpError(404, '空间不存在')
-    adminRole(stores, author, 'maintainer', 'space.archive')
+    const by = adminRole(stores, author, 'maintainer', '归档空间')
     await ensureIdle(stores)
     const stamp = (deps.now?.() ?? new Date())
       .toISOString()
@@ -453,7 +472,7 @@ export async function archiveSpace(
     await mkdir(join(root, '.archive'), { recursive: true })
     if (await exists(destination)) throw new HttpError(409, '同秒归档记录已存在，请稍后重试')
     await checkedDir(root, basename(stores.projectDir))
-    await adminAudit(root, author, reason, `space.archive ${id} -> ${archived}`)
+    await adminAudit(root, by, reason, `space.archive ${id} -> ${archived}`)
     const info = await spaceSummary(stores)
     await rename(stores.projectDir, destination)
     await deps.onChange?.()
@@ -468,7 +487,7 @@ export async function archiveSpace(
 export async function restoreSpace(
   deps: ServerCommandDeps,
   id: string,
-  author: Actor,
+  author: SpaceAuthor,
   reason: string,
 ): Promise<SpaceSummary> {
   const root = rootOf(deps)
@@ -476,7 +495,7 @@ export async function restoreSpace(
   return spaceLock(join(root, '.takt/space-admin'), async () => {
     const source = await checkedDir(join(root, '.archive'), archivedId(id)),
       stores = await openProject(source)
-    adminRole(stores, author, 'maintainer', 'space.restore')
+    const by = adminRole(stores, author, 'maintainer', '恢复空间')
     const original = id.split('@')[0]!
     if (
       (await exists(join(root, original))) ||
@@ -491,7 +510,7 @@ export async function restoreSpace(
         `活动空间名称“${stores.config.project.name}”已被占用，请先重命名同名活动空间后恢复`,
       )
     }
-    await adminAudit(root, author, reason, `space.restore ${id}`)
+    await adminAudit(root, by, reason, `space.restore ${id}`)
     await rename(source, join(root, original))
     await deps.onChange?.()
     return spaceSummary(await openProject(join(root, original)))
@@ -501,7 +520,7 @@ export async function deleteSpace(
   deps: ServerCommandDeps,
   id: string,
   confirm: string,
-  author: Actor,
+  author: SpaceAuthor,
   reason: string,
 ): Promise<{ deleted: string }> {
   const root = rootOf(deps)
@@ -511,8 +530,8 @@ export async function deleteSpace(
   return spaceLock(join(root, '.takt/space-admin'), async () => {
     const dir = await checkedDir(join(root, '.archive'), id),
       stores = await openProject(dir)
-    adminRole(stores, author, 'owner', 'space.delete')
-    await adminAudit(root, author, reason, `space.delete ${id}`)
+    const by = adminRole(stores, author, 'owner', '彻底删除空间')
+    await adminAudit(root, by, reason, `space.delete ${id}`)
     await rm(dir, { recursive: true })
     return { deleted: id }
   })

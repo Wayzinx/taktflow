@@ -2,28 +2,32 @@ import type { WorkflowEditRequest, WorkflowLayout, WorkflowSourceRequest } from 
 import { convertWorkflowSource, sourceDiff } from '@taktflow/workflow-source'
 import { requireRole, systemWrite, type Actor, type ProjectStores, type WorkflowConvertResult } from '@taktflow/core'
 import type { WorkflowStore } from '@taktflow/workflow-source'
-import { actor, body, HttpError, json, safeId, text } from './http.js'
+import { actor, body, HttpError, json, requires, roleDenied, safeId, text } from './http.js'
 import { auditSpace, workflowStore, workflowWritePaths } from './space.js'
 import { STREAMING, type Handler } from './routes.js'
 import { liveStream } from './live-stream.js'
 
 export function workflowRoutes(register: (method: string, path: string, handler: Handler) => void, connections: Set<() => void>, getStore: (stores: Parameters<typeof workflowStore>[0]) => WorkflowStore) {
-  const add: typeof register = (method, path, handler) => register(method, path, async (ctx) => {
-    try { return await handler(ctx) } catch (error) {
-      if (error instanceof HttpError) throw error
-      const message = error instanceof Error ? error.message : String(error)
-      if (/workflow 不存在|修订不存在/.test(message)) throw new HttpError(404, message)
-      if (/非法|不合法|必须|不能|无效/.test(message) || error instanceof TypeError) throw new HttpError(400, message)
-      throw error
+  // what：写接口的操作说明。改流水线（源码、布局、回滚、转换、新建）需要 maintainer，和命令表的 workflow.edit / workflow.convert 一致
+  const add = (method: string, path: string, handler: Handler, what?: string) => {
+    const mapped: Handler = async (ctx) => {
+      try { return await handler(ctx) } catch (error) {
+        if (error instanceof HttpError) throw error
+        const message = error instanceof Error ? error.message : String(error)
+        if (/workflow 不存在|修订不存在/.test(message)) throw new HttpError(404, message)
+        if (/非法|不合法|必须|不能|无效/.test(message) || error instanceof TypeError) throw new HttpError(400, message)
+        throw error
+      }
     }
-  })
+    register(method, path, what ? requires('maintainer', what, mapped) : mapped)
+  }
   // 编辑器写源码、修订记录和布局（读取也会补记初始修订）都是 serve 自己的写入：运行中节点的写权限守卫不能把它们算到 Agent 头上。
   const guarded = <T>(stores: ProjectStores, fn: () => Promise<T>) => systemWrite(stores.projectDir, workflowWritePaths(stores), fn)
   add('POST', '/api/workflows/:id/convert', async ({ stores, params, request }) => {
     const input = await body(request)
     if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') throw new HttpError(400, 'dryRun 必须是布尔值')
     return guarded(stores, () => convertWorkflow(stores, safeId(params.id!), { dryRun: input.dryRun as boolean | undefined, baseRev: input.baseRev as string | undefined, reason: input.reason as string | undefined }, actor(request, stores), getStore(stores)))
-  })
+  }, '转换流水线写法')
   add('GET', '/api/workflows', async ({ stores }) => {
     const runs = await stores.runs.list()
     return (await guarded(stores, () => getStore(stores).list())).map((item) => ({ ...item, runs: runs.filter((run) => run.workflowId === item.id).length }))
@@ -39,13 +43,13 @@ export function workflowRoutes(register: (method: string, path: string, handler:
     if (input.reason !== undefined) text(input.reason, 'reason')
     if (!Array.isArray(input.edits)) throw new HttpError(400, 'edits 必须是数组')
     return result(await guarded(stores, () => getStore(stores).edit(safeId(params.id!), { ...input as unknown as WorkflowEditRequest, author: actor(request, stores) })), response)
-  })
+  }, '修改流水线')
   add('PUT', '/api/workflows/:id/source', async ({ stores, params, request, response }) => {
     const input = await body(request)
     text(input.baseRev, 'baseRev'); text(input.source, 'source')
     if (input.reason !== undefined) text(input.reason, 'reason')
     return result(await guarded(stores, () => getStore(stores).replaceSource(safeId(params.id!), { ...input as unknown as WorkflowSourceRequest, author: actor(request, stores) })), response)
-  })
+  }, '修改流水线源码')
   add('PUT', '/api/workflows/:id/layout', async ({ stores, params, request }) => {
     const input = await body(request)
     if (!input.nodes || typeof input.nodes !== 'object' || Array.isArray(input.nodes)) throw new HttpError(400, 'nodes 必须是坐标表')
@@ -57,7 +61,7 @@ export function workflowRoutes(register: (method: string, path: string, handler:
       if (!v || ![v.x, v.y, v.zoom].every((n) => typeof n === 'number' && Number.isFinite(n))) throw new HttpError(400, 'viewport 不合法')
     }
     return guarded(stores, () => getStore(stores).setLayout(safeId(params.id!), input as unknown as WorkflowLayout))
-  })
+  }, '调整流水线布局')
   add('GET', '/api/workflows/:id/revisions', async ({ stores, params }) => {
     const store = getStore(stores)
     const id = safeId(params.id!)
@@ -70,7 +74,7 @@ export function workflowRoutes(register: (method: string, path: string, handler:
   add('POST', '/api/workflows/:id/rollback', async ({ stores, params, request, response }) => {
     const input = await body(request)
     return result(await guarded(stores, () => getStore(stores).rollback(safeId(params.id!), text(input.rev, 'rev'), actor(request, stores), text(input.reason, 'reason'))), response)
-  })
+  }, '回滚流水线')
   add('GET', '/api/workflows/:id/stream', async ({ stores, params, response }) => {
     const store = getStore(stores)
     await guarded(stores, () => store.get(safeId(params.id!)))
@@ -84,7 +88,7 @@ export function workflowRoutes(register: (method: string, path: string, handler:
 
 export async function convertWorkflow(stores: ProjectStores, id: string, input: { dryRun?: boolean; baseRev?: string; reason?: string }, author: Actor, store = workflowStore(stores)): Promise<WorkflowConvertResult> {
   try { requireRole(stores, author, 'maintainer', 'workflow.convert') }
-  catch (error) { throw new HttpError(403, error instanceof Error ? error.message : String(error)) }
+  catch { throw roleDenied(stores, author, 'maintainer', '转换流水线写法') }
   const current = await store.get(id, { record: !input.dryRun })
   const converted = convertWorkflowSource(current.source)
   if (!converted.ok) return converted

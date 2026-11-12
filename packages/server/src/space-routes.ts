@@ -4,7 +4,7 @@ import { spaceLock } from './space-lock.js'
 import { systemWrite } from '@taktflow/core'
 import { access } from 'node:fs/promises'
 import { assertTaskResendable, TaskResendConflictError, listReviews, type RoomMember, type RoomMessage } from '@taktflow/core'
-import { authorize, actor, body, jsonBody, HttpError, integer, text } from './http.js'
+import { authorize, actor, body, jsonBody, HttpError, integer, requires, text } from './http.js'
 import { atomicWrite, auditSpace, changeConfig, members, repoBinding, repoManager, spaceDetail, spaceFile } from './space.js'
 import { requirement } from './read-model.js'
 import { stream } from './stream.js'
@@ -35,17 +35,15 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
     })
   })
   add('GET', '/api/space', ({ stores }) => spaceDetail(stores))
-  add('PUT', '/api/space/members', async ({ stores, request }) => {
-    authorize(request, stores, 'owner')
+  add('PUT', '/api/space/members', requires('owner', '修改空间成员', async ({ stores, request }) => {
     const input = await jsonBody(request)
     const record = input as Record<string, unknown> | null
     const value = members(Array.isArray(input) ? input : record?.members)
     const reason = Array.isArray(input) ? request.headers['x-takt-reason'] : record?.reason
     await changeConfig(stores, actor(request, stores), text(reason, 'reason'), '更新空间成员', (config) => { config.members = value })
     return spaceDetail(stores)
-  })
-  add('POST', '/api/space/repos', async ({ stores, request }) => {
-    authorize(request, stores, 'maintainer')
+  }))
+  add('POST', '/api/space/repos', requires('maintainer', '绑定代码仓库', async ({ stores, request }) => {
     const input = await body(request)
     const repo = repoBinding(input)
     await changeConfig(stores, actor(request, stores), text(input.reason, 'reason'), `绑定仓库 ${repo.id}`, (config) => {
@@ -53,9 +51,8 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
       config.repos = [...config.repos ?? [], repo]
     })
     return spaceDetail(stores)
-  })
-  add('PATCH', '/api/space/repos/:repoId', async ({ stores, request, params }) => {
-    authorize(request, stores, 'maintainer')
+  }))
+  add('PATCH', '/api/space/repos/:repoId', requires('maintainer', '修改代码仓库', async ({ stores, request, params }) => {
     const input = await body(request)
     const reason = text(input.reason, 'reason')
     await changeConfig(stores, actor(request, stores), reason, `更新仓库 ${params.repoId}`, (config) => {
@@ -65,23 +62,22 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
       config.repos![index] = repoBinding(Object.fromEntries(Object.entries(merged).filter(([, value]) => value !== null)))
     })
     return spaceDetail(stores)
-  })
-  add('POST', '/api/space/repos/:repoId/sync', async ({ stores, request, params }) => {
-    authorize(request, stores, 'maintainer')
+  }))
+  add('POST', '/api/space/repos/:repoId/sync', requires('maintainer', '同步代码仓库', async ({ stores, request, params }) => {
     const input = await body(request)
     const reason = text(input.reason, 'reason')
     if (!stores.config.repos?.some((repo) => repo.id === params.repoId)) throw new HttpError(404, '仓库不存在')
     const result = await repoManager(stores).sync(params.repoId!)
     await auditSpace(stores, actor(request, stores), reason, `同步仓库 ${params.repoId}：${result.head}`)
     return result
-  })
+  }))
   add('GET', '/api/space/files', async ({ stores, url }) => {
     const file = await spaceFile(stores, url.searchParams.get('kind'), url.searchParams.get('name'))
     if (!await access(join(stores.projectDir, file.path)).then(() => true, () => false)) throw new HttpError(404, '文件不存在')
     return file
   })
-  add('PUT', '/api/space/files', async ({ stores, url, request }) => {
-    authorize(request, stores, url.searchParams.get('kind') === 'agent' ? 'owner' : 'maintainer')
+  add('PUT', '/api/space/files', requires('maintainer', '编辑空间文件', async ({ stores, url, request }) => {
+    if (url.searchParams.get('kind') === 'agent') authorize(request, stores, 'owner', '编辑角色档案')
     const input = await body(request)
     const content = text(input.content, 'content', true)
     const reason = text(input.reason, 'reason')
@@ -92,7 +88,7 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
       return { ...file, content }
     })
     return file.kind === 'agent' ? spaceLock(join(stores.taktDir, 'agent-edit'), save) : save()
-  })
+  }))
   add('GET', '/api/requirements/:id/reviews', async ({ stores, params }) => {
     await requirement(stores, params.id!)
     return listReviews(stores, params.id!)
