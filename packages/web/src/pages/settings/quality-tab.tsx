@@ -84,7 +84,7 @@ export function QualityTab() {
           <ul className="ql-cursors">
             {cursors.map(([runId, seq], i) => {
               const req = reqOf(runId)
-              const c = cursorState(seq)
+              const c = cursorState(seq, s.lastSeq?.[runId])
               return (
                 <li key={runId} style={{ '--i': i } as CSSProperties}>
                   <Link to={`/run/${runId}`} className="mono ql-run">

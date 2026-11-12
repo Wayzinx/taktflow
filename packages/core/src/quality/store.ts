@@ -217,7 +217,22 @@ export class FsQualityStore implements QualityStore {
     return (await this.views()).evaluations
   }
 
-  async status(): Promise<QualityStatus> { return this.locked(async () => (await this.ledger()).status) }
+  async status(): Promise<QualityStatus> {
+    const status = await this.locked(async () => (await this.ledger()).status)
+    return { ...status, lastSeq: await this.latestSeqs(status.cursors) }
+  }
+
+  /** 每个运行的最新事件序号：从游标往后读，没有新事件时游标就是链尾。 */
+  private async latestSeqs(cursors: Record<string, number>): Promise<Record<string, number>> {
+    const runs = await this.stores.runs.list()
+    const result: Record<string, number> = {}
+    for (const run of runs) {
+      const cursor = cursors[run.runId] ?? 0
+      const events = await this.stores.events.read(run.runId, { afterSeq: cursor })
+      result[run.runId] = events.reduce((seq, event) => Math.max(seq, event.seq), cursor)
+    }
+    return result
+  }
 
   async repair(by: Actor, reason: string): Promise<QualityStatus> {
     if (!reason.trim()) throw new Error('修复质量锚点必须填写原因；请提供 reason')

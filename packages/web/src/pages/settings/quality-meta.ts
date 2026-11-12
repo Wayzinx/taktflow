@@ -14,6 +14,6 @@ export function cursorState(seq: number, head?: number): CursorState {
   if (head === undefined) return { text: `已入账到第 ${fmtCount(seq)} 条事件 · 总数未提供，暂无法判断是否落后`, canSync: true }
   const behind = Math.max(0, head - seq)
   return behind
-    ? { behind, text: `已入账 ${fmtCount(seq)} / ${fmtCount(head)} 条 · 落后 ${fmtCount(behind)} 条`, canSync: true }
-    : { behind, text: `已入账 ${fmtCount(seq)} / ${fmtCount(head)} 条 · 已追平`, canSync: false }
+    ? { behind, text: `已入账 ${fmtCount(seq)} / 共 ${fmtCount(head)} 条事件，落后 ${fmtCount(behind)} 条`, canSync: true }
+    : { behind, text: `已入账 ${fmtCount(seq)} / 共 ${fmtCount(head)} 条事件，已追平`, canSync: false }
 }

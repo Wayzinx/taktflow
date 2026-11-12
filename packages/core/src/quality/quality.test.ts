@@ -66,7 +66,15 @@ it('挂接质量存储，重复 sync 幂等，观察三态与来源身份独立�
   expect(observations[0]).toMatchObject({ id: 'review:run-quality:1:0', subject: 'ISS-1', checkpointId: 'cp-1', invocationId: 'inv-1' })
   expect(await quality.observations({ source: 'gate' })).toHaveLength(3)
   expect(await quality.defects()).toEqual([])
-  expect(await quality.status()).toMatchObject({ ok: true, importedM3: true, cursors: { [run.runId]: 9 } })
+  expect(await quality.status()).toMatchObject({ ok: true, importedM3: true, cursors: { [run.runId]: 9 }, lastSeq: { [run.runId]: 9 } })
+})
+
+it('入账游标落后时同时给出最新事件序号，前端才能算出落后多少', async () => {
+  const { stores, quality, run } = await setup()
+  for (let i = 0; i < 3; i++) await stores.events.append(run.runId, { type: 'log', actor: system, data: { level: 'info', message: `事件 ${i}` } })
+  await quality.sync(run.runId)
+  await stores.events.append(run.runId, { type: 'log', actor: system, data: { level: 'info', message: '还没入账' } })
+  expect(await quality.status()).toMatchObject({ cursors: { [run.runId]: 3 }, lastSeq: { [run.runId]: 4 } })
 })
 
 it('追加完成但游标尚未推进时崩溃，重开后重放不重复、不漏后续观察', async () => {

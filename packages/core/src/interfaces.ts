@@ -261,6 +261,8 @@ export interface QualityStatus {
   brokenAt?: number
   /** 每个运行已入账到的事件序号。 */
   cursors: Record<RunId, number>
+  /** 每个运行当前最新的事件序号；与 cursors 一起显示落后多少。 */
+  lastSeq?: Record<RunId, number>
   lastSyncAt?: string
   /** M3 存放区缺陷是否已导入。 */
   importedM3?: boolean
