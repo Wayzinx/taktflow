@@ -44,6 +44,23 @@ export const OUTCOME: Record<NonNullable<ReviewFacets['outcome']>, { label: stri
   rejected: { label: '否决', tone: 'failed' },
   escalated: { label: '交人裁决', tone: 'waiting' },
 }
+/**
+ * 结论标签实际显示什么：outcome 只看最近一轮，未关闭问题来自全部轮次的台账。最近一轮没提新问题、
+ * 但还有阻断 / 重要问题没关闭（例如上一轮提的、本轮评审者没再提）时，不显示成干净的"无问题 / 同意"，
+ * 写明遗留数并用待处理色——"本轮未提及"不代表已解决。
+ */
+export function outcomeView(facets: ReviewFacets): { label: string; tone: Tone | 'neutral'; hint: string; leftover: number } | undefined {
+  if (!facets.outcome) return undefined
+  const base = OUTCOME[facets.outcome]
+  const leftover = facets.open.blocker + facets.open.major
+  if (!leftover || (facets.outcome !== 'no_findings' && facets.outcome !== 'approved')) return { ...base, hint: '最近一轮的结论', leftover: 0 }
+  return {
+    label: `${facets.outcome === 'no_findings' ? '本轮无新问题' : '同意'} · 遗留 ${leftover}`,
+    tone: 'waiting',
+    hint: `最近一轮${facets.outcome === 'no_findings' ? '没有提出新问题' : '评审者同意'}，但问题台账里还有 ${leftover} 个阻断 / 重要问题没关闭（本轮没再提的不当作已解决），需要人工确认或处置`,
+    leftover,
+  }
+}
 export const COVERAGE: Record<ReviewFacets['coverage'], { label: string; tone: Tone | 'neutral'; hint: string }> = {
   full: { label: '覆盖完整', tone: 'neutral', hint: '所有评审者都给出了结论，评审目标都可读' },
   partial: { label: '覆盖不全', tone: 'waiting', hint: '有评审者没给出结论，或有目标读不到' },

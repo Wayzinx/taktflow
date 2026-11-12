@@ -3,6 +3,7 @@ import { Gauge } from 'lucide-react'
 import type { BudgetStatus } from '@taktflow/core'
 import { fmtCost, fmtTokens } from '../lib/format'
 import { Link } from '../lib/router'
+import { Skeleton } from './ui'
 import './budget-bar.css'
 
 type Tone = 'running' | 'warning' | 'danger'
@@ -23,12 +24,27 @@ function dims(b: BudgetStatus): Array<{ key: string; label: string; used: string
   return out
 }
 
+/** 预算和用量都是 runId 这一次运行的（需求页头的 token 是全部运行的合计），链接前写明"最近运行"。 */
+function RunLink({ runId }: { runId?: string }) {
+  if (!runId) return null
+  return (
+    <Link to={`/run/${runId}`} className="budget-run" title="预算与用量只统计这一次运行">
+      最近运行 <span className="mono">{runId}</span>
+    </Link>
+  )
+}
+
 /**
- * 预算条（D 组）：需求页顶部常驻。填充用 `.meter`（scaleX），ratio ≥ 0.8 变 warning 色，≥ 1 变 danger 色。
- * budget 为空表示还没有运行或运行没有预算。
+ * 预算条（D 组）：需求页顶部常驻，统计最近一次流水线运行。填充用 `.meter`（scaleX），ratio ≥ 0.8 变 warning 色，≥ 1 变 danger 色。
+ * budget 为空表示还没有运行或运行没有预算；loading 时先占住一行高度，免得运行详情到了再把下面的内容挤下去。
  */
-export function BudgetBar({ budget, runId }: { budget?: BudgetStatus; runId?: string }) {
-  if (!budget) return null
+export function BudgetBar({ budget, runId, loading }: { budget?: BudgetStatus; runId?: string; loading?: boolean }) {
+  if (!budget)
+    return loading ? (
+      <div className="budget-bar is-loading" aria-hidden>
+        <Skeleton w={280} h={12} />
+      </div>
+    ) : null
   const ratio = Math.max(0, budget.ratio)
   const tone: Tone = ratio >= 1 || budget.state === 'exhausted' ? 'danger' : ratio >= 0.8 || budget.state === 'warning' ? 'warning' : 'running'
   const pct = Math.round(ratio * 100)
@@ -39,12 +55,12 @@ export function BudgetBar({ budget, runId }: { budget?: BudgetStatus; runId?: st
       <div className="budget-bar is-unset" aria-label="运行预算">
         <span className="budget-label">
           <Gauge aria-hidden />
-          预算
+          最近运行预算
         </span>
         <span className="budget-state faint">未设预算</span>
         <span className="budget-dims">
           <span className="budget-dim">
-            <span className="faint">已用 Token</span>
+            <span className="faint">最近一次运行已用 Token</span>
             <span className="mono num">{fmtTokens(budget.used.tokens)}</span>
           </span>
           {budget.used.costUsd !== undefined && (
@@ -60,18 +76,14 @@ export function BudgetBar({ budget, runId }: { budget?: BudgetStatus; runId?: st
             </span>
           )}
         </span>
-        {runId && (
-          <Link to={`/run/${runId}`} className="budget-run mono">
-            {runId}
-          </Link>
-        )}
+        <RunLink runId={runId} />
       </div>
     )
   return (
     <div className="budget-bar" data-tone={tone} aria-label="运行预算">
       <span className="budget-label">
         <Gauge aria-hidden />
-        预算
+        最近运行预算
       </span>
       <span className="budget-meter-wrap">
         <span className="meter meter-lg" data-tone={tone} role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} aria-label={`预算用量 ${pct}%`} style={{ '--meter': Math.min(1, ratio) } as CSSProperties}>
@@ -99,11 +111,7 @@ export function BudgetBar({ budget, runId }: { budget?: BudgetStatus; runId?: st
           </span>
         )}
       </span>
-      {runId && (
-        <Link to={`/run/${runId}`} className="budget-run mono">
-          {runId}
-        </Link>
-      )}
+      <RunLink runId={runId} />
     </div>
   )
 }

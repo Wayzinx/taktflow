@@ -6,6 +6,7 @@ import { Avatar, EmptyState, ErrorState, GlideMark, Segmented, Skeleton, Skeleto
 import { AgentMark } from '../../components/agent-mark'
 import { JsonView } from '../../lib/json-view'
 import { Markdown } from '../../lib/markdown'
+import { prefersReducedMotion } from '../../lib/motion'
 import { actorName, fmtDate, fmtRelative } from '../../lib/format'
 import { Link, setQuery, useLocation } from '../../lib/router'
 import { ARTIFACT_KIND, ARTIFACT_KIND_ORDER } from '../../lib/status'
@@ -90,6 +91,13 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
     setClosed((s) => { const n = new Set(s); if (open) n.delete(kind); else n.add(kind); return n })
   }
   const [listRef, glide] = useGlide<HTMLElement>('.art-item.active')
+  // 窄屏上列表和预览上下堆叠：点了产物把预览滚进视野，不然看起来像没反应
+  const layoutRef = useRef<HTMLDivElement>(null)
+  const pick = (path: string) => {
+    setQuery({ path, v: undefined })
+    if (!window.matchMedia('(max-width: 720px)').matches) return
+    requestAnimationFrame(() => layoutRef.current?.querySelector('.art-preview')?.scrollIntoView({ block: 'start', behavior: prefersReducedMotion() ? 'auto' : 'smooth' }))
+  }
   const scopeSwitch = stagePaths && (
     <div className="art-scope">
       <Segmented<'all' | 'stage'>
@@ -144,7 +152,7 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
     )
   const selected = records.find((r) => r.path === selectedPath) ?? records[0]!
   return (
-    <div className="art-layout">
+    <div ref={layoutRef} className="art-layout">
       <nav ref={listRef} className={`card art-list${glide ? ' has-glide' : ''}`} aria-label="产物列表">
         <GlideMark glide={glide} className="art-glide" />
         {scopeSwitch}
@@ -161,7 +169,7 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
               const Icon = fileIcon(r)
               const v = latest(r)
               return (
-                <button key={r.path} className={`art-item art-core${r.path === selected.path ? ' active' : ''}`} onClick={() => setQuery({ path: r.path, v: undefined })}>
+                <button key={r.path} className={`art-item art-core${r.path === selected.path ? ' active' : ''}`} onClick={() => pick(r.path)}>
                   <Icon className="art-item-icon" />
                   <span className="art-item-text">
                     <span className="art-item-title truncate">{coreName(r)}</span>
@@ -193,7 +201,7 @@ export function ArtifactsTab({ id, detail, run }: { id: string; detail?: Require
                       const Icon = fileIcon(r)
                       const v = latest(r)
                       return (
-                        <button key={r.path} className={`art-item art-item-nested${r.path === selected.path ? ' active' : ''}`} onClick={() => setQuery({ path: r.path, v: undefined })}>
+                        <button key={r.path} className={`art-item art-item-nested${r.path === selected.path ? ' active' : ''}`} onClick={() => pick(r.path)}>
                           <Icon className="art-item-icon" />
                           <span className="art-item-text">
                             <span className="art-item-title truncate">{r.title ?? r.path.split('/').pop()}</span>

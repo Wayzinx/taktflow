@@ -74,6 +74,8 @@
   white-space: nowrap;
   pointer-events: all;
   box-shadow: var(--shadow-xs);
+  /* 标签层本身不分层级，不给 z-index 会被半透明的循环组底色（z 1）和节点（z 4）盖住，看着像褪了色 */
+  z-index: 6;
 }
 .rv-edge-label svg {
   width: 11px;

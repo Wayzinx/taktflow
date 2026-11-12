@@ -18,6 +18,7 @@ import { MetricsTab } from './metrics-tab'
 import { ReviewsTab } from './reviews-tab'
 import { RunsTab } from './runs-tab'
 import { TraceTab } from './trace-tab'
+import { latestRun } from '../run/run-context'
 import './requirement.css'
 
 const CURRENT_VERB: Record<string, string> = { running: '正在', waiting_human: '等你处理', blocked: '卡在', failed: '卡在', stale: '需要重跑' }
@@ -63,16 +64,35 @@ function StatusLine({ r, run }: { r: RequirementDetail; run?: RunDetail }) {
       </div>
     )
   }
-  if (!r.latestRunId)
+  if (!r.latestRunId) {
+    // latestRunId 只算流水线运行；Lead 回合 / 临时任务跑过（常见是失败了）时照实说，不写"还没有运行"
+    const last = latestRun(r.runs)
+    const lead = (
+      <Link to={`/req/${r.id}?tab=chat&compose=${encodeURIComponent('@lead 开始')}`} title="Lead 是每个需求的协调 Agent，负责拆解需求、派活和启动流程">
+        去群聊让 Lead 开始
+      </Link>
+    )
+    if (!last)
+      return (
+        <div className="req-summary">
+          <StatusDot tone="pending" />
+          还没有运行
+          {r.status !== 'archived' && <span className="req-summary-sub">点右上角「启动流程」，或{lead}</span>}
+        </div>
+      )
+    const st = runStatusMeta(last.status, last.interrupted)
     return (
       <div className="req-summary">
-        <StatusDot tone="pending" />
-        还没有运行
+        <span>
+          <StatusDot tone={st.tone} pulse={last.status === 'running'} /> {last.kind === 'task' ? (last.origin?.title ?? (last.workflowId === 'lead' ? 'Lead 回合' : '临时任务')) : '最近一次运行'}
+          {st.label}
+        </span>
         <span className="req-summary-sub">
-          <Link to={`/req/${r.id}?tab=chat`}>去群聊让 Lead 开始</Link>
+          还没启动流水线 · <Link to={`/run/${last.runId}`}>{last.status === 'failed' || last.interrupted ? '查看原因 / 重试' : '查看运行'}</Link> · {lead}
         </span>
       </div>
     )
+  }
   const st = run ? runStatusMeta(run.run.status, run.interrupted) : undefined
   return (
     <div className="req-summary">
@@ -105,7 +125,7 @@ export function RequirementPage({ id }: { id: string }) {
             <StageRail
               stages={r.stages}
               current={r.current}
-              empty={r.latestRunId ? '最近的运行没有划分阶段' : '尚未运行'}
+              empty={r.latestRunId ? '最近的运行没有划分阶段' : r.runs.length ? '还没启动流水线' : '尚未运行'}
               onStage={r.latestRunId ? (sid) => navigate(`/run/${r.latestRunId}?stage=${encodeURIComponent(sid)}`) : undefined}
             />
           ) : (
@@ -113,7 +133,7 @@ export function RequirementPage({ id }: { id: string }) {
           )}
         </div>
         <Decisions requirementId={id} detail={r} run={latest.data} budget={latest.data?.budget} />
-        <BudgetBar budget={latest.data?.budget} runId={r?.latestRunId} />
+        <BudgetBar budget={latest.data?.budget} runId={r?.latestRunId} loading={!r && q.loading || !!r?.latestRunId && !latest.data && !latest.error} />
       </header>
 
       <Tabs

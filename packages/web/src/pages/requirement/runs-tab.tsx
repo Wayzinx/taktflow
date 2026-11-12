@@ -19,8 +19,8 @@ export function RunsTab({ runs: given, reqId }: { runs?: RunSummary[]; reqId?: s
         <EmptyState
           icon={GitBranch}
           title="还没有运行"
-          body="在群聊里告诉 Lead 开始，或者让管家按选好的流程启动第一次运行。"
-          action={reqId ? <Link to={`/req/${reqId}?tab=chat`} className="btn btn-sm btn-primary">去群聊</Link> : undefined}
+          body="点页头的「启动流程」，或在群聊里告诉 Lead（每个需求的协调 Agent）开始，也可以让管家按选好的流程启动第一次运行。"
+          action={reqId ? <Link to={`/req/${reqId}?tab=chat&compose=${encodeURIComponent('@lead 开始')}`} className="btn btn-sm btn-primary">去群聊</Link> : undefined}
           stewardAsk={reqId ? `帮我启动 ${reqId} 的第一次运行` : undefined}
           stewardContext={reqId ? [{ type: 'requirement', id: reqId, label: reqId }] : undefined}
         />
@@ -33,7 +33,7 @@ export function RunsTab({ runs: given, reqId }: { runs?: RunSummary[]; reqId?: s
           <tr>
             <th>运行</th>
             <th>状态</th>
-            <th style={{ width: '28%' }}>进度</th>
+            <th style={{ width: '28%' }}>进度（已实例化节点）</th>
             <th>开始</th>
             <th className="r">耗时</th>
             <th className="r">Token</th>

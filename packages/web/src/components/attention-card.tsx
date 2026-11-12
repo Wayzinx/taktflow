@@ -4,6 +4,7 @@ import type { AttentionItem } from '@taktflow/core'
 import { invalidate, useAsync, useSource } from '../api'
 import { actorName, fmtRelative, tidyText } from '../lib/format'
 import { Link, navigate, useSpaceHref } from '../lib/router'
+import { answerOutcome } from './attention-outcome'
 import { TimeboxBar } from './timebox'
 import { toast } from './ui'
 import './attention-card.css'
@@ -185,7 +186,15 @@ export function AttentionCard({ item, reqTitle, compact }: { item: AttentionItem
           body: '这个节点与依赖它的节点已标为过期，恢复运行后会按新的回答重跑。',
           action: { label: '去运行页', onClick: () => navigate(at(`/run/${item.runId}?node=${encodeURIComponent(item.nodeId)}`)) },
         })
-      else toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : label === '已确认假设' ? '假设已确认，运行照常继续。' : '已提交，运行将自动继续。', tone: 'success' })
+      else if (label === '已确认假设' || ds.mock) toast(`${label}：${item.requirementId} · ${item.nodeId}`, { body: ds.mock ? '演示数据：已记入本页内存中的审计日志。' : '假设已确认，运行照常继续。', tone: 'success' })
+      else {
+        const outcome = answerOutcome(item, body)
+        toast(`${label}：${item.requirementId} · ${item.nodeId}`, {
+          body: outcome.body,
+          tone: outcome.tone,
+          action: outcome.stopped ? { label: '去需求页', onClick: () => navigate(at(`/req/${item.requirementId}`)) } : undefined,
+        })
+      }
       invalidate()
     } catch (e) {
       toast('提交失败', { body: (e as Error).message, tone: 'failed' })
