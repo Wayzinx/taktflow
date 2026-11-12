@@ -1441,3 +1441,11 @@ it('服务重启：上次没写完的回复标成已停止，页面不会一直�
   expect((await restarted.store.messages(f.thread.id)).find((m) => m.id === 'm1')).toMatchObject({ status: 'stopped', text: '写了一半', error: '服务重启时这条回复还没写完' })
   expect((await restarted.store.thread(f.thread.id)).status).toBe('interrupted')
 })
+
+it('运行时给出的可读原因原样显示，不再套「回复失败…请检查管家配置」', async () => {
+  const f = await fixture()
+  const agent = new StewardAgent({ ...f.deps, resolveRuntime: async () => ({ run: async () => { throw new StewardError(502, 'TRAE CLI 的上游模型现在太忙，等一会儿点「重试」，或换一个模型') } }) }, 'alice')
+  agents.push(agent)
+  const { done } = await agent.post({ text: '进度' })
+  expect(await done).toMatchObject({ status: 'error', error: 'TRAE CLI 的上游模型现在太忙，等一会儿点「重试」，或换一个模型' })
+})

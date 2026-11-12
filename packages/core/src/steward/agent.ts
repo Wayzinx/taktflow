@@ -439,7 +439,8 @@ export class StewardAgent {
       else {
         message.status = 'error'
         const reason = error instanceof Error ? error.message : String(error)
-        message.error = reason.includes('请') ? reason : `回复失败：${reason}；请检查管家配置后重试`
+        // StewardError 已经是写给人看的原因（超时、上游繁忙……），不再套一层「请检查配置」
+        message.error = error instanceof StewardError || reason.includes('请') ? reason : `回复失败：${reason}；请检查管家配置后重试`
         this.store.emit(user.threadId, { type: 'error', messageId: message.id, error: message.error })
       }
     } finally {
