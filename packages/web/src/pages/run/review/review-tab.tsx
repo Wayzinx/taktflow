@@ -44,6 +44,12 @@ export function ReviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: s
   const views = review ? roundViews(review.rounds, review.config.maxRounds) : []
   const [picked, setPicked] = useState<number>()
   const [focusKey, setFocusKey] = useState<string>()
+  if (review?.status === 'skipped' && !views.length)
+    return (
+      <div className="dpad rv">
+        <EmptyState compact icon={ClipboardCheck} title="这次没有触发评审" body="所在分支没有走到：上游没有交来要评审的改动，节点被跳过。" />
+      </div>
+    )
   if (!review || !views.length)
     return (
       <div className="dpad rv">

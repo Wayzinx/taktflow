@@ -1,4 +1,4 @@
-import { Ban, Check, CircleDashed, FilePen, Hourglass, LoaderCircle, PenLine, Undo2, X } from 'lucide-react'
+import { Ban, Check, CircleDashed, FilePen, Hourglass, LoaderCircle, PenLine, SkipForward, Undo2, X } from 'lucide-react'
 import type { IssueObservation, NodeDetail, ReviewDisposition, ReviewFacets, ReviewIssue, ReviewResponse, ReviewStatus, ReviewVerdict } from '@taktflow/core'
 import type { StatusMeta, Tone } from '../../../lib/status'
 
@@ -12,6 +12,7 @@ export const REVIEW_STATUS: Record<ReviewStatus, StatusMeta> = {
   passed: { label: '已结束', tone: 'success', icon: Check },
   exhausted: { label: '轮次用完', tone: 'failed', icon: Ban },
   reworked: { label: '已打回', tone: 'stale', icon: Undo2 },
+  skipped: { label: '跳过', tone: 'skipped', icon: SkipForward },
 }
 
 export const VERDICT_META: Record<ReviewVerdict, StatusMeta> = {

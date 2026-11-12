@@ -51,3 +51,18 @@ it('代码评审读取实时 diff 判断过期，不登记新版本；工作树�
   await repos.removeWorktree(tree.path)
   expect((await reviewDetail(stores, run.runId, 'review'))?.facets?.freshness).toBe('unknown')
 })
+
+it('分支没走到、被跳过的评审节点是"跳过"，不是"评审中"', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-review-skipped-')); roots.push(root)
+  const stores = await initProject(root)
+  const requirementId = (await stores.workspaces.createRequirement({ title: '跳过的评审' })).id
+  const run: RunState = { runId: 'run-skipped-review', requirementId, workflowId: 'w', workflowVersion: '1', status: 'succeeded', startedAt: new Date().toISOString(), args: {}, expansions: [],
+    nodes: { review: { id: 'review', status: 'skipped', attempts: 0, outputs: [] } } }
+  const snapshot: WorkflowSnapshot = { id: 'w', title: 'w', version: '1', stages: [], nodes: [
+    { id: 'review', kind: 'review', title: '修复代码评审', needs: [], review: { target: ['src/**'], author: 'dev', reviewers: [{ role: 'qa' }], maxRounds: 3, onExhausted: 'fail', pass: 'all' } },
+  ] }
+  await stores.runs.create(run, snapshot)
+  const detail = await reviewDetail(stores, run.runId, 'review')
+  expect(detail?.status).toBe('skipped')
+  expect(detail?.facets?.phase).toBe('skipped')
+})

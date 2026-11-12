@@ -846,7 +846,8 @@ export interface ChatPostRequest {
   replyTo?: string
 }
 
-export type ReviewStatus = 'pending' | 'in_review' | 'revising' | 'passed' | 'exhausted' | 'reworked'
+/** skipped：所在分支没走到（如判决没发现代码缺陷，修复评审不触发），从没评审过。 */
+export type ReviewStatus = 'pending' | 'in_review' | 'revising' | 'passed' | 'exhausted' | 'reworked' | 'skipped'
 
 export interface ReviewSummary {
   runId: string
@@ -868,7 +869,7 @@ export interface ReviewSummary {
  * "no_findings" 表示没发现问题，界面上不显示为"通过"。
  */
 export interface ReviewFacets {
-  phase: 'pending' | 'reviewing' | 'revising' | 'signoff' | 'done' | 'exhausted' | 'reworked' | 'failed'
+  phase: 'pending' | 'reviewing' | 'revising' | 'signoff' | 'done' | 'exhausted' | 'reworked' | 'failed' | 'skipped'
   outcome?: 'approved' | 'changes_requested' | 'rejected' | 'no_findings' | 'escalated'
   /** full：所有评审者都给出结论且目标都可读；partial：有缺失。 */
   coverage: 'full' | 'partial'

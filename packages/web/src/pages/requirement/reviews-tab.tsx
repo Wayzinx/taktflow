@@ -93,7 +93,7 @@ export function ReviewsTab({ id }: { id: string }) {
                     <StatusBadge meta={REVIEW_STATUS[r.status]} />
                   </td>
                   <td>
-                    {r.facets && r.status !== 'pending' ? <FacetTags facets={r.facets} compact /> : <span className="faint">—</span>}
+                    {r.facets && r.status !== 'pending' && r.status !== 'skipped' ? <FacetTags facets={r.facets} compact /> : <span className="faint">—</span>}
                   </td>
                   <td>
                     <RoundMeter revision={r.revision ?? r.reworks + 1} round={r.round} max={r.maxRounds} />

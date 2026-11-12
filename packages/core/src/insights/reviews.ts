@@ -95,11 +95,12 @@ export async function reviewDetail(stores: ProjectStores, runId: string, nodeId:
   const last = events.at(-1)?.type
   let status: ReviewStatus = (ns?.status === 'succeeded' && (ns.result as { passed?: boolean } | undefined)?.passed)
     || (ns?.status === 'skipped' && latest?.passed) ? 'passed'
+    : ns?.status === 'skipped' ? 'skipped'
     : last === 'rework.started' ? 'reworked' : last === 'review.exhausted' ? 'exhausted'
       : progress?.phase === 'revise' ? 'revising'
         : ns?.status === 'pending' && !ns.round ? 'pending' : 'in_review'
   if (ns?.status === 'failed') status = 'exhausted'
-  const phase: ReviewFacets['phase'] = ns?.status === 'failed' ? 'failed' : status === 'reworked' ? 'reworked'
+  const phase: ReviewFacets['phase'] = ns?.status === 'failed' ? 'failed' : status === 'skipped' ? 'skipped' : status === 'reworked' ? 'reworked'
     : status === 'passed' ? 'done' : progress?.phase === 'signoff' ? 'signoff'
       : progress?.phase === 'exhausted' || progress?.phase === 'decision' || status === 'exhausted' ? 'exhausted'
         : status === 'revising' ? 'revising' : status === 'pending' ? 'pending' : 'reviewing'
