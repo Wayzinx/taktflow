@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { initProject, StewardAgent, type HarnessAdapter, type HarnessRequest, type ProviderBridge, type StewardPrefs } from '@taktflow/core'
 import { createStewardDeps } from './steward-routes.js'
-import { failureText, stewardRuntime } from './steward-runtime.js'
+import { failureText, STEWARD_IDLE_MS, stewardRuntime } from './steward-runtime.js'
 import { clearHarnessAvailability } from './harness-availability.js'
 import { StewardMcp } from './steward-mcp.js'
 import { fail, json } from './http.js'
@@ -206,7 +206,7 @@ it('原始 native 模型与自带模型可解析，账号未就绪仅拒绝自�
 
 it('CLI 报错给人看：超时说清楚和怎么办，其余去掉日志行和进程信号', () => {
   expect(failureText('TRAE CLI', 'Incomplete Codex stream: missing terminal turn.completed event\nProcess timeout after 600000ms\nProcess terminated by SIGTERM'))
-    .toBe('TRAE CLI 10 分钟内没有写完回复，已停止。可以调低推理强度、换个更快的模型，或把问题问得具体一些再试')
+    .toBe('TRAE CLI 30 分钟内没有写完回复，已停止。可以调低推理强度、换个更快的模型，或把问题问得具体一些再试')
   expect(failureText('Codex', '2026-11-10T15:38:24.574545Z ERROR codex_memories_write::phase2: Phase 2 no changes\nunexpected status 401 Unauthorized\nProcess exited with code 1'))
     .toBe('Codex 回复失败：unexpected status 401 Unauthorized；请检查配置后重试')
   expect(failureText('TRAE CLI', '{"type":"error","message":"stream disconnected before completion: We\'re sorry, the request queue size is exceed. Please wait and try again later."}'))
@@ -227,4 +227,29 @@ it('回复已写出、进程超时没退出：交回写好的内容并注明可�
     expect(done.text).toContain('游戏在 games/tank/index.html')
     expect(done.text).toContain('可能不完整')
   } finally { agent.close() }
+})
+
+it('还在出事件就一直等；连续 5 分钟没动静才停，并说明是卡住了', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  const f = await fixture()
+  let signal: AbortSignal | undefined
+  f.adapters.codex.run = vi.fn(async (request, emit) => {
+    signal = request.signal
+    // 每 4 分钟一个事件，一共 20 分钟：不该被掐
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(STEWARD_IDLE_MS - 60_000)
+      emit({ type: 'message', role: 'assistant', text: `第 ${i} 步` })
+    }
+    expect(signal?.aborted).toBe(false)
+    await vi.advanceTimersByTimeAsync(STEWARD_IDLE_MS)
+    expect(signal?.aborted).toBe(true)
+    return { ok: false, finalText: '', error: 'Process cancelled' }
+  })
+  const agent = new StewardAgent({ ...f.deps, ...f.runtime }, 'alice')
+  try {
+    const posted = await agent.post({ text: '慢慢做', runtime: { harness: 'codex', model: 'good' } })
+    const done = await posted.done
+    expect(done.status).toBe('error')
+    expect(done.error).toBe('codex 连续 5 分钟没有任何输出，像是卡住了，已停止。等一会儿点「重试」，或换一个模型')
+  } finally { agent.close(); vi.useRealTimers() }
 })

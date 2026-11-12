@@ -84,6 +84,11 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
       return { run: async turn => {
         const grant = mcp.issue({ userId, threadId: turn.threadId, specs: turn.specs, call: turn.call })
         let route: BridgeRoute | undefined
+        // 还在出事件（想、调工具、写字）就一直等；连续 STEWARD_IDLE_MS 没动静才算卡住
+        const idle = new AbortController()
+        let quiet: ReturnType<typeof setTimeout> | undefined
+        const touch = () => { clearTimeout(quiet); quiet = setTimeout(() => idle.abort(), STEWARD_IDLE_MS) }
+        touch()
         try {
           const history = turn.messages.filter(message => message.role !== 'system').slice(-40)
             .map(message => `${message.role}: ${message.content}`).join('\n\n').slice(-100000)
@@ -96,24 +101,31 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
           }
           const result = await adapter.run({ prompt: history, systemAppend: turn.messages.filter(message => message.role === 'system').map(message => message.content).join('\n\n'),
             cwd: stores.projectDir, model: modelId, modelConfig, effort: selected.effort, provider: connection, ...(route ? { env: route.env } : {}),
-            readOnly: true, timeoutMs: STEWARD_TIMEOUT_MS, signal: turn.signal,
+            readOnly: true, timeoutMs: STEWARD_TIMEOUT_MS, signal: turn.signal ? AbortSignal.any([turn.signal, idle.signal]) : idle.signal,
             mcpServers: [{ name: 'takt', url: url(), headers: { Authorization: `Bearer ${grant.token}` } }],
-          }, turn.onEvent)
+          }, event => { touch(); turn.onEvent(event) })
           if (result.ok) return result.finalText
+          const stalled = idle.signal.aborted && !turn.signal?.aborted
           // 回复已经写出来、进程却没按时退出（CLI 收尾卡住）：把写好的内容交给人，说明可能不完整，不整条判失败
-          if (isTimeout(result.error) && result.finalText.trim()) return `${result.finalText}\n\n（${adapter.displayName} 在 ${STEWARD_TIMEOUT_MS / 60_000} 分钟内没有正常结束，以上是停止前写出的内容，可能不完整。）`
+          if ((stalled || isTimeout(result.error)) && result.finalText.trim()) return `${result.finalText}\n\n（${adapter.displayName} ${stalled ? `连续 ${STEWARD_IDLE_MS / 60_000} 分钟没有动静` : `在 ${STEWARD_TIMEOUT_MS / 60_000} 分钟内没有正常结束`}，以上是停止前写出的内容，可能不完整。）`
+          if (stalled) throw new StewardError(502, `${adapter.displayName} 连续 ${STEWARD_IDLE_MS / 60_000} 分钟没有任何输出，像是卡住了，已停止。等一会儿点「重试」，或换一个模型`)
           throw new Error(result.error ?? '未完成回复')
         } catch (error) {
+          if (error instanceof StewardError) throw error
           const reason = createRedactor([grant.token, ...Object.values(route?.env ?? {})])(error instanceof Error ? error.message : String(error))
           throw new StewardError(502, failureText(adapter.displayName, reason))
-        } finally { grant.revoke(); await route?.close().catch(() => undefined) }
+        } finally { clearTimeout(quiet); grant.revoke(); await route?.close().catch(() => undefined) }
       } }
     },
   }
 }
 
-/** 管家一轮可能连调多次工具、推理模型想得久：给 10 分钟。 */
-export const STEWARD_TIMEOUT_MS = 600_000
+/**
+ * 管家一轮可能连调几十次工具、推理模型想得久：只要还在出事件就等，总时长封顶 30 分钟；
+ * 连续 5 分钟一个事件都没有才当卡住停掉。人随时可以自己点停止。
+ */
+export const STEWARD_TIMEOUT_MS = 30 * 60_000
+export const STEWARD_IDLE_MS = 5 * 60_000
 const isTimeout = (error?: string) => !!error && /Process timeout after/.test(error)
 
 /** 上游模型排队满、限流或过载：不是配置问题，等一会儿重试或换模型。 */
