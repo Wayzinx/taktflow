@@ -18,6 +18,8 @@ export function toStrictSchema(schema: Schema): Schema {
     if (node.type === 'object' || Array.isArray(node.type) && node.type.includes('object') || node.properties) {
       const props = node.properties as Schema | undefined ?? {}
       const required = node.required as string[] | undefined ?? []
+      // 没列字段的对象在 JSON Schema 里是开放的；严格模式会把它收成只能输出 {}，内容被悄悄丢掉。
+      if (!Object.keys(props).length && node.additionalProperties !== false) throw new Error(`${path}：严格模式不支持没列字段的开放对象`)
       if (required.some(key => !Object.hasOwn(props, key))) throw new Error(`${path}：必填字段没有 properties 定义`)
       out.properties = Object.fromEntries(Object.entries(props).map(([key, child]) => {
         const converted = visit(child, `${path}.${key}`)

@@ -57,3 +57,18 @@ it('planner 展开的条目和恢复时重建的条目都按桥接校验，不�
     expect(started.find(e => e.agentRole === 'dev')?.pairing).toEqual({ mode: 'bridge', protocol: 'openai-responses', upstream: 'openai-chat' })
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+it('声明的产出不在写权限里时开跑前就阻塞，不白跑一整轮', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'takt-engine-outputs-'))
+  try {
+    const stores = await initProject(root)
+    const requirement = await stores.workspaces.createRequirement({ title: '产出越界' })
+    const run = vi.fn(async () => ({ ok: true, finalText: 'done' }))
+    const harness: HarnessAdapter = { id: 'test', displayName: 'test', available: async () => ({ ok: true }), run }
+    const profile: AgentProfile = { role: 'dev', title: '', description: '', instructions: '', skills: [], writeScope: ['src/**'], harness: { harness: 'test' } }
+    const state = await createEngine({ stores, profiles: { dev: profile }, harnesses: { test: harness }, knowledge: [] }).start({ requirementId: requirement.id,
+      workflow: { id: 'test', title: '产出越界', version: '1', stages: [], nodes: [agent({ id: 'code', title: '实现', role: 'dev', prompt: 'OK', outputs: [{ path: 'tasks/code.md', kind: 'task' }, { path: 'evidence/**', kind: 'evidence' }] })] } })
+    expect(state.nodes.code).toMatchObject({ status: 'blocked', error: expect.stringMatching(/^节点要产出 \S+tasks\/code\.md，但角色 dev 的写权限不含它：\["src\/\*\*"\]/) })
+    expect(run).not.toHaveBeenCalled()
+  } finally { await rm(root, { recursive: true, force: true }) }
+})

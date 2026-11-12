@@ -52,3 +52,10 @@ it('Lead 动作的开放参数必须降级，不得被严格模式悄悄删掉',
   expect(() => toStrictSchema(LEAD_TURN_SCHEMA)).toThrow('自由键 map')
   expect(schemaErrors({ reply: '派发', actions: [{ type: 'dispatch_task', task: { role: 'dev', title: '实现', instructions: '完成' } }] }, LEAD_TURN_SCHEMA)).toEqual([])
 })
+
+it('planner 条目的开放 params 必须降级，不得被严格模式收成空对象', async () => {
+  const { PLANNER_SCHEMA } = await import('../engine/nodes/schemas.js')
+  expect(() => toStrictSchema(PLANNER_SCHEMA)).toThrow('没列字段的开放对象')
+  expect(() => toStrictSchema({ type: 'object', properties: { meta: { type: 'object' } } })).toThrow('$.meta')
+  expect(toStrictSchema({ type: 'object', properties: { empty: { type: 'object', additionalProperties: false } } })).toMatchObject({ properties: { empty: { anyOf: [{ additionalProperties: false }, { type: 'null' }] } } })
+})

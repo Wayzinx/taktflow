@@ -24,6 +24,7 @@ import { completionPrompt, completionSchema, checkCompletion, completionErrors, 
 import { FailureError } from './fingerprint.js'
 import { harnessEnvFailure, withEnvHint } from './harness-failure.js'
 import { extractJsonBlock } from '../util/json-block.js'
+import { matchGlob } from '../util/glob.js'
 import { workingDirectory, sandboxCall, cwdGuard, saveWorktreeDiff } from './execution.js'
 
 export class BlockedError extends Error {}
@@ -49,6 +50,12 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const { stores, profiles, harnesses, knowledge } = host.deps
     const profile = profiles[node.role]
     if (!profile) throw new Error(`角色不存在：${node.role}`)
+    if (!identity.snapshot) {
+      // 声明的产出写不了，跑完也必判越界；开跑前就停，别白花一整轮。只查不带通配的路径，通配产出交给运行后的守卫。
+      const unwritable = (node.outputs ?? []).map((output) => relative(stores.projectDir, join(ctx.workspaceDir, output.path)))
+        .filter((file) => !/[*?[{]/.test(file) && !(profile.writeScope.some((p) => matchGlob(p, file)) && (node.writeScope === undefined || node.writeScope.some((p) => matchGlob(p, file)))))
+      if (unwritable.length) throw new BlockedError(`节点要产出 ${unwritable.join('、')}，但角色 ${node.role} 的写权限${node.writeScope ? '与节点写权限的交集' : ''}不含它：${JSON.stringify(intersectWriteScopes(profile.writeScope, node.writeScope))}。给角色加上这个路径的写权限后重试`)
+    }
     const cwd = await workingDirectory(host, node, ctx, ns)
     ctx = { ...ctx, projectDir: cwd }
     const selection = { config: stores.config, profiles, harnesses }
