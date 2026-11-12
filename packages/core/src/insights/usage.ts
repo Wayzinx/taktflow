@@ -1,11 +1,24 @@
 import type { EventEnvelope, EventPayloads, Usage } from '../types.js'
 
+/** 没报成本的 token：有 costUsd 时看 unpricedTokens（省略即 0），没有 costUsd 就是整份都没报。 */
+const unpricedOf = (u: Usage) => u.unpricedTokens ?? (u.costUsd === undefined ? u.inputTokens + u.outputTokens : 0)
+
+/**
+ * 成本只累加报了的部分，没报的 token 记进 unpricedTokens，界面据此写"≥$x、覆盖 y%"。
+ * 有 token 的调用全都没报成本时（只有零用量的调用带了 costUsd: 0）成本是未知，不是 $0：不输出 costUsd。
+ */
 export function addUsage(a: Usage, b: Usage): Usage {
+  const inputTokens = a.inputTokens + b.inputTokens
+  const outputTokens = a.outputTokens + b.outputTokens
+  const unpricedTokens = unpricedOf(a) + unpricedOf(b)
+  const costUsd = (a.costUsd ?? 0) + (b.costUsd ?? 0)
+  const priced = (a.costUsd !== undefined || b.costUsd !== undefined) && (costUsd !== 0 || unpricedTokens < inputTokens + outputTokens || unpricedTokens === 0)
   return {
-    inputTokens: a.inputTokens + b.inputTokens,
-    outputTokens: a.outputTokens + b.outputTokens,
+    inputTokens,
+    outputTokens,
     ...(a.cachedTokens !== undefined || b.cachedTokens !== undefined ? { cachedTokens: (a.cachedTokens ?? 0) + (b.cachedTokens ?? 0) } : {}),
-    ...(a.costUsd !== undefined || b.costUsd !== undefined ? { costUsd: (a.costUsd ?? 0) + (b.costUsd ?? 0) } : {}),
+    ...(priced ? { costUsd } : {}),
+    ...(priced && unpricedTokens ? { unpricedTokens } : {}),
   }
 }
 
