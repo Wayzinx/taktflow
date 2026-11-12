@@ -23,7 +23,8 @@ function ParamForm({ input, original, editable, onChange }: { input: Record<stri
     else next[k] = v
     onChange(next)
   }
-  const keys = [...new Set([...Object.keys(original), ...Object.keys(input)])]
+  // baseHash 是服务端记的基线，不给人改
+  const keys = [...new Set([...Object.keys(original), ...Object.keys(input)])].filter((k) => k !== 'baseHash')
   return (
     <div className="stw-form">
       {keys.map((k) => {
@@ -73,7 +74,7 @@ function WorkflowPreviewButton({ proposalId, threadId, step }: { proposalId: str
   )
 }
 
-/** 提案里的一步：标题 + 对应预览（命令 → 参数表单，workflow → diff + 画布幽灵预览，文件 → diff）。 */
+/** 提案里的一步：标题 + 对应预览（命令 → 参数表单，改配置 → 配置差异，workflow → diff + 画布幽灵预览，文件 → diff）。 */
 export function ProposalStepView({ index, step, original, preview, proposalId, threadId, editable, onChange }: { index: number; step: ProposalStep; original?: ProposalStep; preview?: Preview; proposalId: string; threadId: string; editable: boolean; onChange: (s: ProposalStep) => void }) {
   const Icon = STEP_ICON[step.kind]
   const title = step.title ?? (step.kind === 'command' ? step.commandId : step.kind === 'workflow' ? `修改流水线 ${step.workflowId}` : `写入 ${step.path}`)
@@ -87,9 +88,10 @@ export function ProposalStepView({ index, step, original, preview, proposalId, t
         {target !== title && <span className="stw-step-target mono truncate">{target}</span>}
       </div>
       <div className="stw-step-body">
-        {step.kind === 'command' && <ParamForm input={step.input} original={original?.kind === 'command' ? original.input : step.input} editable={editable} onChange={(input) => onChange({ ...step, input })} />}
+        {/* 命令带了配置差异（config.patch）就只看差异，整段补丁 JSON 读不出改了谁 */}
+        {step.kind === 'command' && preview?.kind !== 'diff' && <ParamForm input={step.input} original={original?.kind === 'command' ? original.input : step.input} editable={editable} onChange={(input) => onChange({ ...step, input })} />}
         {step.kind === 'command' && preview?.kind === 'text' && <p className="stw-step-note">{preview.body}</p>}
-        {step.kind !== 'command' && preview?.kind === 'diff' && <DiffView diff={preview.body} />}
+        {preview?.kind === 'diff' && <DiffView diff={preview.body} />}
         {step.kind === 'file' && !preview && <DiffView diff={step.content.split('\n').map((l) => `+${l}`).join('\n')} />}
         {preview?.kind === 'text' && step.kind !== 'command' && <p className="stw-step-note">{preview.body}</p>}
         {step.kind === 'workflow' && (
