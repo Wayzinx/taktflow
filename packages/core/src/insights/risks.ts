@@ -21,8 +21,8 @@ export interface RiskSnapshot {
 }
 export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now: Date, thresholds: RiskThresholds = {}): ComputedRisk[] {
   const at = now.toISOString(), time = now.getTime(), risks: ComputedRisk[] = []
-  const add = (kind: Risk['kind'], level: Risk['level'], req: string, subject: string, title: string, detail: string, runId?: string, nodeId?: string) => {
-    const href = runId ? stewardLinks.run(spaceId, runId, nodeId) : req ? stewardLinks.requirement(spaceId, req) : stewardLinks.overview(spaceId)
+  const add = (kind: Risk['kind'], level: Risk['level'], req: string, subject: string, title: string, detail: string, runId?: string, nodeId?: string, link?: string) => {
+    const href = link ?? (runId ? stewardLinks.run(spaceId, runId, nodeId) : req ? stewardLinks.requirement(spaceId, req) : stewardLinks.overview(spaceId))
     risks.push({ key: `${kind}:${spaceId}/${req}/${subject}`, kind, level, spaceId, ...(req ? { requirementId: req } : {}), runId, nodeId,
       title, detail, evidence: [{ label: title, href }], firstSeenAt: at, lastSeenAt: at, actions: [{ label: '让管家协助处理', ask: `帮我处理${title}`, href }] })
   }
@@ -63,7 +63,12 @@ export function computeRiskSnapshot(snapshot: RiskSnapshot, spaceId: string, now
     if (remaining < duration * (thresholds.deadlineRatio ?? .25)) add('deadline', 'medium', req.id, req.id, '需求临近截止时间', `截止时间 ${req.dueAt}`)
   }
   for (const defect of snapshot.defects ?? []) add('defect-escape', 'medium', defect.requirementId, defect.id, '已确认逃逸缺陷', defect.title)
-  for (const card of snapshot.scorecards ?? []) if (card.regression?.suspected) add('regression', 'medium', '', `${card.key.workflowId ?? ''}/${card.key.nodeId ?? card.label}`, '成绩单疑似退化', card.regression.reason ?? card.label)
+  for (const card of snapshot.scorecards ?? []) if (card.regression?.suspected) {
+    const subject = `${card.key.workflowId ?? ''}/${card.key.nodeId ?? card.label}`
+    // 证据直接打开评测页这张成绩单（?card= 与评测页的 cardKey 同口径），不再落到空间总览。
+    const link = `${stewardLinks.overview(spaceId)}/eval?card=${encodeURIComponent(card.key.workflowId ? subject : card.key.nodeId ?? card.label)}`
+    add('regression', 'medium', '', subject, '成绩单疑似退化', `${card.label}：${card.regression.reason ?? '指标变差'}`, undefined, undefined, link)
+  }
   return risks
 }
 export async function computeRisks(stores: ProjectStores, spaceId: string, now: Date, thresholds?: RiskThresholds): Promise<ComputedRisk[]> {

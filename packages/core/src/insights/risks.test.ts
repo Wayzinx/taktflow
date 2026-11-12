@@ -32,6 +32,17 @@ describe('确定性风险规则', () => {
     expect(risks.map((r) => r.kind).sort()).toEqual(['repeat-failure', 'review-stuck', 'gate-failed', 'deadline', 'defect-escape', 'regression'].sort())
     expect(risks.every((r) => r.key.startsWith(`${r.kind}:shop/`))).toBe(true)
   })
+  it('成绩单退化的证据直接指向评测页那张成绩单，探索性的不报', () => {
+    const snapshot = base()
+    snapshot.scorecards = [
+      { key: { by: 'node', workflowId: 'taktflow-standard', nodeId: 'prd' }, label: 'taktflow-standard/prd', regression: { suspected: true, reason: '最近配方一次通过率 100% → 25%' } } as never,
+      { key: { by: 'node', workflowId: 'taktflow-standard', nodeId: 'design' }, label: 'taktflow-standard/design', regression: { suspected: false, exploratory: true, reason: '样本不足' } } as never,
+    ]
+    const risks = computeRiskSnapshot(snapshot, 'shop', now)
+    expect(risks).toHaveLength(1)
+    expect(risks[0]).toMatchObject({ kind: 'regression', detail: 'taktflow-standard/prd：最近配方一次通过率 100% → 25%',
+      evidence: [{ href: '/s/shop/eval?card=taktflow-standard%2Fprd' }], actions: [{ href: '/s/shop/eval?card=taktflow-standard%2Fprd' }] })
+  })
   it('几十万条事件的长运行不爆栈', () => {
     const snapshot = base()
     const many = Array.from({ length: 300_000 }, () => event('harness.message', { role: 'system', text: '' }))

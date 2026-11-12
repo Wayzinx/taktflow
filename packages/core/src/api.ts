@@ -1140,7 +1140,8 @@ export interface NodeScorecard {
   durationMsAvg?: number
   /** 按配方的时间序列（最早出现时间升序）。 */
   trend?: Array<{ recipeKey: string; firstAt: string; executions: number; firstPassRate?: number }>
-  regression?: { suspected: boolean; reason?: string }
+  /** exploratory：指标变差但前后某一组执行次数不足，只作参考，不判退化、不产生风险。 */
+  regression?: { suspected: boolean; reason?: string; exploratory?: boolean }
 }
 
 export interface EvalCollectRequest {

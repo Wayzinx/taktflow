@@ -118,6 +118,25 @@
   width: 12px;
   height: 12px;
 }
+.sc-regress-btn {
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+.sc-regress-btn[aria-pressed='true'] {
+  border-color: color-mix(in oklch, var(--st-failed) 45%, transparent);
+}
+/* 指标变差但样本不足：只作参考，不当退化 */
+.sc-explore {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-xs);
+  background: var(--st-skipped-soft);
+  color: var(--text-2);
+  font-size: var(--text-label);
+  white-space: nowrap;
+}
 
 /* 趋势小图 */
 .esp {
@@ -167,6 +186,11 @@
   background: var(--st-failed-soft);
   color: var(--st-failed);
   font-size: var(--text-ui);
+}
+.sc-callout.is-explore {
+  border-color: var(--border);
+  background: var(--st-skipped-soft);
+  color: var(--text-2);
 }
 .sc-metrics {
   display: grid;

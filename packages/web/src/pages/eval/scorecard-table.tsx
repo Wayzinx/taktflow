@@ -29,6 +29,7 @@ export function Downstream({ d }: { d: NodeScorecard['downstream'] }) {
 }
 
 export function RegressionTag({ c, compact }: { c: NodeScorecard; compact?: boolean }) {
+  if (c.regression?.exploratory) return <span className="sc-explore" title={c.regression.reason}>样本不足</span>
   if (!c.regression?.suspected) return null
   return (
     <span className="sc-regress" title={c.regression.reason}>
@@ -60,7 +61,7 @@ export function ScorecardTable({ cards, by, onOpen }: { cards?: NodeScorecard[];
           <tr>
             <th>{first}</th>
             <Th k="executions">执行</Th>
-            <Th k="firstPassRate" title="第一次执行就成功且完成标准全部满足">一次通过率</Th>
+            <Th k="firstPassRate" title="第一次执行就成功且完成标准全部满足；评审节点按「只评审一轮且该轮通过」算，反映被评审产物的质量，评审节点自身看检出率">一次通过率</Th>
             <th title="评审轮数均值 · 打回次数 · blocker / major 问题">评审负担</th>
             <th title="人修改产物：语义 / 措辞">人工改写</th>
             <th className="r" title="完成标准未满足次数">未满足</th>
