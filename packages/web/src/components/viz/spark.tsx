@@ -6,8 +6,9 @@ import { RUN_STATUS } from '../../lib/status'
 /**
  * 迷你折线（docs/design/25 §3）：读数格里的 14 天趋势。少于 2 个点不画；全为 0 画一条贴底的平线。
  * 首次出现描线 400ms（pathLength 归一），数据更新直接换形不重播。
+ * points：每个点的说明（哪天、多少），给了就按点切出悬停区，悬停显示该点和它的说明。
  */
-export function Sparkline({ values, label, width = 64, height = 22, className }: { values: number[]; label: string; width?: number; height?: number; className?: string }) {
+export function Sparkline({ values, label, points, width = 64, height = 22, className }: { values: number[]; label: string; points?: string[]; width?: number; height?: number; className?: string }) {
   if (values.length < 2) return null
   const max = Math.max(...values)
   const pad = 2
@@ -17,12 +18,20 @@ export function Sparkline({ values, label, width = 64, height = 22, className }:
   const line = `M${pts.join('L')}`
   const area = `${line}L${x(values.length - 1).toFixed(1)},${height}L${x(0).toFixed(1)},${height}Z`
   const last = values[values.length - 1]!
+  const step = (width - pad * 2) / (values.length - 1)
   return (
-    <svg className={`spark${className ? ` ${className}` : ''}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
+    <svg className={`spark${points ? ' spark-points' : ''}${className ? ` ${className}` : ''}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={label}>
       <title>{label}</title>
       <path className="spark-area" d={area} />
       <path className="spark-line" d={line} pathLength={1} />
       <circle className="spark-dot" cx={x(values.length - 1)} cy={y(last)} r={2.2} />
+      {points?.map((text, i) => (
+        <g key={i} className="spark-hit">
+          <title>{text}</title>
+          <rect x={Math.max(0, x(i) - step / 2)} y={0} width={step} height={height} />
+          <circle cx={x(i)} cy={y(values[i] ?? 0)} r={2.2} />
+        </g>
+      ))}
     </svg>
   )
 }
@@ -34,32 +43,44 @@ const RUN_TONE: Partial<Record<RunSpark['status'], string>> = {
   cancelled: 'var(--border-strong)',
 }
 
+/** 柱高用对数刻度，最高的柱子往下看 3 个数量级：一次 10M 的运行不会把 15 万的失败运行压成和 0 一样的点。 */
+const DECADES = 3
+export function barHeight(tokens: number, max: number, height: number): number {
+  if (tokens <= 0 || max <= 0) return 0
+  const floor = 3
+  const t = 1 + Math.log10(Math.min(tokens, max) / max) / DECADES
+  return Math.round(floor + Math.max(0, t) * (height - floor))
+}
+
 /**
- * 最近几次运行的迷你柱：高 = Token、色 = 结果（失败红、等人琥珀、运行中节拍橙、成功中性灰）；
- * Lead 派发的任务运行画得更淡。每根柱子悬停写明是哪次运行。
+ * 最近几次运行的迷你柱：高 = Token（对数刻度）、色 = 结果（失败红、等人琥珀、运行中节拍橙、成功中性灰）；
+ * 没有用量的运行画成贴底的空心短横，和有用量的区分开。Lead 派发的任务运行画得更淡。每根柱子悬停写明是哪次运行。
  */
 export function RunBars({ runs, height = 16, className }: { runs: RunSpark[]; height?: number; className?: string }) {
   if (!runs.length) return null
-  const max = Math.max(1, ...runs.map((r) => r.tokens))
+  const max = Math.max(...runs.map((r) => r.tokens))
   const w = 3
   const gap = 2
   const width = runs.length * (w + gap) - gap
   return (
-    <svg className={`run-bars${className ? ` ${className}` : ''}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`最近 ${runs.length} 次运行`}>
+    <svg className={`run-bars${className ? ` ${className}` : ''}`} width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`最近 ${runs.length} 次运行（柱高为对数刻度的 Token）`}>
       {runs.map((r, i) => {
-        const h = Math.max(3, Math.round((r.tokens / max) * height))
+        const empty = r.tokens <= 0
+        const h = empty ? 2 : barHeight(r.tokens, max, height)
+        const tone = RUN_TONE[r.status] ?? 'var(--c-7)'
         return (
           <rect
             key={r.runId}
-            x={i * (w + gap)}
-            y={height - h}
-            width={w}
+            x={i * (w + gap) + (empty ? 0.5 : 0)}
+            y={height - h - (empty ? 0.5 : 0)}
+            width={empty ? w - 1 : w}
             height={h}
             rx={1}
             className="run-bar"
+            data-empty={empty || undefined}
             data-live={r.status === 'running' || undefined}
             data-task={r.kind === 'task' || undefined}
-            style={{ fill: RUN_TONE[r.status] ?? 'var(--c-7)', '--i': i } as CSSProperties}
+            style={{ fill: empty ? 'transparent' : tone, stroke: empty ? tone : undefined, '--i': i } as CSSProperties}
           >
             <title>{`${r.runId} · ${RUN_STATUS[r.status].label} · ${r.tokens ? fmtTokens(r.tokens) : '无用量'} · ${fmtRelative(r.startedAt)}${r.kind === 'task' ? ' · 任务' : ''}`}</title>
           </rect>
