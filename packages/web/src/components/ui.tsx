@@ -8,7 +8,7 @@ import './ui.css'
 export function StatusBadge({ meta, subtle }: { meta: StatusMeta; subtle?: boolean }) {
   const Icon = meta.icon
   return (
-    <span className={`status-badge${subtle ? ' subtle' : ''}`} style={{ '--tone': meta.tone === 'pending' ? 'var(--text-2)' : toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}>
+    <span className={`status-badge${subtle ? ' subtle' : ''}`} title={meta.hint} style={{ '--tone': meta.tone === 'pending' ? 'var(--text-2)' : toneVar(meta.tone), '--tone-soft': toneSoftVar(meta.tone) } as CSSProperties}>
       <Icon className={meta.spin ? 'spin' : undefined} strokeWidth={2.4} />
       {meta.label}
     </span>
@@ -20,9 +20,9 @@ export function StatusDot({ tone, pulse }: { tone: Tone; pulse?: boolean }) {
 }
 
 export function KindIcon({ kind, size = 22 }: { kind: NodeKind; size?: number }) {
-  const { icon: Icon, label } = NODE_KIND[kind]
+  const { icon: Icon, label, hint } = NODE_KIND[kind]
   return (
-    <span className={`kind-icon kind-${kind}`} style={{ width: size, height: size }} title={label}>
+    <span className={`kind-icon kind-${kind}`} style={{ width: size, height: size }} title={`${label}：${hint}`}>
       <Icon strokeWidth={2} />
     </span>
   )
@@ -217,3 +217,4 @@ export { Kbd, withShortcut } from './ui/kbd'
 export { Drawer, type DrawerProps } from './ui/drawer'
 export { PageTransition, vtName } from './ui/page-transition'
 export { ReasonDialog, ReasonField, RiskTag, RISK, reasonOk, type Risk } from './ui/reason-dialog'
+export { Term } from './ui/term'

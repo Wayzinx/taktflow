@@ -392,3 +392,11 @@
     transform: none;
   }
 }
+
+/* ---------------------------------------------------------------- 术语：虚下划线 + 悬停解释（lib/glossary，<Term>） */
+.term {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-3);
+  text-underline-offset: 3px;
+  cursor: help;
+}
