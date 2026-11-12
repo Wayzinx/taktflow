@@ -1,10 +1,11 @@
 import { Check, GitFork } from 'lucide-react'
 import type { AgentRoleView, SpaceDetail } from '@taktflow/core'
-import { useAsync } from '../../api'
+import type { AsyncState } from '../../api'
 import { AgentMark } from '../../components/agent-mark'
 import { EmptyState, ErrorState, SkeletonRows } from '../../components/ui'
 import { setQuery } from '../../lib/router'
 import { selectorText } from './runtime/shared'
+import { ROLE_ORIGIN } from './role-form'
 import './shared-tab.css'
 
 const SOURCE: Record<AgentRoleView['effective']['source'], string> = { role: '角色档案', 'space-default': '默认路由', builtin: '内置默认' }
@@ -13,8 +14,8 @@ const SOURCE: Record<AgentRoleView['effective']['source'], string> = { role: '�
  * 共享资源（docs/design/30 §3）：代码仓库、技能、知识库都挂在空间上，所有角色共用；
  * 这一页一张表看全每个角色实际用了哪些（技能是提示词里点名的，知识库没限定就是全部）。
  */
-export function SharedTab({ space }: { space?: SpaceDetail }) {
-  const q = useAsync((d) => d.agentRoles(), [])
+/** roles：设置页取的角色列表（与角色 Tab 同一份）。 */
+export function SharedTab({ space, roles: q }: { space?: SpaceDetail; roles: AsyncState<AgentRoleView[]> }) {
   if (q.error && !q.data) return <div className="card"><ErrorState error={q.error} onRetry={q.reload} compact /></div>
   if (!space || !q.data) return <div className="card"><SkeletonRows rows={8} /></div>
   const roles = q.data
@@ -78,7 +79,7 @@ export function SharedTab({ space }: { space?: SpaceDetail }) {
                 </th>
                 <td className="shared-run">
                   <span className="mono truncate">{selectorText(r.effective.harness)}</span>
-                  <span className="faint">{SOURCE[r.effective.source]}</span>
+                  <span className="faint">{r.effective.source === 'role' ? ROLE_ORIGIN[r.origin] : SOURCE[r.effective.source]}</span>
                 </td>
                 {skills.map((s, i) => (
                   <td key={s} className={`shared-cell${i === 0 ? ' grp-start' : ''}`}>
