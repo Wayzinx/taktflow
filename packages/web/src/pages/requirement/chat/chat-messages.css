@@ -188,6 +188,15 @@
   margin-top: 2px;
 }
 
+/* 流水线投来的待办：和系统消息一样居中，不占成员的头像列 */
+.chat-pipeline {
+  width: min(640px, calc(100% - 2 * var(--sp-4)));
+  margin: var(--sp-2) auto var(--sp-3);
+}
+.chat-pipeline > .chat-system {
+  margin: 0 0 2px;
+}
+
 /* ---- 待办卡片 */
 .chat-attn {
   margin-top: 4px;

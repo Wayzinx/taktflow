@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Activity, Cog, CornerUpLeft, Info } from 'lucide-react'
+import { Activity, Cog, CornerUpLeft, Info, UserRoundCheck, type LucideIcon } from 'lucide-react'
 import type { AttentionItem, RoomMember, RoomMessage } from '@taktflow/core'
 import { AgentMark } from '../../../components/agent-mark'
 import { LeadMark } from '../../../components/identity'
@@ -29,14 +29,14 @@ export interface MessageCtx {
 
 function authorLabel(m: RoomMessage, member?: RoomMember): { name: string; tag?: string; kind: RoomMember['kind'] | 'system' } {
   const a = m.author
-  if (a.type === 'system') return { name: a.id === 'engine' ? '引擎' : a.id, kind: 'system' }
+  if (a.type === 'system') return { name: a.id === 'engine' ? '流水线' : a.id, kind: 'system' }
   if (a.type === 'agent') return { name: member?.name ?? a.role, tag: a.role === 'lead' ? undefined : a.harness, kind: a.role === 'lead' ? 'lead' : 'agent' }
   return { name: member?.name ?? a.id, tag: member?.role, kind: 'human' }
 }
 
 /**
  * 头像（docs/design/30 §1）：真人是首字母头像，Lead 是拿指挥棒的蜂，子 Agent 是按角色拿道具、按 harness 着色的蜂；
- * 引擎这类系统消息用线稿图标。一眼分清是人、是哪个 Agent。
+ * 系统（流水线）用线稿图标。一眼分清是人、是哪个 Agent。
  */
 export function MemberAvatar({ kind, name, id, role, harness, size = 24, busy }: { kind: RoomMember['kind'] | 'system'; name: string; id?: string; role?: string; harness?: string; size?: number; busy?: boolean }) {
   if (kind === 'human') return <Avatar name={name} id={id} size={size} />
@@ -49,11 +49,11 @@ export function MemberAvatar({ kind, name, id, role, harness, size = 24, busy }:
   )
 }
 
-function SystemLine({ m }: { m: RoomMessage }) {
+function SystemLine({ m, icon: Icon = Info }: { m: RoomMessage; icon?: LucideIcon }) {
   const text = tidyText(m.text)
   return (
     <div className="chat-system" role="note">
-      <Info aria-hidden="true" />
+      <Icon aria-hidden="true" />
       <span className="chat-system-text" title={text.length > 120 ? text : undefined}>
         {text}
       </span>
@@ -65,10 +65,32 @@ function SystemLine({ m }: { m: RoomMessage }) {
   )
 }
 
+/**
+ * 流水线（引擎）不是群成员，它投来的评审进度、待办卡片和系统消息排在一起：居中，不顶着头像和名字像有人在说话。
+ * 待办卡片照常可以直接审批 / 回答。
+ */
+function PipelineItem({ m, ctx }: { m: RoomMessage; ctx: MessageCtx }) {
+  if (m.kind !== 'attention') return <SystemLine m={m} icon={m.kind === 'progress' ? Activity : Info} />
+  return (
+    <div className="chat-pipeline" role="group" aria-label={`流水线请人处理 ${fmtTime(m.at)}`} data-kind={m.kind}>
+      <div className="chat-system">
+        <UserRoundCheck aria-hidden="true" />
+        <span className="chat-system-text">流水线请人处理</span>
+        <time className="mono faint" dateTime={m.at}>
+          {fmtTime(m.at).slice(0, 5)}
+        </time>
+      </div>
+      <AttentionMessage m={m} items={ctx.attention} />
+      <MessageRefs m={m} />
+    </div>
+  )
+}
+
 /** 一条消息；grouped 时与上一条同作者，省掉头像和名字。 */
 export function MessageItem({ m, grouped, ctx }: { m: RoomMessage; grouped: boolean; ctx: MessageCtx }) {
   const [streamDone, setStreamDone] = useState(false)
   if (m.kind === 'system') return <SystemLine m={m} />
+  if (m.author.type === 'system') return <PipelineItem m={m} ctx={ctx} />
   const member = findMember(ctx.members, m.author)
   const who = authorLabel(m, member)
   const quoted = m.replyTo ? ctx.byId.get(m.replyTo) : undefined
