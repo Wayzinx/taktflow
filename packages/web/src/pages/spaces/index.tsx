@@ -65,7 +65,7 @@ export function SpacesPage() {
     <div className="page sp-page">
       <PageHeader
         title="全部空间"
-        description={live ? `${live.length} 个空间，${active} 个需求进行中${blocked ? `，${blocked} 个需求阻塞` : ''}${risky ? `，${risky} 个空间有待处理的风险` : ''}` : '每个空间是一条交付线：自己的需求、流水线、成员和知识库'}
+        description={live ? `${live.length} 个空间，${active} 个需求未交付${blocked ? `，${blocked} 个需求阻塞` : ''}${risky ? `，${risky} 个空间有待处理的风险` : ''}` : '每个空间是一条交付线：自己的需求、流水线、成员和知识库'}
         suggestions={suggestions}
         actions={
           <button type="button" className="btn btn-primary" onClick={() => openCreateSpace()} title={single ? '单空间模式下不能新建，点开看原因' : '新建空间'}>

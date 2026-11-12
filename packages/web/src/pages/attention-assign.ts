@@ -14,3 +14,19 @@ export function assigneesOf(a: AttentionItem, members: SpaceMember[], reqs: Requ
 
 export const assignedTo = (a: AttentionItem, me: SpaceMember | undefined, members: SpaceMember[], reqs: RequirementSummary[]) =>
   !!me && assigneesOf(a, members, reqs).ids.includes(me.id)
+
+/** 卡片文案用：职责没有任何成员承担、已兜底转给需求负责人时，给出职责和负责人名字。 */
+export function fallbackAssigneeOf(a: AttentionItem, members: SpaceMember[], reqs: RequirementSummary[]): { duty: string; ownerId: string; ownerName: string } | undefined {
+  if (!a.owner || a.assignees?.length) return undefined
+  if (members.some((m) => m.duties?.includes(a.owner!))) return undefined
+  const ownerId = reqs.find((r) => r.id === a.requirementId)?.owner
+  if (!ownerId) return undefined
+  return { duty: a.owner, ownerId, ownerName: members.find((m) => m.id === ownerId)?.name ?? ownerId }
+}
+
+/** 节点职责里没有任何成员承担的（按职责去重、排序）；成员页据此提示补人。 */
+export function uncoveredDuties(members: SpaceMember[], items: AttentionItem[]): string[] {
+  const duties = new Set<string>()
+  for (const a of items) if (a.owner && !members.some((m) => m.duties?.includes(a.owner!))) duties.add(a.owner)
+  return [...duties].sort()
+}

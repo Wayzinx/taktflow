@@ -26,10 +26,10 @@ export function SpaceCard({
 }) {
   const [menu, setMenu] = useState(false)
   const btn = useRef<HTMLButtonElement>(null)
-  // 与总览同口径：阻塞 = 总览"阻塞"格，风险 = 空间全部未处理风险（含不挂需求的）
-  const stats: Array<{ label: string; v: number; tone?: 'running' | 'waiting' | 'failed' }> = [
+  // 与总览同口径：阻塞 = 总览"阻塞"格，风险 = 空间全部未处理风险（含不挂需求的）；"未交付" = 已开始但还没交付的需求
+  const stats: Array<{ label: string; v: number; tone?: 'running' | 'waiting' | 'failed'; title?: string }> = [
     { label: '需求', v: s.requirements },
-    { label: '进行中', v: s.active, tone: s.active ? 'running' : undefined },
+    { label: '未交付', v: s.active, tone: s.active ? 'running' : undefined, title: '已开始但未交付的需求，不一定有节点在跑' },
     { label: '阻塞', v: s.blocked ?? 0, tone: s.blocked ? 'failed' : undefined },
     { label: '待办', v: s.pendingAttention ?? 0, tone: s.pendingAttention ? 'waiting' : undefined },
     { label: '风险', v: s.risks ?? 0, tone: s.risks ? 'failed' : undefined },
@@ -65,7 +65,7 @@ export function SpaceCard({
               separator: true,
               danger: true,
               disabled: s.active > 0,
-              hint: s.active > 0 ? `${s.active} 个进行中` : undefined,
+              hint: s.active > 0 ? `${s.active} 个未交付` : undefined,
               onSelect: onArchive,
             },
           ]}
@@ -75,7 +75,7 @@ export function SpaceCard({
       <dl className="sp-stats" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
         {stats.map((x) => (
           <div key={x.label} className={`sp-stat${x.tone ? ` tone-${x.tone}` : ''}`}>
-            <dt>{x.label}</dt>
+            <dt title={x.title}>{x.label}</dt>
             <dd className="num">
               <CountUp value={x.v} />
             </dd>

@@ -248,7 +248,7 @@ export function ReposTab({ space, onChanged }: { space?: SpaceDetail; onChanged:
           绑定代码仓库
         </button>
       </div>
-      {me.data && !canWrite && <p className="repo-add-hint faint">你是 {me.data.member?.role ?? '非成员'}，绑定、同步和解绑仓库需要 maintainer 或 owner。</p>}
+      {me.data && !canWrite && <p className="repo-add-hint faint">你是 {me.data.member?.role ?? '非成员'}，只能查看；绑定、同步和解绑仓库需要 maintainer 或 owner。</p>}
       <div className="expand" data-open={adding ? 'true' : 'false'}>
         <div inert={!adding}>
           <AddRepo
