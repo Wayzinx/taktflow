@@ -1,3 +1,6 @@
+import { matchGlob } from '../util/glob.js'
+import type { AgentProfile, NodeDef } from '../types.js'
+
 // 两个 glob 数组分别是 OR，工具白名单必须表示它们的 AND；不能拼接数组。
 // 在字符、路径段两层同步消费通配符，结果仍是 glob，因而新文件也受同一约束。
 function intersectTokens(left: string[], right: string[], star: string, meet: (a: string, b: string) => string[]): string[][] {
@@ -47,4 +50,34 @@ export function intersectWriteScopes(profile: string[], node?: string[]): string
   if (node === undefined) return [...profile]
   return [...new Set(profile.flatMap((a) => node.flatMap((b) =>
     intersectTokens(segments(a), segments(b), '**', intersectSegment).map((tokens) => tokens.join('/')))))]
+}
+
+/**
+ * 声明的产出（相对公共存放区 workspace）里角色与节点写权限盖不住的那些：产出不会自动获得写权限，写不了就必然缺产物或判越界。
+ * 通配产出取最直接的一个文件代表：research/review/** 看 research/review/x，reports/*.md 看 reports/x.md；带 [] {} 的交给运行后的守卫。
+ */
+export function unwritableOutputs(outputs: Array<{ path: string }>, workspace: string, profile: string[], node?: string[]): string[] {
+  const allowed = (file: string) => profile.some((pattern) => matchGlob(pattern, file)) && (node === undefined || node.some((pattern) => matchGlob(pattern, file)))
+  return outputs.map((output) => output.path).filter((path) => {
+    if (/[[{]/.test(path)) return false
+    const parts = path.split('/')
+    const sample = parts.flatMap((part, index) => part === '**' ? index === parts.length - 1 ? ['x'] : [] : [part.replace(/[*?]+/g, 'x')]).join('/')
+    return !allowed(workspace ? `${workspace}/${sample}` : sample)
+  })
+}
+
+export function unwritableMessage(nodeId: string, role: string, paths: string[], scope: string[]): string {
+  return `节点 ${nodeId} 要产出 ${paths.join('、')}，但角色 ${role} 的写权限不含它：${JSON.stringify(scope)}。给角色加上这个路径的写权限，或把产出改到写权限里的位置，再重试`
+}
+
+/** 启动前核对每个 agent 节点的产出都写得了；planner 展开的节点在开跑前另行核对。 */
+export function validateWorkflowOutputs(nodes: NodeDef[], profiles: Record<string, AgentProfile>, workspace: string): void {
+  for (const node of nodes) {
+    if (node.kind === 'loop') validateWorkflowOutputs(node.body, profiles, workspace)
+    else if (node.kind === 'subflow') validateWorkflowOutputs(node.workflow.nodes, profiles, workspace)
+    else if (node.kind === 'agent' && profiles[node.role] && node.outputs?.length) {
+      const paths = unwritableOutputs(node.outputs, workspace, profiles[node.role]!.writeScope, node.writeScope)
+      if (paths.length) throw new Error(unwritableMessage(node.id, node.role, paths, intersectWriteScopes(profiles[node.role]!.writeScope, node.writeScope)))
+    }
+  }
 }

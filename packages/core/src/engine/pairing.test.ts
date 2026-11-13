@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it, vi } from 'vitest'
@@ -58,17 +58,58 @@ it('planner 展开的条目和恢复时重建的条目都按桥接校验，不�
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 
-it('声明的产出不在写权限里时开跑前就阻塞，不白跑一整轮', async () => {
+const outputsFixture = async (run: HarnessAdapter['run'], writeScope: string[], resume = false) => {
   const root = await mkdtemp(join(tmpdir(), 'takt-engine-outputs-'))
+  const stores = await initProject(root)
+  const requirement = await stores.workspaces.createRequirement({ title: '产出' })
+  const harness: HarnessAdapter = { id: 'test', displayName: 'test', capabilities: { resume }, available: async () => ({ ok: true }), run: vi.fn(run) }
+  const profile: AgentProfile = { role: 'dev', title: '', description: '', instructions: '', skills: [], writeScope, harness: { harness: 'test' } }
+  const engine = createEngine({ stores, profiles: { dev: profile }, harnesses: { test: harness }, knowledge: [] })
+  const workflow = (nodes: Parameters<typeof engine.start>[0]['workflow']['nodes']) => ({ requirementId: requirement.id, workflow: { id: 'test', title: '产出', version: '1', stages: [], nodes } })
+  return { root, stores, workspace: stores.workspaces.dir(requirement.id), harness, engine, workflow }
+}
+
+it('声明的产出不在写权限里：静态节点不让启动，拆出的节点开跑前阻塞，通配产出也查', async () => {
+  const f = await outputsFixture(async () => ({ ok: true, finalText: 'done', structured: { items: [{ key: 'a', title: 'A' }] } }), ['src/**', '**/reports/**'])
   try {
-    const stores = await initProject(root)
-    const requirement = await stores.workspaces.createRequirement({ title: '产出越界' })
-    const run = vi.fn(async () => ({ ok: true, finalText: 'done' }))
-    const harness: HarnessAdapter = { id: 'test', displayName: 'test', available: async () => ({ ok: true }), run }
-    const profile: AgentProfile = { role: 'dev', title: '', description: '', instructions: '', skills: [], writeScope: ['src/**'], harness: { harness: 'test' } }
-    const state = await createEngine({ stores, profiles: { dev: profile }, harnesses: { test: harness }, knowledge: [] }).start({ requirementId: requirement.id,
-      workflow: { id: 'test', title: '产出越界', version: '1', stages: [], nodes: [agent({ id: 'code', title: '实现', role: 'dev', prompt: 'OK', outputs: [{ path: 'tasks/code.md', kind: 'task' }, { path: 'evidence/**', kind: 'evidence' }] })] } })
-    expect(state.nodes.code).toMatchObject({ status: 'blocked', error: expect.stringMatching(/^节点要产出 \S+tasks\/code\.md，但角色 dev 的写权限不含它：\["src\/\*\*"\]/) })
-    expect(run).not.toHaveBeenCalled()
-  } finally { await rm(root, { recursive: true, force: true }) }
+    await expect(f.engine.start(f.workflow([agent({ id: 'code', title: '', role: 'dev', prompt: '', outputs: [{ path: 'research/review/**', kind: 'report' }] })])))
+      .rejects.toThrow(/^节点 code 要产出 research\/review\/\*\*，但角色 dev 的写权限不含它/)
+    await expect(f.engine.start(f.workflow([agent({ id: 'code', title: '', role: 'dev', prompt: '', outputs: [{ path: 'tasks/code.md', kind: 'task' }] })]))).rejects.toThrow('tasks/code.md')
+    const ok = await f.engine.start(f.workflow([agent({ id: 'code', title: '', role: 'dev', prompt: '', outputs: [{ path: 'reports/**', kind: 'report' }, { path: 'evidence/{a,b}/**', kind: 'evidence', required: false }] })]))
+    expect(ok.nodes.code?.error ?? '').not.toContain('写权限不含')
+    const state = await f.engine.start(f.workflow([planner({ id: 'p', title: '', role: 'dev', maxItems: 1, prompt: '',
+      expand: () => [agent({ id: 'code', title: '', role: 'dev', prompt: '', outputs: [{ path: 'research/**', kind: 'report' }] })] })]))
+    expect(state.nodes['p/a/code']).toMatchObject({ status: 'blocked', error: expect.stringContaining('节点 p/a/code 要产出 research/**') })
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+it.each([true, false])('跑完缺必需产物时追问补交，补上就成功（可续聊：%s）', async resume => {
+  const prompts: Array<{ prompt: string; sessionId?: string }> = []
+  const f = await outputsFixture(async req => {
+    prompts.push({ prompt: req.prompt, sessionId: req.sessionId })
+    if (prompts.length === 1) return { ok: true, finalText: '结论：通过', sessionId: 's1' }
+    await mkdir(join(f.workspace, 'reports'), { recursive: true })
+    await writeFile(join(f.workspace, 'reports/review.md'), '结论：通过')
+    return { ok: true, finalText: '已补写', sessionId: 's1' }
+  }, ['**'], resume)
+  try {
+    const state = await f.engine.start(f.workflow([agent({ id: 'review', title: '', role: 'dev', prompt: '核验', outputs: [{ path: 'reports/**', kind: 'report' }] })]))
+    expect(state.status).toBe('succeeded')
+    expect(prompts).toHaveLength(2)
+    expect(prompts[1]!.prompt).toContain('你还没有交付必需产物：reports/**')
+    expect(prompts[1]!.sessionId).toBe(resume ? 's1' : undefined)
+    if (resume) expect(prompts[1]!.prompt).not.toContain('核验')
+    else expect(prompts[1]!.prompt).toContain('你上一轮的最终回复：\n结论：通过')
+    expect((await f.stores.events.read(state.runId, { types: ['log'] })).map(e => (e.data as { message: string }).message)).toContain('缺少必需产物 reports/**，让 agent 补交（第 1 次）')
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
+
+it('追问补交到上限仍缺产物才失败，并带上 agent 的说明', async () => {
+  const f = await outputsFixture(async req => ({ ok: true, finalText: req.prompt.includes('你还没有交付') ? '缺少样本，写不了结论' : '结论' }), ['**'])
+  try {
+    f.stores.config.output = { repairs: 1 }
+    const state = await f.engine.start(f.workflow([agent({ id: 'review', title: '', role: 'dev', prompt: '', outputs: [{ path: 'reports/review.md', kind: 'report' }] })]))
+    expect(state.nodes.review).toMatchObject({ status: 'failed', error: '缺少必需产物：reports/review.md（已让 agent 补交 1 次；agent 的说明：缺少样本，写不了结论）' })
+    expect(f.harness.run).toHaveBeenCalledTimes(2)
+  } finally { await rm(f.root, { recursive: true, force: true }) }
 })

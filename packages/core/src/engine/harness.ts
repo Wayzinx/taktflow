@@ -19,12 +19,12 @@ import { collectSecrets, createRedactor, redactValue } from '../util/redact.js'
 import { Semaphore } from './process.js'
 import { WriteGuard } from './guard.js'
 import { harnessSelectors, resolveHarnessSelector, selectHarness } from './selection.js'
-import { intersectWriteScopes } from './scope.js'
+import { intersectWriteScopes, unwritableMessage, unwritableOutputs } from './scope.js'
 import { completionPrompt, completionSchema, checkCompletion, completionErrors, resultSummary } from './completion.js'
 import { FailureError } from './fingerprint.js'
 import { harnessEnvFailure, withEnvHint } from './harness-failure.js'
 import { extractJsonBlock } from '../util/json-block.js'
-import { matchGlob } from '../util/glob.js'
+import { listFiles, matchGlob } from '../util/glob.js'
 import { workingDirectory, sandboxCall, cwdGuard, saveWorktreeDiff } from './execution.js'
 
 export class BlockedError extends Error {}
@@ -51,10 +51,9 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const profile = profiles[node.role]
     if (!profile) throw new Error(`角色不存在：${node.role}`)
     if (!identity.snapshot) {
-      // 声明的产出写不了，跑完也必判越界；开跑前就停，别白花一整轮。只查不带通配的路径，通配产出交给运行后的守卫。
-      const unwritable = (node.outputs ?? []).map((output) => relative(stores.projectDir, join(ctx.workspaceDir, output.path)))
-        .filter((file) => !/[*?[{]/.test(file) && !(profile.writeScope.some((p) => matchGlob(p, file)) && (node.writeScope === undefined || node.writeScope.some((p) => matchGlob(p, file)))))
-      if (unwritable.length) throw new BlockedError(`节点要产出 ${unwritable.join('、')}，但角色 ${node.role} 的写权限${node.writeScope ? '与节点写权限的交集' : ''}不含它：${JSON.stringify(intersectWriteScopes(profile.writeScope, node.writeScope))}。给角色加上这个路径的写权限后重试`)
+      // 声明的产出写不了，跑完也必缺产物或判越界；开跑前就停，别白花一整轮。
+      const unwritable = unwritableOutputs(node.outputs ?? [], relative(stores.projectDir, ctx.workspaceDir), profile.writeScope, node.writeScope)
+      if (unwritable.length) throw new BlockedError(unwritableMessage(node.id, node.role, unwritable, intersectWriteScopes(profile.writeScope, node.writeScope)))
     }
     const cwd = await workingDirectory(host, node, ctx, ns)
     ctx = { ...ctx, projectDir: cwd }
@@ -317,6 +316,28 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
             usage: callUsage ?? result?.usage, sessionId: result?.sessionId ?? reportedSessionId ?? request.sessionId, reported, durationMs: Date.now() - startedAt }, node.id, actor)
         }
       }
+      // 跑完缺必需产物时在原会话里追问补交，不直接判失败：多半是漏写或写错位置，人来处理也只是让 agent 再写一次。
+      // 追问次数同结构化修正（output.repairs）；仍缺就判失败，并带上 agent 最后的说明。
+      const requireOutputs = async (first: HarnessResult) => {
+        const required = (node.outputs ?? []).filter((output) => output.required !== false)
+        if (!required.length) return
+        const missing = async () => {
+          const present = await listFiles(ctx.workspaceDir, ['**'], { ignore: [] })
+          return required.filter((output) => !present.some((path) => matchGlob(output.path, path))).map((output) => output.path)
+        }
+        let last = first
+        for (let round = 1, gaps = await missing(); gaps.length; round++, gaps = await missing()) {
+          if (round > (stores.config.output?.repairs ?? 2)) {
+            const note = last !== first && last.finalText.trim() ? `；agent 的说明：${last.finalText.trim().slice(0, 600)}` : ''
+            throw new FailureError(`缺少必需产物：${gaps.join('、')}（已让 agent 补交 ${round - 1} 次${note}）`, 'output.missing', gaps.join(','))
+          }
+          await host.emit('log', { level: 'warn', message: `缺少必需产物 ${gaps.join('、')}，让 agent 补交（第 ${round} 次）` }, node.id)
+          const ask = `你还没有交付必需产物：${gaps.join('、')}。把它们写进公共存放区 ${ctx.workspaceDir}（路径相对这个目录），写完就结束。内容以你刚才的结论为准，不要重做整个任务；确实写不了（例如超出写权限、缺少输入）就在最终回复里说明原因。`
+          const resumable = harness.capabilities?.resume && ns.sessionRef?.harness === harness.id
+          last = await invokeOnce({ ...request, prompt: resumable ? ask : [requestPrompt, `你上一轮的最终回复：\n${last.finalText.slice(-4000)}`, ask].join('\n\n'),
+            sessionId: resumable ? ns.sessionRef!.sessionId : undefined })
+        }
+      }
       try {
         const result = schema ? await runStructured(harness, request, schema, {
           repairs: stores.config.output?.repairs,
@@ -325,6 +346,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           onInvalid: event => host.emit('output.invalid', event, node.id, actor),
           onRepaired: event => host.emit('output.repaired', event, node.id, actor),
         }) : await invokeOnce(request)
+        if (!identity.snapshot) await requireOutputs(result)
         const data = schema ? result.structured : result.structured ?? result.finalText
         ns.summary = resultSummary(typeof data === 'string' ? extractJsonBlock(result.finalText) ?? data : data, result.finalText)
         if (node.completion?.length) {

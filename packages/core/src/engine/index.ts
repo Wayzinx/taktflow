@@ -16,6 +16,7 @@ import { answerOrRead, recordAnswerOnce } from './answers.js'
 import { requirementLock, updateRequirement } from './requirement.js'
 import { validateDag } from './graph.js'
 import { validateWorkflowHarnesses } from './selection.js'
+import { validateWorkflowOutputs } from './scope.js'
 import { WriteGuard } from './guard.js'
 import { Runtime, system, type EngineOptions } from './runtime.js'
 
@@ -57,6 +58,7 @@ export function createEngine(deps: EngineDeps, opts: EngineOptions = {}): Engine
       validateWorkflowHarnesses(input.workflow, { config: deps.stores.config, profiles: runtimeDeps.profiles, harnesses: deps.harnesses, bridge: deps.bridge }, opts.harnessOverride)
       validateDag(input.workflow.nodes, new Set(input.workflow.stages.map((stage) => stage.id)))
       if (!await deps.stores.workspaces.getRequirement(input.requirementId)) throw new Error(`需求不存在：${input.requirementId}`)
+      validateWorkflowOutputs(input.workflow.nodes, runtimeDeps.profiles, relative(deps.stores.projectDir, deps.stores.workspaces.dir(input.requirementId)))
       const now = opts.now?.() ?? new Date()
       const state: RunState = {
         runId: newRunId(now), workflowId: input.workflow.id, workflowVersion: input.workflow.version,

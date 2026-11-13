@@ -1583,7 +1583,7 @@ export interface TaktConfig {
   budget?: RunBudget
   /** 同一失败指纹在输入不变时允许出现的次数（默认 2，达到即停止重试）。 */
   retry?: { maxSameFailure?: number }
-  /** 结构化输出（docs/design/31 §5）：校验不过时追问修正的次数，缺省 2，0 为不追问。 */
+  /** 结构化输出（docs/design/31 §5）：校验不过时追问修正的次数，缺省 2，0 为不追问；跑完缺必需产物时追问补交也用这个次数。 */
   output?: { repairs?: number }
   /** 经验库。 */
   lessons?: { enabled?: boolean; holdoutPercent?: number; maxRecall?: number; maxTokens?: number; learner?: HarnessSelector; dailyCalls?: number }
