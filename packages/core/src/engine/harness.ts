@@ -50,7 +50,9 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
     const { stores, profiles, harnesses, knowledge } = host.deps
     const profile = profiles[node.role]
     if (!profile) throw new Error(`角色不存在：${node.role}`)
-    if (!identity.snapshot) {
+    // 只有图里本身就是 agent 的节点要自己交产出；门禁评分、评审、规划、判决借用节点定义调用模型，产出不归它们写。
+    const producesOutputs = !identity.snapshot && (host.graph?.get(node.id)?.def.kind ?? node.kind) === 'agent'
+    if (producesOutputs) {
       // 声明的产出写不了，跑完也必缺产物或判越界；开跑前就停，别白花一整轮。
       const unwritable = unwritableOutputs(node.outputs ?? [], relative(stores.projectDir, ctx.workspaceDir), profile.writeScope, node.writeScope)
       if (unwritable.length) throw new BlockedError(unwritableMessage(node.id, node.role, unwritable, intersectWriteScopes(profile.writeScope, node.writeScope)))
@@ -346,7 +348,7 @@ export async function callHarness(host: HarnessHost, node: AgentNodeDef, ctx: No
           onInvalid: event => host.emit('output.invalid', event, node.id, actor),
           onRepaired: event => host.emit('output.repaired', event, node.id, actor),
         }) : await invokeOnce(request)
-        if (!identity.snapshot) await requireOutputs(result)
+        if (producesOutputs) await requireOutputs(result)
         const data = schema ? result.structured : result.structured ?? result.finalText
         ns.summary = resultSummary(typeof data === 'string' ? extractJsonBlock(result.finalText) ?? data : data, result.finalText)
         if (node.completion?.length) {

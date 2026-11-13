@@ -113,3 +113,13 @@ it('追问补交到上限仍缺产物才失败，并带上 agent 的说明', asy
     expect(f.harness.run).toHaveBeenCalledTimes(2)
   } finally { await rm(f.root, { recursive: true, force: true }) }
 })
+
+it('借用节点定义调用模型的检查（规划、门禁评分、交付复核）不核对也不追问产出', async () => {
+  const f = await outputsFixture(async () => ({ ok: true, finalText: 'done', structured: { items: [{ key: 'a', title: 'A' }] } }), [])
+  try {
+    const state = await f.engine.start(f.workflow([planner({ id: 'p', title: '', role: 'dev', maxItems: 1, prompt: '', outputs: [{ path: 'evidence/**', kind: 'evidence', required: false }],
+      expand: () => [human({ id: 'ok', title: '', ask: '?', form: 'approve' })] })]))
+    expect(state.status).toBe('waiting_human')
+    expect(f.harness.run).toHaveBeenCalledTimes(1)
+  } finally { await rm(f.root, { recursive: true, force: true }) }
+})
