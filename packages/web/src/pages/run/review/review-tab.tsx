@@ -71,10 +71,12 @@ export function ReviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: s
   const endsRevision = views[idx + 1] ? views[idx + 1]!.revision !== view.revision : false
   const live = status === 'in_review' || status === 'revising'
   const threshold = typeof config.pass === 'object' ? config.pass.minScore : undefined
-  const exhaustedHere = !view.r.passed && (endsRevision || view.round === config.maxRounds || view.r.stopReason === 'no_progress')
+  const exhaustedHere = !view.r.passed && (endsRevision || view.round === config.maxRounds || !!view.r.stopReason)
   const avg = avgScore(view.r)
   const arb = arbitrations.get(view.seq)
-  const stop = exhaustedEvents.find((x) => x.reason === 'no_progress') ?? (views.some((v) => v.r.stopReason === 'no_progress') ? { rounds: last.round, action: 'human' as const, reason: 'no_progress' as const } : undefined)
+  const stopped = views.find(v => v.r.stopReason)
+  const stop = exhaustedEvents.find(x => x.reason === 'no_progress' || x.reason === 'author_cannot_fix')
+    ?? (stopped ? { rounds: stopped.round, action: 'human' as const, reason: stopped.r.stopReason } : undefined)
 
   return (
     <div className="dpad rv">
@@ -185,10 +187,10 @@ export function ReviewTab({ d, runId, requirementId }: { d: NodeDetail; runId: s
             <span className="faint">· {arb.conflict}</span>
           </div>
         )}
-        {view.r.stopReason === 'no_progress' && (
+        {view.r.stopReason && (
           <div className="rv-arb stop">
             <Unplug />
-            <span>本轮后提前结束：没有新增或变化的阻断 / 重要问题</span>
+            <span>{view.r.stopReason === 'author_cannot_fix' ? '本轮后提前结束：作者无法修复阻断 / 重要问题，且未补充参考材料' : '本轮后提前结束：重大问题没有修复进展，也没有新重大问题'}</span>
           </div>
         )}
 

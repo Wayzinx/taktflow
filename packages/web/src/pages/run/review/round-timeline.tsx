@@ -8,7 +8,8 @@ type Exhausted = EventPayloads['review.exhausted']
 
 /** 打回原因：轮次用完 / 连续无进展；反馈取第一行。 */
 export function reworkReason(rework?: Rework, exhausted?: Exhausted): string {
-  const why = exhausted?.reason === 'no_progress' ? '连续无进展，提前结束' : `${exhausted?.rounds ?? ''}${exhausted ? ' 轮用完' : '轮次用完'}`
+  const why = exhausted?.reason === 'author_cannot_fix' ? '作者无法修复且未补充参考材料，提前结束'
+    : exhausted?.reason === 'no_progress' ? '连续无进展，提前结束' : `${exhausted?.rounds ?? ''}${exhausted ? ' 轮用完' : '轮次用完'}`
   const first = feedbackLine(rework?.feedback)
   return first ? `${why} · ${first}` : why
 }
@@ -66,7 +67,7 @@ export function RoundTimeline({ views, maxRounds, reworks, exhausted, arbitrated
                 const avg = avgScore(v.r)
                 const issues = issueCount(v.r)
                 const current = live && v.seq === lastSeq
-                const stopped = v.r.stopReason === 'no_progress'
+                const stopped = !!v.r.stopReason
                 return (
                   <button
                     key={v.seq}
@@ -91,7 +92,7 @@ export function RoundTimeline({ views, maxRounds, reworks, exhausted, arbitrated
                           </span>
                         )}
                         {stopped && (
-                          <span className="rv-step-flag" title="连续多轮没有新增或变化的 blocker / major 问题，提前结束">
+                          <span className="rv-step-flag" title={v.r.stopReason === 'author_cannot_fix' ? '作者无法修复重大问题且未补充参考材料，提前结束' : '重大问题连续无修复进展，提前结束'}>
                             <Unplug /> 早停
                           </span>
                         )}

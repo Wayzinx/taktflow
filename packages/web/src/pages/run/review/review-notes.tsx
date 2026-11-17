@@ -17,7 +17,8 @@ export function StopBanner({ stop, config }: { stop: Exhausted; config: ReviewCo
       <div>
         <b>提前结束，没有再烧轮次</b>
         <p>
-          连续 <span className="num">{n}</span> 轮没有新增或变化的阻断 / 重要问题，评审仍未同意；在第 <span className="num">{stop.rounds}</span> 轮后按"轮次用完{exhaustedRule(config.onExhausted)}"处理：{ACTION_TEXT[stop.action]}。
+          {stop.reason === 'author_cannot_fix' ? '作者对所有阻断 / 重要问题均回应 deferred 或 declined，且未补充参考材料'
+            : <>连续 <span className="num">{n}</span> 轮重大问题没有修复进展，也没有新重大问题</>}；在第 <span className="num">{stop.rounds}</span> 轮后按"轮次用完{exhaustedRule(config.onExhausted)}"处理：{ACTION_TEXT[stop.action]}。
         </p>
       </div>
     </div>
