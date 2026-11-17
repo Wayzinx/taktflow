@@ -29,10 +29,12 @@ export function taskWorkflow(task: TaskSpec, stores: ProjectStores, profiles: Re
     if (!review.reviewers.length || review.reviewers.some((role) => !Object.hasOwn(profiles, role) || role === task.role || role === 'lead')) throw new Error('评审者必须存在且独立于作者')
     if (!Number.isInteger(review.maxRounds) || review.maxRounds < 1) throw new Error('评审轮数必须为正整数')
     if (!task.repo && !task.outputs?.length) throw new Error('默认评审需要声明输出产物或目标仓库')
+    const references = [...new Set([...(task.inputs ?? []), ...(review.references ?? [])])]
+    for (const path of references) assertArtifactPath(path)
     workflow.nodes.push({ id: 'review', kind: 'review', title: `评审：${task.title}`, needs: ['task'],
       target: task.repo ? { code: { repo: task.repo } } : task.outputs!.map((output) => output.path),
       author: { role: task.role, prompt: task.instructions }, reviewers: review.reviewers.map((role) => ({ role })),
-      maxRounds: review.maxRounds, onExhausted: 'human',
+      maxRounds: review.maxRounds, onExhausted: 'human', references,
     })
   }
   return { workflow, profiles: scopedProfiles }

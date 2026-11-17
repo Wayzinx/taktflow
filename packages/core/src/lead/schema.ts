@@ -1,5 +1,5 @@
 import type { LeadAction } from '../types.js'
-import { budgetSchema, taskSchema } from '../commands/schema.js'
+import { budgetSchema, taskSchema, taskReviewSchema } from '../commands/schema.js'
 import { validateSchema } from '../engine/schema.js'
 
 const text = { type: 'string' }
@@ -27,6 +27,6 @@ export function validateAction(value: unknown): asserts value is LeadAction {
   validateSchema(value, { type: 'object', ...actionSchemas[value.type as LeadAction['type']] })
   if (value.type === 'dispatch_task') {
     const review = (value as Extract<LeadAction, { type: 'dispatch_task' }>).task.review
-    if (review !== undefined && review !== false) validateSchema(review, { type: 'object', required: ['reviewers', 'maxRounds'], properties: { reviewers: strings, maxRounds: { type: 'integer' } } })
+    if (review !== undefined && review !== false) validateSchema(review, taskReviewSchema)
   }
 }

@@ -2,10 +2,15 @@ const text = { type: 'string' }
 export const budgetSchema = { type: 'object', properties: {
   tokens: { type: 'number' }, costUsd: { type: 'number' }, minutes: { type: 'number' }, concurrency: { type: 'integer' },
 } }
+export const taskReviewSchema = { type: 'object', required: ['reviewers', 'maxRounds'], properties: {
+  reviewers: { type: 'array', items: text }, maxRounds: { type: 'integer', minimum: 1 },
+  references: { type: 'array', items: text, description: '补充评审比较依据，本需求存放区相对路径或 glob；任务 inputs 自动加入评审只读快照' },
+} }
 export const taskSchema = { type: 'object', required: ['role', 'title', 'instructions'], properties: {
   role: text, title: text, instructions: text, repo: text,
   inputs: { type: 'array', items: text }, writeScope: { type: 'array', items: text }, completion: { type: 'array', items: text },
   impact: { type: 'string', enum: ['cosmetic', 'semantic'] },
+  review: { anyOf: [{ const: false }, taskReviewSchema], description: '配置独立评审者、轮次及额外参考材料；默认评审自动携带 inputs' },
   outputs: { type: 'array', items: { type: 'object', required: ['path', 'kind'], properties: { path: text, kind: text } } },
 } }
 export const objectSchema = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required })

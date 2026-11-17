@@ -438,7 +438,7 @@ export interface ReviewNodeDef extends BaseNodeDef {
   /** agent 全部通过后再交人确认。 */
   humanSignoff?: boolean
   rubric?: string
-  /** 连续这么多轮没有新增 / 变化的 blocker、major 问题仍不通过，就提前按 onExhausted 处理（默认 2，0 关闭）。 */
+  /** 连续这么多轮没有修复后消失的重大问题或新 blocker / major 仍不通过，就提前按 onExhausted 处理（默认 2，0 关闭）。 */
   stopAfterNoProgress?: number
   /** 裁决者：只在评审者结论冲突时调用（有人通过、有人要求修改且含 blocker）。 */
   arbiter?: ReviewerSpec
@@ -548,6 +548,8 @@ export interface ReviewResponse {
   reviewer: string
   action: 'fixed' | 'declined' | 'deferred'
   note: string
+  /** 仅当评审员看不到已存在的材料时申请补充：本需求存放区相对路径或 glob，每次作者回应合计最多 50 条。 */
+  needsReferences?: string[]
 }
 
 export interface ReviewRound {
@@ -567,8 +569,8 @@ export interface ReviewRound {
   targetFingerprint?: string
   /** 与上一轮相比的问题观察。 */
   continuity?: ReviewContinuity[]
-  /** 提前结束的原因：no_progress（连续无新增问题）。 */
-  stopReason?: 'no_progress'
+  /** 提前结束的原因：连续无进展，或作者无法在本节点修复重大问题且未补充参考材料。 */
+  stopReason?: 'no_progress' | 'author_cannot_fix'
 }
 
 export interface SubflowNodeDef extends BaseNodeDef {
@@ -850,8 +852,8 @@ export interface EventPayloads {
   'dag.expanded': Expansion
   'guard.violation': { rule: string; paths: string[]; action: 'reverted' | 'blocked' | 'flagged' }
   'review.round': { round: number; passed: boolean; verdicts: Array<{ reviewer: string; verdict: ReviewVerdict; score?: number; issues: number }> }
-  'review.response': { round: number; responses: ReviewResponse[]; revised: ArtifactRef[] }
-  'review.exhausted': { rounds: number; action: 'rework' | 'human' | 'fail'; reason?: 'max_rounds' | 'no_progress' }
+  'review.response': { round: number; responses: ReviewResponse[]; revised: ArtifactRef[]; addedReferences?: string[] }
+  'review.exhausted': { rounds: number; action: 'rework' | 'human' | 'fail'; reason?: 'max_rounds' | 'no_progress' | 'author_cannot_fix' }
   'review.arbitrated': { round: number; arbiter: string; verdict: ReviewVerdict; conflict: string }
   'review.disposition': ReviewDisposition
   'rework.started': { from: NodeId; to: NodeId; count: number; feedback: string; reset: NodeId[] }
@@ -1524,7 +1526,7 @@ export interface TaskSpec {
   /** 在哪个绑定代码仓库里改代码。 */
   repo?: string
   /** 完成后是否走一轮评审（默认按角色：改代码的任务默认评审）。 */
-  review?: { reviewers: string[]; maxRounds: number } | false
+  review?: { reviewers: string[]; maxRounds: number; references?: string[] } | false
   /** 对已有产物的修改是措辞调整还是语义变更（措辞调整不让下游过期）；缺省 semantic。 */
   impact?: 'cosmetic' | 'semantic'
   completion?: string[]
