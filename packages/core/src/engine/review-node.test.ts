@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -7,7 +7,7 @@ import { initProject, openProject } from '../store/project.js'
 import { createEngine } from './index.js'
 import { listReviews, reviewDetail } from '../insights/reviews.js'
 import { buildRunGraph } from '../insights/graph.js'
-import type { AgentProfile, HarnessAdapter, HarnessRequest, NodeDef, ReviewNodeDef, ReviewRecord } from '../types.js'
+import type { AgentProfile, HarnessAdapter, HarnessRequest, NodeDef, ReviewNodeDef, ReviewRecord, EventPayloads } from '../types.js'
 import { setReviewDisposition, listReviewDispositions } from '../review/dispositions.js'
 import { withAttentionStaleness } from '../insights/attention.js'
 import { markArtifactEdited } from '../store/artifact-edits.js'
@@ -57,7 +57,7 @@ it('独立会话评审 → 作者逐条回应 → 新版本复审；读模型和
     return count === 1 ? changes : approve
   })
   const state = await createEngine(f.deps, { concurrency: 1 }).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode()]) })
-  expect(state.status).toBe('succeeded')
+  expect(state.status, state.nodes.review?.error).toBe('succeeded')
   expect(state.nodes.review?.result).toEqual({ passed: true, rounds: 2 })
   const detail = await reviewDetail(await openProject(f.stores.projectDir), state.runId, 'review')
   expect(detail?.rounds).toHaveLength(2)
@@ -94,7 +94,7 @@ it('人工拒绝触发作者修改；换引擎恢复不重复评审、不复用�
 
 it('三轮用完打回上游，保留历史、注入反馈；再次超限交人', async () => {
   const f = await fixture(async (req) => req.env!.TAKT_ROLE === 'author'
-    ? { responses: [{ round: Number(/按第 (\d+) 轮/.exec(req.prompt)?.[1]), reviewer: 'r1', issueId: 'I1', action: 'deferred', note: '待重新设计' }] } : changes)
+    ? { responses: [{ round: Number(/按第 (\d+) 轮/.exec(req.prompt)?.[1]), reviewer: 'r1', issueId: 'I1', action: 'fixed', note: '声称已补充，等待复核' }] } : changes)
   const feedback: Array<string | undefined> = []
   const workflow = def([{ ...f.write, run: async (ctx) => { feedback.push(ctx.feedback); await writeFile(join(ctx.workspaceDir, 'spec.md'), `设计 ${feedback.length}`) } },
     script({ id: 'middle', title: '中间节点', needs: ['write'], run: async () => {} }),
@@ -284,6 +284,120 @@ it.each([2, 0])('重复重大问题按配置早停，0 关闭（%s）', async (s
   expect(detail?.facets?.open.major).toBe(1)
   expect((await f.stores.events.read(state.runId, { types: ['review.exhausted'] }))[0]?.data)
     .toMatchObject(stopAfterNoProgress ? { reason: 'no_progress' } : { rounds: 5 })
+})
+
+it.each(['deferred', 'declined'] as const)('同一 major 每轮改写措辞，作者 %s 且不补材料时首轮直接交人', async action => {
+  let reviews = 0
+  const title = '关键依赖正文未纳入本轮冻结送审范围'
+  const f = await fixture(async req => {
+    if (req.env!.TAKT_ROLE === 'author') return { responses: [{ round: 1, reviewer: 'r1', issueId: 'R1', action, note: '只能修改 target，需 Lead 补齐材料' }] }
+    return { verdict: 'request_changes', summary: title, issues: [{ id: 'R1', severity: 'major', title, duty: 'Lead／送审材料提供方',
+      description: `第 ${++reviews} 轮仍需正文，换一种措辞`, ...(reviews > 1 ? { key: 'ISS-1' } : {}) }] }
+  })
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId,
+    workflow: def([f.write, reviewNode({ maxRounds: 3, onExhausted: 'human' })]) })
+  expect(state.status).toBe('waiting_human')
+  expect(reviews).toBe(1)
+  expect(f.calls.filter(req => req.env!.TAKT_ROLE === 'author')).toHaveLength(1)
+  expect((await reviewDetail(f.stores, state.runId, 'review'))?.rounds).toMatchObject([{ stopReason: 'author_cannot_fix', responses: [{ action }] }])
+  const events = await f.stores.events.read(state.runId)
+  expect(events.find(event => event.type === 'review.exhausted')?.data).toMatchObject({ rounds: 1, action: 'human', reason: 'author_cannot_fix' })
+  const requested = events.find(event => event.type === 'human.requested')!.data as EventPayloads['human.requested']
+  expect(requested).toMatchObject({ form: 'choice', choices: ['放行', '打回', '终止'] })
+  expect(requested.ask).toContain(title)
+  expect(requested.ask).toContain('作者无法在本节点修复')
+  expect(requested.ask).toContain(`major，责任方：Lead／送审材料提供方，作者最后回应：${action}`)
+  expect(await f.stores.events.verify(state.runId)).toEqual({ ok: true })
+})
+
+it('作者申请已存在参考材料，下一轮冻结正文并在换实例恢复后保留指定版本', async () => {
+  let reviews = 0
+  let outage = true
+  const f = await fixture(async req => {
+    if (req.env!.TAKT_ROLE === 'author') {
+      expect(req.prompt).toContain('needsReferences')
+      return { responses: [{ round: 1, reviewer: 'r1', issueId: 'I1', action: 'deferred', note: '请核对已有材料', needsReferences: ['reference.md', 'reference.*'] }] }
+    }
+    if (++reviews === 1) return changes
+    if (outage) throw new Error('模拟第二轮评审服务中断')
+    return { ...approve, previous: [{ key: 'ISS-1', status: 'resolved', note: '参考正文已核实' }] }
+  })
+  await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'reference.md' }, content: '已有依赖正文 v1',
+    kind: 'input', author: { type: 'system', id: 'test' } })
+  const workflow = def([f.write, reviewNode({ maxRounds: 3, onExhausted: 'human' })])
+  const first = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow })
+  expect(first.status).toBe('failed')
+  const events = await f.stores.events.read(first.runId)
+  expect(events.find(event => event.type === 'review.response')?.data).toMatchObject({ addedReferences: ['reference.md'] })
+  expect(events.some(event => event.type === 'review.exhausted')).toBe(false)
+  const snapshots = events.filter(event => event.type === 'snapshot.created').map(event => event.data as EventPayloads['snapshot.created'])
+  const snapshot = snapshots.at(-1)!
+  expect(snapshots[0]!.files.some(file => file.role === 'reference')).toBe(false)
+  expect(snapshot.files.filter(file => file.role === 'reference')).toMatchObject([{ ref: { path: 'reference.md', version: 1, workspace: f.requirementId } }])
+  expect(snapshot.files.filter(file => file.role === 'reference')).toHaveLength(1)
+  const file = join(f.stores.taktDir, snapshot.dir, 'files', 'reference/reference.md')
+  expect(await readFile(file, 'utf8')).toBe('已有依赖正文 v1')
+  expect((await stat(file)).mode & 0o222).toBe(0)
+  await writeFile(join(f.stores.workspaces.dir(f.requirementId), 'reference.md'), '恢复前改写的当前正文')
+  first.status = 'running'; first.nodes.review!.status = 'pending'
+  await f.stores.runs.save(first)
+  outage = false
+  const resumed = await createEngine({ ...f.deps, stores: await openProject(f.stores.projectDir) }).resume(first.runId, workflow)
+  expect(resumed.status).toBe('succeeded')
+  const after = (await f.stores.events.read(first.runId, { types: ['snapshot.created'] })).at(-1)!.data as EventPayloads['snapshot.created']
+  expect(await readFile(join(f.stores.taktDir, after.dir, 'files', 'reference/reference.md'), 'utf8')).toBe('已有依赖正文 v1')
+  expect(f.calls.at(-1)!.prompt).toContain('reference/reference.md')
+  expect((await reviewDetail(f.stores, first.runId, 'review'))?.rounds).toHaveLength(2)
+  expect(await f.stores.events.verify(first.runId)).toEqual({ ok: true })
+})
+
+it.each(['spec.md', 'reference.*'])('重复申请已提供材料不能延长评审：%s', async path => {
+  let reviews = 0
+  const f = await fixture(async req => req.env!.TAKT_ROLE === 'author'
+    ? { responses: [{ round: 1, reviewer: 'r1', issueId: 'I1', action: 'deferred', note: '暂缓', needsReferences: [path] }] }
+    : (++reviews, changes))
+  await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'reference.md' }, content: '已提供', kind: 'input', author: { type: 'system', id: 'test' } })
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode({ references: ['reference.md'], maxRounds: 3, onExhausted: 'human' })]) })
+  expect(state.status).toBe('waiting_human')
+  expect(reviews).toBe(1)
+  expect((await f.stores.events.read(state.runId, { types: ['review.response'] }))[0]!.data).toMatchObject({ addedReferences: [] })
+  expect((await reviewDetail(f.stores, state.runId, 'review'))?.rounds[0]?.stopReason).toBe('author_cannot_fix')
+})
+
+it('打回重做后的修订继续携带作者补充的参考材料', async () => {
+  let reviews = 0
+  const f = await fixture(async req => {
+    if (req.env!.TAKT_ROLE === 'author') return { responses: [{ round: 1, reviewer: 'r1', issueId: 'I1', action: 'deferred', note: '补充依据', needsReferences: ['reference.md'] }] }
+    reviews++
+    if (reviews > 1) expect(req.prompt).toContain('reference/reference.md')
+    return reviews < 3 ? { ...changes, issues: changes.issues.map(issue => ({ ...issue, ...(reviews > 1 ? { key: 'ISS-1' } : {}) })) } : approve
+  })
+  await f.stores.workspaces.writeArtifact({ ref: { workspace: f.requirementId, path: 'reference.md' }, content: '已有依据', kind: 'input', author: { type: 'system', id: 'test' } })
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode({ maxRounds: 2, onExhausted: { rework: 'write' } })]) })
+  expect(state.status).toBe('succeeded')
+  expect(state.nodes.review?.revision).toBe(2)
+  expect(reviews).toBe(3)
+})
+
+it('缺失参考材料不进入快照且报告必需输入缺失', async () => {
+  const f = await fixture(async req => req.env!.TAKT_ROLE === 'author'
+    ? { responses: [{ round: 1, reviewer: 'r1', issueId: 'I1', action: 'deferred', note: '暂缓', needsReferences: ['missing/**'] }] } : changes)
+  const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode({ maxRounds: 3, onExhausted: 'human' })]) })
+  expect(state.nodes.review?.status).toBe('blocked')
+  expect(state.nodes.review?.error).toContain('缺少必需输入：missing/**')
+  expect((await f.stores.events.read(state.runId, { types: ['review.response'] }))).toHaveLength(0)
+})
+
+it('重大问题有一条 fixed 时继续评审；minor 的 fixed 不掩盖重大问题均无法修复', async () => {
+  for (const severity of ['major', 'minor'] as const) {
+    let reviews = 0
+    const f = await fixture(async req => req.env!.TAKT_ROLE === 'author'
+      ? { responses: [{ round: 1, reviewer: 'r1', issueId: 'I1', action: 'deferred', note: '等 Lead' }, { round: 1, reviewer: 'r1', issueId: 'I2', action: 'fixed', note: '已改' }] }
+      : ++reviews === 1 ? { ...changes, issues: [...changes.issues, { id: 'I2', severity, description: '第二个问题' }] } : approve)
+    const state = await createEngine(f.deps).start({ requirementId: f.requirementId, workflow: def([f.write, reviewNode({ maxRounds: 3, onExhausted: 'human' })]) })
+    expect(state.status).toBe(severity === 'major' ? 'succeeded' : 'waiting_human')
+    expect(reviews).toBe(severity === 'major' ? 2 : 1)
+  }
 })
 
 it.each(['conflict', 'minor', 'agree'] as const)('裁决只处理含 blocker 的结论冲突：%s', async (mode) => {

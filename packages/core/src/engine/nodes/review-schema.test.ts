@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 import type { ReviewRecord, ReviewResponse } from '../../types.js'
-import { assertResponses, normalizeResponses } from './review-schema.js'
+import { assertResponses, normalizeResponses, RESPONSES_SCHEMA } from './review-schema.js'
+import { validateSchema } from '../schema.js'
 
 const record = (reviewer: string, issues: Array<[string, string]>): ReviewRecord => ({
   round: 1, reviewer, verdict: 'request_changes', summary: '', artifacts: [], at: '2026-11-09T00:00:00.000Z',
@@ -24,4 +25,17 @@ it('对不上的回应原样留下，仍按原规则报错', () => {
   const normalized = normalizeResponses(records, [response('architect', 'ISS-99'), response('architect', 'A2'), response('test-designer', 'N1')], 1)
   expect(() => assertResponses(records, normalized, 1)).toThrow('作者回应必须与本轮问题逐条对应')
   expect(() => assertResponses(records, normalizeResponses(records, [response('architect', 'A1')], 1), 1)).toThrow('作者回应缺少问题')
+})
+it.each(['../other/ref.md', '/tmp/ref.md', 'manifest.json', 'ref\\outside.md'])('参考材料请求拒绝越界或元数据路径：%s', path => {
+  expect(() => assertResponses([records[1]!], [{ ...response('test-designer', 'N1'), needsReferences: [path] }], 1)).toThrow()
+})
+it('参考材料 schema 接受路径或 glob，拒绝错误类型和超过单次上限；上限按全部回应合计', () => {
+  const value = { responses: [{ ...response('test-designer', 'N1'), needsReferences: ['spec/prd.md', 'evidence/**'] }] }
+  expect(() => validateSchema(value, RESPONSES_SCHEMA)).not.toThrow()
+  expect(() => validateSchema({ responses: [{ ...response('test-designer', 'N1'), needsReferences: [3] }] }, RESPONSES_SCHEMA)).toThrow()
+  const paths = Array.from({ length: 50 }, (_, index) => `refs/${index}.md`)
+  expect(() => assertResponses([records[1]!], [{ ...response('test-designer', 'N1'), needsReferences: paths }], 1)).not.toThrow()
+  expect(() => validateSchema({ responses: [{ ...response('test-designer', 'N1'), needsReferences: [...paths, 'more.md'] }] }, RESPONSES_SCHEMA)).toThrow()
+  expect(() => assertResponses(records.slice(0, 1), [{ ...response('architect', 'A1'), needsReferences: paths },
+    { ...response('architect', 'A2'), needsReferences: ['more.md'] }], 1)).toThrow('合计最多 50 条')
 })

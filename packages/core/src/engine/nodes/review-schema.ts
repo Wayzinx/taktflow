@@ -1,4 +1,5 @@
 import type { ReviewNodeDef, ReviewRecord, ReviewResponse } from '../../types.js'
+import { assertArtifactPath } from '../../store/paths.js'
 
 /** 评审与评分卡的分数都是百分制（pass.minScore、rubric threshold 都按 0–100 写），写进 schema，模型才不会各用各的刻度。 */
 export const SCORE = { type: 'number', minimum: 0, maximum: 100, description: '0–100 分，100 表示完全满足' } as const
@@ -19,6 +20,7 @@ export const RESPONSES_SCHEMA = {
     type: 'object', required: ['round', 'reviewer', 'issueId', 'action', 'note'], properties: {
       round: { type: 'integer' }, reviewer: { type: 'string' }, issueId: { type: 'string' },
       action: { type: 'string', enum: ['fixed', 'declined', 'deferred'] }, note: { type: 'string' },
+      needsReferences: { type: 'array', maxItems: 50, items: { type: 'string' }, description: '只有问题是评审员看不到某份已存在的材料时才填：本需求存放区相对路径或 glob，本次全部回应合计最多 50 条' },
     },
   } } },
 }
@@ -50,7 +52,11 @@ export function responseErrors(records: ReviewRecord[], responses: ReviewRespons
   const errors: string[] = []
   const expected = new Set(records.flatMap((record) => record.issues.map((issue) => JSON.stringify([record.reviewer, issue.id]))))
   const seen = new Set<string>()
+  if (responses.flatMap(response => response.needsReferences ?? []).length > 50) errors.push('本次作者回应 needsReferences 合计最多 50 条')
   for (const response of responses) {
+    for (const path of response.needsReferences ?? []) {
+      try { assertArtifactPath(path) } catch (error) { errors.push((error as Error).message) }
+    }
     const key = JSON.stringify([response.reviewer, response.issueId])
     if (response.round !== round || !expected.has(key) || seen.has(key)) errors.push(`作者回应必须与本轮问题逐条对应：${key}`)
     seen.add(key)

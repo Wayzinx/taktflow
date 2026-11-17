@@ -680,7 +680,7 @@ export class Runtime implements HarnessHost {
   }
   private resetReview(id: string): void {
     const progress = this.reviews[id]
-    if (progress) this.reviews[id] = { rounds: [], phase: 'review', history: [...(progress.history ?? []), ...progress.rounds] }
+    if (progress) this.reviews[id] = { rounds: [], phase: 'review', history: [...(progress.history ?? []), ...progress.rounds], requestedReferences: progress.requestedReferences }
   }
   async rework(entry: Entry, target: string, feedback: string): Promise<void> {
     const origin = entry.def.id
