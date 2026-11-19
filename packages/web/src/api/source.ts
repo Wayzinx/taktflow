@@ -58,6 +58,7 @@ import type { CrudSource, KnowledgeSource, StewardSource } from './source-m4'
 import type { M5Source } from './source-m5'
 import type { M6Source } from './source-m6'
 import type { M8Source } from './source-m8'
+import type { FeishuSource } from './feishu.js'
 
 export type { CrudSource, KnowledgeSource, StewardSource, StewardThreadDetail } from './source-m4'
 export { RevisionConflictError, RewindConflictError, type M5Source } from './source-m5'
@@ -102,7 +103,7 @@ export interface EvalOutputSnapshot {
 }
 
 /** Web 用到的全部数据接口：真实 HTTP 客户端和演示数据实现同一份。 */
-export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, M5Source, M6Source, M8Source {
+export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, M5Source, M6Source, M8Source, FeishuSource {
   readonly mock: boolean
   /** 绑定到某个空间的数据源（空间内接口固定加该空间前缀，不看当前地址）：Solo 这类全局页按实体所在空间取数（docs/design/28 §2）。 */
   forSpace(spaceId: string): DataSource

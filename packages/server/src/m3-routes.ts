@@ -1,4 +1,4 @@
-import type { CommandRegistry, LeadPresence, ProjectStores, RoomMessage } from '@taktflow/core'
+import type { Actor, CommandRegistry, LeadPresence, ProjectStores, RoomMessage } from '@taktflow/core'
 import type { EvalRuntimeResolver } from './eval-routes.js'
 import { actor, authorize, body, HttpError, text, viewer } from './http.js'
 import { projectCommands } from './space.js'
@@ -30,12 +30,14 @@ export function commandExecutor(options: M3Callbacks = {}) {
     return options.getCommands?.(stores) ?? projectCommands(stores, {},
       id && ['eval.run', 'defect.attribute'].includes(id) ? await options.resolveRuntime?.(stores) : undefined)
   }
-  const execute = async (stores: ProjectStores, request: Parameters<typeof actor>[0], id: string, input: Record<string, unknown>, reason?: string) => {
-    const result = await (await commands(stores, id)).run(id, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)), { actor: actor(request, stores), reason })
+  const executeAs = async (stores: ProjectStores, by: Actor, id: string, input: Record<string, unknown>, reason?: string) => {
+    const result = await (await commands(stores, id)).run(id, Object.fromEntries(Object.entries(input).filter(([, value]) => value !== undefined)), { actor: by, reason })
     if (!result.ok) throw new HttpError(/权限不足|必须由人/.test(result.message) ? 403 : /待办已|先取消运行|已有运行|已变化|已改变|冲突|已存在|还没有流水线|没有支持 T\d 的流水线/.test(result.message) ? 409 : /不存在/.test(result.message) ? 404 : 400, result.message)
     return result.result
   }
-  return { commands, execute }
+  const execute = (stores: ProjectStores, request: Parameters<typeof actor>[0], id: string, input: Record<string, unknown>, reason?: string) =>
+    executeAs(stores, actor(request, stores), id, input, reason)
+  return { commands, execute, executeAs }
 }
 export function m3Routes(add: (method: string, path: string, handler: Handler) => void, options: M3Callbacks) {
   const { commands, execute } = commandExecutor(options)

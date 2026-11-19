@@ -34,11 +34,12 @@ import { RewindConflictError } from './source-m5'
 import type { DataSource } from './source'
 import type { KnowledgeSource, StewardSource } from './source-m4'
 import type { M8Source } from './source-m8'
+import type { FeishuSource } from './feishu.js'
 
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
 export type ProjectSource = Omit<
   DataSource,
-  'me' | 'spaces' | 'space' | 'team' | 'postTeamMessage' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | keyof StewardSource | keyof KnowledgeSource | 'serverInfo' | 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace' | 'convertWorkflow' | 'routePreviewDraft' | 'forSpace' | keyof M8Source
+  'me' | 'spaces' | 'space' | 'team' | 'postTeamMessage' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | keyof StewardSource | keyof KnowledgeSource | 'serverInfo' | 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace' | 'convertWorkflow' | 'routePreviewDraft' | 'forSpace' | keyof M8Source | keyof FeishuSource
 >
 
 const clone = <T,>(v: T): T => structuredClone(v)

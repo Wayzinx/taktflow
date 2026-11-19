@@ -1,10 +1,13 @@
-import { BookOpen, Cpu, GitFork, LayoutGrid, Lightbulb, Puzzle, ScrollText, UserRoundCog, Users, Workflow } from 'lucide-react'
-import { useAsync } from '../../api'
+import { useSyncExternalStore } from 'react'
+import { BookOpen, Cpu, GitFork, LayoutGrid, Lightbulb, MessageSquare, Puzzle, ScrollText, UserRoundCog, Users, Workflow } from 'lucide-react'
+import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { ErrorState, PageHeader, Skeleton, TabPanel, Tabs, useStewardSuggestions } from '../../components/ui'
 import { StewardEditButton } from './ask-steward'
+import { actingUser, subscribeActingUser } from '../../lib/acting-user.js'
 import { setQuery, useLocation } from '../../lib/router'
 import { FilesTab } from './files-tab'
+import { FeishuTab } from './feishu-tab.js'
 import { SkillsTab } from './skills-tab'
 import { KnowledgeTab } from './knowledge-tab'
 import { LessonsTab } from './lessons-tab'
@@ -18,7 +21,7 @@ import { SettingsViewer } from './access'
 import './settings.css'
 import './space.css'
 
-const TABS = ['members', 'repos', 'skills', 'agents', 'shared', 'workflows', 'knowledge', 'lessons', 'runtime', 'quality'] as const
+const TABS = ['members', 'repos', 'skills', 'agents', 'shared', 'workflows', 'knowledge', 'lessons', 'runtime', 'quality', 'feishu'] as const
 type Tab = (typeof TABS)[number]
 
 const TAB_HINT: Record<Tab, string> = {
@@ -32,6 +35,7 @@ const TAB_HINT: Record<Tab, string> = {
   lessons: '从过往运行里沉淀下来的经验，Agent 在相似场景会参考。',
   runtime: 'Harness 是执行 Agent 的工具；这里配置模型 API、模型别名和默认路由。',
   quality: '查看日志是否健康、运行记录是否已同步，按需校验或修复。',
+  feishu: '绑定飞书群，让群里的管家和网页共用此空间的团队对话。',
 }
 
 /**
@@ -39,14 +43,19 @@ const TAB_HINT: Record<Tab, string> = {
  * 能直接改的都在页面上改（写回空间配置并留审计）；还不能直接改的给"让管家帮我改"，不教人改文件。
  */
 export function SettingsPage() {
-  const { query } = useLocation()
+  const { query, spaceId } = useLocation()
+  const root = useSource()
+  const source = spaceId ? root.forSpace(spaceId) : root
+  const user = useSyncExternalStore(subscribeActingUser, () => actingUser(spaceId))
   const raw = query.get('tab')
-  const tab: Tab = TABS.includes(raw as Tab) ? (raw as Tab) : 'members'
+  const me = useAsync(() => source.me(), [spaceId, user])
+  const canManageFeishu = !me.error && me.data?.member?.role === 'owner'
+  const checkingFeishuAccess = raw === 'feishu' && (me.error || !me.data)
+  const tab: Tab = TABS.includes(raw as Tab) && (raw !== 'feishu' || canManageFeishu) ? (raw as Tab) : 'members'
   const q = useAsync((ds) => ds.space(), [])
   const sp = q.data
   const bindings = useAsync((ds) => ds.knowledgeBindings().catch(() => undefined), [tab === 'knowledge'])
   // 身份加载期间或失败时保持只读，角色门槛以服务端为准
-  const me = useAsync((ds) => ds.me(), [])
   // 角色列表含插件 / 内置角色：Tab 徽标、角色 Tab、共享资源 Tab 用同一份；接口不可用（老版本服务端）时退回空间档案
   const roles = useAsync((ds) => ds.agentRoles(), [])
   useCrumbs([{ label: '空间设置' }], [])
@@ -81,9 +90,12 @@ export function SettingsPage() {
               { id: 'lessons', label: '经验', icon: Lightbulb },
               { id: 'runtime', label: '模型与 Harness', icon: Cpu },
               { id: 'quality', label: '质量日志', icon: ScrollText },
+              ...(canManageFeishu ? [{ id: 'feishu', label: '飞书群绑定', icon: MessageSquare }] : []),
             ]}
           />
-          <TabPanel key={tab} className="space-tab-body">
+          {checkingFeishuAccess ? (
+            me.error ? <ErrorState title="无法确认空间身份" error={me.error} onRetry={me.reload} /> : <Skeleton w="100%" h={80} />
+          ) : <TabPanel key={tab} className="space-tab-body">
             {tab === 'members' && <MembersTab space={sp} onSaved={q.reload} />}
             {tab === 'repos' && <ReposTab space={sp} onChanged={q.reload} />}
             {tab === 'skills' && <SkillsTab space={sp} onChanged={q.reload} />}
@@ -94,7 +106,8 @@ export function SettingsPage() {
             {tab === 'lessons' && <LessonsTab space={sp} />}
             {tab === 'runtime' && <RuntimeTab />}
             {tab === 'quality' && <QualityTab />}
-          </TabPanel>
+            {tab === 'feishu' && canManageFeishu && <FeishuTab key={JSON.stringify([spaceId, user])} source={source} members={sp?.members} />}
+          </TabPanel>}
         </SettingsViewer.Provider>
       )}
     </div>

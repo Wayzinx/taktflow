@@ -1,3 +1,5 @@
+import { resolve } from 'node:path'
+import { createFeishuRuntime, feishuAppFromEnv, feishuCallbackPath } from './feishu-runtime.js'
 import { createProviderBridge } from '@taktflow/harness'
 export { ModelCatalog } from './model-catalog.js'
 export { createRuntimeModelCatalog } from './runtime-catalog.js'
@@ -31,6 +33,7 @@ export { enqueueTeamJob, teamJobs, teamNodes } from './team-hub.js'
 export interface ServerOptions extends CatalogCallbacks, M3Callbacks, RuntimeCallbacks {
   onSpaceLoad?: (stores: import('@taktflow/core').ProjectStores) => Promise<void>
   onSpaceUnload?: (projectDir: string) => Promise<void>
+  feishuFetch?: typeof fetch
   automationFetch?: typeof fetch
   projectDir?: string
   spacesDir?: string
@@ -71,7 +74,9 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   }
   const bridge = options.bridge ?? createProviderBridge()
   const preview = createPreviewServer(options.host ?? '127.0.0.1')
-  const routeOptions = { ...options, bridge, automationRuntime, preview }
+  const feishuRoot = options.spacesDir ? resolve(options.spacesDir, '.takt-feishu') : resolve(spaces[0]!.taktDir, 'runs', '.feishu-hub')
+  const feishu = createFeishuRuntime(feishuRoot, feishuAppFromEnv(process.env), () => spaces, options, options.feishuFetch)
+  const routeOptions = { ...options, bridge, automationRuntime, preview, feishu }
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, routeOptions,
     options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
@@ -142,6 +147,10 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       if (closing) throw new HttpError(500, '服务正在关闭')
       let url: URL
       try { url = new URL(request.url ?? '/', 'http://localhost') } catch { throw new HttpError(400, 'URL 不合法') }
+      if (url.pathname === feishuCallbackPath) {
+        await feishu.callback(request, response)
+        return
+      }
       if (url.pathname === '/api/team-worker' || url.pathname.startsWith(TEAM_WORKER_PATH)) {
         await workerApi(request, response, url)
         return
@@ -237,6 +246,15 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     automationRefresh = refresh().then(syncAutomations).catch(() => { process.stderr.write('自动化空间刷新失败，请检查空间配置后重试\n') }).finally(() => { automationRefresh = undefined })
   }, 5000)
   automationScanner.unref()
+  let feishuScan: Promise<void> | undefined
+  const scanFeishu = () => {
+    if (closing || feishuScan) return
+    feishuScan = feishu.scan().catch(() => { process.stderr.write('飞书同步延迟，请检查空间配置、队列和磁盘权限\n') })
+      .finally(() => { feishuScan = undefined })
+  }
+  const feishuScanner = feishu.configured ? setInterval(scanFeishu, 2000) : undefined
+  feishuScanner?.unref()
+  if (feishu.configured) scanFeishu()
   let closePromise: Promise<void> | undefined
   return {
     url: `http://${address.address.includes(':') ? `[${address.address}]` : address.address}:${address.port}`,
@@ -244,7 +262,8 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       if (closePromise) return closePromise
       closing = true
       clearInterval(automationScanner)
-      closePromise = Promise.all([automationRefresh, refreshing]).then(async () => { for (const pending of automations.values()) await (await pending).close() }).then(() => maintenance.close()).then(() => steward.close()).then(() => new Promise<void>((resolve, reject) => {
+      clearInterval(feishuScanner)
+      closePromise = Promise.all([automationRefresh, refreshing, feishuScan]).then(() => feishu.close()).then(async () => { for (const pending of automations.values()) await (await pending).close() }).then(() => maintenance.close()).then(() => steward.close()).then(() => new Promise<void>((resolve, reject) => {
         for (const close of connections) close()
         server.close((error) => { if (error) reject(error); else resolve() })
         server.closeAllConnections()

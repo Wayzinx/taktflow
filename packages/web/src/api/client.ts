@@ -34,6 +34,7 @@ const enc = encodeURIComponent
 const GLOBAL_PATH = /^\/(steward|spaces|server)(\/|\?|$)/
 /** 管家接口：按人存，用全局身份（lib/acting-user 的 stewardUser），不按空间取。 */
 const STEWARD_PATH = /^\/steward(\/|\?|$)/
+const FEISHU_BINDING_PATH = '/space/feishu'
 
 export function qs(params: Record<string, string | number | boolean | undefined>): string {
   const p = new URLSearchParams()
@@ -76,7 +77,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     })
     const text = await res.text()
     const data = text ? (JSON.parse(text) as unknown) : undefined
-    if (res.status === 409 && (data as WorkflowConflict | undefined)?.error === 'conflict') throw new WorkflowConflictError(data as WorkflowConflict)
+    if (path !== FEISHU_BINDING_PATH && res.status === 409 && (data as WorkflowConflict | undefined)?.error === 'conflict') throw new WorkflowConflictError(data as WorkflowConflict)
     if (!res.ok) {
       const err = data as ApiError | undefined
       throw new ApiRequestError(res.status, err?.error ?? `${method} ${path} → ${res.status}`, err?.detail, data)
@@ -121,6 +122,10 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     subscribe: (runId, onEvent) => stream(scoped(`/runs/${enc(runId)}/stream?from=tail`), onEvent),
     spaces: (opts) => get(`/spaces${qs({ archived: opts?.archived ? 1 : undefined })}`),
     space: () => get('/space'),
+    feishuBinding: () => get(FEISHU_BINDING_PATH),
+    setFeishuBinding: (update) => req('PUT', FEISHU_BINDING_PATH, update.chatId === null
+      ? { chatId: null, baseRevision: update.baseRevision }
+      : { chatId: update.chatId, members: update.members.map(({ openId, memberId }) => ({ openId, memberId })), baseRevision: update.baseRevision }),
     team: (signal) => req('GET', '/space/team', undefined, signal),
     postTeamMessage: (body, signal) => req('POST', '/space/team/messages', body, signal),
     // 服务端成员接口接受数组 + x-takt-reason 头，或 { members, reason }；用 body 形式，避免非 ASCII 原因放进请求头

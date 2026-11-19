@@ -1,3 +1,4 @@
+import { feishuBindingRoutes, type FeishuBindings } from './feishu-bindings.js'
 import { catalogHarnesses, legacyCatalog } from './harness-catalog.js'
 import { pairingMatrix } from './pairings.js'
 import { harnessCatalogInfo } from '@taktflow/harness'
@@ -41,7 +42,7 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & RuntimeCallbacks & AutomationCallbacks & { preview?: PreviewServer } = {}, onLeadMention?: LeadMention) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & RuntimeCallbacks & AutomationCallbacks & { preview?: PreviewServer; feishu?: { bindings: FeishuBindings; configured: boolean } } = {}, onLeadMention?: LeadMention) {
   const router = createRouter<Handler>()
   const add = router.add
   const { execute } = commandExecutor(catalog)
@@ -54,6 +55,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   registerKnowledgeRoutes(add, { connections })
   crudRoutes(add, catalog)
   spaceRoutes(add, connections, onLeadMention, catalog)
+  if (catalog.feishu) feishuBindingRoutes(add, catalog.feishu.bindings, catalog.feishu.configured)
   teamRoomRoutes(add, catalog, { enqueueTeamJob, teamJobs, teamNodes })
   skillRoutes(add)
   m3Routes(add, catalog)

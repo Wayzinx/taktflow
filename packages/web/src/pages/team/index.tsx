@@ -4,7 +4,7 @@ import { useAsync, useSource } from '../../api'
 import { useCrumbs } from '../../components/layout'
 import { PageHeader, Skeleton } from '../../components/ui'
 import { actingUser, subscribeActingUser } from '../../lib/acting-user'
-import { useLocation } from '../../lib/router'
+import { Link, useLocation } from '../../lib/router'
 import { splitSpace } from '../../lib/space'
 import { TeamComposer } from './composer'
 import { Conversation, JobStatus } from './conversation'
@@ -76,6 +76,11 @@ function TeamRoom({ spaceId, user }: { spaceId?: string; user?: string }) {
           ) : team.loading && !team.error ? <div className="team-loading" aria-label="正在读取空间对话" role="status"><Skeleton w="50%" h={14} /><Skeleton w="70%" h={14} /><Skeleton w="42%" h={14} /></div> : null}
         </section>
         <aside className="team-side" aria-label="开发资源">
+          {!viewer.error && me?.member?.role === 'owner' && <section aria-labelledby="team-feishu-title">
+            <div className="team-side-head"><h2 id="team-feishu-title">飞书群</h2></div>
+            <p>绑定群后，可在飞书里 <strong>@管家</strong> 聊天、建需求、查看待办。</p>
+            <Link to="/settings?tab=feishu" className="btn btn-sm">管理飞书群绑定</Link>
+          </section>}
           <section aria-labelledby="team-nodes-title">
             <div className="team-side-head"><Laptop aria-hidden /><h2 id="team-nodes-title">开发机</h2>{data && <span className="num">{online} 台在线</span>}</div>
             {data && nodes.length > 0 && <ul className="team-nodes">

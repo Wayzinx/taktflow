@@ -7,6 +7,7 @@ import type { DataSource } from './source'
 export type { CrudSource, DataSource, EvalOutputSnapshot, KnowledgeSource, RepoPatch, ScorecardBy, StewardSource, StewardThreadDetail, WorkflowRevisionDetail } from './source'
 export { RevisionConflictError, RewindConflictError, RoleConflictError, RuntimeConflictError, WorkflowConflictError } from './source'
 export { DEMO_READONLY_MESSAGE, demoMode, type DemoMode } from './demo'
+export type { FeishuBinding, FeishuBindingStatus, FeishuBindingUpdate, FeishuMemberMapping } from './feishu.js'
 
 const SourceContext = createContext<DataSource | null>(null)
 

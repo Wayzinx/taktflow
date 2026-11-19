@@ -1,0 +1,126 @@
+.feishu-settings {
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+}
+
+.feishu-head {
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+.feishu-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+}
+
+.feishu-head svg { width: 16px; height: 16px; }
+
+.feishu-badge {
+  padding: 2px var(--sp-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-hover);
+  color: var(--text-2);
+  font-size: var(--text-meta);
+}
+
+.feishu-badge[data-bound='true'] {
+  background: var(--st-success-soft);
+  color: var(--st-success);
+}
+
+.feishu-body { padding: var(--sp-4); }
+
+.feishu-intro p {
+  max-width: 68ch;
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--text-body);
+}
+
+.feishu-intro a { text-decoration: underline; text-underline-offset: 3px; }
+.feishu-intro strong { color: var(--text); }
+
+.feishu-fields {
+  min-width: 0;
+  padding: 0;
+  margin: var(--sp-5) 0 0;
+  border: 0;
+}
+
+.feishu-field {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--text-2);
+  font-size: var(--text-meta);
+  font-weight: 500;
+}
+
+.feishu-field :is(.input, .select) { width: 100%; min-width: 0; }
+.feishu-chat { max-width: 400px; }
+
+.feishu-mappings-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-top: var(--sp-6);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--divider);
+}
+
+.feishu-mappings-head h3 { margin: 0; font-size: var(--text-title); }
+.feishu-mappings-head p { margin: var(--sp-1) 0 0; color: var(--text-2); }
+.feishu-empty { margin: var(--sp-3) 0 0; color: var(--text-2); }
+.feishu-mappings { list-style: none; padding: 0; margin: 0; }
+
+.feishu-mapping {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--sp-3);
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--divider);
+}
+
+.feishu-message {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  background: var(--surface-hover);
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.feishu-conflict { background: var(--st-waiting-soft); color: var(--st-waiting); }
+.feishu-conflict p { margin: 0 0 var(--sp-2); }
+.feishu-error { background: var(--st-failed-soft); color: var(--st-failed); }
+.feishu-group-id { margin: 0; overflow-wrap: anywhere; }
+
+.feishu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+@media (max-width: 560px) {
+  .feishu-mapping {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    align-items: end;
+    gap: var(--sp-2);
+  }
+
+  .feishu-mapping .feishu-field { grid-column: 1; }
+  .feishu-mapping .feishu-field:first-child,
+  .feishu-mapping:not(:has(.feishu-remove)) .feishu-field { grid-column: 1 / -1; }
+  .feishu-mapping .feishu-remove { grid-column: 2; grid-row: 2; }
+  .feishu-body :is(.btn, .input, .select) { min-height: 44px; }
+  .feishu-body :is(.input, .select) { font-size: 16px; }
+  .feishu-body .feishu-remove { width: 44px; }
+}
