@@ -137,6 +137,7 @@ export const HELP = `用法：takt <命令> [选项]
   defect attribute <REQ> <defectId> [--mock <file>]
   defect confirm <REQ> <defectId> [--note <text>]
   serve [--spaces <dir>] [--port 4870] [--host 127.0.0.1]
+  wechat listen --project <空间目录> --by <成员ID> --config <腾讯微信账号文件>
   worker --hub URL --space ID --node ID --harness codex --project <专用目录>
                                                 从 stdin 读取单个 Worker token（仅 HTTPS 或本机 HTTP 隧道）
   link --hub URL --space ID --node ID --project <专用目录> [--relink]

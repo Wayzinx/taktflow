@@ -15,7 +15,7 @@ import './team.css'
 export function TeamPage() {
   const { spaceId } = useLocation()
   const user = useSyncExternalStore(subscribeActingUser, () => actingUser(spaceId))
-  useCrumbs([{ label: '团队 Agent' }], [])
+  useCrumbs([{ label: '管家', to: '/solo' }, { label: '空间讨论' }], [])
   return <TeamRoom key={JSON.stringify([spaceId, user])} spaceId={spaceId} user={user} />
 }
 
@@ -24,7 +24,7 @@ function TeamRoom({ spaceId, user }: { spaceId?: string; user?: string }) {
   const source = spaceId ? root.forSpace(spaceId) : root
   const isCurrent = useCallback(() => {
     const locationScope = splitSpace(location.pathname)
-    return locationScope.rest === '/team' && locationScope.spaceId === spaceId && actingUser(spaceId) === user
+    return ['/steward', '/solo'].includes(locationScope.rest) && new URLSearchParams(location.search).get('room') === 'team' && locationScope.spaceId === spaceId && actingUser(spaceId) === user
   }, [spaceId, user])
   const team = useTeam(source, isCurrent)
   const viewer = useAsync(() => source.me(), [spaceId, user])
@@ -56,7 +56,7 @@ function TeamRoom({ spaceId, user }: { spaceId?: string; user?: string }) {
   }
   return (
     <div className="page team-page">
-      <PageHeader title="团队 Agent" description="在当前空间共享对话、发起开发任务，并查看执行结果。" actions={
+      <PageHeader title="空间讨论" description="空间成员可在这里讨论、发起开发任务，查看来自已绑定渠道的消息。" actions={
         <button type="button" className="btn" onClick={refresh} disabled={team.loading && !data}><RotateCw aria-hidden /> 刷新</button>
       } />
       <div className="team-layout">
@@ -77,15 +77,15 @@ function TeamRoom({ spaceId, user }: { spaceId?: string; user?: string }) {
         </section>
         <aside className="team-side" aria-label="开发资源">
           {!viewer.error && me?.member?.role === 'owner' && <section aria-labelledby="team-feishu-title">
-            <div className="team-side-head"><h2 id="team-feishu-title">飞书群</h2></div>
-            <p>绑定群后，可在飞书里 <strong>@管家</strong> 聊天、建需求、查看待办。</p>
-            <Link to="/settings?tab=feishu" className="btn btn-sm">管理飞书群绑定</Link>
+            <div className="team-side-head"><h2 id="team-feishu-title">消息渠道</h2></div>
+            <p>从飞书、GitHub Issue 或微信联系此空间的管家。</p>
+            <Link to="/settings?tab=feishu" className="btn btn-sm">管理消息渠道</Link>
           </section>}
           <section aria-labelledby="team-nodes-title">
             <div className="team-side-head"><Laptop aria-hidden /><h2 id="team-nodes-title">开发机</h2>{data && <span className="num">{online} 台在线</span>}</div>
             {data && nodes.length > 0 && <ul className="team-nodes">
               {nodes.map((node) => <li key={nodeKey(node)}>
-                <div><strong>{node.id}</strong><span className="team-node-harness mono">{node.harness}</span></div>
+                <div><strong>{node.displayName ?? node.id}</strong><span className="team-node-harness mono">{node.harness}</span></div>
                 <span className="team-node-state" data-online={node.online}>{node.online ? '在线' : '离线'}</span>
               </li>)}
             </ul>}

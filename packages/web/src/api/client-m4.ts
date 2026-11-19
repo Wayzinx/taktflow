@@ -34,7 +34,7 @@ export function createM4Http({ req, get, url, stream, stewardStream }: Http): Cr
     deleteSpace: (id, body) => req('DELETE', `/spaces/${enc(id)}`, body),
     convertWorkflow: (id, body) => req('POST', `/workflows/${enc(id)}/convert`, body),
 
-    // ---------------------------------------------------------------- 管家（全局，不加空间前缀）
+    // ---------------------------------------------------------------- 管家（HTTP 客户端按当前空间或个人页面选择地址和身份）
     stewardThreads: (opts) => get(`/steward/threads${qs({ archived: opts?.archived ? 1 : undefined })}`),
     patchStewardThread: (id, patch) => req('PATCH', `/steward/threads/${enc(id)}`, patch),
     deleteStewardThread: (id) => req<void>('DELETE', `/steward/threads/${enc(id)}`),

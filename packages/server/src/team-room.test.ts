@@ -250,3 +250,23 @@ it('按空间配置调用无工具模型回答追问；模型失败降级且不�
   expect(hub.enqueueTeamJob).not.toHaveBeenCalled()
   expect(await (await openProject(alpha.projectDir)).workspaces.listRequirements()).toEqual([])
 })
+
+it('完整 Hub 在默认与显式空间路由共享同一管家，跨空间或个人路由无法取到它，重启后可以继续', async () => {
+  const { server, start } = await fixture()
+  const user = { 'x-takt-user': 'alice', 'content-type': 'application/json' }
+  const threads = '/space/steward/threads'
+  const create = await fetch(`${server.url}/api/s/alpha${threads}`, { method: 'POST', headers: user, body: JSON.stringify({ text: '记录 Alpha 的交付约定' }) })
+  expect(create.status).toBe(200)
+  const { thread } = await create.json() as { thread: { id: string } }
+  const read = (hub: RunningServer, prefix: string) => fetch(`${hub.url}/api${prefix}/${thread.id}`, { headers: { 'x-takt-user': 'bob' } })
+  expect((await read(server, threads)).status).toBe(200)
+  expect((await read(server, `/s/beta${threads}`)).status).toBe(404)
+  expect((await read(server, '/steward/threads')).status).toBe(404)
+  await server.close()
+  const restart = await start()
+  const continueTurn = await fetch(`${restart.url}/api/s/alpha${threads}/${thread.id}/messages`, {
+    method: 'POST', headers: { ...user, 'x-takt-user': 'bob' }, body: JSON.stringify({ text: '接着聊验收范围' }),
+  })
+  expect(continueTurn.status).toBe(200)
+  expect(await continueTurn.json()).toMatchObject({ threadId: thread.id, author: { type: 'human', id: 'bob' } })
+})

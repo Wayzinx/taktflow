@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { Laptop, Plus, RotateCw } from 'lucide-react'
 import { useAsync, useSource, type SpaceDevice } from '../../api/index.js'
+import type { ComputerDetails } from '../../api/devices.js'
 import { useCrumbs } from '../../components/layout.js'
 import { Dialog, EmptyState, PageHeader, Skeleton, SkeletonRows } from '../../components/ui.js'
 import { actingUserHeader, setActingUser, subscribeActingUser } from '../../lib/acting-user.js'
 import { Link, useLocation } from '../../lib/router.js'
 import { splitSpace } from '../../lib/space.js'
 import { ConnectDialog, DeviceTime, type Pairing } from './connect-dialog.js'
-import { authDenied, canManageDevices, deviceError, hubAddress, ROLE_LABELS } from './model.js'
+import { authDenied, canManageDevices, deviceError, DEVICE_ID, hubAddress, PLATFORM_LABEL, ROLE_LABELS } from './model.js'
 import { REQUEST_MS, useDevices } from './use-devices.js'
 import './devices.css'
 
@@ -33,6 +34,7 @@ function DevicesSession({ spaceId, user }: { spaceId?: string; user?: string }) 
   const viewer = useAsync(() => source.me(), [spaceId, user])
   const [dialog, setDialog] = useState<'link' | SpaceDevice>()
   const [pairing, setPairing] = useState<Pairing>()
+  const [pairedNode, setPairedNode] = useState<string>()
   const [expired, setExpired] = useState(false)
   const [busy, setBusy] = useState(false)
   const [writeError, setWriteError] = useState<string>()
@@ -50,6 +52,7 @@ function DevicesSession({ spaceId, user }: { spaceId?: string; user?: string }) 
     setDialog(undefined)
     setPairing(undefined)
     setExpired(false)
+    setPairedNode(undefined)
     setWriteError(undefined)
   }, [])
 
@@ -89,28 +92,33 @@ function DevicesSession({ spaceId, user }: { spaceId?: string; user?: string }) 
     }
   }
 
-  const link = (nodeId: string, target: string) => {
+  const link = (computer: ComputerDetails) => {
     if (!data) return
-    void write('link', (signal) => source.createDeviceLink({ nodeId, harness: 'codex' }, signal), (value) => {
-      if (value.nodeId !== nodeId || value.harness !== 'codex' || !value.code || !(Date.parse(value.expiresAt) > Date.now())) {
+    void write('link', (signal) => source.createDeviceLink(computer, signal), (value) => {
+      if (!DEVICE_ID.test(value.nodeId ?? '') || value.displayName !== computer.displayName || value.platform !== computer.platform || value.harness !== 'codex' || !value.code || !(Date.parse(value.expiresAt) > Date.now())) {
         setWriteError('Hub 未返回有效的配对码。请刷新设备列表，检查是否已登记，再重试。')
         return
       }
-      setPairing({ ...value, hub: target, spaceId: data.spaceId })
+      setPairing({ ...value, ...computer, hub, spaceId: data.spaceId })
+      setPairedNode(value.nodeId)
     })
   }
+  const connected = data?.devices.find(device => device.nodeId === pairedNode && device.status !== 'pending')
+  useEffect(() => {
+    if (connected) { setPairing(undefined); setExpired(false) }
+  }, [connected])
   const revokeTarget = dialog && dialog !== 'link' ? dialog : undefined
   const revoke = (device: SpaceDevice) => void write('revoke', (signal) => source.revokeDevice(device.nodeId, signal), () => {
     closing()
-    setRevoked(device.nodeId)
+    setRevoked(device.displayName ?? device.nodeId)
   })
   const refreshPage = () => { void refresh(); viewer.reload() }
 
   return (
     <div className="page devices-page">
-      <PageHeader title={TITLE} description="连接 Mac、服务器和执行 Agent，查看节点状态并向指定机器派发任务。" actions={<>
+      <PageHeader title={TITLE} description="管理空间可调度的电脑与 Agent。" actions={<>
         <button type="button" className="btn" onClick={refreshPage} disabled={loading}><RotateCw aria-hidden /> 刷新</button>
-        {canManage && <button type="button" className="btn btn-primary" onClick={() => { setRevoked(undefined); setDialog('link') }}><Plus aria-hidden /> 连接设备</button>}
+        {canManage && <button type="button" className="btn btn-primary" onClick={() => { setRevoked(undefined); setDialog('link') }}><Plus aria-hidden /> 添加电脑</button>}
       </>} />
 
       <dl className="device-context">
@@ -133,37 +141,37 @@ function DevicesSession({ spaceId, user }: { spaceId?: string; user?: string }) 
 
       <details className="card device-protocol">
         <summary>接入自有 Agent</summary>
-        <p>「连接设备」为内置 Codex Link 配对。已有 Agent 服务可以实现 Worker 协议，由 Hub 管理员通过 <code>TAKT_TEAM_NODES</code> 登记空间、节点和 harness。接入后会显示在下方，可在「团队 Agent → 直接开发」中选择。</p>
+        <p>已有 Agent 服务可以实现 Worker 协议，由 Hub 管理员通过 <code>TAKT_TEAM_NODES</code> 登记空间、节点和 harness。接入后会显示在下方，可在空间管家的「直接开发」中选择。</p>
         <a href="https://github.com/Wayzinx/taktflow/blob/main/examples/team-delivery/README.md#接入已有的-agent-进程" target="_blank" rel="noreferrer">查看 Worker 协议和接入步骤</a>
       </details>
 
       <section className="card devices-inventory" aria-labelledby="device-inventory-title">
         <header className="device-inventory-head"><h2 id="device-inventory-title">执行设备</h2>{data && !error && <span className="device-meta">{data.devices.length} 台设备</span>}</header>
-        {error && <p className="device-error device-load-error" role="alert">{data ? '刷新失败，列表为上次读取的状态。' : '无法读取设备列表。'}{error}</p>}
+        {error && (user || !isOwner || data) && <p className="device-error device-load-error" role="alert">{data ? '刷新失败，列表为上次读取的状态。' : '无法读取设备列表。'}{error}</p>}
         {revoked && <p className="device-revoked" role="status">已撤销 <code>{revoked}</code> 的连接。</p>}
         {data?.devices.length ? <ul className="device-list">{data.devices.map((device) => <li key={device.nodeId}>
           <div className="device-main">
-            <strong><code>{device.nodeId}</code></strong>
-            <span className="device-meta">Agent：{device.harness === 'codex' ? 'Codex' : device.harness} · {device.source === 'env' ? '环境变量管理' : '配对接入'}</span>
+            <strong>{device.displayName ?? device.nodeId}</strong>
+            <span className="device-meta">{device.platform && <>{PLATFORM_LABEL[device.platform]} · </>}Agent：{device.harness === 'codex' ? 'Codex' : device.harness} · {device.source === 'env' ? '环境变量管理' : '配对接入'}</span>
             {device.jobId && <span className="device-meta">任务：<code>{device.jobId}</code></span>}
             {device.lastSeenAt && <span className="device-meta">最后在线：<DeviceTime value={device.lastSeenAt} /></span>}
             {device.status === 'pending' && device.expiresAt && <span className="device-meta">配对截止：<DeviceTime value={device.expiresAt} /></span>}
           </div>
           <div className="device-row-actions">
             <span className="device-status" data-status={device.status}>{STATUS[device.status]}</span>
-            {canManage && device.source === 'link' && <button type="button" className="btn btn-sm" aria-label={`撤销设备 ${device.nodeId} 的连接`} onClick={() => setDialog(device)}>撤销连接</button>}
+            {canManage && device.source === 'link' && <button type="button" className="btn btn-sm" aria-label={`撤销设备 ${device.displayName ?? device.nodeId} 的连接`} onClick={() => setDialog(device)}>撤销连接</button>}
           </div>
         </li>)}</ul>
-          : !error && (data ? <EmptyState compact title="还没有连接设备" body={canManage ? '点「连接设备」，为第一台 Mac 或服务器生成配对码。' : '设备接入后会出现在这里。'} />
+          : !error && (data ? <EmptyState compact title="还没有连接设备" body={canManage ? '点击「添加电脑」，连接第一台 Mac 或 Linux 服务器。' : '设备接入后会出现在这里。'} />
             : loading && <div className="device-loading" role="status" aria-label="正在读取设备"><SkeletonRows rows={3} /></div>)}
       </section>
       <p className="device-note"><Laptop aria-hidden /> 环境变量管理的设备须由 Hub 管理员修改服务配置，不能在本页撤销。</p>
 
-      <ConnectDialog open={canManage && dialog === 'link'} hub={hub} pairing={pairing} expired={expired} error={writeError} busy={busy} onClose={closing} onLink={link} />
+      <ConnectDialog open={canManage && dialog === 'link'} connected={connected} pairing={pairing} expired={expired} error={writeError} busy={busy} onClose={closing} onLink={link} />
       <Dialog open={canManage && !!revokeTarget} onClose={closing} dismissible={false} className="device-dialog" title="撤销设备连接？" tone="danger" size="sm"
         footer={<><button type="button" className="btn" onClick={closing}>取消</button><button type="button" className="btn btn-danger" disabled={busy || !revokeTarget} aria-busy={busy}
           onClick={() => { if (revokeTarget) revoke(revokeTarget) }}>撤销连接</button></>}>
-        {revokeTarget && <p className="device-confirm">设备 <code>{revokeTarget.nodeId}</code> 将不能再连接此空间；重新接入需要新的配对码。</p>}
+        {revokeTarget && <p className="device-confirm">设备 <strong>{revokeTarget.displayName ?? revokeTarget.nodeId}</strong> 将不能再连接此空间；重新接入需要新的配对码。</p>}
         {revokeTarget && writeError && <p className="device-error" role="alert">{writeError}</p>}
       </Dialog>
     </div>

@@ -25,7 +25,7 @@ npm run takt -- doctor --project examples/hello-delivery  # 检查 harness / 模
 
 ## 团队 Agent
 
-在项目空间侧栏打开 **设备与 Agent**，生成配对码，让 Mac 或 Linux 开发机通过 Link 接入 Hub。打开 **团队 Agent** 即可讨论、选设备和派发任务。团队可以共用一个管家讨论方案，把对话变成需求、启动已有工作流，也可以直接把任务发给已连接 Hub 的 Mac 或 Linux 开发机。[配置空间、连接 Worker 和运行示例](examples/team-delivery/README.md) · [在飞书群使用管家](examples/team-delivery/feishu.md)
+在项目空间打开 **管家**。成员可以查看同一份会话列表，接着同事的上一轮讨论继续工作。在管家的 **空间讨论** 里可从讨论创建需求、启动工作流，或选择在线开发机直接开发。在 **设备与 Agent → 添加电脑** 选择 Mac 或 Linux，给电脑取名，按向导下载 Link 并配对即可上线。[配置空间、连接 Worker 和运行示例](examples/team-delivery/README.md) · [飞书群](examples/team-delivery/feishu.md) · [GitHub Issue](examples/team-delivery/github.md) · [个人微信](examples/team-delivery/wechat.md)
 
 ## 支持哪些 harness 和模型
 

@@ -1,5 +1,6 @@
 import { CircleCheck } from 'lucide-react'
 import type { StewardContextRef, StewardPick } from '@taktflow/core'
+import { personalSteward } from '../../lib/space'
 import { useAsync } from '../../api'
 import { Bee } from '../../components/mascot'
 import { useEntityFocus } from '../../components/steward/focus'
@@ -15,13 +16,13 @@ const greeting = () => {
 
 /** 输入框上方：打招呼的节拍蜂 + 一句话。 */
 export function SoloHero() {
-  const spaces = useAsync((ds) => ds.spaces(), [])
-  const n = spaces.data?.length
+  const shared = !personalSteward(location.pathname)
+  const scope = useAsync((ds) => shared ? ds.space().then(s => s.name) : ds.spaces().then(s => String(s.length)), [shared])
   return (
     <div className="solo-hello">
       <Bee className="solo-hello-bee" state="greet" size={96} interactive follow label="管家" />
-      <h1>{greeting()}，想看哪个需求？</h1>
-      <p className="faint">{n ? `我能在你的 ${n} 个空间里找需求、运行和节点，直接画给你看。` : '我能跨空间找需求、运行和节点，直接画给你看。'}</p>
+      <h1>{shared ? (scope.data ? `${scope.data}的管家` : '空间管家') : `${greeting()}，想看哪个需求？`}</h1>
+      <p className="faint">{shared ? '和管家讨论需求、查看进度。空间成员都可以查看并接着聊。' : '这是你的个人会话，可以跨空间查询需求、运行和节点。'}</p>
     </div>
   )
 }

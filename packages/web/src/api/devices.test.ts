@@ -15,8 +15,8 @@ describe('空间设备接口', () => {
     route.pathname = '/s/beta%20lab/devices'
     setActingUser('bob')
     const list: SpaceDevices = { spaceId: 'beta lab', devices: [{ nodeId: 'runner', harness: 'codex', source: 'env', status: 'online', jobId: 'job-1' }] }
-    const payload: DeviceLinkRequest = { nodeId: 'mac-mini', harness: 'codex' }
-    const link: DeviceLink = { ...payload, expiresAt: '2026-11-19T12:00:00Z', code: 'fixture-only' }
+    const payload: DeviceLinkRequest = { displayName: '团队 Mac', platform: 'mac' }
+    const link: DeviceLink = { ...payload, nodeId: 'computer-123', harness: 'codex', expiresAt: '2026-11-19T12:00:00Z', code: 'fixture-only' }
     const fetch = vi.fn()
       .mockResolvedValueOnce(Response.json(list))
       .mockResolvedValueOnce(Response.json(link))

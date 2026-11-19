@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process'
 import type { Viewer } from '@taktflow/core'
 import { describe, expect, it } from 'vitest'
 import { ApiRequestError } from '../../api/client.js'
-import { canManageDevices, deviceError, hubAddress, linkCommand, linkHub } from './model.js'
+import { canManageDevices, deviceError, hubAddress, linkCommand, linkHub, linkDownloadCommand, loopbackHub } from './model.js'
 
 describe('设备配对', () => {
   it('从浏览器地址派生 Hub，保留 HTTPS 和端口', () => {
@@ -26,7 +26,14 @@ describe('设备配对', () => {
     const nodeId = "node'$(printf expanded);*"
     const command = linkCommand(hub, space, nodeId)
     const args = execFileSync('/bin/sh', ['-c', `set -- ${command}; printf '%s\\0' "$@"`], { encoding: 'utf8' }).split('\0')
-    expect(args.slice(0, -1)).toEqual(['node', 'packages/cli/dist/index.js', 'link', '--hub', hub, '--space', space, '--node', nodeId, '--project', '/path/to/checkout'])
+    expect(args.slice(0, -1)).toEqual(['node', `${process.env.HOME}/Downloads/taktflow-link.mjs`, '--hub', hub, '--space', space, '--node', nodeId])
+  })
+
+  it('识别回环 Hub，并向无桌面的 Linux 提供同源 Link 下载命令', () => {
+    expect(loopbackHub('http://127.0.0.1:4870')).toBe(true)
+    expect(loopbackHub('http://[::1]:4870')).toBe(true)
+    expect(loopbackHub('https://127.example.com')).toBe(false)
+    expect(linkDownloadCommand('https://hub.example')).toBe("mkdir -p ~/Downloads && curl -fL 'https://hub.example/downloads/taktflow-link.mjs' -o ~/Downloads/taktflow-link.mjs")
   })
 
   it('支持网关或本地选择器确认的空间 Owner', () => {

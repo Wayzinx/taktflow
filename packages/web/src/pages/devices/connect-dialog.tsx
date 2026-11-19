@@ -1,10 +1,10 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { Copy } from 'lucide-react'
-import type { DeviceLink } from '../../api/index.js'
+import { CheckCircle2, Copy, Download } from 'lucide-react'
+import type { ComputerDetails, DeviceLink, SpaceDevice } from '../../api/devices.js'
 import { Dialog } from '../../components/ui/dialog.js'
-import { DEVICE_ID, linkCommand, linkHub } from './model.js'
+import { LINK_DOWNLOAD, linkCommand, linkDownloadCommand, linkHub, loopbackHub, PLATFORM_LABEL } from './model.js'
 
-export type Pairing = DeviceLink & { hub: string; spaceId: string }
+export type Pairing = DeviceLink & ComputerDetails & { hub: string; spaceId: string }
 
 export function DeviceTime({ value }: { value: string }) {
   const date = new Date(value)
@@ -37,66 +37,100 @@ function CopyValue({ label, value, secret = false }: { label: string; value: str
   )
 }
 
-function ConnectFields({ hub, busy, formId, onLink }: { hub: string; busy: boolean; formId: string; onLink: (nodeId: string, hub: string) => void }) {
-  const [nodeId, setNodeId] = useState('')
-  const [address, setAddress] = useState(hub)
-  const [error, setError] = useState<{ field: 'node' | 'hub'; text: string }>()
-  return (
-    <form id={formId} className="device-form" onSubmit={(event) => {
-      event.preventDefault()
-      if (busy) return
-      const id = nodeId.trim()
-      if (!DEVICE_ID.test(id)) return setError({ field: 'node', text: '以字母或数字开头，只使用英文字母、数字、点、短横线或下划线。' })
-      const target = linkHub(address)
-      if (!target) return setError({ field: 'hub', text: '填写 HTTPS Hub，或使用执行机器上的本机 HTTP 隧道地址。不要带路径、凭据、查询参数或片段。' })
-      setError(undefined)
-      onLink(id, target)
-    }}>
-      <label className="ov-field">
-        <span className="ov-field-label">设备 ID</span>
-        <input className="input" data-autofocus required maxLength={128} value={nodeId} placeholder="例如 mac-mini" disabled={busy} autoComplete="off" spellCheck={false}
-          aria-invalid={error?.field === 'node' || undefined} aria-describedby={error?.field === 'node' ? `${formId}-node-error` : undefined}
-          onChange={(event) => { setNodeId(event.target.value); setError(undefined) }} />
-        {error?.field === 'node' && <span className="device-error" id={`${formId}-node-error`} role="alert">{error.text}</span>}
-      </label>
-      <label className="ov-field">
-        <span className="ov-field-label">命令使用的 Hub 地址</span>
-        <input className="input mono" type="text" inputMode="url" required value={address} disabled={busy} autoComplete="off" spellCheck={false}
-          aria-invalid={error?.field === 'hub' || undefined} aria-describedby={`${formId}-hub-hint${error?.field === 'hub' ? ` ${formId}-hub-error` : ''}`}
-          onChange={(event) => { setAddress(event.target.value); setError(undefined) }} />
-        <span className="ov-field-hint" id={`${formId}-hub-hint`}>优先用设备可访问的 HTTPS Hub。远程机器不能直接用浏览器所在机器的回环地址；可在执行机器上建立本机隧道，再填隧道地址。</span>
-        {error?.field === 'hub' && <span className="device-error" id={`${formId}-hub-error`} role="alert">{error.text}</span>}
-      </label>
-      <p>Agent：<strong>Codex</strong>（目前唯一支持配对的 Agent）</p>
-    </form>
-  )
+function InstallLink({ pairing }: { pairing: Pairing }) {
+  const { hub, platform, spaceId, nodeId, code, expiresAt } = pairing
+  const local = loopbackHub(hub)
+  const [remote, setRemote] = useState(!local)
+  const [address, setAddress] = useState(local ? '' : hub)
+  const target = remote ? linkHub(address) : linkHub(hub)
+  const mustSetAddress = remote && !target
+  const editAddress = <label className="ov-field device-hub-field">
+    <span className="ov-field-label">目标电脑可访问的 Hub 地址</span>
+    <input className="input" value={address} onChange={e => setAddress(e.target.value)} autoComplete="off" inputMode="url" placeholder="https://hub.example.com" spellCheck={false} />
+    <span className="ov-field-hint">填写此 Hub 的 HTTPS 地址。使用隧道时，填写目标电脑上的本机转发地址。</span>
+  </label>
+  return <div className="device-pairing">
+    {local && <fieldset className="device-location">
+      <legend>Link 将在哪里运行？</legend>
+      <label><input type="radio" checked={!remote} onChange={() => setRemote(false)} /> Hub 本机</label>
+      <label><input type="radio" checked={remote} onChange={() => setRemote(true)} /> 另一台电脑</label>
+      <p>当前 Hub 使用本机地址。另一台电脑需要能访问同一个 Hub。</p>
+    </fieldset>}
+    {remote && (local || !linkHub(hub) ? editAddress : <details className="device-hub-options"><summary>更改 Hub 地址</summary>{editAddress}</details>)}
+    {target && !mustSetAddress && <>
+      <div className="device-install">
+        <h3>下载 Taktflow Link</h3>
+        <p>在目标{platform === 'mac' ? ' Mac' : ' Linux 电脑'}上准备 Node.js 20.12 或更高版本，并安装、登录 Codex。</p>
+        <a className="btn btn-sm" href={LINK_DOWNLOAD} download="taktflow-link.mjs"><Download aria-hidden /> 下载 Link 文件</a>
+        <details open={platform === 'linux'}><summary>在目标电脑用终端下载</summary><CopyValue label="下载命令" value={linkDownloadCommand(target)} /></details>
+      </div>
+      <div className="device-install">
+        <h3>从项目目录启动 Link</h3>
+        <p>将文件存入目标电脑的 <code>~/Downloads</code>，在专用于此空间的项目目录打开终端并运行：</p>
+        <CopyValue label="启动命令" value={linkCommand(target, spaceId, nodeId)} />
+      </div>
+      <div className="device-install">
+        <h3>在终端提示时粘贴配对码</h3>
+        <CopyValue label="一次性配对码" value={code} secret />
+        <p>有效至 <DeviceTime value={expiresAt} />。完成后请保持 Link 运行。</p>
+      </div>
+    </>}
+    {mustSetAddress && <p role="status">确认目标电脑访问地址后，即可查看下载与配对步骤。</p>}
+  </div>
 }
 
-export function ConnectDialog({ open, hub, pairing, expired, error, busy, onClose, onLink }: {
-  open: boolean; hub: string; pairing?: Pairing; expired: boolean; error?: string; busy: boolean
-  onClose: () => void; onLink: (nodeId: string, hub: string) => void
+export function ConnectDialog({ open, pairing, connected, expired, error, busy, onClose, onLink }: {
+  open: boolean; pairing?: Pairing; connected?: SpaceDevice; expired: boolean; error?: string; busy: boolean
+  onClose: () => void; onLink: (computer: ComputerDetails) => void
 }) {
+  const [platform, setPlatform] = useState<ComputerDetails['platform']>('mac')
+  const [name, setName] = useState('')
+  useEffect(() => {
+    if (!open) { setName(''); setPlatform('mac') }
+  }, [open])
   const formId = useId()
   const result = useRef<HTMLHeadingElement>(null)
-  useEffect(() => { if (open && (pairing || expired)) result.current?.focus() }, [open, pairing, expired])
+  const nameValid = !!name.trim() && !/[\p{Cc}\u2028\u2029\u202a-\u202e\u2066-\u2069]/u.test(name)
+  useEffect(() => { if (pairing || expired || connected) result.current?.focus() }, [pairing, expired, connected?.nodeId])
+  const first = !pairing && !connected && !expired
   let content: ReactNode
-  if (open && pairing) content = <div className="device-pairing">
-    <h3 ref={result} tabIndex={-1}>在目标设备的终端运行</h3>
-    <p>在已构建的 Taktflow 仓库根目录运行。先安装并配置 Codex，再把 <code>/path/to/checkout</code> 换成任务使用的检出目录。命令提示时，粘贴一次性配对码。</p>
-    <CopyValue label="命令" value={linkCommand(pairing.hub, pairing.spaceId, pairing.nodeId)} />
-    <CopyValue label="配对码" value={pairing.code} secret />
-    <p>只在本弹窗显示，<DeviceTime value={pairing.expiresAt} /> 到期。关闭后无法找回；需要重配时，请先撤销旧连接。</p>
+  if (!open) content = null
+  else if (connected) content = <div className="device-pairing" role="status">
+    <h3 ref={result} tabIndex={-1}><CheckCircle2 aria-hidden /> {connected.displayName ?? connected.nodeId} 已配对</h3>
+    <p>{connected.status === 'online' ? 'Codex 已在线，空间成员现在可以把开发任务交给这台电脑。' : '正在等待 Link 上线。上线后，空间成员即可把任务交给这台电脑。'}</p>
   </div>
-  else if (open && expired) content = <div className="device-pairing">
+  else if (pairing) content = <>
+    <h3 className="device-pair-title" ref={result} tabIndex={-1}>连接「{pairing.displayName}」</h3>
+    <InstallLink pairing={pairing} />
+  </>
+  else if (expired) content = <div className="device-pairing">
     <h3 ref={result} tabIndex={-1}>配对码已过期</h3>
-    <p>关闭弹窗并检查设备状态。如果尚未接入且列表仍有旧记录，先撤销再重新连接。</p>
+    <p>关闭弹窗，重新添加电脑即可领取新配对码。</p>
   </div>
-  else if (open) content = <ConnectFields hub={hub} busy={busy} formId={formId} onLink={onLink} />
-
-  return <Dialog open={open} onClose={onClose} dismissible={false} className="device-dialog" title="连接 Mac 或服务器" description="为当前空间登记设备，并在目标机器上运行配对命令。"
-    footer={<><button type="button" className="btn" onClick={onClose}>{pairing || expired ? '关闭' : '取消'}</button>
-      {!pairing && !expired && <button className="btn btn-primary" type="submit" form={formId} disabled={busy} aria-busy={busy}>生成配对码</button>}</>}>
+  else content = <form className="device-form" id={formId} onSubmit={event => {
+    event.preventDefault()
+    if (nameValid && !busy) onLink({ displayName: name.trim(), platform })
+  }}>
+    <fieldset className="device-platforms" disabled={busy}>
+      <legend className="ov-field-label">这台电脑的系统</legend>
+      <div className="device-platform-list">{(['mac', 'linux', 'windows'] as const).map(os =>
+        <label key={os}>
+          <input type="radio" name={formId + '-platform'} value={os} checked={platform === os} onChange={() => { if (os !== 'windows') setPlatform(os) }} disabled={os === 'windows'} />
+          <span>{os === 'windows' ? 'Windows' : PLATFORM_LABEL[os]}</span>
+        </label>)}</div>
+      <p className="ov-field-hint">Windows 原生 Link 暂未提供。</p>
+    </fieldset>
+    <label className="ov-field">
+      <span className="ov-field-label">电脑名称</span>
+      <input data-autofocus className="input" type="text" maxLength={64} required value={name} onChange={e => setName(e.target.value)} disabled={busy}
+        autoComplete="off" placeholder={platform === 'mac' ? '比如：我的 MacBook' : '比如：团队开发服务器'} />
+      <span className="ov-field-hint">空间成员会看到这个名字，可以使用中文。</span>
+    </label>
+  </form>
+  return <Dialog open={open} onClose={onClose} dismissible={false} className="device-dialog" title="添加电脑"
+    footer={<><button type="button" className="btn" onClick={onClose}>{first ? '取消' : '关闭'}</button>
+      {first && <button className="btn btn-primary" type="submit" form={formId} disabled={busy || !nameValid} aria-busy={busy}>下一步</button>}</>}>
     {content}
-    {open && error && <p className="device-error" role="alert">{error}</p>}
+    {error && <p className="device-error" role="alert">{error}</p>}
   </Dialog>
 }

@@ -5,20 +5,23 @@ import type { FeishuEvent } from './feishu-wire.js'
 
 type Message = { type: 'text' | 'interactive'; content: Record<string, unknown> }
 
-export interface FeishuEnvelope {
+export interface ChannelEnvelope {
   key: string
   spaceId: string
   chatId: string
   revision: string
-  memberId?: string
-  event?: FeishuEvent
   message?: Message
 }
 
-interface Services {
+export interface FeishuEnvelope extends ChannelEnvelope {
+  memberId?: string
+  event?: FeishuEvent
+}
+
+interface Services<E extends ChannelEnvelope> {
   // 回调须校验当前绑定和成员；prepare 可能在崩溃后重放，以 envelope.key 保证业务幂等。
-  prepare: (envelope: FeishuEnvelope) => Promise<Message | undefined>
-  deliver: (envelope: FeishuEnvelope, message: Message, dedupId: string) => Promise<void>
+  prepare: (envelope: E) => Promise<Message | undefined>
+  deliver: (envelope: E, message: Message, dedupId: string) => Promise<void>
 }
 
 const retryDelays = [1_000, 5_000, 15_000, 60_000, 300_000]
@@ -29,10 +32,10 @@ const sweepInterval = 60 * 60_000
 const storageRetry = 5_000
 const maxActiveChats = 8
 
-interface Pending {
+interface Pending<E extends ChannelEnvelope> {
   state: 'pending'
   sequence: number
-  envelope: FeishuEnvelope
+  envelope: E
   uuid: string
   attempt: number
   retryAt: number
@@ -52,8 +55,8 @@ function isMessage(value: unknown): value is Message {
     && typeof message.content === 'object' && message.content !== null && !Array.isArray(message.content)
 }
 
-function readRecord(name: string, value: unknown): Pending | Receipt {
-  const record = value as Partial<Pending | Receipt> | null
+function readRecord<E extends ChannelEnvelope>(name: string, value: unknown): Pending<E> | Receipt {
+  const record = value as Partial<Pending<E> | Receipt> | null
   if ((record?.state === 'done' || record?.state === 'dead') && natural(record.expiresAt)) return record as Receipt
   if (record?.state === 'pending' && natural(record.sequence) && natural(record.attempt) && natural(record.retryAt)
     && (record.firstSendAt === undefined || (natural(record.firstSendAt) && record.message !== undefined))
@@ -61,21 +64,21 @@ function readRecord(name: string, value: unknown): Pending | Receipt {
     && typeof record.uuid === 'string' && /^[a-f0-9-]{36}$/.test(record.uuid)
     && typeof record.envelope?.key === 'string' && filename(record.envelope.key) === name
     && typeof record.envelope.spaceId === 'string' && typeof record.envelope.chatId === 'string'
-    && typeof record.envelope.revision === 'string') return record as Pending
-  throw new Error(`飞书队列记录损坏：${name}`)
+    && typeof record.envelope.revision === 'string') return record as Pending<E>
+  throw new Error(`渠道队列记录损坏：${name}`)
 }
 
 function retryable(error: unknown): boolean {
   return !(typeof error === 'object' && error !== null && 'retryable' in error && error.retryable === false)
 }
 
-function outsideSendWindow(entry: Pending, now: number): boolean {
+function outsideSendWindow(entry: Pending<ChannelEnvelope>, now: number): boolean {
   return entry.firstSendAt !== undefined && (now < entry.firstSendAt || now - entry.firstSendAt >= sendWindow)
 }
 
-export class FeishuQueue {
+export class ChannelQueue<E extends ChannelEnvelope = FeishuEnvelope> {
   private readonly store: FeishuQueueStore
-  private readonly pending = new Map<string, Pending>()
+  private readonly pending = new Map<string, Pending<E>>()
   private readonly receipts = new Map<string, Receipt>()
   private readonly active = new Map<string, Promise<void>>()
   private initialized?: Promise<void>
@@ -88,14 +91,14 @@ export class FeishuQueue {
   private started = false
   private closed = false
 
-  constructor(root: string, private readonly services: Services) { this.store = new FeishuQueueStore(root) }
+  constructor(root: string, private readonly services: Services<E>) { this.store = new FeishuQueueStore(root) }
 
-  put(envelope: FeishuEnvelope): Promise<void> {
-    if (this.closed) return Promise.reject(new Error('飞书队列已关闭'))
+  put(envelope: E): Promise<void> {
+    if (this.closed) return Promise.reject(new Error('渠道队列已关闭'))
     const put = this.putTail.then(async () => {
       await this.load()
       const name = filename(envelope.key)
-      const entry: Pending = { state: 'pending', sequence: ++this.sequence, envelope, uuid: randomUUID(),
+      const entry: Pending<E> = { state: 'pending', sequence: ++this.sequence, envelope, uuid: randomUUID(),
         attempt: 0, retryAt: 0, message: envelope.message }
       const saved = await this.store.save(name, entry, true)
       if (saved) this.pending.set(name, saved)
@@ -114,7 +117,7 @@ export class FeishuQueue {
     this.rescan = true
     if (this.scan) return
     this.scan = this.drain().catch(() => {
-      console.error('飞书队列扫描失败，稍后重试')
+      console.error('渠道队列扫描失败，稍后重试')
       this.wake(Date.now() + storageRetry)
     }).finally(() => {
       this.scan = undefined
@@ -132,7 +135,7 @@ export class FeishuQueue {
     return this.initialized ??= (async () => {
       for (const name of await this.store.list()) {
         try { this.remember(name, await this.store.read(name)) }
-        catch { console.error(`无法读取飞书队列记录：${name}`) }
+        catch { console.error(`无法读取渠道队列记录：${name}`) }
       }
     })().catch(error => {
       this.initialized = undefined
@@ -141,7 +144,7 @@ export class FeishuQueue {
   }
 
   private remember(name: string, value: unknown): void {
-    const record = readRecord(name, value)
+    const record = readRecord<E>(name, value)
     if (record.state === 'pending') {
       this.sequence = Math.max(this.sequence, record.sequence)
       this.pending.set(name, record)
@@ -156,7 +159,7 @@ export class FeishuQueue {
     if (now >= this.nextSweep) await this.prune(now)
     if (this.closed) return
 
-    const heads = new Map<string, [string, Pending]>()
+    const heads = new Map<string, [string, Pending<E>]>()
     for (const pair of this.pending) {
       const chatId = pair[1].envelope.chatId
       const head = heads.get(chatId)
@@ -171,7 +174,7 @@ export class FeishuQueue {
         continue
       }
       this.active.set(chatId, this.step(name, entry).catch(() => {
-        console.error(`无法保存飞书队列进度：${name}`)
+        console.error(`无法保存渠道队列进度：${name}`)
         const pending = this.pending.get(name)
         if (pending) pending.retryAt = Date.now() + storageRetry
       }).finally(() => {
@@ -198,11 +201,11 @@ export class FeishuQueue {
       try {
         await this.store.remove(name)
         this.receipts.delete(name)
-      } catch { console.error(`无法清理飞书队列回执：${name}`) }
+      } catch { console.error(`无法清理渠道队列回执：${name}`) }
     }
   }
 
-  private async step(name: string, entry: Pending): Promise<void> {
+  private async step(name: string, entry: Pending<E>): Promise<void> {
     const now = Date.now()
     const failed = entry.message ? 'delivery-failed' : 'prepare-failed'
     if (outsideSendWindow(entry, now)) return this.finish(name, 'delivery-window-expired')
@@ -236,6 +239,8 @@ export class FeishuQueue {
     await this.store.save(name, receipt)
     this.pending.delete(name)
     this.receipts.set(name, receipt)
-    if (reason) console.warn(`飞书队列记录停止重试：${name} (${reason})`)
+    if (reason) console.warn(`渠道队列记录停止重试：${name} (${reason})`)
   }
 }
+
+export { ChannelQueue as FeishuQueue }

@@ -3,6 +3,7 @@ import { Brain, SlidersHorizontal } from 'lucide-react'
 import type { StewardPrefs } from '@taktflow/core'
 import { useAsync, useSource } from '../../api'
 import { Drawer, ErrorState, SkeletonText, TabPanel, Tabs, toast } from '../../components/ui'
+import { personalSteward } from '../../lib/space'
 import { PrefsForm } from './prefs-form'
 
 type Tab = 'prefs' | 'memory'
@@ -13,15 +14,18 @@ type Tab = 'prefs' | 'memory'
  */
 export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ds = useSource()
+  const shared = !personalSteward(location.pathname)
   const [tab, setTab] = useState<Tab>('prefs')
   const q = useAsync(
     async (d) => {
       if (!open) return undefined
-      // harness × 模型和输入框的选择器同一来源：管家是全局的，不按当前所在空间的配置判断能不能用
-      const [prefs, profile, spaces, choices] = await Promise.all([d.stewardPrefs(), d.stewardProfile(), d.spaces().catch(() => []), d.stewardRuntimeChoices()])
-      return { prefs, profile: profile.content, spaces, choices }
+      const [prefs, profile, spaces, choices, editable] = await Promise.all([
+        d.stewardPrefs(), d.stewardProfile(), shared ? [] : d.spaces().catch(() => []), d.stewardRuntimeChoices(),
+        shared ? d.me().then(me => me.member?.role === 'owner') : true,
+      ])
+      return { prefs, profile: profile.content, spaces, choices, editable }
     },
-    [open],
+    [open, shared],
   )
   const [prefs, setPrefs] = useState<StewardPrefs>()
   const [profile, setProfile] = useState('')
@@ -67,7 +71,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
       open={open}
       onClose={onClose}
       title="管家设置"
-      description="管家怎么替你做事、什么时候找你"
+      description={shared ? '空间成员共享这份设置和记忆，负责人可以修改。' : '管家怎么替你做事、什么时候找你'}
       width={560}
       footer={
         <>
@@ -85,7 +89,7 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
           >
             取消
           </button>
-          <button type="button" className="btn btn-primary" disabled={!dirty || busy} onClick={() => void save()}>
+          <button type="button" className="btn btn-primary" disabled={!dirty || busy || !q.data?.editable} onClick={() => void save()}>
             {busy ? '正在保存' : '保存'}
           </button>
         </>
@@ -107,18 +111,18 @@ export function SettingsDrawer({ open, onClose }: { open: boolean; onClose: () =
         ) : !q.data || !prefs ? (
           <SkeletonText lines={8} />
         ) : (
-          <TabPanel key={tab}>
+          <TabPanel key={tab}><fieldset disabled={!q.data.editable} style={{ border: 0, padding: 0, margin: 0 }}>
             {tab === 'prefs' ? (
-              <PrefsForm prefs={prefs} onChange={setPrefs} spaces={q.data.spaces} choices={q.data.choices} />
+              <PrefsForm shared={shared} prefs={prefs} onChange={setPrefs} spaces={q.data.spaces} choices={q.data.choices} />
             ) : (
               <div className="stwp-memory">
                 <p className="stwp-field-note">
-                  这是管家对你的了解（<span className="mono">profile.md</span>）。你可以直接改；管家想记住什么时，会先提一个低风险提案让你确认。
+                  {shared ? '这是当前空间的团队记忆' : '这是管家对你的了解'}（<span className="mono">profile.md</span>）。你可以直接改；管家想记住什么时，会先提一个低风险提案让你确认。
                 </p>
                 <textarea className="textarea stwp-profile mono" value={profile} onChange={(e) => setProfile(e.target.value)} spellCheck={false} aria-label="profile.md" />
               </div>
             )}
-          </TabPanel>
+          </fieldset></TabPanel>
         )}
       </div>
     </Drawer>

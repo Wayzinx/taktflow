@@ -331,7 +331,7 @@ export class StewardProposals {
         return this.approve(
           proposal.id,
           { hash: proposal.hash },
-          { type: 'human', id: this.userId },
+          { type: 'human', id: this.deps.actingUser?.() ?? this.userId },
         )
       }
       return proposal

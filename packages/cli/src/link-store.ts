@@ -1,8 +1,7 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, realpath, rename, unlink } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
-import { sha256 } from '@taktflow/core'
 import { UsageError } from './args.js'
 import { record, validToken } from './team-transport.js'
 import { inside } from './worker-harness.js'
@@ -86,7 +85,7 @@ async function saveToken(root: string, file: string, key: string, token: string)
 export async function linkStore(home: string, checkout: string, endpoint: URL) {
   const uid = process.getuid!()
   const root = await privateRoot(process.env.TAKT_LINK_DIR ?? join(home, '.takt-link'), checkout, uid)
-  const key = sha256(endpoint.href)
+  const key = createHash('sha256').update(endpoint.href).digest('hex')
   const file = join(root, `${key}.json`)
   return {
     load: async () => {

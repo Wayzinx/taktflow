@@ -1,4 +1,6 @@
 import { useEffect, useSyncExternalStore } from 'react'
+import { currentSpaceId, personalSteward } from './space'
+import { actingUser } from './acting-user'
 import type { ProposalStep, StewardContextRef } from '@taktflow/core'
 
 /**
@@ -32,6 +34,7 @@ function useStore<T>(s: ReturnType<typeof createStore<T>>): T {
 // ---------------------------------------------------------------- 管家停靠面板（A 组实现面板，骨架提供开关）
 
 export interface StewardDockState {
+  scope?: string
   open: boolean
   /** 打开时预填到输入框的问题（页头建议、⌘K "问管家"、空状态"让管家帮我"）。 */
   prefill?: string
@@ -45,16 +48,21 @@ export interface StewardDockState {
   nonce: number
 }
 
-const dock = createStore<StewardDockState>({ open: false, nonce: 0 })
+const closedDock: StewardDockState = { open: false, nonce: 0 }
+const dock = createStore(closedDock)
+const dockScope = () => JSON.stringify([currentSpaceId(), personalSteward(location.pathname), actingUser()])
 
 export function openSteward(opts: { prefill?: string; context?: StewardContextRef[]; threadId?: string; send?: boolean } = {}) {
-  dock.set((s) => ({ open: true, prefill: opts.prefill, context: opts.context, threadId: opts.threadId, send: opts.send, nonce: s.nonce + 1 }))
+  dock.set((s) => ({ open: true, scope: dockScope(), prefill: opts.prefill, context: opts.context, threadId: opts.threadId, send: opts.send, nonce: s.nonce + 1 }))
 }
 /** 让管家回答 / 代办一件事：打开停靠面板并预填问题；send 时直接发出。 */
 export const askSteward = (text: string, context?: StewardContextRef[], opts: { send?: boolean } = {}) => openSteward({ prefill: text, context, send: opts.send })
 export const closeSteward = () => dock.set((s) => ({ ...s, open: false }))
-export const toggleSteward = () => (dock.get().open ? closeSteward() : openSteward())
-export const useStewardDock = () => useStore(dock)
+export const toggleSteward = () => (dock.get().open && dock.get().scope === dockScope() ? closeSteward() : openSteward())
+export const useStewardDock = () => {
+  const state = useStore(dock)
+  return state.scope === dockScope() ? state : closedDock
+}
 
 // ---------------------------------------------------------------- 页面上下文：停靠面板自动带上的标签
 

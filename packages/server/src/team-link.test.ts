@@ -101,6 +101,39 @@ it('只向显式空间成员提供只读库存，静态设备只从环境变量�
   expect(await (await device(server)).json()).toMatchObject({ devices: [{ nodeId: 'env-box', source: 'env', status: 'online', lastSeenAt: expect.any(String) }] })
 })
 
+it('按系统和中文名称添加电脑，同名设备独立配对，重启后保留名称与系统', async () => {
+  await project('alpha')
+  await project('beta')
+  let server = await start()
+  const endpoint = '/api/s/alpha/space/devices'
+  const computer = { displayName: '研发的 Mac 🐝', platform: 'mac' }
+  expect((await device(server, `${endpoint}/link`, 'POST', 'reader', computer)).status).toBe(403)
+  for (const input of [{}, { displayName: '   ', platform: 'mac' }, { ...computer, platform: 'windows' }, { ...computer, displayName: 'a'.repeat(65) }, { ...computer, displayName: 'one\ntwo' }]) {
+    expect((await device(server, `${endpoint}/link`, 'POST', 'owner', input)).status).toBe(400)
+  }
+  const replies = await Promise.all(['mac', 'linux'].map(platform => device(server, `${endpoint}/link`, 'POST', 'owner', { ...computer, platform })))
+  expect(replies.map(reply => reply.status)).toEqual([200, 200])
+  const [mac, linux] = await Promise.all(replies.map(reply => reply.json()))
+  expect(mac).toMatchObject({ ...computer, nodeId: expect.stringMatching(/^computer-[0-9a-f-]+$/), harness: 'codex' })
+  expect(linux.nodeId).not.toBe(mac.nodeId)
+  expect((await device(server, '/api/s/beta/space/devices').then(reply => reply.json())).devices).toEqual([])
+  await server.close()
+  server = await start()
+  const { devices } = await device(server, endpoint, 'GET', 'reader').then(reply => reply.json())
+  expect(devices).toEqual(expect.arrayContaining([expect.objectContaining({ ...computer, nodeId: mac.nodeId, status: 'pending' })]))
+  const exchange = await worker(server, 'link', { code: mac.code }, { node: mac.nodeId })
+  expect(exchange.status).toBe(200)
+  const { token } = await exchange.json()
+  await server.close()
+  server = await start()
+  expect((await worker(server, 'poll', { poll: 1 }, { node: mac.nodeId, token })).status).toBe(200)
+  const inventory = await device(server, endpoint, 'GET', 'reader').then(reply => reply.json())
+  expect(inventory.devices).toEqual(expect.arrayContaining([
+    expect.objectContaining({ ...computer, nodeId: mac.nodeId, status: 'online' }),
+    expect.objectContaining({ displayName: computer.displayName, platform: 'linux', nodeId: linux.nodeId, status: 'pending' }),
+  ]))
+})
+
 it('连接码按空间与节点隔离，并发只兑现一次，凭据重启后仍可用且仅存哈希', async () => {
   await project('alpha', join(root, 'first'))
   await project('Alpha', join(root, 'second'))

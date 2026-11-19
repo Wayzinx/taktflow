@@ -3,7 +3,7 @@ import { usePresence } from '../lib/motion'
 import { Boxes, ChevronRight, Menu, MessagesSquare, Monitor, Moon, PanelLeftClose, PanelLeftOpen, Plus, Search, Sun, TriangleAlert, X } from 'lucide-react'
 import { invalidate, useAsync, useSource } from '../api'
 import { Link, useLocation } from '../lib/router'
-import { spacePath } from '../lib/space'
+import { personalSteward, spacePath } from '../lib/space'
 import { SHORTCUTS, shortcutLabel } from '../lib/shortcuts'
 import { openCreateRequirement, setStewardUnread, toggleSidebar, toggleSteward, useSidebarCollapsed, useStewardDock, useStewardUnread } from '../lib/ui-store'
 import { PageHeader } from './ui/page-header'
@@ -128,7 +128,7 @@ export type RailMode = 'solo' | 'space'
 const SoloRail = lazy(() => import('../pages/solo/rail'))
 
 /** 两种模式各记住最后去过的地址：切回来时回到原处（Solo 回到原会话，空间回到原页面）。 */
-const lastHref: Record<RailMode, string> = { solo: '/solo', space: '/' }
+const lastHref = new Map<string | undefined, Partial<Record<RailMode, string>>>()
 
 /**
  * 侧栏分两种模式（docs/design/29）：
@@ -137,8 +137,10 @@ const lastHref: Record<RailMode, string> = { solo: '/solo', space: '/' }
  */
 function Sidebar({ open, onClose, mode }: { open: boolean; onClose: () => void; mode: RailMode }) {
   const collapsed = useSidebarCollapsed()
+  const { spaceId } = useLocation()
+  const destinations = lastHref.get(spaceId) ?? {}
   const modes = [
-    { mode: 'solo' as const, label: '管家', icon: BeeGlyph, title: '和管家对话：问进度、查原因、让它代办；跨空间看需求、运行和节点' },
+    { mode: 'solo' as const, label: '管家', icon: BeeGlyph, title: '当前空间的管家、共享会话和开发任务' },
     { mode: 'space' as const, label: '空间', icon: Boxes, title: '当前空间的总览、需求、待办与设置' },
   ]
   return (
@@ -153,7 +155,7 @@ function Sidebar({ open, onClose, mode }: { open: boolean; onClose: () => void; 
       </div>
       <nav className="sb-modes" aria-label="模式">
         {modes.map(({ mode: m, label, icon: Icon, title }) => (
-          <Link key={m} to={lastHref[m]} className="sb-mode" aria-current={m === mode ? 'page' : undefined} title={collapsed ? label : title}>
+          <Link key={m} to={destinations[m] ?? (m === 'solo' ? '/steward' : '/')} className="sb-mode" aria-current={m === mode ? 'page' : undefined} title={collapsed ? label : title}>
             <Icon aria-hidden />
             <span className="sb-label">{label}</span>
           </Link>
@@ -252,16 +254,16 @@ function SpaceRail({ collapsed }: { collapsed: boolean }) {
 }
 
 /** 全局页：不属于某个空间，面包屑和标题不带空间名，也不显示空间的节拍指示。 */
-const GLOBAL_PATHS = new Set(['/spaces', '/solo'])
+
 
 function Topbar({ onMenu }: { onMenu: () => void }) {
   const declared = useCrumbState()
   const ds = useSource()
-  const { path, spaceId } = useLocation()
+  const { spaceId } = useLocation()
   const online = useOnline()
   const project = useAsync((d) => d.project(), [spaceId])
   const running = project.data?.requirements.filter((r) => r.stages.some((s) => s.status === 'running')) ?? []
-  const global = GLOBAL_PATHS.has(path)
+  const global = personalSteward(location.pathname)
   const workflows = useAsync((d) => global ? Promise.resolve([]) : d.workflows(), [spaceId, global])
   const space = global ? undefined : project.data?.name
   const items = withSpaceCrumb(declared, space)
@@ -321,9 +323,9 @@ function Topbar({ onMenu }: { onMenu: () => void }) {
 export function AppShell({ children }: { children: ReactNode }) {
   const [navOpen, setNavOpen] = useState(false)
   const { path, spaceId, query } = useLocation()
-  const mode: RailMode = path === '/solo' ? 'solo' : 'space'
+  const mode: RailMode = ['/solo', '/steward', '/personal'].includes(path) ? 'solo' : 'space'
   const qs = query.toString()
-  lastHref[mode] = mode === 'solo' ? `/solo${qs ? `?${qs}` : ''}` : `${spaceId ? spacePath(spaceId, path) : path}${qs ? `?${qs}` : ''}`
+  if (!personalSteward(location.pathname)) lastHref.set(spaceId, { ...lastHref.get(spaceId), [mode]: `${spaceId ? spacePath(spaceId, path) : path}${qs ? `?${qs}` : ''}` })
   const collapsed = useSidebarCollapsed()
   const dockOpen = useStewardDock().open
   const ds = useSource()

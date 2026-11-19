@@ -1,5 +1,5 @@
 import type { ApiError, LeadPresence, RoomMessage, WorkflowConflict } from '@taktflow/core'
-import { currentSpaceId } from '../lib/space'
+import { currentSpaceId, personalSteward } from '../lib/space'
 import { actingUserHeader } from '../lib/acting-user'
 import { whileVisible } from '../lib/visible'
 import { isNetworkError, reportConnection } from '../lib/connection'
@@ -63,9 +63,11 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
   // 多空间：当前 URL 带 /s/:spaceId 时空间内接口加同样的前缀；全局接口（GLOBAL_PATH）不加。绑定了空间（forSpace）时用绑定的
   const scoped = (path: string) => {
     const sid = space ?? currentSpaceId()
+    if (sharedSteward(path)) return `${base}${sid ? `/s/${enc(sid)}` : ''}/space${path}`
     return sid && !GLOBAL_PATH.test(path) ? `${base}/s/${enc(sid)}${path}` : base + path
   }
-  const identity = (path: string) => actingUserHeader(STEWARD_PATH.test(path), GLOBAL_PATH.test(path) ? undefined : space)
+  const sharedSteward = (path: string) => STEWARD_PATH.test(path) && (space !== undefined || !personalSteward(location.pathname))
+  const identity = (path: string) => actingUserHeader(STEWARD_PATH.test(path) && !sharedSteward(path), space)
   async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     // 服务端 validateWriteRequest 要求所有写请求都是 application/json（无 body 的 POST 会 415）：写方法没给 body 时发 {}
     const write = method !== 'GET' && method !== 'HEAD'
@@ -144,7 +146,11 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     addRoomMembers: (id, members) => req('POST', `/requirements/${enc(id)}/room/members`, members),
     chat: (id, opts = {}) => get(`/requirements/${enc(id)}/chat${qs({ after: opts.after, limit: opts.limit })}`),
     postChat: (id, body) => req('POST', `/requirements/${enc(id)}/chat`, body),
-    subscribeChat: (id, onMessage, onLead) => stream<RoomMessage>(scoped(`/requirements/${enc(id)}/chat/stream`), onMessage, onLead && { lead: (d) => onLead(d as LeadPresence) }),
+    subscribeChat: (id, onMessage, onLead) => fetchStream<RoomMessage | LeadPresence>(
+      scoped(`/requirements/${enc(id)}/chat/stream`),
+      event => { if ('seq' in event) onMessage(event); else onLead?.(event) },
+      () => actingUserHeader(false, space),
+    ),
     requirementReviews: (id) => get(`/requirements/${enc(id)}/reviews`),
     disposeReview: (runId, nodeId, body) => req('POST', `/runs/${enc(runId)}/nodes/${enc(nodeId)}/dispositions`, body),
     routePreview: (id, body) => req('POST', `/requirements/${enc(id)}/route`, body),
@@ -179,7 +185,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     workflowRevision: (id, rev) => get(`/workflows/${enc(id)}/revisions/${enc(rev)}`),
     rollbackWorkflow: (id, body) => req('POST', `/workflows/${enc(id)}/rollback`, body),
     subscribeWorkflow: (id, onChange) => stream(scoped(`/workflows/${enc(id)}/stream`), onChange),
-    ...createM4Http({ req, get, url: scoped, stream, stewardStream: (url, on) => fetchStream(url, on, () => actingUserHeader(true)) }),
+    ...createM4Http({ req, get, url: scoped, stream, stewardStream: (url, on) => fetchStream(url, on, () => actingUserHeader(!url.includes('/space/steward/'), space)) }),
     ...createM5Http({ req, get }),
     ...createM6Http({ req, get }),
     ...createM8Http({ req, get }),

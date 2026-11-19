@@ -1,4 +1,6 @@
 import { resolve } from 'node:path'
+import { githubChannel } from './github-channel.js'
+import { githubConfig, githubCallbackPath } from './github-wire.js'
 import { createFeishuRuntime, feishuAppFromEnv, feishuCallbackPath } from './feishu-runtime.js'
 import { createProviderBridge } from '@taktflow/harness'
 export { ModelCatalog } from './model-catalog.js'
@@ -34,6 +36,7 @@ export { enqueueTeamJob, teamJobs, teamNodes } from './team-hub.js'
 export interface ServerOptions extends CatalogCallbacks, M3Callbacks, RuntimeCallbacks {
   onSpaceLoad?: (stores: import('@taktflow/core').ProjectStores) => Promise<void>
   onSpaceUnload?: (projectDir: string) => Promise<void>
+  githubFetch?: typeof fetch
   feishuFetch?: typeof fetch
   automationFetch?: typeof fetch
   projectDir?: string
@@ -77,6 +80,8 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const preview = createPreviewServer(options.host ?? '127.0.0.1')
   const feishuRoot = options.spacesDir ? resolve(options.spacesDir, '.takt-feishu') : resolve(spaces[0]!.taktDir, 'runs', '.feishu-hub')
   const feishu = createFeishuRuntime(feishuRoot, feishuAppFromEnv(process.env), () => spaces, options, options.feishuFetch)
+  const githubQueue = options.spacesDir ? resolve(options.spacesDir, '.takt-github') : resolve(spaces[0]!.taktDir, 'runs', '.github-channel')
+  const github = githubChannel(githubQueue, githubConfig(process.env), () => spaces, options, options.githubFetch)
   const teamRoot = options.spacesDir ? resolve(options.spacesDir, '.takt-team-link') : resolve(spaces[0]!.taktDir, 'runs', '.team-link')
   const teamAdmissions = new TeamAdmissions(teamRoot, process.env.TAKT_TEAM_NODES)
   const routeOptions = { ...options, bridge, automationRuntime, preview, feishu, teamAdmissions }
@@ -153,6 +158,10 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       if (closing) throw new HttpError(500, '服务正在关闭')
       let url: URL
       try { url = new URL(request.url ?? '/', 'http://localhost') } catch { throw new HttpError(400, 'URL 不合法') }
+      if (url.pathname === githubCallbackPath) {
+        await github.callback(request, response)
+        return
+      }
       if (url.pathname === feishuCallbackPath) {
         await feishu.callback(request, response)
         return
@@ -187,7 +196,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
         url.pathname = '/api' + url.pathname.slice(prefix[0].length)
       }
       const scopedAdmin = prefix && admin.match(request.method ?? 'GET', url.pathname)
-      if (scopedAdmin && url.pathname.startsWith('/api/steward/')) {
+      if (scopedAdmin && (url.pathname.startsWith('/api/steward/') || url.pathname.startsWith('/api/space/steward/'))) {
         validateWriteRequest(request)
         const result = await scopedAdmin.handler({ stores: selected!, request, response, url, params: scopedAdmin.params })
         if (result !== STREAMING) json(response, result)
@@ -261,6 +270,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const feishuScanner = feishu.configured ? setInterval(scanFeishu, 2000) : undefined
   feishuScanner?.unref()
   if (feishu.configured) scanFeishu()
+  github.start()
   let closePromise: Promise<void> | undefined
   return {
     url: `http://${address.address.includes(':') ? `[${address.address}]` : address.address}:${address.port}`,
@@ -269,7 +279,7 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
       closing = true
       clearInterval(automationScanner)
       clearInterval(feishuScanner)
-      closePromise = Promise.all([automationRefresh, refreshing, feishuScan]).then(() => feishu.close()).then(async () => { for (const pending of automations.values()) await (await pending).close() }).then(() => maintenance.close()).then(() => steward.close()).then(() => new Promise<void>((resolve, reject) => {
+      closePromise = Promise.all([automationRefresh, refreshing, feishuScan]).then(() => Promise.all([feishu.close(), github.close()])).then(async () => { for (const pending of automations.values()) await (await pending).close() }).then(() => maintenance.close()).then(() => steward.close()).then(() => new Promise<void>((resolve, reject) => {
         for (const close of connections) close()
         server.close((error) => { if (error) reject(error); else resolve() })
         server.closeAllConnections()
@@ -300,3 +310,5 @@ export { stewardRuntime } from './steward-runtime.js'
 
 export { sendToChannel } from './channel-delivery.js'
 export { AutomationRuntime } from './automation-runtime.js'
+
+export { listenWeChat } from './wechat-channel.js'

@@ -25,7 +25,7 @@ function harnessOptions(choices: StewardRuntimeChoice[]) {
 }
 
 /** 管家偏好表单（docs/design/22 §1.7）：值由父组件持有，改动即时反映，保存在抽屉底部。 */
-export function PrefsForm({ prefs, onChange, spaces, choices }: { prefs: StewardPrefs; onChange: (p: StewardPrefs) => void; spaces: SpaceSummary[]; choices: StewardRuntimeChoice[] }) {
+export function PrefsForm({ prefs, onChange, spaces, choices, shared = false }: { shared?: boolean; prefs: StewardPrefs; onChange: (p: StewardPrefs) => void; spaces: SpaceSummary[]; choices: StewardRuntimeChoice[] }) {
   const [time, setTime] = useState('17:30')
   const set = (patch: Partial<StewardPrefs>) => onChange({ ...prefs, ...patch })
   const watchOf = (id: string): Watch => (prefs.watchedSpaces?.includes(id) ? 'watch' : prefs.mutedSpaces?.includes(id) ? 'mute' : 'normal')
@@ -66,6 +66,7 @@ export function PrefsForm({ prefs, onChange, spaces, choices }: { prefs: Steward
         <p className="stwp-field-note">{prefs.trust === 'confirm' ? '每个写操作都先给你一份提案。' : '新建草稿、写记忆这类低风险且可撤销的操作直接执行，对话里显示"已执行，可撤销"。'}</p>
       </Field>
 
+      {!shared && <>
       <Field label="定时汇报" hint="工作日">
         <div className="stwp-row">
           <Chips items={prefs.digestTimes.map((t) => ({ id: t, label: t }))} onRemove={(t) => set({ digestTimes: prefs.digestTimes.filter((x) => x !== t) })} />
@@ -127,6 +128,8 @@ export function PrefsForm({ prefs, onChange, spaces, choices }: { prefs: Steward
         </select>
       </Field>
 
+      </>}
+
       <Field label="管家用的 harness 与模型">
         <div className="stwp-row">
           <select className="select" value={harness} onChange={(e) => set({ harness: { harness: e.target.value } })} aria-label="harness">
@@ -155,13 +158,13 @@ export function PrefsForm({ prefs, onChange, spaces, choices }: { prefs: Steward
         </div>
       </Field>
 
-      <Field label="浏览器通知" hint="新风险与汇报弹系统通知">
+      {!shared && <Field label="浏览器通知" hint="新风险与汇报弹系统通知">
         <label className="stw-switch">
           <input type="checkbox" checked={!!prefs.browserNotifications} onChange={(e) => void toggleNotify(e.target.checked)} />
           {prefs.browserNotifications ? <Bell aria-hidden /> : <BellOff aria-hidden />}
           <span>{prefs.browserNotifications ? '已开启' : '关闭'}</span>
         </label>
-      </Field>
+      </Field>}
     </div>
   )
 }

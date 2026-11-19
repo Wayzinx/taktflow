@@ -152,3 +152,56 @@
 .device-protocol { padding: var(--s-4, 16px); }
 .device-protocol > summary { cursor: pointer; font-weight: 600; }
 .device-protocol > p { margin: 12px 0; }
+
+.device-platforms,
+.device-location {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+}
+.device-platforms legend,
+.device-location legend { padding: 0; margin-bottom: var(--sp-2); }
+.device-platform-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  padding: 3px;
+}
+.device-platform-list label { position: relative; text-align: center; }
+.device-platform-list input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+.device-platform-list span {
+  display: block;
+  padding: var(--sp-2);
+  color: var(--text-2);
+  border-radius: var(--r-sm);
+}
+.device-platform-list input:checked + span {
+  color: var(--text);
+  font-weight: 600;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--border);
+}
+.device-platform-list input:focus-visible + span { outline: 2px solid var(--accent); }
+.device-platform-list input:disabled { cursor: not-allowed; }
+.device-platform-list input:disabled + span { opacity: .6; }
+.device-platforms .ov-field-hint { margin-top: var(--sp-2); }
+.device-install { display: grid; justify-items: start; gap: var(--sp-2); }
+.device-install .device-copy, .device-install details { width: 100%; min-width: 0; }
+.device-install summary, .device-hub-options summary { cursor: pointer; color: var(--text-2); }
+.device-install details[open] summary, .device-hub-options[open] summary { margin-bottom: var(--sp-2); }
+.device-install + .device-install { padding-top: var(--sp-3); border-top: 1px solid var(--divider); }
+.device-pair-title { margin: 0 0 var(--sp-3); font-size: var(--text-title); }
+.device-location label { display: inline-flex; margin-right: var(--sp-4); align-items: center; gap: var(--sp-1); }
+.device-location p { margin-top: var(--sp-2); }
+.device-hub-field input { width: 100%; }
+.device-pairing h3 svg { vertical-align: middle; width: 1.2em; color: var(--st-success); }

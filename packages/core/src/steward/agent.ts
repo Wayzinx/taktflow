@@ -115,7 +115,7 @@ export class StewardAgent {
         id: randomUUID(),
         threadId: thread.id,
         role: 'user',
-        author: { type: 'human', id: this.userId },
+        author: { type: 'human', id: this.deps.actingUser?.() ?? this.userId },
         at: timestamp(this.deps),
         text: input.text,
         context: input.context ?? thread.context,
@@ -345,7 +345,8 @@ export class StewardAgent {
             history.map(async (m): Promise<ChatMessage> =>
               m.role === 'system'
                 ? { role: 'user', content: await this.note(m, m.id === user.id) }
-                : { role: m.role === 'user' ? 'user' : 'assistant', content: m.text },
+                : { role: m.role === 'user' ? 'user' : 'assistant', content: this.deps.actingUser && m.role === 'user' && m.author?.type === 'human'
+                    ? JSON.stringify({ member: m.author.id, text: m.text }) : m.text },
             ),
           )),
         ]

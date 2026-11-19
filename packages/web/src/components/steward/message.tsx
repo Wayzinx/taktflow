@@ -177,6 +177,7 @@ export function MessageView({ m, proposals, animate, showSuggestions, onProposal
   if (m.role === 'user')
     return (
       <div className={`stw-msg stw-msg-user${animate ? ' stw-in' : ''}`} data-steward-anchor={m.id}>
+        {m.author?.type === 'human' && <span className="faint num">{m.author.id}</span>}
         <div className="stw-bubble">{m.text}</div>
         {m.status === 'error' && (
           <span className="stw-msg-err">

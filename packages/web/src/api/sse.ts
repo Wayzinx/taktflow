@@ -27,18 +27,20 @@ export function parseSse(buffer: string): { data: string[]; rest: string } {
  * 同一条流（同地址、同请求头）在所有标签页之间只连一条（lib/shared-stream），不占满浏览器的连接数。
  */
 export function fetchStream<T>(url: string, on: (v: T) => void, headers: () => Record<string, string>, retryMs = 3000): () => void {
-  return whileVisible(() => sharedStream<T>(`${url}|${JSON.stringify(headers())}`, (emit) => openFetchStream(url, emit, headers, retryMs), on))
+  const identity = headers()
+  return whileVisible(() => sharedStream<T>(`${url}|${JSON.stringify(identity)}`, (emit) => openFetchStream(url, emit, identity, retryMs), on))
 }
 
-function openFetchStream<T>(url: string, on: (v: T) => void, headers: () => Record<string, string>, retryMs: number): () => void {
+function openFetchStream<T>(url: string, on: (v: T) => void, headers: Record<string, string>, retryMs: number): () => void {
   let closed = false
+  let lastSeq = 0
   let ctrl: AbortController | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
   const connect = async () => {
     ctrl = new AbortController()
     let permanent = false
     try {
-      const res = await fetch(url, { headers: { accept: 'text/event-stream', ...headers() }, signal: ctrl.signal, cache: 'no-store' })
+      const res = await fetch(url, { headers: { accept: 'text/event-stream', ...headers, ...(lastSeq ? { 'last-event-id': String(lastSeq) } : {}) }, signal: ctrl.signal, cache: 'no-store' })
       if (!res.ok || !res.body) {
         permanent = res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429
         throw new Error(`stream ${res.status}`)
@@ -57,6 +59,7 @@ function openFetchStream<T>(url: string, on: (v: T) => void, headers: () => Reco
           } catch {
             continue // 非 JSON 的数据行忽略
           }
+          if (typeof v === 'object' && v && 'seq' in v && typeof v.seq === 'number') lastSeq = v.seq
           on(v)
         }
       }

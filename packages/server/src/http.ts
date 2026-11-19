@@ -66,7 +66,7 @@ export async function body(request: IncomingMessage, allowEmpty = false, limit =
   return value as Record<string, unknown>
 }
 
-/** 请求头 x-takt-user：界面上选了"我是"才有；没选时为空，由调用方按所操作的空间回落到它的第一个 owner。 */
+/** 远程部署由身份网关验证成员并设置 x-takt-user。 */
 export function requestUser(request: IncomingMessage): string | undefined {
   const value = request.headers['x-takt-user']
   return (Array.isArray(value) ? value[0] : value)?.trim() || undefined
@@ -74,8 +74,16 @@ export function requestUser(request: IncomingMessage): string | undefined {
 
 const firstOwner = (stores?: Pick<ProjectStores, 'config'>) => stores?.config.members?.find((member) => member.role === 'owner' && member.id !== 'web')?.id
 
+function localOwner(request: IncomingMessage, stores?: Pick<ProjectStores, 'config'>): string | undefined {
+  const peer = request.socket?.remoteAddress
+  if (peer !== '::1' && peer !== '127.0.0.1' && peer !== '::ffff:127.0.0.1') return
+  if (!/^(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i.test(request.headers.host ?? '')) return
+  if (Object.keys(request.headers).some(name => name === 'forwarded' || name === 'via' || name === 'x-real-ip' || name.startsWith('x-forwarded-'))) return
+  return firstOwner(stores)
+}
+
 export function actor(request: IncomingMessage, stores?: Pick<ProjectStores, 'config'>): Actor {
-  return { type: 'human', id: requestUser(request) || firstOwner(stores) || 'web' }
+  return { type: 'human', id: requestUser(request) || localOwner(request, stores) || 'web' }
 }
 
 /**
@@ -85,7 +93,7 @@ export function actor(request: IncomingMessage, stores?: Pick<ProjectStores, 'co
 export function globalActor(request: IncomingMessage, fallback?: ProjectStores): Actor | ((space?: Pick<ProjectStores, 'config'>) => Actor | undefined) {
   if (requestUser(request)) return actor(request)
   return (space) => {
-    const id = firstOwner(space ?? fallback)
+    const id = localOwner(request, space ?? fallback)
     return id ? { type: 'human', id } : undefined
   }
 }

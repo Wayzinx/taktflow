@@ -1,4 +1,9 @@
-export interface SpaceDevice {
+export interface ComputerDetails {
+  displayName: string
+  platform: 'mac' | 'linux'
+}
+
+export interface SpaceDevice extends Partial<ComputerDetails> {
   nodeId: string
   harness: string
   source: 'env' | 'link'
@@ -13,12 +18,11 @@ export interface SpaceDevices {
   devices: SpaceDevice[]
 }
 
-export interface DeviceLinkRequest {
+export type DeviceLinkRequest = (ComputerDetails & { harness?: 'codex' }) | { nodeId: string; harness: 'codex' }
+
+export interface DeviceLink extends Partial<ComputerDetails> {
   nodeId: string
   harness: 'codex'
-}
-
-export interface DeviceLink extends DeviceLinkRequest {
   code: string
   expiresAt: string
 }

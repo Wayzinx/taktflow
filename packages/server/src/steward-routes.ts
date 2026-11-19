@@ -2,6 +2,7 @@ import { validateStewardRuntime } from '@taktflow/core'
 import { StewardMcp } from './steward-mcp.js'
 import { stewardRuntime } from './steward-runtime.js'
 import { stewardConfigPatch } from './steward-config-patch.js'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, join, resolve } from 'node:path'
 import { readdir } from 'node:fs/promises'
 import { applyEdits } from '@taktflow/workflow-source'
@@ -47,7 +48,7 @@ import {
   auditSpace,
 } from './space.js'
 import { createServerCommandRegistry } from './space-admin.js'
-import { actor, body, HttpError, text, validateWriteRequest } from './http.js'
+import { actor, authorize, body, HttpError, text, validateWriteRequest } from './http.js'
 import { liveStream } from './live-stream.js'
 import { STREAMING, type Handler, type RequestContext } from './routes.js'
 import type { LeadMention } from './space-routes.js'
@@ -73,10 +74,10 @@ export interface StewardRouteDeps {
     Pick<StewardDeps, 'chat' | 'now' | 'extraRisks' | 'systemPrompt' | 'leadTimeoutMs'>
   >
 }
-export function createStewardDeps(options: StewardRouteDeps, userId: string): StewardDeps {
-  const by = { type: 'human' as const, id: stewardUserId(userId) }
+export function createStewardDeps(options: StewardRouteDeps, userId: string, shared?: { stores: ProjectStores; actingUser(): string }): StewardDeps {
+  const by = () => ({ type: 'human' as const, id: shared?.actingUser() ?? stewardUserId(userId) })
   const all = async () => {
-    const fresh = options.registry
+    const fresh = shared ? [await openProject(shared.stores.projectDir)] : options.registry
       ? await Promise.all([...options.registry.values()].map((s) => openProject(s.projectDir)))
       : options.spacesDir
         ? await discoverSpaces(options.spacesDir)
@@ -90,14 +91,15 @@ export function createStewardDeps(options: StewardRouteDeps, userId: string): St
   }
   return {
     ...options.steward,
-    dataDir: (id) =>
+    actingUser: shared?.actingUser,
+    dataDir: (id) => shared ? join(shared.stores.taktDir, 'space-steward') :
       options.spacesDir
         ? join(resolve(options.spacesDir), '.steward', stewardUserId(id))
         : join(resolve(options.projectDir ?? process.cwd()), '.takt/steward', stewardUserId(id)),
     spaces: async () => {
       const visible = (await all()).filter((stores) => {
         try {
-          requireRole(stores, by, 'viewer', '查询空间')
+          requireRole(stores, by(), 'viewer', '查询空间')
           return true
         } catch {
           return false
@@ -110,7 +112,7 @@ export function createStewardDeps(options: StewardRouteDeps, userId: string): St
       const stores = (await all()).find((s) => spaceId(s) === id)
       if (!stores) throw new StewardError(404, '空间不存在，请刷新空间列表')
       try {
-        requireRole(stores, by, 'viewer', '管家查询空间')
+        requireRole(stores, by(), 'viewer', '管家查询空间')
       } catch {
         throw new StewardError(403, '没有该空间的访问权限，请联系空间管理员')
       }
@@ -153,7 +155,7 @@ export function createStewardDeps(options: StewardRouteDeps, userId: string): St
         onChat: (req, listener) => stores.chat.subscribe(stewardId(req), listener),
         postToLead: async (req, message) => {
           try {
-            requireRole(stores, by, 'member', '转达 Lead')
+            requireRole(stores, by(), 'member', '转达 Lead')
           } catch {
             throw new StewardError(403, '转达 Lead 需要成员权限，请联系管理员')
           }
@@ -179,7 +181,7 @@ export function createStewardDeps(options: StewardRouteDeps, userId: string): St
         },
       }
     },
-    serverCommands: options.serverCommands ?? createServerCommandRegistry(options),
+    serverCommands: shared ? undefined : options.serverCommands ?? createServerCommandRegistry(options),
     applyWorkflowEdits: applyEdits,
   }
 }
@@ -228,14 +230,22 @@ export function registerStewardRoutes(
   const connections =
     'connections' in deps ? (deps.connections ?? new Set<() => void>()) : new Set<() => void>()
   let closed = false
-  const ensureAgent = (id: string) => {
-    let agent = agents.get(id)
+  const turnActor = new AsyncLocalStorage<string>()
+  const actingUser = () => {
+    const id = turnActor.getStore()
+    if (!id) throw new StewardError(403, '找不到本轮空间管家的操作者')
+    return id
+  }
+  const ensureAgent = (id: string, shared?: ProjectStores) => {
+    const key = shared ? `space/${shared.projectDir}` : id
+    let agent = agents.get(key)
     if (!agent) {
       if (agents.size >= 128)
         throw new HttpError(429, '管家活跃用户已达上限，请稍后重试或联系管理员')
-      agent = new StewardAgent('dataDir' in deps ? deps : createStewardDeps(deps, id), id)
+      agent = new StewardAgent('dataDir' in deps ? deps : createStewardDeps(deps, id, shared ? { stores: shared, actingUser } : undefined), id)
       if (!('dataDir' in deps)) Object.assign(agent.deps, stewardRuntime(agent.deps, id, mcp, deps.mcpUrl ?? (() => { throw new StewardError(503, 'MCP 地址尚未就绪，请稍后重试') }), undefined, deps.bridge))
-      agents.set(id, agent)
+      agents.set(key, agent)
+      if (shared) return agent
       const current = agent
       schedulers.set(
         id,
@@ -255,11 +265,11 @@ export function registerStewardRoutes(
     }
     return agent
   }
-  const get = async (ctx: RequestContext) => {
+  const get = async (ctx: RequestContext, shared = false) => {
     const by = actor(ctx.request, ctx.stores)
     if (by.type !== 'human') throw new HttpError(403, '管家需要用户身份')
-    const agent = ensureAgent(stewardUserId(by.id))
-    if ('resolveChat' in deps && deps.resolveChat)
+    const agent = ensureAgent(shared ? 'space-steward' : stewardUserId(by.id), shared ? ctx.stores : undefined)
+    if (!shared && 'resolveChat' in deps && deps.resolveChat)
       agent.deps.chat = await deps.resolveChat(await agent.store.prefs())
     return { agent, by, store: agent.store }
   }
@@ -288,19 +298,31 @@ export function registerStewardRoutes(
     method: string,
     path: string,
     handler: (ctx: RequestContext, service: Awaited<ReturnType<typeof get>>) => Promise<unknown>,
-  ) =>
-    add(method, `/api/steward${path}`, async (ctx) => {
+  ) => {
+    const invoke = async (ctx: RequestContext, shared = false) => {
       try {
         validateWriteRequest(ctx.request)
         await ready
-        const service = await get(ctx)
+        const service = await get(ctx, shared)
         await service.agent.ready
         return await handler(ctx, service)
       } catch (error) {
         if (error instanceof StewardError) throw new HttpError(error.status, error.message)
         throw error
       }
+    }
+    add(method, `/api/steward${path}`, (ctx) => invoke(ctx))
+    if ('dataDir' in deps) return
+    add(method, `/api/space/steward${path}`, async (ctx) => {
+      const stores = await openProject(ctx.stores.projectDir)
+      const role = method === 'GET' ? 'viewer' : ['/prefs', '/profile'].includes(path) ? 'owner' : 'member'
+      authorize(ctx.request, stores, role, '访问空间管家')
+      const by = actor(ctx.request, stores)
+      if (by.type !== 'human') throw new HttpError(403, '管家需要成员身份')
+      ctx.response.setHeader('cache-control', 'private, no-store')
+      return turnActor.run(stewardUserId(by.id), () => invoke({ ...ctx, stores }, true))
     })
+  }
   route('POST', '/delegations/:messageId/resend', async ({ params, request }, { agent }) => agent.tools.resendDelegation(params.messageId!, text((await body(request)).reason, 'reason')))
   route('GET', '/find', async ({ url }, { agent, store }) => {
     const params = url.searchParams
@@ -432,9 +454,14 @@ export function registerStewardRoutes(
   route('GET', '/feed', async (_, { store }) => store.lines<StewardFeedItem>('feed.jsonl'))
   // 导轨角标只要一个数：整份动态能有几百 KB
   route('GET', '/unread', async (_, { store }) => ({ count: await unreadFeed(store) }))
-  route('GET', '/prefs', async (_, { store }) => store.prefs())
-  route('PUT', '/prefs', async ({ request }, { store, by }) => {
+  route('GET', '/prefs', async (_, { store, agent }) => {
+    const value = await store.prefs()
+    return agent.deps.actingUser ? { ...value, digestTimes: [] } : value
+  })
+  route('PUT', '/prefs', async ({ request }, { store, by, agent }) => {
     const input = prefs(await body(request))
+    if (agent.deps.actingUser && input.digestTimes.length)
+      throw new HttpError(400, '空间定时报告请在空间自动化中设置')
     await store.serial(async () => {
       await store.write('prefs.json', input)
       await store.append('audit.jsonl', {

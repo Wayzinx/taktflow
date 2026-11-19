@@ -2,7 +2,7 @@
  * client ↔ server 契约（评审发现 #1 #2 #20）：
  * - 每个写请求都要过服务端真实的 validateWriteRequest（无 body 的 POST 曾经 415）；
  * - 每个请求的方法 + 路径都在 packages/core/src/api.ts 顶部的接口表里；
- * - 管家接口（含两条 SSE）带全局身份 x-takt-user，空间内选的"我是"在全局 /steward 页也生效。
+ * - 管家接口（含两条 SSE）使用所属空间的成员身份，个人管家使用全局身份。
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -16,7 +16,7 @@ const table = readFileSync(join(here, '../../core/src/api.ts'), 'utf8')
   .split('\n')
   .flatMap((l) => {
     const m = /^ \* \|\s*(GET|POST|PUT|PATCH|DELETE)\s*\|\s*(\/api\/\S+)/.exec(l)
-    return m ? [{ method: m[1]!, re: new RegExp(`^${m[2]!.split('?')[0]!.replace(/:[A-Za-z]+/g, '[^/]+')}$`) }] : []
+    return m ? [{ method: m[1]!, path: m[2]!.split('?')[0]!, re: new RegExp(`^${m[2]!.split('?')[0]!.replace(/:[A-Za-z]+/g, '[^/]+')}$`) }] : []
   })
 
 type Call = { method: string; path: string; headers: Record<string, string>; body?: string }
@@ -61,28 +61,57 @@ describe('HTTP client contract', () => {
       if (c.method !== 'GET') expect(c.body, `${c.method} ${c.path} 写请求要带 JSON body`).toBeTruthy()
     }
     // 全局接口不加空间前缀，空间内接口加
-    expect(calls.find((c) => c.path.includes('/steward/threads'))!.path.startsWith('/api/steward/')).toBe(true)
+    expect(calls.find((c) => c.path.includes('/steward/threads'))!.path).toBe('/api/s/shop/space/steward/threads')
     expect(calls.find((c) => c.path.includes('/knowledge/kinds'))!.path).toBe('/api/s/shop/knowledge/kinds')
-    expect(calls.find((c) => c.path.includes('/steward/digest'))!.path).toBe('/api/steward/digest?peek=1')
+    expect(calls.find((c) => c.path.includes('/steward/digest'))!.path).toBe('/api/s/shop/space/steward/digest?peek=1')
     // 服务端 PUT /knowledge/secrets/:name 要求 reason（协议只写了 { value }）
     expect(JSON.parse(calls.find((c) => c.path.includes('/knowledge/secrets/'))!.body!)).toMatchObject({ value: 'v', reason: expect.any(String) })
   })
 
-  it('steward calls and streams carry the global identity, even on the global /steward page', async () => {
+  it.each([
+    { page: '/s/shop/solo', prefix: '/api/s/shop/space/steward', user: 'alice' },
+    { page: '/s/studio/knowledge', prefix: '/api/s/studio/space/steward', user: 'bob' },
+    { page: '/steward', prefix: '/api/space/steward', user: 'local' },
+    { page: '/personal', prefix: '/api/steward', user: 'bob' },
+    { page: '/solo', prefix: '/api/steward', user: 'bob' },
+  ])('all steward HTTP calls and both streams on $page use $prefix as $user', async ({ page, prefix, user }) => {
     const { setActingUser } = await import('../src/lib/acting-user')
     const { createHttpSource } = await import('../src/api/client')
-    setActingUser('bob') // 在空间 shop 里选了"我是 bob"
-    vi.stubGlobal('location', { pathname: '/steward' })
+    const at = (pathname: string) => vi.stubGlobal('location', { pathname })
+    at('/'); setActingUser('local')
+    at('/s/shop/knowledge'); setActingUser('alice')
+    at('/s/studio/knowledge'); setActingUser('bob') // 最近的全局身份，shop 的身份仍是 alice
+    at(page)
     const ds = createHttpSource()
     calls.length = 0
-    await ds.stewardThreads()
     const off = ds.subscribeSteward('t1', () => undefined)
     const offFeed = ds.subscribeStewardFeed(() => undefined)
-    await new Promise((r) => setTimeout(r, 10))
-    off()
-    offFeed()
-    const steward = calls.filter((c) => c.path.startsWith('/api/steward/'))
-    expect(steward.map((c) => c.path)).toEqual(expect.arrayContaining(['/api/steward/threads', '/api/steward/threads/t1/stream', '/api/steward/stream']))
-    for (const c of steward) expect(c.headers['x-takt-user'], c.path).toBe('bob')
+    try {
+      await Promise.all([
+        ds.stewardThreads(), ds.createStewardThread({ text: 'hi' }), ds.stewardThread('t1'), ds.patchStewardThread('t1', { title: 'hello' }),
+        ds.deleteStewardThread('t1'), ds.stopStewardThread('t1'), ds.stewardRuntimeChoices(), ds.postStewardMessage('t1', { text: 'ok' }),
+        ds.stewardFeedback('m', { rating: 'up' }), ds.resendDelegation('m', 'retry'), ds.proposals(),
+        ds.approveProposal('p', { hash: 'h' }), ds.rejectProposal('p'), ds.undoProposal('p', 'undo'),
+        ds.risks(), ds.setRiskState('k', { state: 'ignored' }), ds.digest(undefined, { peek: true }),
+        ds.stewardFeed(), ds.stewardUnread(), ds.stewardPrefs(), ds.saveStewardPrefs({ trust: 'confirm', digestTimes: [] }),
+        ds.stewardProfile(), ds.saveStewardProfile('memo'), ds.stewardSuggestions({ page: 'overview' }),
+        ds.stewardFind('q'), ds.stewardPicks(), ds.productMetrics(), ds.reportProductEvent({ type: 'dialog.open', feature: 'requirement.create' }),
+      ])
+      await vi.waitFor(() => expect(calls.filter(c => c.headers.accept === 'text/event-stream').length).toBe(2))
+      const documentedRoot = strip(prefix) + '/'
+      const documented = table.filter(r => r.path.startsWith(documentedRoot) && r.path !== '/api/steward/mcp')
+      // 各端点都真的经过客户端；新增接口漏写文档、漏写调用、混入个人或异空间路径均报错。
+      for (const c of calls) {
+        expect(c.path.startsWith(prefix + '/'), c.path).toBe(true)
+        expect(c.headers['x-takt-user'], c.path).toBe(user)
+        expect(documented.some(r => r.method === c.method && r.re.test(strip(c.path))), c.path).toBe(true)
+        expect(() => validateWriteRequest(asRequest(c)), c.path).not.toThrow()
+        if (c.method !== 'GET') expect(c.body, c.path).toBeTruthy()
+      }
+      for (const r of documented) expect(calls.some(c => c.method === r.method && r.re.test(strip(c.path))), r.method + ' ' + r.path).toBe(true)
+    } finally {
+      off()
+      offFeed()
+    }
   })
 })

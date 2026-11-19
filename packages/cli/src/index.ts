@@ -53,6 +53,23 @@ async function dispatch(cli: ParsedCli): Promise<number> {
   const handler = command && registered.get(command)
   if (handler) return handler(cli)
   switch (command) {
+    case 'wechat': {
+      if (args.length !== 1 || args[0] !== 'listen' || !options.project || !options.config || !options.by) {
+        throw new UsageError('用法：takt wechat listen --project <空间目录> --by <成员ID> --config <腾讯微信账号文件>')
+      }
+      const { listenWeChat } = await import('@taktflow/server')
+      const controller = new AbortController()
+      const stop = () => controller.abort()
+      process.once('SIGINT', stop)
+      process.once('SIGTERM', stop)
+      try {
+        await listenWeChat(options.project, options.by, options.config, controller.signal, (message) => process.stderr.write(message + '\n'))
+      } finally {
+        process.off('SIGINT', stop)
+        process.off('SIGTERM', stop)
+      }
+      return 0
+    }
     case 'worker':
       return runWorkerCommand(cli)
     case 'link':

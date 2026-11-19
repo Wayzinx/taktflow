@@ -1,6 +1,6 @@
 # 让项目空间的管家调度开发机
 
-成员进入项目空间，打开侧栏的 **团队 Agent**。聊天记录、关联的需求和作业保存在当前空间。Owner 在「空间设置 → 成员」添加同事。Viewer 可以看对话与结果，Member 可以讨论、创建需求和派活。
+成员进入项目空间，打开 **管家**。管家的会话列表和消息归该空间所有，同事可以打开已有会话继续追问。共享会话在管家浮层和完整页面都可访问。「空间讨论」保留群聊、需求和作业回执。Owner 在「空间设置 → 成员」添加同事。Viewer 可以看对话与结果，Member 可以讨论、创建需求和派活。
 
 | 用法 | 操作 | 结果 |
 | --- | --- | --- |
@@ -8,7 +8,7 @@
 | 按流程开发 | 选「编排开发」、流水线，填写目标与验收条件。可勾选附入最近八条消息。 | 管家以发言人的身份创建需求、写入 PRD、请求启动流程。会话提供需求和运行入口，启动失败会单独说明。 |
 | 直接开发 | 选「直接开发」、一台在线开发机，描述改动 | Worker 在自己的工作目录运行 Codex，团队在原消息下看到状态和回执。继续派给同一节点即可基于上次的文件改动迭代。 |
 
-团队成员也可以用手机飞书与管家讨论、建需求和审批。[飞书配置与群内用法](feishu.md)
+成员也可以在手机使用已绑定的消息渠道。在「空间设置 → 消息渠道」查看各入口。[飞书配置与群内用法](feishu.md) · [GitHub Issue 评论](github.md) · [个人微信](wechat.md)
 
 ## 在 Hub 上准备空间
 
@@ -25,19 +25,16 @@ cp examples/team-delivery/team-delivery.workflow.ts ./spaces/shop/workflows/
 
 「聊天」使用空间配置中 `steward.harness.model` 指定的模型别名，该别名应关联已配置的 `openai-chat` provider。单独使用工作流或 Worker 可以跳过这项设置。
 
+空间管家的每段对话、工具结果和提案由空间成员共享，需求详情中的 Agent 群聊按需求保存。个人管家保留个人历史。多人部署应在 HTTPS 身份网关登录，网关覆盖客户端提供的 `X-Takt-User` 并写入已验证的成员 ID，限制 Hub 只接受网关流量。网关保留 `Forwarded` 或 `X-Forwarded-For`。只有直接通过本机回环地址访问时才支持省略成员身份并使用默认负责人。
+
 ## 在界面连接 Mac 或 Linux 开发机
 
 启动 Hub 后，进入项目空间，在左侧打开 **设备与 Agent**（`/s/shop/devices`）。成员能看到这个空间下的设备、使用的 Agent、连接状态与执行中的作业。Owner 可以管理通过 Link 接入的设备。在本机受信开发模式，请先在「待办 → 我是」选中 Owner；部署团队服务时，由身份网关提供已验证的成员身份。
 
-1. 点连接设备，为执行节点取一个空间内唯一的 ID，例如 `mac-dev`，生成十分钟有效的一次性配对码。内置 Link 在本机运行 Codex CLI。
-2. 在目标 Mac 或 Linux 机器上准备同版本的 Taktflow 构建、已登录的 Codex CLI 和一个专用代码目录。从 Taktflow 仓库根目录执行页面给出的命令，在终端提示时输入配对码。示例中的 Hub 域名与工作目录需要换成实际值。
-
-   ```bash
-   node packages/cli/dist/index.js link --hub https://hub.example.com --space shop --node mac-dev --project /path/to/checkout
-   ```
-
-3. 保持 Link 进程运行。第二台机器使用另一个节点 ID 配对。设备上线后到「团队 Agent → 直接开发」选定机器，提交的开发任务及回执会出现在共享会话。运行中的编排流程也能调度这些节点。
-4. Link 会把本机凭据写入用户私有目录，下次执行同一命令即可重连。在设备页撤销授权会停止该节点继续领取作业。重新加入需要新配对码及 `--relink`。同一机器要提供多个执行槽时，为每个 Link 进程分配独立节点 ID 和工作目录。
+1. 点击「添加电脑」，选择 Mac 或 Linux，填写便于同事辨认的名称，例如「小组构建机」。点击「下一步」，Hub 自动分配节点 ID，生成十分钟有效的一次性配对码。
+2. 在目标电脑上准备 Node.js 20.12 或更高版本、已登录的 Codex CLI 和项目代码。按向导下载单文件 Link，在该项目目录运行向导里的启动命令，收到终端提示后输入配对码。
+3. 保持 Link 运行。设备在线后，在「管家 → 空间讨论 → 直接开发」选择这台电脑。任务和回执对空间成员可见，编排流程也可以调度它。更多电脑逐台配对。
+4. Link 将凭据保存在本机用户私有目录，重新运行同一命令即可重连。Owner 可在设备页撤销节点授权。Windows 原生执行暂未支持。
 
 在内网使用 SSH 隧道时，开发机上的 Hub 地址填隧道的回环端口。使用公网域名时，通过 TLS 代理转发 `/api/team-worker/` 到回环监听的 Hub。移动端用手机 Web 或飞书与空间交互，执行进程运行在开发机上。
 
@@ -58,7 +55,7 @@ cp examples/team-delivery/team-delivery.workflow.ts ./spaces/shop/workflows/
 TAKT_TEAM_NODES="$(cat /path/to/team-nodes.json)" npm run takt -- serve --spaces ./spaces
 ```
 
-Hub 默认监听本机 4870。访问 `/s/shop/team` 即可进入会话。环境变量登记表在启动时读取，改动后重启 Hub；通过设备页生成的 Link 配对即时生效。
+Hub 默认监听本机 4870。访问 `/s/shop/solo` 即可进入空间管家。旧的 `/s/shop/team` 链接会打开「空间讨论」。环境变量登记表在启动时读取，改动后重启 Hub；通过设备页生成的 Link 配对即时生效。
 
 ## 在开发机上运行 Worker
 
@@ -88,7 +85,7 @@ node packages/cli/dist/index.js worker \
 | `heartbeat` | `harness`、`session`、`id`、`claimId` | 执行中定期续租，如每 5 秒一次。失去租约时应停止本地任务。 |
 | `finish` | 心跳字段及 `status`、`result` | 提交 `succeeded` 或 `failed` 和至多 16 KiB 文本回执，随后继续轮询。 |
 
-可在「团队 Agent → 直接开发」按节点派活。编排中使用 `runTeamWorker(ctx, {harness, prompt})` 选择匹配的在线节点；需要固定机器时再指定 `nodeId`。每个节点在自己的受限工作环境中执行任务。
+可在「管家 → 空间讨论 → 直接开发」按节点派活。编排中使用 `runTeamWorker(ctx, {harness, prompt})` 选择匹配的在线节点；需要固定机器时再指定 `nodeId`。每个节点在自己的受限工作环境中执行任务。
 
 ## 把远端执行放入工作流
 
@@ -98,7 +95,7 @@ node packages/cli/dist/index.js worker \
 
 Web 端沿用 Taktflow 的成员身份机制。本机「我是」选择器和请求头仅适用于受信环境。多人网络部署需要在入口验证用户身份、覆盖客户端的 `X-Takt-User`、限制成员可访问的空间与旧版 API，并阻止绕过网关直连后台。登录、邀请邮件和 SSO 由部署方接入。SSH 转发整个服务端口的账号也应是受信任的运维人员。
 
-空间共享记录保存在 `.takt/chat/.team-room.json`，Worker 和作业状态保存在 `.takt/runs/.team-hub/state.json`。这两个文件与空间一同备份。首版采用单 Hub 和文件存储，适用于受信任的小团队。
+管家会话保存在空间的 `.takt/space-steward/`，空间讨论记录保存在 `.takt/chat/.team-room.json`，Worker 和作业状态保存在 `.takt/runs/.team-hub/state.json`。请随空间一起备份。首版采用单 Hub 和文件存储，适用于受信任的小团队。
 
 设备页生成配对码、开发机主动连 Hub 的流程参考 Collie；在设备上独立运行 Link 的方式参考 Persona。项目空间决定成员、节点、任务与审批的归属。[Collie 设备配对](https://github.com/lihuanyu0w0/collie/blob/cf5d1287f5358c5631ef5982111b1f06184f6a2f/README.md) · [Persona Link](https://github.com/nwverse/persona/blob/009f5c061f6dffa1000aefdd87039413089456f2/docs/operations/link.md)
 

@@ -18,6 +18,8 @@ export interface StewardSpace {
   onChat(requirementId: string, listener: (message: RoomMessage) => void): () => void
 }
 export interface StewardDeps {
+  /** 当前共享会话的实际操作者，随这一轮异步调用传播。 */
+  actingUser?(): string
   dataDir(userId: string): string
   spaces(): Promise<SpaceSummary[]>
   open(spaceId: string): Promise<StewardSpace>

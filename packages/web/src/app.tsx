@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, type ReactNode } from 'react'
+import { Fragment, lazy, Suspense, useEffect, useSyncExternalStore, type ReactNode } from 'react'
 import { RotateCw } from 'lucide-react'
 import { DataProvider } from './api'
 import { AppShell, useMissingSpace } from './components/layout'
@@ -7,6 +7,8 @@ import { SpaceCreateDialog } from './components/space-create'
 import { TaktLoader } from './components/takt'
 import { EmptyState, ErrorState, Skeleton, SkeletonGrid, Toaster } from './components/ui'
 import { matchPath, useLocation } from './lib/router'
+import { personalSteward } from './lib/space'
+import { actingUser, subscribeActingUser } from './lib/acting-user'
 import { useGlobalShortcuts } from './lib/shortcuts'
 import './lib/theme'
 import { openCreateRequirement, openCreateSpace, openSteward, useStewardDock } from './lib/ui-store'
@@ -69,7 +71,7 @@ function Routes() {
   const { path, spaceId } = useLocation()
   const access = useMissingSpace(spaceId)
   const missing = access.data
-  const local = path !== '/spaces' && path !== '/solo'
+  const local = !personalSteward(location.pathname)
   if (spaceId && local && access.loading && access.data === undefined) return <RouteFallback />
   if (spaceId && local && access.error) return <ErrorState error={access.error} onRetry={access.reload} />
   // 地址里的空间不存在 / 已归档：空间内页面都换成说明页（全局页照常，"全部空间"就是出口）
@@ -80,10 +82,12 @@ function Routes() {
 function SpaceRoutes({ path }: { path: string }) {
   if (path === '/' || path === '') return <OverviewPage />
   // 全局路由：带不带 /s/:space 前缀都能访问
-  if (path === '/solo') return <SoloPage />
+  if (path === '/solo' || path === '/steward' || path === '/personal') {
+    if (!personalSteward(location.pathname) && new URLSearchParams(location.search).get('room') === 'team') return <TeamPage />
+    return <SoloPage />
+  }
   if (path === '/spaces') return <SpacesPage />
   if (path === '/requirements') return <RequirementsPage />
-  if (path === '/team') return <TeamPage />
   if (path === '/devices') return <DevicesPage />
   if (path === '/attention') return <AttentionPage />
   if (path === '/knowledge') return <KnowledgeListPage />
@@ -118,8 +122,9 @@ function RouteFallback() {
 /** 停靠面板第一次打开时才加载；管家整页本身就是对话，不再叠一个面板（"问管家"落到整页的输入框，见 SoloPage）。 */
 function DockMount() {
   const dock = useStewardDock()
-  const { path } = useLocation()
-  if (path === '/solo' || (!dock.open && dock.nonce === 0)) return null
+  const { path, query } = useLocation()
+  const fullThread = ['/solo', '/steward', '/personal'].includes(path) && query.get('room') !== 'team'
+  if (fullThread || (!dock.open && dock.nonce === 0)) return null
   return (
     <Suspense fallback={null}>
       <StewardDock />
@@ -196,6 +201,16 @@ function ConnectFailed({ retry }: { retry: () => void }) {
   )
 }
 
+function Workspace() {
+  const { spaceId } = useLocation()
+  const user = useSyncExternalStore(subscribeActingUser, () => actingUser(spaceId))
+  const scope = JSON.stringify([spaceId, personalSteward(location.pathname), user])
+  return <Fragment key={scope}>
+    <AppShell><Suspense fallback={<RouteFallback />}><Routes /></Suspense></AppShell>
+    <GlobalMounts />
+  </Fragment>
+}
+
 export function App() {
   return (
     <DataProvider
@@ -206,12 +221,7 @@ export function App() {
       )}
       failed={(retry) => <ConnectFailed retry={retry} />}
     >
-      <AppShell>
-        <Suspense fallback={<RouteFallback />}>
-          <Routes />
-        </Suspense>
-      </AppShell>
-      <GlobalMounts />
+      <Workspace />
       <Toaster />
     </DataProvider>
   )

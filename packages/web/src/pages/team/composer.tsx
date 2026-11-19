@@ -15,7 +15,7 @@ const MODES = [
 ] satisfies Array<{ value: TeamMode; label: string; icon: typeof Workflow }>
 
 const PROMPT: Record<TeamMode, string> = {
-  chat: '向团队 Agent 提问，或留下要同步的信息…',
+  chat: '向空间管家提问，或留下要同步的信息…',
   workflow: '描述需求、交付目标和验收标准…',
   vibe: '描述要在开发机上完成的任务…',
 }
@@ -109,7 +109,7 @@ export function TeamComposer({ source, nodes, workflows, workflowsLoading, workf
           <label htmlFor="team-node">开发机与 Harness</label>
           <select id="team-node" className="select" value={selectedNode} disabled={!!attempt || !online} onChange={(event) => setDraft({ ...draft, nodeKey: event.target.value })}>
             <option value="">选择在线开发机</option>
-            {nodes.map((node) => <option key={nodeKey(node)} value={nodeKey(node)} disabled={!node.online}>{node.id} · {node.harness} · {node.online ? '在线' : '离线'}</option>)}
+            {nodes.map((node) => <option key={nodeKey(node)} value={nodeKey(node)} disabled={!node.online}>{node.displayName ?? node.id} · {node.harness} · {node.online ? '在线' : '离线'}</option>)}
           </select>
           {!online && <p>没有在线开发机。请先连接执行节点。</p>}
         </div>

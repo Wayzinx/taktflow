@@ -6,6 +6,11 @@ export function splitSpace(pathname: string): { spaceId?: string; rest: string }
   return { spaceId: decodeURIComponent(m[1]!), rest: m[2] && m[2] !== '' ? m[2] : '/' }
 }
 
+export function personalSteward(pathname: string): boolean {
+  const { spaceId, rest } = splitSpace(pathname)
+  return rest === '/personal' || rest === '/spaces' || (!spaceId && rest === '/solo')
+}
+
 export function currentSpaceId(): string | undefined {
   return splitSpace(location.pathname).spaceId
 }

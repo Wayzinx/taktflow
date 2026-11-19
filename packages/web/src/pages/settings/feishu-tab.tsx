@@ -114,7 +114,7 @@ export function FeishuEditor({ source, initial, members }: { source: FeishuClien
       </div>
       <div className="feishu-body">
         <div className="feishu-intro">
-          <p>每个空间可绑定一个飞书群，与「团队 Agent」共用空间对话。在群里 <strong>@管家</strong> 聊天、建需求或查看待办；需要拍板时，用群里的卡片确认。</p>
+          <p>每个空间可绑定一个飞书群，与管家里的「空间讨论」共用消息。在群里 <strong>@管家</strong> 聊天、建需求或查看待办；需要拍板时，用群里的卡片确认。</p>
           <p>绑定后，全群都能看到团队会话的新消息和运行通知。成员映射决定谁能发指令和审批。单向通知 Webhook 在<Link to="/automations">自动化</Link>中配置。</p>
         </div>
         {!status.configured && <p className="feishu-message" role="note">请联系 Hub 运维启用飞书企业应用后，再来绑定群。</p>}

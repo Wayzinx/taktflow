@@ -7,7 +7,8 @@ import { decodeFocus, encodeFocus, EntityFocusContext, sameFocus, type EntityFoc
 import { focusAnchor } from '../../components/steward/jump'
 import { ThreadView } from '../../components/steward/thread-view'
 import { fmtRelative } from '../../lib/format'
-import { setQuery, useLocation } from '../../lib/router'
+import { personalSteward } from '../../lib/space'
+import { Link, setQuery, useLocation } from '../../lib/router'
 import { closeSteward, useStewardDock } from '../../lib/ui-store'
 import { HealthDrawer } from '../steward/health-drawer'
 import { SettingsDrawer } from '../steward/settings-drawer'
@@ -48,7 +49,8 @@ export function SoloPage() {
   const [follow, setFollow] = useState(!focus)
   const followRef = useRef(follow)
   followRef.current = follow
-  useCrumbs([{ label: '管家' }], [])
+  const shared = !personalSteward(location.pathname)
+  useCrumbs([{ label: shared ? '空间管家' : '个人管家' }], [shared])
 
   useEffect(() => {
     if (rawFocus && !focus && !threadId) focusAnchor([rawFocus], 120)
@@ -121,7 +123,9 @@ export function SoloPage() {
           <header className="solo-head">
             {threadId && <h2 className="solo-head-title truncate">{current?.title ?? '会话'}</h2>}
             {current && <span className="faint num">更新于 {fmtRelative(current.updatedAt)}</span>}
+            {shared && <span className="faint">本空间成员可见</span>}
             <span className="solo-head-gap" />
+            {shared && <Link to="/steward?room=team" className="btn btn-ghost btn-sm">开发任务</Link>}
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setQuery({ drawer: 'health' })}>
               <Activity />
               产品健康

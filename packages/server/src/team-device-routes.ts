@@ -1,9 +1,10 @@
 import { openProject } from '@taktflow/core'
+import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { body, HttpError, requestUser, requires, roleDenied, text } from './http.js'
 import type { Handler, RequestContext } from './routes.js'
 import { spaceId } from './space.js'
-import type { TeamAdmissions } from './team-admissions.js'
+import { computerDetails, type TeamAdmissions } from './team-admissions.js'
 import { forgetTeamDevice, teamId, teamPresence } from './team-hub.js'
 import { storagePath, teamFileLock } from './team-storage.js'
 
@@ -45,8 +46,9 @@ export function teamDeviceRoutes(add: (method: string, path: string, handler: Ha
     for (const entry of env?.values() ?? []) devices.push(device(entry.nodeId, entry.harness, 'env'))
     for (const entry of links?.values() ?? []) {
       if (env?.has(entry.nodeId)) continue
-      if ('generation' in entry) devices.push(device(entry.nodeId, entry.harness, 'link', entry.generation))
-      else if (entry.expiresAt > Date.now()) devices.push({ nodeId: entry.nodeId, harness: entry.harness, source: 'link', status: 'pending', expiresAt: new Date(entry.expiresAt).toISOString() })
+      const details = { displayName: entry.displayName, platform: entry.platform }
+      if ('generation' in entry) devices.push({ ...device(entry.nodeId, entry.harness, 'link', entry.generation), ...details })
+      else if (entry.expiresAt > Date.now()) devices.push({ ...details, nodeId: entry.nodeId, harness: entry.harness, source: 'link', status: 'pending', expiresAt: new Date(entry.expiresAt).toISOString() })
     }
     return { spaceId: space, devices: devices.sort((left, right) => left.nodeId.localeCompare(right.nodeId)) }
   })
@@ -54,9 +56,11 @@ export function teamDeviceRoutes(add: (method: string, path: string, handler: Ha
     context.response.setHeader('cache-control', 'no-store')
     member(context, true)
     const input = await body(context.request, false, 2048)
-    const nodeId = teamId(text(input.nodeId, 'nodeId'))
-    if (input.harness !== 'codex') throw new HttpError(400, 'Team Link 仅支持 codex')
-    return edit(context, space => admissions.issue(teamId(space), nodeId, () => forgetTeamDevice(context.stores, nodeId)))
+    const computer = input.nodeId === undefined || input.displayName !== undefined || input.platform !== undefined
+      ? computerDetails(input.displayName, input.platform) : undefined
+    const nodeId = input.nodeId === undefined ? `computer-${randomUUID()}` : teamId(text(input.nodeId, 'nodeId'))
+    if (input.harness !== 'codex' && !(computer && input.harness === undefined)) throw new HttpError(400, 'Team Link 仅支持 codex')
+    return edit(context, space => admissions.issue(teamId(space), nodeId, () => forgetTeamDevice(context.stores, nodeId), computer))
   }))
   add('DELETE', `${path}/:nodeId`, requires('owner', what, async (context: RequestContext) => {
     context.response.setHeader('cache-control', 'no-store')

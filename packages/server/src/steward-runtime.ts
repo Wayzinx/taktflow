@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks'
 import { harnessAvailability } from './harness-availability.js'
 import { providerFor, providerProtocols, resolvePairing, resolveHarnessSelector, resolveSecret, StewardError, type BridgeRoute, type HarnessAdapter, type ProviderBridge, type StewardDeps, type StewardPrefs, type StewardRuntimeChoice } from '@taktflow/core'
 import { createHarnesses, createProvider, providerConfig, createRedactor } from '@taktflow/harness'
@@ -82,7 +83,7 @@ export function stewardRuntime(deps: StewardDeps, userId: string, mcp: StewardMc
         return { chat, model: selected.model }
       }
       return { run: async turn => {
-        const grant = mcp.issue({ userId, threadId: turn.threadId, specs: turn.specs, call: turn.call })
+        const grant = mcp.issue({ userId: deps.actingUser?.() ?? userId, threadId: turn.threadId, specs: turn.specs, call: AsyncResource.bind(turn.call) })
         let route: BridgeRoute | undefined
         // 还在出事件（想、调工具、写字）就一直等；连续 STEWARD_IDLE_MS 没动静才算卡住
         const idle = new AbortController()

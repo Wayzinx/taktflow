@@ -8,6 +8,7 @@ import { actingUser, subscribeActingUser } from '../../lib/acting-user.js'
 import { setQuery, useLocation } from '../../lib/router'
 import { FilesTab } from './files-tab'
 import { FeishuTab } from './feishu-tab.js'
+import { OtherChannels } from './other-channels.js'
 import { SkillsTab } from './skills-tab'
 import { KnowledgeTab } from './knowledge-tab'
 import { LessonsTab } from './lessons-tab'
@@ -35,7 +36,7 @@ const TAB_HINT: Record<Tab, string> = {
   lessons: '从过往运行里沉淀下来的经验，Agent 在相似场景会参考。',
   runtime: 'Harness 是执行 Agent 的工具；这里配置模型 API、模型别名和默认路由。',
   quality: '查看日志是否健康、运行记录是否已同步，按需校验或修复。',
-  feishu: '绑定飞书群，让群里的管家和网页共用此空间的团队对话。',
+  feishu: '把团队使用的消息渠道接入当前空间的管家。',
 }
 
 /**
@@ -90,7 +91,7 @@ export function SettingsPage() {
               { id: 'lessons', label: '经验', icon: Lightbulb },
               { id: 'runtime', label: '模型与 Harness', icon: Cpu },
               { id: 'quality', label: '质量日志', icon: ScrollText },
-              ...(canManageFeishu ? [{ id: 'feishu', label: '飞书群绑定', icon: MessageSquare }] : []),
+              ...(canManageFeishu ? [{ id: 'feishu', label: '消息渠道', icon: MessageSquare }] : []),
             ]}
           />
           {checkingFeishuAccess ? (
@@ -106,7 +107,7 @@ export function SettingsPage() {
             {tab === 'lessons' && <LessonsTab space={sp} />}
             {tab === 'runtime' && <RuntimeTab />}
             {tab === 'quality' && <QualityTab />}
-            {tab === 'feishu' && canManageFeishu && <FeishuTab key={JSON.stringify([spaceId, user])} source={source} members={sp?.members} />}
+            {tab === 'feishu' && canManageFeishu && <><FeishuTab key={JSON.stringify([spaceId, user])} source={source} members={sp?.members} /><OtherChannels /></>}
           </TabPanel>}
         </SettingsViewer.Provider>
       )}

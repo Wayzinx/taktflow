@@ -6,9 +6,11 @@ import { HttpError } from './http.js'
 import { atomicWrite } from './space.js'
 import { spaceLock } from './space-lock.js'
 
+export type TeamChannel = 'feishu' | 'github' | 'wechat'
+
 export interface TeamMessage {
   id: string
-  source?: 'feishu'
+  source?: TeamChannel
   role: 'human' | 'steward'
   author: string
   text: string
@@ -23,7 +25,7 @@ export type TeamReply = Pick<TeamMessage, 'text' | 'requirementId' | 'runId' | '
 interface Receipt { id: string; fingerprint: string; finished?: true }
 interface Room { messages: TeamMessage[]; receipts: Record<string, Receipt> }
 interface SubmitOptions {
-  source?: 'feishu'
+  source?: TeamChannel
   operationKey?: string
   guard?: () => Promise<unknown>
   beforeRecord?: () => Promise<void>

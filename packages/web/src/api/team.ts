@@ -2,6 +2,7 @@ export type TeamMode = 'chat' | 'workflow' | 'vibe'
 
 export interface TeamMessage {
   id: string
+  source?: 'feishu' | 'github' | 'wechat'
   role: 'human' | 'steward'
   author: string
   text: string
@@ -13,6 +14,7 @@ export interface TeamMessage {
 
 export interface TeamNode {
   id: string
+  displayName?: string
   harness: string
   online: boolean
 }

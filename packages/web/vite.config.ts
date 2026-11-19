@@ -1,11 +1,12 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { linkDownload } from './scripts/link-download.mjs'
 
 // 开发代理：默认指向 takt serve 的 4870；联调别的端口时用 TAKT_API=http://127.0.0.1:4883 npm run dev -w @taktflow/web
 const api = process.env.TAKT_API ?? 'http://127.0.0.1:4870'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), linkDownload()],
   server: {
     port: 5173,
     proxy: {

@@ -3,7 +3,7 @@ import { actor, authorize, body, HttpError, safeId, text } from './http.js'
 import { commandExecutor, type M3Callbacks } from './m3-routes.js'
 import type { Handler } from './routes.js'
 import { roomContext, teamChat, vibePrompt } from './team-room-context.js'
-import { teamRoomStore, type TeamMessage, type TeamReply } from './team-room-store.js'
+import { teamRoomStore, type TeamChannel, type TeamMessage, type TeamReply } from './team-room-store.js'
 
 interface TeamNode { id: string; harness: string; online: boolean }
 export interface TeamJob { id: string; nodeId: string; harness: string; status: 'queued' | 'running' | 'succeeded' | 'failed'; result?: unknown }
@@ -85,7 +85,7 @@ export function formatDiscussion(history: TeamMessage[]): string {
 }
 
 export function teamRoomService(stores: ProjectStores, options: M3Callbacks, hub: TeamHub,
-  currentStores: () => Promise<ProjectStores> = async () => stores, source?: 'feishu') {
+  currentStores: () => Promise<ProjectStores> = async () => stores, source?: TeamChannel) {
   const { executeAs } = commandExecutor(options)
   const room = teamRoomStore(stores.taktDir)
   const record = (by: TeamHuman, requestId: string, fingerprint: object, message: string,

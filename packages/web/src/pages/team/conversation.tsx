@@ -6,6 +6,8 @@ import { Avatar } from '../../components/ui'
 import { fmtDateTime } from '../../lib/format'
 import { Link } from '../../lib/router'
 
+const CHANNEL = { feishu: '飞书', github: 'GitHub', wechat: '微信' } as const
+
 const STATUS = { queued: '排队中', running: '运行中', succeeded: '已成功', failed: '已失败' } satisfies Record<TeamJob['status'], string>
 
 export function JobStatus({ job }: { job: TeamJob }) {
@@ -56,6 +58,7 @@ export function Conversation({ messages, jobs, memberName }: { messages: TeamMes
                 <div className="team-message-content">
                   <div className="team-message-meta">
                     <strong>{steward ? '空间管家' : memberName(message.author)}</strong>
+                    {message.source && <span>{CHANNEL[message.source]}</span>}
                     <time dateTime={message.at}>{fmtDateTime(message.at)}</time>
                   </div>
                   <p>{message.text}</p>

@@ -1,10 +1,6 @@
 /**
- * "我是谁"：还没有登录时由人在界面上选（待办页的"我是"），HTTP 客户端把它放进 `x-takt-user`，
- * 这样"派给我"筛选和服务端审计（审批、处置、改配置的操作者）是同一个人。
- * 没选过时不发请求头，服务端按空间第一个 owner 处理，`GET /api/me` 返回的就是这个缺省身份。
- * 按空间分别记：各空间成员不同，在 A 空间选的人到 B 空间可能不是成员，带过去会让写操作 403。
- * 管家是全局的（会话、提案、汇报按人存，不分空间）：另记一份全局身份 stewardUser()，最近一次在任何空间选的"我是"，
- * Solo 整页与空间内停靠面板用的是同一个人。
+ * 空间页面和空间管家使用当前空间选择的成员。显式个人管家使用单独保存的全局身份。
+ * 部署在网关后由网关验证身份并设置可信请求头；直接访问本机服务可使用默认负责人。
  */
 import { currentSpaceId } from './space'
 
@@ -57,7 +53,7 @@ export function subscribeActingUser(notify: () => void): () => void {
   return () => listeners.delete(notify)
 }
 
-/** 管家接口（/steward/*）用的全局身份；没选过时为空，服务端回落到缺省 owner。 */
+/** 个人管家使用的全局身份。 */
 export function stewardUser(): string | undefined {
   if (cache.has(STEWARD_KEY)) return cache.get(STEWARD_KEY)
   let v: string | undefined

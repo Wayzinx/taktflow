@@ -141,7 +141,7 @@
  * | DELETE| /api/spaces/:id                               | 请求体 { confirm: <id>, reason } → 204（只允许已归档的空间） |
  * | POST | /api/workflows/:id/convert                     | 请求体 WorkflowConvertRequest → WorkflowConvertResult（把不可编辑写法改写为 defineWorkflow；baseRev 不一致 409） |
  *
- * —— 管家（docs/design/22）；按 x-takt-user 区分用户，数据在 <spaces 根>/.steward/<userId>/ ——
+ * —— 个人管家（docs/design/22）；按 x-takt-user 区分个人历史 ——
  * | GET  | /api/steward/threads?archived=1                | StewardThread[]（默认不含已归档；archived=1 只列已归档。置顶的排最前，其余按 updatedAt 倒序） |
  * | PATCH| /api/steward/threads/:id                       | 请求体 StewardThreadPatch → StewardThread（docs/design/30 §2：重命名、置顶、归档、换 harness / 模型） |
  * | DELETE| /api/steward/threads/:id                      | → 204（连同消息删除；有未决提案的会话 409，先处理或归档） |
@@ -149,6 +149,7 @@
  * | POST | /api/steward/mcp                               | MCP（streamable HTTP，JSON-RPC 2.0）：把管家工具开放给外部 harness；只认本轮签发的 Bearer 令牌 |
  * | POST | /api/steward/threads                           | 请求体 StewardPostRequest → { thread, message }（新会话 + 第一条消息） |
  * | GET  | /api/steward/threads/:id                       | { thread, messages: StewardMessage[], proposals: Proposal[] } |
+ * | POST | /api/steward/threads/:id/stop                  | → { stopped: boolean } |
  * | POST | /api/steward/threads/:id/messages              | 请求体 StewardPostRequest → StewardMessage（用户消息；管家回复走 stream） |
  * | GET  | /api/steward/threads/:id/stream                | text/event-stream，data 为 StewardStreamEvent |
  * | POST | /api/steward/messages/:id/feedback             | 请求体 { rating, reason? } → StewardMessage |
@@ -159,6 +160,7 @@
  * | GET  | /api/steward/risks?space=&state=               | Risk[] |
  * | POST | /api/steward/risks/:key/state                  | 请求体 RiskStateRequest → Risk（key 需 encodeURIComponent） |
  * | GET  | /api/steward/digest?since=&peek=1              | Digest（since 缺省为上次查看；peek=1 只读，不标记已读也不记 digest.open） |
+ * | GET  | /api/steward/unread                            | → { count: number } |
  * | GET  | /api/steward/feed                              | StewardFeedItem[]（"动态"：汇报、风险变化、提案结果） |
  * | GET  | /api/steward/prefs                             | StewardPrefs |
  * | PUT  | /api/steward/prefs                             | 请求体 StewardPrefs → StewardPrefs |
@@ -171,6 +173,40 @@
  * —— 管家 Solo（docs/design/28）；跨调用者看得见的全部空间 ——
  * | GET  | /api/steward/find?q=&types=&space=&limit=      | StewardFindResult（编号精确 > 标题模糊 > 最近有动静；types 逗号分隔，limit 默认 8、最多 20） |
  * | GET  | /api/steward/picks?limit=                      | { items: StewardPick[] }（Solo 首页"你可能想看"：等你 > 失败 > 有风险 > 刚变化 > 在跑；limit 默认 6） |
+ *
+ * —— 项目空间管家；显式空间在 /api 后加 /s/:spaceId，省略时使用默认空间 ——
+ * 与个人管家复用消息、提案、工具和事件格式。成员共同读取，会话记录每条消息的实际作者。
+ * viewer 可读取与订阅，member 可发言，owner 可修改偏好与团队记忆。空间定时报告由自动化配置。
+ * | POST | /api/space/steward/delegations/:messageId/resend      | 请求体 { reason } → StewardDelegation（只允许 uncertain / expired） |
+ * | GET  | /api/space/steward/threads?archived=1                | StewardThread[]（默认不含已归档；archived=1 只列已归档。置顶的排最前，其余按 updatedAt 倒序） |
+ * | PATCH| /api/space/steward/threads/:id                       | 请求体 StewardThreadPatch → StewardThread（docs/design/30 §2：重命名、置顶、归档、换 harness / 模型） |
+ * | DELETE| /api/space/steward/threads/:id                      | → 204（连同消息删除；有未决提案的会话 409，先处理或归档） |
+ * | GET  | /api/space/steward/runtime-choices                   | StewardRuntimeChoice[]（管家能用的 harness × 模型组合，含不可用原因） |
+ * | POST | /api/space/steward/threads                           | 请求体 StewardPostRequest → { thread, message }（新会话 + 第一条消息） |
+ * | GET  | /api/space/steward/threads/:id                       | { thread, messages: StewardMessage[], proposals: Proposal[] } |
+ * | POST | /api/space/steward/threads/:id/stop                  | → { stopped: boolean } |
+ * | POST | /api/space/steward/threads/:id/messages              | 请求体 StewardPostRequest → StewardMessage（用户消息；管家回复走 stream） |
+ * | GET  | /api/space/steward/threads/:id/stream                | text/event-stream，data 为 StewardStreamEvent |
+ * | POST | /api/space/steward/messages/:id/feedback             | 请求体 { rating, reason? } → StewardMessage |
+ * | GET  | /api/space/steward/proposals?status=                 | Proposal[] |
+ * | POST | /api/space/steward/proposals/:id/approve             | 请求体 ProposalDecisionRequest → Proposal（hash 不一致或基线变了 409，状态 stale） |
+ * | POST | /api/space/steward/proposals/:id/reject              | 请求体 { reason? } → Proposal |
+ * | POST | /api/space/steward/proposals/:id/undo                | 请求体 { reason? } → Proposal |
+ * | GET  | /api/space/steward/risks?space=&state=               | Risk[] |
+ * | POST | /api/space/steward/risks/:key/state                  | 请求体 RiskStateRequest → Risk（key 需 encodeURIComponent） |
+ * | GET  | /api/space/steward/digest?since=&peek=1              | Digest（since 缺省为上次查看；peek=1 只读，不标记已读也不记 digest.open） |
+ * | GET  | /api/space/steward/unread                            | → { count: number } |
+ * | GET  | /api/space/steward/feed                              | StewardFeedItem[]（"动态"：汇报、风险变化、提案结果） |
+ * | GET  | /api/space/steward/prefs                             | StewardPrefs |
+ * | PUT  | /api/space/steward/prefs                             | 请求体 StewardPrefs → StewardPrefs |
+ * | GET  | /api/space/steward/profile                           | { content }（记忆 profile.md） |
+ * | PUT  | /api/space/steward/profile                           | 请求体 { content } → { content } |
+ * | GET  | /api/space/steward/suggestions?page=&space=&id=      | string[]（页内"让管家……"建议，最多 3 条） |
+ * | GET  | /api/space/steward/metrics                           | ProductMetric[]（产品健康：每个功能的效率与迭代信号） |
+ * | POST | /api/space/steward/events                            | 请求体 ProductEvent → 204（页面上报的交互事件：对话框打开 / 提交、建议点击、汇报打开；只存本机） |
+ * | GET  | /api/space/steward/stream                            | text/event-stream，data 为 StewardFeedItem（本空间动态与未读数） |
+ * | GET  | /api/space/steward/find?q=&types=&space=&limit=      | StewardFindResult（编号精确 > 标题模糊 > 最近有动静；types 逗号分隔，limit 默认 8、最多 20） |
+ * | GET  | /api/space/steward/picks?limit=                      | { items: StewardPick[] }（Solo 首页"你可能想看"：等你 > 失败 > 有风险 > 刚变化 > 在跑；limit 默认 6） |
  *
  * —— 知识库（docs/design/23）；空间内，可加 /api/s/:spaceId 前缀 ——
  * | GET  | /api/knowledge/kinds                           | KnowledgeKindInfo[] |

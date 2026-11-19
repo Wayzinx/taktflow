@@ -13,8 +13,9 @@ const DIGEST = /^[a-f0-9]{64}$/
 const newSecret = () => randomBytes(32).toString('base64url')
 
 interface StaticAdmission { nodeId: string; harness: string; tokenHash: string }
-interface Pending { nodeId: string; harness: 'codex'; codeHash: string; expiresAt: number }
-interface Enrolled { nodeId: string; harness: 'codex'; tokenHash: string; generation: string }
+interface Computer { displayName: string; platform: 'mac' | 'linux' }
+interface Pending extends Partial<Computer> { nodeId: string; harness: 'codex'; codeHash: string; expiresAt: number }
+interface Enrolled extends Partial<Computer> { nodeId: string; harness: 'codex'; tokenHash: string; generation: string }
 type Link = Pending | Enrolled
 type Registry = Map<string, Link>
 
@@ -46,6 +47,15 @@ function staticAdmissions(raw: string | undefined): Map<string, Map<string, Stat
   }
 }
 
+export function computerDetails(name: unknown, platform: unknown): Computer {
+  const displayName = text(name, 'displayName').trim()
+  if (displayName.length > 64 || /[\p{Cc}\u2028\u2029\u202a-\u202e\u2066-\u2069]/u.test(displayName)) {
+    throw new HttpError(400, '电脑名称最多 64 个字符，且必须为单行')
+  }
+  if (platform !== 'mac' && platform !== 'linux') throw new HttpError(400, 'Link 仅支持 Mac 和 Linux')
+  return { displayName, platform }
+}
+
 function decodeRegistry(value: { version: number; links: Link[] }): Registry {
   if (value?.version !== 1 || !Array.isArray(value.links)) throw new Error('Team Link 注册表格式不合法')
   const records: Registry = new Map()
@@ -53,6 +63,7 @@ function decodeRegistry(value: { version: number; links: Link[] }): Registry {
     if (!record || typeof record.nodeId !== 'string' || teamId(record.nodeId) !== record.nodeId || record.harness !== 'codex' || records.has(record.nodeId)) {
       throw new Error('Team Link 设备格式不合法')
     }
+    if (record.displayName !== undefined || record.platform !== undefined) computerDetails(record.displayName, record.platform)
     const valid = 'codeHash' in record
       ? typeof record.codeHash === 'string' && DIGEST.test(record.codeHash) && Number.isSafeInteger(record.expiresAt) && !('tokenHash' in record) && !('generation' in record)
       : typeof record.tokenHash === 'string' && DIGEST.test(record.tokenHash) && typeof record.generation === 'string' && record.generation.length > 0
@@ -112,18 +123,22 @@ export class TeamAdmissions {
     })
   }
 
-  issue(space: string, nodeId: string, reset: () => Promise<void>) {
+  issue(space: string, nodeId: string, reset: () => Promise<void>, computer?: Computer) {
     return this.locked(space, true, async records => {
       const current = records.get(nodeId)
       if (this.env.get(space)?.has(nodeId) || (current && 'tokenHash' in current)) {
         throw new HttpError(409, '此节点 ID 已登记')
       }
       await reset()
+      for (const [id, link] of records) {
+        if ('expiresAt' in link && link.expiresAt <= Date.now()) records.delete(id)
+      }
+      const details = computer ?? (current && { displayName: current.displayName, platform: current.platform })
       const code = newSecret()
       const expiresAt = Date.now() + LINK_TTL_MS
-      records.set(nodeId, { nodeId, harness: 'codex', codeHash: sha256(code), expiresAt })
+      records.set(nodeId, { ...details, nodeId, harness: 'codex', codeHash: sha256(code), expiresAt })
       await this.write(space, records)
-      return { nodeId, harness: 'codex', code, expiresAt: new Date(expiresAt).toISOString() }
+      return { ...details, nodeId, harness: 'codex', code, expiresAt: new Date(expiresAt).toISOString() }
     })
   }
 
@@ -134,7 +149,7 @@ export class TeamAdmissions {
         throw new HttpError(401, 'Team Link 连接码无效或已失效')
       }
       const token = newSecret()
-      records.set(nodeId, { nodeId, harness: 'codex', tokenHash: sha256(token), generation: randomUUID() })
+      records.set(nodeId, { nodeId, harness: 'codex', displayName: record.displayName, platform: record.platform, tokenHash: sha256(token), generation: randomUUID() })
       await this.write(space, records)
       return { token }
     })

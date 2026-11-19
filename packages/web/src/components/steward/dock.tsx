@@ -6,7 +6,8 @@ import { useAsync } from '../../api'
 import { Drawer, Menu, useStewardSuggestions, withShortcut } from '../ui'
 import { StatTiles, type Tile } from '../viz'
 import { fmtRelative } from '../../lib/format'
-import { navigate, useLocation } from '../../lib/router'
+import { personalSteward } from '../../lib/space'
+import { Link, navigate, useLocation } from '../../lib/router'
 import { closeSteward, useStewardDock } from '../../lib/ui-store'
 import { pageKeyOf, usePageStewardContext } from './context'
 import { ThreadView } from './thread-view'
@@ -91,6 +92,7 @@ function DockWelcome({ onAsk, onResume }: { onAsk: (t: string) => void; onResume
 export function StewardDock() {
   const dock = useStewardDock()
   const pageCtx = usePageStewardContext()
+  const requirement = pageCtx.find(ref => ref.type === 'requirement')
   const [ctx, setCtx] = useState(pageCtx)
   const [draft, setDraft] = useState('')
   const [ask, setAsk] = useState<{ text: string; context: StewardContextRef[]; key: number }>()
@@ -131,8 +133,8 @@ export function StewardDock() {
       onClose={closeSteward}
       width={440}
       className="stw-dock"
-      title="管家"
-      description="改动先出提案，批准后才执行"
+      title={personalSteward(location.pathname) ? '个人管家' : '空间管家'}
+      description={personalSteward(location.pathname) ? '仅自己可见' : '当前空间成员均可查看并接续会话'}
       headerActions={
         <>
           <button type="button" className="btn btn-ghost btn-icon btn-sm" title="新会话" aria-label="新会话" onClick={fresh}>
@@ -156,6 +158,7 @@ export function StewardDock() {
         </>
       }
     >
+      {requirement && <Link to={`/req/${encodeURIComponent(requirement.id)}?tab=chat`} className="btn btn-ghost btn-sm" onClick={closeSteward}>{requirement.label ?? requirement.id} · 需求 Agent 会话</Link>}
       <ThreadView
         className="stw-thread-dock"
         threadId={threadId}

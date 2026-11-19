@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createServer } from 'node:http'
+import { createServer, get } from 'node:http'
 import { afterEach, expect, it, vi } from 'vitest'
 import { initProject } from '../../core/src/store/project.js'
 import { registerStewardRoutes, createStewardDeps, type StewardRouteDeps } from './steward-routes.js'
@@ -301,4 +301,35 @@ it('真实 config.patch 多步执行、撤销保留 hash 与批准人审计', as
   const audits = events.map(e => String(e.data.message))
   expect(audits.some(message => message.includes('requested') && message.includes('onBehalfOf') && message.includes('alice'))).toBe(true)
   expect(audits.some(message => message.includes('finished') && message.includes('config.patch'))).toBe(true)
+})
+
+it('同空间成员续聊保留作者，个人会话和非成员隔离', async () => {
+  const f = await fixture()
+  const configPath = join(f.root, 'takt.config.json')
+  const config = JSON.parse(await readFile(configPath, 'utf8'))
+  config.members = [{ id: 'alice', name: 'Alice', role: 'owner' }, { id: 'bob', name: 'Bob', role: 'member' }, { id: 'eve', name: 'Eve', role: 'viewer' }]
+  await writeFile(configPath, JSON.stringify(config))
+  const shared = (path: string, id: string, text?: string) => fetch(`${f.base}/api/space/steward/threads${path}`, {
+    method: text ? 'POST' : 'GET', headers: { 'x-takt-user': id, 'content-type': 'application/json' }, body: text && JSON.stringify({ text }),
+  })
+  const created = await shared('', 'alice', '查一下空间的需求')
+  expect(created.status).toBe(200)
+  const { thread } = await created.json() as { thread: { id: string } }
+  expect(await (await shared('', 'bob')).json()).toEqual(expect.arrayContaining([expect.objectContaining({ id: thread.id })]))
+  const reply = await shared(`/${thread.id}/messages`, 'bob', '接着查一下进度')
+  expect(reply.status).toBe(200)
+  const detail = await (await shared(`/${thread.id}`, 'eve')).json() as { messages: StewardMessage[] }
+  expect(detail.messages.filter(m => m.role === 'user').map(m => m.author)).toEqual([{ type: 'human', id: 'alice' }, { type: 'human', id: 'bob' }])
+  expect((await shared('', 'eve', '不能发送')).status).toBe(403)
+  expect((await shared('', 'outsider')).status).toBe(403)
+  const endpoint = `${f.base}/api/space/steward/threads`
+  expect((await fetch(endpoint)).status).toBe(200)
+  expect((await fetch(endpoint, { headers: { forwarded: 'for=192.0.2.1' } })).status).toBe(403)
+  const remoteHost = await new Promise<number | undefined>((resolve, reject) => {
+    get(endpoint, { headers: { host: 'hub.example' } }, res => { res.resume(); resolve(res.statusCode) }).once('error', reject)
+  })
+  expect(remoteHost).toBe(403)
+  expect((await f.request(`/threads/${thread.id}`, 'alice')).status).toBe(404)
+  const privateThread = await (await f.request('/threads', 'alice', 'POST', { text: '个人笔记' })).json() as { thread: { id: string } }
+  expect((await shared(`/${privateThread.thread.id}`, 'alice')).status).toBe(404)
 })

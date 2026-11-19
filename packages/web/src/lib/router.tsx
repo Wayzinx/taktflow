@@ -29,7 +29,16 @@ function canonical(url: URL): URL {
     url.search = search
   }
   const tab = /^\/settings\/([^/]+)$/.exec(rest)?.[1]
-  if (rest === '/steward') to('/solo')
+  if (rest === '/personal' && spaceId) {
+    url.pathname = '/personal'
+    // 带空间前缀的旧链接只负责导航，不把空间操作或草稿带进个人会话。
+    for (const key of [...url.searchParams.keys()]) if (!['mock', 'theme', 'thread'].includes(key)) url.searchParams.delete(key)
+  }
+  else if (rest === '/team') {
+    url.searchParams.set('room', 'team')
+    to(spaceId ? '/solo' : '/steward')
+  }
+  else if (rest === '/steward' && spaceId) to('/solo')
   else if (rest === '/settings' && url.searchParams.get('tab') === 'steward') to('/solo', '?drawer=settings')
   else if (tab) to('/settings', `?tab=${tab}`)
   return url
@@ -60,9 +69,12 @@ window.addEventListener('popstate', () => {
 const STICKY = ['mock', 'theme']
 
 function withSticky(to: string): string {
-  const url = canonical(new URL(to, location.origin))
-  const { spaceId } = splitSpace(location.pathname)
-  if (spaceId && !url.pathname.startsWith('/s/')) url.pathname = spacePath(spaceId, url.pathname)
+  const url = new URL(to, location.origin)
+  const { spaceId, rest } = splitSpace(location.pathname)
+  if (spaceId && url.pathname !== '/personal' && !url.pathname.startsWith('/s/')) url.pathname = spacePath(spaceId, url.pathname)
+  else if (url.pathname === '/solo' && rest === '/personal') url.pathname = '/personal'
+  else if (url.pathname === '/solo' && !spaceId && !['/solo', '/spaces'].includes(rest)) url.pathname = '/steward'
+  canonical(url)
   const current = new URLSearchParams(location.search)
   for (const key of STICKY) {
     const v = current.get(key)

@@ -139,7 +139,8 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
     await requirement(stores, params.id!)
     return listReviews(stores, params.id!)
   })
-  add('GET', '/api/requirements/:id/room', async ({ stores, params }) => {
+  add('GET', '/api/requirements/:id/room', async ({ stores, params, request }) => {
+    authorize(request, stores, 'viewer', '查看需求群聊')
     const req = await requirement(stores, params.id!)
     const room = await stores.chat.ensureRoom(req.id, { title: req.title })
     // 建群时只知道成员 id（name 填的也是 id）：读取时按空间成员表补显示名，改名后也立即生效
@@ -158,7 +159,8 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
     })
     return stores.chat.addMembers(params.id!, value)
   })
-  add('GET', '/api/requirements/:id/chat', async ({ stores, params, url }) => {
+  add('GET', '/api/requirements/:id/chat', async ({ stores, params, url, request }) => {
+    authorize(request, stores, 'viewer', '查看需求消息')
     await requirement(stores, params.id!)
     return stores.chat.list(params.id!, { afterSeq: integer(url.searchParams.get('after'), 'after'), limit: integer(url.searchParams.get('limit'), 'limit', 1) })
   })
@@ -178,6 +180,7 @@ export function spaceRoutes(add: (method: string, path: string, handler: Handler
     return message
   })
   add('GET', '/api/requirements/:id/chat/stream', async ({ stores, params, request, response, url }) => {
+    authorize(request, stores, 'viewer', '订阅需求消息')
     await requirement(stores, params.id!)
     const cursor = url.searchParams.get('after') ?? (typeof request.headers['last-event-id'] === 'string' ? request.headers['last-event-id'] : null)
     // 复用运行 SSE 的先订阅再回放和 seq 去重；消息仍保持原协议，未转换为事件信封。

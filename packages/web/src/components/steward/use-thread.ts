@@ -41,6 +41,8 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
   const [error, setError] = useState<Error>()
   const [waiting, setWaiting] = useState(false)
   const [tick, setTick] = useState(0)
+  const mounted = useRef(false)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   const initialIds = useRef(new Set<string>())
   const created = useRef<string | undefined>(undefined)
 
@@ -138,6 +140,7 @@ export function useStewardThread(threadId: string | undefined, onCreated?: (thre
       try {
         if (!threadId) {
           const r = await ds.createStewardThread(body)
+          if (!mounted.current) return false
           created.current = r.thread.id
           setThread(r.thread)
           setMessages((cur) => settleLocal(cur, local.id, r.message))
