@@ -19,7 +19,7 @@ export interface WorkerOutcome { status: 'succeeded' | 'failed'; result: string 
 
 const failed = (result: string): WorkerOutcome => ({ status: 'failed', result })
 
-function inside(root: string, path: string): boolean {
+export function inside(root: string, path: string): boolean {
   const rel = relative(root, path)
   return rel === '' || (!isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`))
 }
@@ -35,7 +35,7 @@ async function locate(cwd: string) {
   throw new Error('找不到可执行的 codex；请在工作目录之外的绝对 PATH 中安装 Codex')
 }
 
-export async function localCodex(project: string): Promise<(prompt: string, signal: AbortSignal) => Promise<WorkerOutcome>> {
+export async function workerDirectories(project: string) {
   if (process.platform !== 'darwin' && process.platform !== 'linux') throw new Error('Team Worker 目前仅支持 macOS / Linux')
   const cwd = await realpath(project)
   const home = await realpath(homedir())
@@ -49,6 +49,11 @@ export async function localCodex(project: string): Promise<(prompt: string, sign
   if (!(await stat(cwd)).isDirectory() || inside(cwd, home) || inside(cwd, codexHome) || inside(codexHome, cwd)) {
     throw new Error('--project 必须是与 HOME / CODEX_HOME 分离的专用工作目录')
   }
+  return { cwd, home, codexHome, operatorConfig }
+}
+
+export async function localCodex(project: string): Promise<(prompt: string, signal: AbortSignal) => Promise<WorkerOutcome>> {
+  const { cwd, home, codexHome, operatorConfig } = await workerDirectories(project)
   const { file, path } = await locate(cwd)
   const env = { PATH: path, HOME: home, CODEX_HOME: codexHome, LANG: process.env.LANG, LC_ALL: process.env.LC_ALL }
   const args = operatorConfig ? ARGS.filter(arg => arg !== '--ignore-user-config') : ARGS

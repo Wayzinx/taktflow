@@ -11,7 +11,8 @@ async function openAt(path: string) {
   }
   vi.stubGlobal('location', url)
   vi.stubGlobal('history', { state: null, replaceState: move, pushState: move })
-  vi.stubGlobal('window', { addEventListener() {} })
+  vi.stubGlobal('window', { addEventListener() {}, scrollTo() {} })
+  vi.stubGlobal('document', { querySelector: () => null })
   vi.resetModules()
   return { url, router: await import('./router') }
 }
@@ -29,4 +30,11 @@ it('站内链接指向旧地址时直接给现在的地址：管家页、管家�
   expect(router.href('/settings?tab=steward')).toBe('/s/shop/solo?drawer=settings')
   expect(router.href('/s/other/settings/repos')).toBe('/s/other/settings?tab=repos')
   expect(router.href('/settings?tab=repos')).toBe('/s/shop/settings?tab=repos')
+})
+
+it('从团队前往设备页时保留空间及演示、主题，不携带其它查询参数', async () => {
+  const { router, url } = await openAt('/s/beta%20lab/team?mock=1&theme=dark&thread=old')
+  expect(router.href('/devices')).toBe('/s/beta%20lab/devices?mock=1&theme=dark')
+  router.navigate('/devices')
+  expect(url.pathname + url.search).toBe('/s/beta%20lab/devices?mock=1&theme=dark')
 })

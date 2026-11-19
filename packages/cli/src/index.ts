@@ -21,6 +21,7 @@ import { runSpaceCommand, runSpaceServer } from './commands/space.js'
 import { runServe } from './commands/serve.js'
 import { runCatalog, runDoctor } from './commands/catalog.js'
 import { runWorkerCommand } from './worker.js'
+import { runLinkCommand } from './link.js'
 
 export { knowledgeFromConfig } from './knowledge.js'
 
@@ -54,6 +55,8 @@ async function dispatch(cli: ParsedCli): Promise<number> {
   switch (command) {
     case 'worker':
       return runWorkerCommand(cli)
+    case 'link':
+      return runLinkCommand(cli)
     case 'quality':
     case 'attention':
       return runQualityCommand(cli)

@@ -123,7 +123,7 @@ export function FeishuEditor({ source, initial, members }: { source: FeishuClien
           <div className="feishu-message feishu-conflict">
             <p role="alert">绑定发生冲突，本次操作未生效。草稿还在；读取最新绑定后，需要重新填写改动。</p>
             <button className="btn" type="button" disabled={!!busy} onClick={() => void apply('reload')}>
-              {busy === 'reload' ? '正在读取…' : '放弃草稿并读取最新绑定'}
+              {busy === 'reload' ? <SkeletonRows rows={1} icon={false} /> : '放弃草稿并读取最新绑定'}
             </button>
           </div>
         )}
@@ -172,7 +172,7 @@ export function FeishuEditor({ source, initial, members }: { source: FeishuClien
           </fieldset>
           {!confirm && error && <p className="feishu-message feishu-error" role="alert">{error}</p>}
           {canEdit && <div className="feishu-actions">
-            <button type="submit" className="btn btn-primary" disabled={locked || !dirty}>{busy === 'save' ? '正在保存…' : '保存绑定'}</button>
+            <button type="submit" className="btn btn-primary" disabled={locked || !dirty}>{busy === 'save' ? '保存中' : '保存绑定'}</button>
             {status.binding && <button type="button" className="btn" disabled={locked} onClick={() => { setError(undefined); setConfirm(true) }}><Unplug aria-hidden /> 解绑群</button>}
           </div>}
         </form>
@@ -182,7 +182,7 @@ export function FeishuEditor({ source, initial, members }: { source: FeishuClien
         footer={<>
           <button type="button" className="btn" data-autofocus disabled={!!busy} onClick={() => setConfirm(false)}>取消</button>
           <button type="button" className="btn btn-danger" disabled={!!busy} onClick={() => void apply('unbind', { chatId: null, baseRevision: binding.revision })}>
-            {busy === 'unbind' ? '正在解绑…' : '确认解绑'}
+            {busy === 'unbind' ? '解绑中' : '确认解绑'}
           </button>
         </>}>
         <p className="mono feishu-group-id">{binding.chatId}</p>

@@ -35,6 +35,7 @@ const GLOBAL_PATH = /^\/(steward|spaces|server)(\/|\?|$)/
 /** 管家接口：按人存，用全局身份（lib/acting-user 的 stewardUser），不按空间取。 */
 const STEWARD_PATH = /^\/steward(\/|\?|$)/
 const FEISHU_BINDING_PATH = '/space/feishu'
+const DEVICE_LINK_PATH = '/space/devices/link'
 
 export function qs(params: Record<string, string | number | boolean | undefined>): string {
   const p = new URLSearchParams()
@@ -74,6 +75,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
       headers: { ...identity(path), ...(payload === undefined ? {} : { 'content-type': 'application/json' }) },
       body: payload === undefined ? undefined : JSON.stringify(payload),
       signal,
+      ...(path === DEVICE_LINK_PATH ? { cache: 'no-store' } as const : {}),
     })
     const text = await res.text()
     const data = text ? (JSON.parse(text) as unknown) : undefined
@@ -128,6 +130,9 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
       : { chatId: update.chatId, members: update.members.map(({ openId, memberId }) => ({ openId, memberId })), baseRevision: update.baseRevision }),
     team: (signal) => req('GET', '/space/team', undefined, signal),
     postTeamMessage: (body, signal) => req('POST', '/space/team/messages', body, signal),
+    devices: (signal) => req('GET', '/space/devices', undefined, signal),
+    createDeviceLink: (body, signal) => req('POST', DEVICE_LINK_PATH, body, signal),
+    revokeDevice: async (nodeId, signal) => { await req('DELETE', `/space/devices/${enc(nodeId)}`, undefined, signal) },
     // 服务端成员接口接受数组 + x-takt-reason 头，或 { members, reason }；用 body 形式，避免非 ASCII 原因放进请求头
     setMembers: (members, reason) => req('PUT', '/space/members', { members, reason }),
     addRepo: (repo, reason) => req('POST', '/space/repos', { ...repo, reason }),

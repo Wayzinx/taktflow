@@ -16,6 +16,12 @@ describe('⌘K 页面', () => {
     const evalPage = PAGES.find((p) => p.to === '/eval')!
     for (const w of ['评测', 'eval', 'pingce']) expect(`${evalPage.label} ${evalPage.keywords}`.toLowerCase()).toContain(w)
   })
+
+  it('设备与 Agent 是默认可见的空间页面，可以搜到 Codex 或配对', () => {
+    const devices = PAGES.find((p) => p.to === '/devices')
+    expect(devices).toMatchObject({ label: '设备与 Agent', keywords: expect.stringMatching(/codex.*配对/) })
+    expect(devices?.dev).toBeUndefined()
+  })
 })
 
 describe('suggestPage', () => {
@@ -42,5 +48,6 @@ describe('侧栏高亮', () => {
     expect(active('/run/r1')).toEqual(['需求'])
     expect(active('/requirements')).toEqual(['需求'])
     expect(active('/workflows/wf-1')).toEqual(['流水线'])
+    expect(active('/devices')).toEqual(['设备与 Agent'])
   })
 })

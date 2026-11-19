@@ -30,6 +30,8 @@ import { workflowSource } from './space.js'
 import type { WorkflowStore } from '@taktflow/workflow-source'
 import { enqueueTeamJob, teamJobs, teamNodes } from './team-hub.js'
 import { teamRoomRoutes } from './team-room.js'
+import type { TeamAdmissions } from './team-admissions.js'
+import { teamDeviceRoutes } from './team-device-routes.js'
 
 export interface RequestContext {
   stores: ProjectStores
@@ -42,7 +44,7 @@ export interface RequestContext {
 export type Handler = (context: RequestContext) => Promise<unknown> | unknown
 export const STREAMING = Symbol('streaming')
 
-export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & RuntimeCallbacks & AutomationCallbacks & { preview?: PreviewServer; feishu?: { bindings: FeishuBindings; configured: boolean } } = {}, onLeadMention?: LeadMention) {
+export function routes(connections: Set<() => void>, onAnswer?: (item: AttentionItem) => void | Promise<void>, catalog: CatalogCallbacks & M3Callbacks & RuntimeCallbacks & AutomationCallbacks & { preview?: PreviewServer; feishu?: { bindings: FeishuBindings; configured: boolean }; teamAdmissions?: TeamAdmissions } = {}, onLeadMention?: LeadMention) {
   const router = createRouter<Handler>()
   const add = router.add
   const { execute } = commandExecutor(catalog)
@@ -56,6 +58,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   crudRoutes(add, catalog)
   spaceRoutes(add, connections, onLeadMention, catalog)
   if (catalog.feishu) feishuBindingRoutes(add, catalog.feishu.bindings, catalog.feishu.configured)
+  if (catalog.teamAdmissions) teamDeviceRoutes(add, catalog.teamAdmissions)
   teamRoomRoutes(add, catalog, { enqueueTeamJob, teamJobs, teamNodes })
   skillRoutes(add)
   m3Routes(add, catalog)

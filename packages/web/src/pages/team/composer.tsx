@@ -4,7 +4,7 @@ import type { WorkflowSummary } from '@taktflow/core'
 import type { DataSource } from '../../api/source'
 import type { TeamMode, TeamNode, TeamPost, TeamSnapshot } from '../../api/team'
 import { Link } from '../../lib/router'
-import { Segmented } from '../../components/ui'
+import { Segmented, Skeleton } from '../../components/ui'
 import { initialDraft, nodeKey, teamPost } from './model'
 import { denied } from './use-team'
 
@@ -99,7 +99,7 @@ export function TeamComposer({ source, nodes, workflows, workflowsLoading, workf
             {workflows.map((workflow) => <option key={workflow.id} value={workflow.id}>{workflow.title} · {workflow.id}</option>)}
           </select>
           {workflowsError ? <p role="alert">无法加载流水线。<button type="button" className="btn btn-sm" onClick={reloadWorkflows}>重试</button></p>
-            : workflowsLoading && workflows.length === 0 ? <p role="status">正在读取流水线…</p>
+            : workflowsLoading && workflows.length === 0 ? <div role="status" aria-label="正在读取流水线"><Skeleton w="60%" h={16} /></div>
             : workflows.length === 0 ? <p>当前空间没有流水线。<Link to="/workflows">查看流水线</Link></p> : null}
         </div>
       )}
@@ -121,7 +121,7 @@ export function TeamComposer({ source, nodes, workflows, workflowsLoading, workf
           <Send aria-hidden /> 发送
         </button>
       </div>
-      {sending && <p className="team-send-note" role="status">{slow ? '服务响应较慢，仍在等待。无需再次提交。' : '正在提交消息…'}</p>}
+      {sending && <p className="team-send-note" role="status">{slow ? '服务响应较慢，仍在等待。无需再次提交。' : <span aria-label="正在提交消息"><Skeleton w={90} h={12} /></span>}</p>}
       {error && attempt && (
         <div className="team-send-error">
           <p role="alert">{error} {!readOnly && '重试会使用同一请求编号。'}</p>

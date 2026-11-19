@@ -18,6 +18,7 @@ import { RequirementsPage } from './pages/requirements'
 // 总览与需求列表是最常见的首屏，随主包；其余页面按路由分包（画布、运行详情、评测、设置各自较重），首屏渲染后空闲时预取
 const PAGES = {
   attention: () => import('./pages/attention'),
+  devices: () => import('./pages/devices'),
   eval: () => import('./pages/eval'),
   requirement: () => import('./pages/requirement'),
   run: () => import('./pages/run'),
@@ -33,6 +34,7 @@ const PAGES = {
   automations: () => import('./pages/automations'),
 }
 const AttentionPage = lazy(() => PAGES.attention().then((m) => ({ default: m.AttentionPage })))
+const DevicesPage = lazy(() => PAGES.devices().then((m) => ({ default: m.DevicesPage })))
 const EvalPage = lazy(() => PAGES.eval().then((m) => ({ default: m.EvalPage })))
 const RequirementPage = lazy(() => PAGES.requirement().then((m) => ({ default: m.RequirementPage })))
 const RunPage = lazy(() => PAGES.run().then((m) => ({ default: m.RunPage })))
@@ -82,6 +84,7 @@ function SpaceRoutes({ path }: { path: string }) {
   if (path === '/spaces') return <SpacesPage />
   if (path === '/requirements') return <RequirementsPage />
   if (path === '/team') return <TeamPage />
+  if (path === '/devices') return <DevicesPage />
   if (path === '/attention') return <AttentionPage />
   if (path === '/knowledge') return <KnowledgeListPage />
   if (path === '/settings') return <SettingsPage />

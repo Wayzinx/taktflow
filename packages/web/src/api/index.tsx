@@ -8,6 +8,7 @@ export type { CrudSource, DataSource, EvalOutputSnapshot, KnowledgeSource, RepoP
 export { RevisionConflictError, RewindConflictError, RoleConflictError, RuntimeConflictError, WorkflowConflictError } from './source'
 export { DEMO_READONLY_MESSAGE, demoMode, type DemoMode } from './demo'
 export type { FeishuBinding, FeishuBindingStatus, FeishuBindingUpdate, FeishuMemberMapping } from './feishu.js'
+export type { DeviceLink, DeviceLinkRequest, SpaceDevice, SpaceDevices } from './devices.js'
 
 const SourceContext = createContext<DataSource | null>(null)
 

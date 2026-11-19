@@ -39,7 +39,7 @@ import type { FeishuSource } from './feishu.js'
 /** 单个空间的演示数据源；空间级接口（spaces / space / 技能文件…）由 mock-source.ts 包一层。 */
 export type ProjectSource = Omit<
   DataSource,
-  'me' | 'spaces' | 'space' | 'team' | 'postTeamMessage' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | keyof StewardSource | keyof KnowledgeSource | 'serverInfo' | 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace' | 'convertWorkflow' | 'routePreviewDraft' | 'forSpace' | keyof M8Source | keyof FeishuSource
+  'me' | 'spaces' | 'space' | 'team' | 'postTeamMessage' | 'devices' | 'createDeviceLink' | 'revokeDevice' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile' | keyof WorkflowApi | keyof StewardSource | keyof KnowledgeSource | 'serverInfo' | 'createSpace' | 'updateSpace' | 'archiveSpace' | 'restoreSpace' | 'deleteSpace' | 'convertWorkflow' | 'routePreviewDraft' | 'forSpace' | keyof M8Source | keyof FeishuSource
 >
 
 const clone = <T,>(v: T): T => structuredClone(v)

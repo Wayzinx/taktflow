@@ -140,7 +140,7 @@ export function createMockSource(): DataSource {
     deleteRequirement: (id, reason) => project().deleteRequirement(id, reason),
   }
 
-  const spaceApi: Pick<DataSource, 'me' | 'spaces' | 'space' | 'team' | 'postTeamMessage' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> & FeishuSource = {
+  const spaceApi: Pick<DataSource, 'me' | 'spaces' | 'space' | 'team' | 'postTeamMessage' | 'devices' | 'createDeviceLink' | 'revokeDevice' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> & FeishuSource = {
     // 与服务端 viewer() 一致：x-takt-user（这里是界面上选的身份），缺省为第一个 owner
     me: () =>
       withSpace((sp) => {
@@ -166,6 +166,15 @@ export function createMockSource(): DataSource {
     setFeishuBinding: () => fail('演示数据是只读的'),
     team: () => withSpace((sp) => delay(mockTeam(sp.seeded))),
     postTeamMessage: () => fail('演示数据是只读的'),
+    devices: () => withSpace((sp) => delay({
+      spaceId: sp.detail.id,
+      devices: sp.seeded ? [
+        { nodeId: 'mac-mini', harness: 'codex', source: 'link', status: 'online' },
+        { nodeId: 'build-server', harness: 'codex', source: 'env', status: 'offline' },
+      ] : [],
+    })),
+    createDeviceLink: () => fail('演示数据是只读的'),
+    revokeDevice: () => fail('演示数据是只读的'),
     setMembers: (members, reason) =>
       needReason(reason) ??
       withSpace((sp) => {

@@ -27,6 +27,7 @@ import { attachLessons } from './commands.js'
 import type { M3Callbacks } from './m3-routes.js'
 import { staticFile } from './static.js'
 import { TEAM_WORKER_PATH, teamWorkerApi } from './team-hub-http.js'
+import { TeamAdmissions } from './team-admissions.js'
 export { runTeamWorker } from './team-workflow.js'
 export { enqueueTeamJob, teamJobs, teamNodes } from './team-hub.js'
 
@@ -76,7 +77,9 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   const preview = createPreviewServer(options.host ?? '127.0.0.1')
   const feishuRoot = options.spacesDir ? resolve(options.spacesDir, '.takt-feishu') : resolve(spaces[0]!.taktDir, 'runs', '.feishu-hub')
   const feishu = createFeishuRuntime(feishuRoot, feishuAppFromEnv(process.env), () => spaces, options, options.feishuFetch)
-  const routeOptions = { ...options, bridge, automationRuntime, preview, feishu }
+  const teamRoot = options.spacesDir ? resolve(options.spacesDir, '.takt-team-link') : resolve(spaces[0]!.taktDir, 'runs', '.team-link')
+  const teamAdmissions = new TeamAdmissions(teamRoot, process.env.TAKT_TEAM_NODES)
+  const routeOptions = { ...options, bridge, automationRuntime, preview, feishu, teamAdmissions }
   const routers = new Map(spaces.map((space) => [spaceId(space), routes(connections,
     options.onSpaceAnswer ? (item) => options.onSpaceAnswer!(space.projectDir, item) : options.onAnswer, routeOptions,
     options.onSpaceLeadMention ? (id, message) => options.onSpaceLeadMention!(space.projectDir, id, message) : options.onLeadMention)]))
@@ -102,9 +105,12 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     for (const id of routers.keys()) if (!byId.has(id)) routers.delete(id)
   }
   const refresh = () => refreshing ??= refreshSpaces().finally(() => { refreshing = undefined })
-  const workerApi = teamWorkerApi(process.env.TAKT_TEAM_NODES, async (id) => {
+  const workerApi = teamWorkerApi(teamAdmissions, async (id) => {
     if (Date.now() - refreshedAt > 2000) await refresh()
-    return byId.get(id)
+    const current = byId.get(id)
+    if (!current) return undefined
+    const fresh = await openProject(current.projectDir)
+    return fresh.projectDir === current.projectDir && spaceId(fresh) === id ? fresh : undefined
   })
   const admin = createRouter<Handler>()
   const modelSpaces = async () => (await Promise.all(spaces.map(space =>

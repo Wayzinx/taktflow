@@ -15,6 +15,7 @@ export interface CliOptions {
   thread?: string
   space?: string
   hub?: string
+  relink?: boolean
   hash?: string
   config?: string
   base?: string[]
@@ -138,6 +139,10 @@ export const HELP = `用法：takt <命令> [选项]
   serve [--spaces <dir>] [--port 4870] [--host 127.0.0.1]
   worker --hub URL --space ID --node ID --harness codex --project <专用目录>
                                                 从 stdin 读取单个 Worker token（仅 HTTPS 或本机 HTTP 隧道）
+  link --hub URL --space ID --node ID --project <专用目录> [--relink]
+                                                首次连接或 --relink 时从 stdin 读取配对码（终端不回显）
+                                                凭据保存在 ~/.takt-link（可用 TAKT_LINK_DIR 指定绝对路径）
+                                                仅 HTTPS 或本机 HTTP 隧道；在前台运行 Codex Worker
 
 需求与空间管理：
   req new <title> [--desc-file <file>] [--workflow <id>] [--start] [--due <date>]
@@ -171,12 +176,13 @@ const EXTRA_STRINGS = {
 } as const
 const EXTRA_COMMANDS: Record<string, string[]> = {
   'desc-file': ['req'], due: ['req'], owner: ['req'], start: ['req'], template: ['space'], from: ['space'],
-  parts: ['space'], color: ['space'], confirm: ['space', 'steward', 'req'], thread: ['steward'], space: ['steward', 'worker'], hub: ['worker'],
+  parts: ['space'], color: ['space'], confirm: ['space', 'steward', 'req'], thread: ['steward'], space: ['steward', 'worker', 'link'], hub: ['worker', 'link'],
   hash: ['steward'], config: ['kb'], base: ['kb'], top: ['kb'], wait: ['kb'], force: ['kb'], off: ['kb'],
-  'dry-run': ['kb', 'workflow', 'runs'], rule: ['runs'],
+  'dry-run': ['kb', 'workflow', 'runs'], rule: ['runs'], relink: ['link'],
 }
+const LINK_FLAGS = new Set(['hub', 'space', 'node', 'project', 'relink', 'help', 'json'])
 const OPTIONS = {
-  hub: { type: 'string' },
+  hub: { type: 'string' }, relink: { type: 'boolean' },
   'desc-file': { type: 'string' }, due: { type: 'string' }, owner: { type: 'string' },
   template: { type: 'string' }, from: { type: 'string' }, parts: { type: 'string' }, color: { type: 'string' },
   confirm: { type: 'string' }, thread: { type: 'string' }, space: { type: 'string' }, hash: { type: 'string' },
@@ -227,9 +233,19 @@ const OPTIONS = {
 export function parseCliArgs(argv: string[]): ParsedCli {
   let parsed
   try {
-    parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true })
+    parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true, tokens: true })
   } catch (error) {
+    if (argv.includes('link')) throw new UsageError('takt link 参数不合法；配对码只能从 stdin 输入')
     throw new UsageError(error instanceof Error ? error.message : String(error))
+  }
+  const [command, ...positionals] = parsed.positionals
+  if (command === 'link') {
+    const seen = new Set<string>()
+    for (const token of parsed.tokens) {
+      if (token.kind !== 'option') continue
+      if (!LINK_FLAGS.has(token.name) || seen.has(token.name)) throw new UsageError('takt link 不接受无关或重复选项')
+      seen.add(token.name)
+    }
   }
   const values = parsed.values
   const options: CliOptions = {
@@ -251,7 +267,6 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     const value = values[key]
     if (value !== undefined) options[key] = value
   }
-  const [command, ...positionals] = parsed.positionals
   for (const [flag, commands] of Object.entries(EXTRA_COMMANDS)) {
     if (Object.hasOwn(values, flag) && command && !commands.includes(command)) throw new UsageError(`--${flag} 不适用于 ${command}`)
   }
@@ -260,7 +275,7 @@ export function parseCliArgs(argv: string[]): ParsedCli {
     if (value !== undefined) options[key] = value
   }
   Object.assign(options, { base: values.base, wait: values.wait, force: values.force, off: values.off,
-    start: values.start, dryRun: values['dry-run'] })
+    start: values.start, dryRun: values['dry-run'], relink: values.relink })
   if (values.top !== undefined) {
     if (!/^\d+$/.test(values.top) || !Number.isSafeInteger(Number(values.top))) throw new UsageError('--top 必须是非负整数')
     options.top = Number(values.top)

@@ -2,82 +2,25 @@ import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import { UsageError, type ParsedCli } from './args.js'
 import { localCodex, type WorkerOutcome } from './worker-harness.js'
+import { postTeamJson, record, RemoteError, REQUEST_MS, teamEndpoint, teamId, validToken, type TeamDestination } from './team-transport.js'
 
-interface WorkerOptions { hub: string; space: string; node: string; harness: string; project: string; token: string }
+interface WorkerOptions extends TeamDestination { harness: string; project: string; token: string }
 interface Job { id: string; claimId: string; prompt: string }
 type Call = (action: 'poll' | 'heartbeat' | 'finish', payload: object, signal?: AbortSignal, timeout?: number) => Promise<unknown>
 type Report = (message: string) => void
 const POLL_MS = 2000
 const HEARTBEAT_MS = 5000
-const REQUEST_MS = 4000
-const REPLY_BYTES = 400 * 1024
-
-class RemoteError extends Error {
-  constructor(readonly status: number, action: string) { super(`Team Worker ${action} 失败（HTTP ${status}）`) }
-  get retryable(): boolean { return this.status === 408 || this.status === 429 || this.status >= 500 }
-}
-
 const retryable = (error: unknown) => error instanceof RemoteError && error.retryable
-const record = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
-const id = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)
-const validToken = (token: string) => /^[A-Za-z0-9_-]{32,256}$/.test(token)
-
-function endpoint({ hub, space, node, token }: WorkerOptions): URL {
-  let url: URL
-  try { url = new URL(hub) } catch { throw new UsageError('--hub 必须是 HTTP(S) URL') }
-  const loopback = url.hostname === '127.0.0.1' || url.hostname === '[::1]'
-  if ((url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) || url.username || url.password || url.search || url.hash) {
-    throw new UsageError('--hub 必须用 HTTPS，或使用指向本机隧道的 HTTP（127.0.0.1 / [::1]），且不含凭据、query 或 fragment')
-  }
-  if (url.protocol === 'https:' && process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') throw new UsageError('Team Worker 要求启用 TLS 证书验证')
-  if (!id(space) || !id(node) || !validToken(token)) throw new UsageError('空间、节点 ID 或 Worker token 不合法')
-  url.pathname = `${url.pathname.replace(/\/$/, '')}/api/team-worker/v1/${space}/${node}/`
-  return url
-}
 
 function connection(url: URL, { token, harness }: WorkerOptions): Call {
   const session = randomUUID()
-  return async (action, payload, signal, timeout = REQUEST_MS) => {
-    const requestTimeout = AbortSignal.timeout(timeout)
-    const combined = signal ? AbortSignal.any([signal, requestTimeout]) : requestTimeout
-    let response: Response
-    try {
-      response = await fetch(new URL(action, url), {
-        method: 'POST', redirect: 'manual', signal: combined,
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ ...payload, session, harness }),
-      })
-    } catch { throw new RemoteError(503, action) }
-    if (!response.ok) {
-      void response.body?.cancel().catch(() => {})
-      throw new RemoteError(response.status, action)
-    }
-    return readReply(response, action)
-  }
-}
-
-async function readReply(response: Response, action: string): Promise<unknown> {
-  const reader = response.body?.getReader()
-  const chunks: Uint8Array[] = []
-  let size = 0
-  if (reader) for (;;) {
-    const { done, value } = await reader.read().catch(() => { throw new RemoteError(503, action) })
-    if (done) break
-    size += value.byteLength
-    if (size > REPLY_BYTES) {
-      void reader.cancel().catch(() => {})
-      throw new Error('Team Worker 响应过大')
-    }
-    chunks.push(value)
-  }
-  try { return JSON.parse(Buffer.concat(chunks, size).toString('utf8')) as unknown }
-  catch { throw new Error(`Team Worker ${action} 响应不是 JSON`) }
+  return (action, payload, signal, timeout) => postTeamJson(url, action, { ...payload, session, harness }, { token, signal, timeout })
 }
 
 function assignment(value: unknown): Job | null {
   const job = record(value) && value.job
   if (job === null) return null
-  if (!record(job) || typeof job.id !== 'string' || !id(job.id) || typeof job.claimId !== 'string' || !id(job.claimId)
+  if (!record(job) || typeof job.id !== 'string' || !teamId(job.id) || typeof job.claimId !== 'string' || !teamId(job.claimId)
     || typeof job.prompt !== 'string' || Buffer.byteLength(job.prompt) > 64 * 1024) throw new Error('Team Worker 任务响应不合法')
   return { id: job.id, claimId: job.claimId, prompt: job.prompt }
 }
@@ -149,7 +92,9 @@ async function runJob(call: Call, job: Job, run: Awaited<ReturnType<typeof local
 
 export async function runTeamWorker(options: WorkerOptions, stop: AbortSignal, report: Report = () => {}): Promise<void> {
   if (options.harness !== 'codex') throw new UsageError('Team Worker 目前只支持 --harness codex')
-  const call = connection(endpoint(options), options)
+  const endpoint = teamEndpoint(options)
+  if (!validToken(options.token)) throw new UsageError('Worker token 不合法')
+  const call = connection(endpoint, options)
   const run = await localCodex(options.project)
   let poll = 1
   let disconnected = false
@@ -186,14 +131,24 @@ export async function runWorkerCommand({ options, positionals }: ParsedCli): Pro
     throw new UsageError('用法：takt worker --hub URL --space ID --node ID --harness codex --project DIR（token 从 stdin 读入）')
   }
   const token = await readToken()
+  return withWorkerSignals(async ({ signal }) => {
+    await runTeamWorker({ hub, space, node: node[0]!, harness, project, token }, signal, reportWorker)
+  })
+}
+
+export const reportWorker: Report = (message) => { process.stderr.write(`${message}\n`) }
+
+export async function withWorkerSignals(run: (stop: AbortController) => Promise<void>): Promise<number> {
   const stop = new AbortController()
   const abort = () => stop.abort()
   process.once('SIGINT', abort)
   process.once('SIGTERM', abort)
   try {
-    await runTeamWorker({ hub, space, node: node[0]!, harness, project, token }, stop.signal,
-      (message) => { process.stderr.write(`${message}\n`) })
+    await run(stop)
     return 0
+  } catch (error) {
+    if (stop.signal.aborted) return 0
+    throw error
   } finally {
     process.off('SIGINT', abort)
     process.off('SIGTERM', abort)

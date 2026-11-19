@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react'
-import { ArrowDown, Bot, ClipboardList, CircleAlert, GitBranch, MessagesSquare, UserRound } from 'lucide-react'
+import { ArrowDown, ClipboardList, CircleAlert, GitBranch, MessagesSquare } from 'lucide-react'
 import type { TeamJob, TeamMessage } from '../../api/team'
+import { StewardMark } from '../../components/identity'
+import { Avatar } from '../../components/ui'
 import { fmtDateTime } from '../../lib/format'
 import { Link } from '../../lib/router'
 
@@ -47,11 +49,10 @@ export function Conversation({ messages, jobs, memberName }: { messages: TeamMes
         <ol>
           {messages.map((message) => {
             const steward = message.role === 'steward'
-            const Icon = steward ? Bot : UserRound
             const job = message.jobId ? jobs.get(message.jobId) : undefined
             return (
               <li className="team-message" key={message.id}>
-                <span className="team-avatar" data-steward={steward}><Icon aria-hidden /></span>
+                <span className="team-avatar" data-steward={steward}>{steward ? <StewardMark size={24} /> : <Avatar name={memberName(message.author)} id={message.author} size={24} />}</span>
                 <div className="team-message-content">
                   <div className="team-message-meta">
                     <strong>{steward ? '空间管家' : memberName(message.author)}</strong>

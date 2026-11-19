@@ -138,6 +138,9 @@ export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, 
   space(): Promise<SpaceDetail>
   team(signal?: AbortSignal): Promise<import('./team').TeamSnapshot>
   postTeamMessage(body: import('./team').TeamPost, signal?: AbortSignal): Promise<import('./team').TeamSnapshot>
+  devices(signal?: AbortSignal): Promise<import('./devices.js').SpaceDevices>
+  createDeviceLink(body: import('./devices.js').DeviceLinkRequest, signal?: AbortSignal): Promise<import('./devices.js').DeviceLink>
+  revokeDevice(nodeId: string, signal?: AbortSignal): Promise<void>
   /** 空间写操作都要原因（服务端校验非空，写进审计）：成员走 body `{ members, reason }`，仓库放在 body.reason。 */
   setMembers(members: SpaceMember[], reason: string): Promise<SpaceDetail>
   addRepo(repo: RepoBinding, reason: string): Promise<SpaceDetail>

@@ -39,6 +39,7 @@ const S = `/s/${space}`
 const PAGES = [
   { name: '总览', path: `${S}/` },
   { name: '需求列表', path: `${S}/requirements` },
+  { name: '设备与 Agent', path: `${S}/devices`, mobile: true },
   req && { name: '需求详情', path: `${S}/req/${req.id}` },
   req?.latestRunId && { name: '运行页', path: `${S}/run/${req.latestRunId}` },
   { name: '待办', path: `${S}/attention` },
@@ -62,6 +63,7 @@ const VIEWS = [
   { theme: 'light', width: 1440, height: 900 },
   { theme: 'dark', width: 1440, height: 900 },
   { theme: 'light', width: 1100, height: 800 },
+  { theme: 'light', width: 390, height: 844, mobile: true },
 ]
 
 /** 在页面里跑的检查；返回问题列表，每条带框（画红框用）。 */
@@ -205,7 +207,7 @@ for (const view of VIEWS) {
   // 主题跟系统走：colorScheme 已经切了；清掉手动选过的主题
   await context.addInitScript(() => { try { localStorage.removeItem('takt.theme') } catch {} })
   const page = await context.newPage()
-  for (const p of PAGES.filter((p) => !p.minWidth || view.width >= p.minWidth)) {
+  for (const p of PAGES.filter((p) => (!p.minWidth || view.width >= p.minWidth) && (!view.mobile || p.mobile))) {
     const id = `${p.name}-${view.theme}-${view.width}`.replace(/[\s/]+/g, '_')
     try {
       await page.goto(base + p.path, { waitUntil: 'domcontentloaded' })
