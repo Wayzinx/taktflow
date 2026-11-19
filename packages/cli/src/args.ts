@@ -14,6 +14,7 @@ export interface CliOptions {
   confirm?: string
   thread?: string
   space?: string
+  hub?: string
   hash?: string
   config?: string
   base?: string[]
@@ -135,6 +136,8 @@ export const HELP = `用法：takt <命令> [选项]
   defect attribute <REQ> <defectId> [--mock <file>]
   defect confirm <REQ> <defectId> [--note <text>]
   serve [--spaces <dir>] [--port 4870] [--host 127.0.0.1]
+  worker --hub URL --space ID --node ID --harness codex --project <专用目录>
+                                                从 stdin 读取单个 Worker token（仅 HTTPS 或本机 HTTP 隧道）
 
 需求与空间管理：
   req new <title> [--desc-file <file>] [--workflow <id>] [--start] [--due <date>]
@@ -164,15 +167,16 @@ export const HELP = `用法：takt <命令> [选项]
 
 const EXTRA_STRINGS = {
   'desc-file': 'descFile', due: 'due', owner: 'owner', template: 'template', from: 'from', parts: 'parts',
-  color: 'color', confirm: 'confirm', thread: 'thread', space: 'space', hash: 'hash', config: 'config',
+  color: 'color', confirm: 'confirm', thread: 'thread', space: 'space', hub: 'hub', hash: 'hash', config: 'config',
 } as const
 const EXTRA_COMMANDS: Record<string, string[]> = {
   'desc-file': ['req'], due: ['req'], owner: ['req'], start: ['req'], template: ['space'], from: ['space'],
-  parts: ['space'], color: ['space'], confirm: ['space', 'steward', 'req'], thread: ['steward'], space: ['steward'],
+  parts: ['space'], color: ['space'], confirm: ['space', 'steward', 'req'], thread: ['steward'], space: ['steward', 'worker'], hub: ['worker'],
   hash: ['steward'], config: ['kb'], base: ['kb'], top: ['kb'], wait: ['kb'], force: ['kb'], off: ['kb'],
   'dry-run': ['kb', 'workflow', 'runs'], rule: ['runs'],
 }
 const OPTIONS = {
+  hub: { type: 'string' },
   'desc-file': { type: 'string' }, due: { type: 'string' }, owner: { type: 'string' },
   template: { type: 'string' }, from: { type: 'string' }, parts: { type: 'string' }, color: { type: 'string' },
   confirm: { type: 'string' }, thread: { type: 'string' }, space: { type: 'string' }, hash: { type: 'string' },

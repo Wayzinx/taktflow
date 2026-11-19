@@ -1,0 +1,211 @@
+.team-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 252px);
+  gap: 28px;
+  align-items: start;
+}
+
+.team-room {
+  min-width: 0;
+  padding: 0;
+}
+
+.team-room-head,
+.team-side-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.team-room-head {
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.team-room h2,
+.team-side h2 {
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+}
+
+.team-room-head > span,
+.team-side-head > span,
+.team-message-meta time,
+.team-composer-footer > span,
+.team-target p,
+.team-side p {
+  color: var(--text-2);
+  font-size: var(--text-meta);
+  overflow-wrap: anywhere;
+}
+
+.team-thread { position: relative; }
+
+.team-log {
+  max-height: clamp(280px, 46dvh, 560px);
+  min-height: min(30dvh, 235px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.team-log:focus-visible { outline-offset: -3px; }
+
+.team-log ol,
+.team-nodes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.team-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 14px 0 20px;
+  padding: 15px 0;
+}
+
+.team-message + .team-message { border-top: 1px solid var(--border); }
+
+.team-avatar {
+  display: grid;
+  flex: 0 0 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--text-2);
+  background: var(--surface-hover);
+}
+
+.team-avatar[data-steward='true'] { color: var(--accent); background: var(--accent-soft); }
+.team-avatar svg { width: 16px; height: 16px; }
+.team-message-content { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+.team-message-meta,
+.team-message-links,
+.team-actions,
+.team-job-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.team-message-meta { min-height: 19px; }
+.team-message-meta strong { font-weight: 600; }
+.team-message-content > p { margin: 4px 0 0; white-space: pre-wrap; max-width: 72ch; }
+.team-message-links { margin-top: 8px; }
+.team-message-links .btn { height: auto; min-height: 26px; white-space: normal; max-width: 100%; }
+.team-message-links .btn svg { flex: none; }
+.team-latest { position: absolute; right: 20px; bottom: 10px; }
+
+.team-empty,
+.team-loading {
+  display: grid;
+  place-content: center;
+  min-height: 235px;
+  padding: 24px;
+}
+
+.team-empty { justify-items: center; text-align: center; }
+.team-empty > svg { color: var(--text-3); width: 26px; height: 26px; }
+.team-empty h3 { margin: 8px 0 3px; font-size: var(--text-title); }
+.team-empty p { margin: 0; color: var(--text-2); max-width: 38ch; }
+.team-loading { gap: 12px; grid-template-columns: 1fr; }
+
+.team-composer {
+  display: grid;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.team-mode-row,
+.team-composer-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.team-mode-row .segmented { max-width: 100%; white-space: nowrap; }
+.team-mode-row .segmented button:disabled { cursor: not-allowed; }
+.team-textarea { width: 100%; min-height: 80px; resize: vertical; font: inherit; }
+.team-textarea:disabled { cursor: not-allowed; }
+.team-composer-footer .btn { flex: none; margin-left: auto; }
+.team-composer-footer a,
+.team-target a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.team-readonly,
+.team-missing-job { display: inline-flex; gap: 5px; align-items: center; color: var(--text-2); font-size: var(--text-meta); }
+.team-readonly svg,
+.team-missing-job svg { width: 13px; height: 13px; }
+.team-missing-job { margin-top: 8px; }
+.team-target { display: grid; gap: 4px; }
+.team-target label { font-size: var(--text-meta); font-weight: 600; }
+.team-target select { width: min(100%, 430px); }
+.team-target p { margin: 0; }
+.team-target p .btn { margin-left: 6px; }
+.team-send-note { margin: 0; color: var(--text-2); font-size: var(--text-ui); }
+
+.team-load-error,
+.team-send-error {
+  color: var(--st-failed);
+  background: var(--st-failed-soft);
+  padding: 10px 12px;
+  overflow-wrap: anywhere;
+}
+
+.team-send-error { border-radius: var(--r-sm); }
+.team-send-error p { margin: 0 0 8px; }
+.team-side { min-width: 0; }
+.team-side section + section { margin-top: 22px; }
+.team-side-head { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.team-side-head svg { width: 16px; height: 16px; color: var(--text-2); }
+.team-side-head > span { margin-left: auto; }
+.team-side p { margin: 10px 0 0; }
+
+.team-nodes li {
+  display: flex;
+  gap: 6px;
+  align-items: flex-start;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding: 10px 0;
+}
+
+.team-nodes li > div { min-width: 0; overflow-wrap: anywhere; }
+.team-node-harness { display: block; color: var(--text-2); }
+.team-node-state { flex: none; font-size: var(--text-meta); color: var(--text-3); }
+.team-node-state::before { display: inline-block; content: ''; width: 6px; height: 6px; background: currentColor; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+.team-node-state[data-online='true'] { color: var(--st-success); }
+
+.team-job {
+  max-width: 72ch;
+  padding: 8px 10px;
+  margin-top: 8px;
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+  overflow-wrap: anywhere;
+}
+
+.team-job-meta { color: var(--text-2); font-size: var(--text-meta); }
+.team-job-state { font-weight: 600; color: var(--st-waiting); }
+.team-job-state[data-state='running'] { color: var(--st-running); }
+.team-job-state[data-state='succeeded'] { color: var(--st-success); }
+.team-job-state[data-state='failed'] { color: var(--st-failed); }
+.team-job-result { margin: 5px 0 0; white-space: pre-wrap; font: inherit; color: var(--text); }
+
+@media (max-width: 820px) {
+  .team-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+}
+
+@media (max-width: 460px) {
+  .team-room-head,
+  .team-composer { padding-inline: 12px; }
+  .team-message { margin-inline: 12px 4px; gap: 8px; }
+}

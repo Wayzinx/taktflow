@@ -1,4 +1,4 @@
-import { BookOpen, Boxes, FlaskConical, Inbox, LayoutDashboard, LayoutGrid, ListTodo, Settings, Shapes, UserRoundCog, Workflow, Zap, type LucideIcon } from 'lucide-react'
+import { BookOpen, Boxes, FlaskConical, Inbox, LayoutDashboard, LayoutGrid, ListTodo, MessagesSquare, Settings, Shapes, UserRoundCog, Workflow, Zap, type LucideIcon } from 'lucide-react'
 import { BeeGlyph } from '../bee-glyph'
 
 export interface PageEntry {
@@ -15,6 +15,7 @@ export interface PageEntry {
 export const PAGES: PageEntry[] = [
   { to: '/', label: '总览', icon: LayoutDashboard, keywords: 'overview home zonglan' },
   { to: '/requirements', label: '需求列表', icon: ListTodo, keywords: 'requirements xuqiu' },
+  { to: '/team', label: '团队 Agent', icon: MessagesSquare, keywords: 'team space agent shared conversation 团队 空间 对话 开发' },
   { to: '/attention', label: '待办', icon: Inbox, keywords: 'attention todo daiban' },
   { to: '/knowledge', label: '知识库', icon: BookOpen, keywords: 'knowledge zhishi kb rag wiki' },
   { to: '/solo', label: '管家 · 整页对话', icon: BeeGlyph, keywords: 'solo steward guanjia assistant agent 管家 对话' },

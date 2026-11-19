@@ -8,11 +8,13 @@
  */
 import { currentSpaceId } from './space'
 
-const key = () => `taktflow.attention.me:${currentSpaceId() ?? ''}`
+const PREFIX = 'taktflow.attention.me:'
+const key = (spaceId = currentSpaceId()) => `${PREFIX}${spaceId ?? ''}`
 const cache = new Map<string, string | undefined>()
+const listeners = new Set<() => void>()
 
-export function actingUser(): string | undefined {
-  const k = key()
+export function actingUser(spaceId?: string): string | undefined {
+  const k = key(spaceId)
   if (cache.has(k)) return cache.get(k)
   let v: string | undefined
   try {
@@ -40,6 +42,19 @@ export function setActingUser(id: string | undefined) {
   write(key(), id)
   // 选了人就同步成管家的全局身份；清空空间身份不清全局身份（别的空间可能还在用）
   if (id) write(STEWARD_KEY, id)
+  for (const notify of listeners) notify()
+}
+
+globalThis.addEventListener?.('storage', (event) => {
+  if (event.key === null) cache.clear()
+  else if (event.key.startsWith(PREFIX)) cache.delete(event.key)
+  else return
+  for (const notify of listeners) notify()
+})
+
+export function subscribeActingUser(notify: () => void): () => void {
+  listeners.add(notify)
+  return () => listeners.delete(notify)
 }
 
 /** 管家接口（/steward/*）用的全局身份；没选过时为空，服务端回落到缺省 owner。 */
@@ -56,7 +71,7 @@ export function stewardUser(): string | undefined {
 }
 
 /** 请求头只能放 ByteString；成员 id 不是可打印 ASCII 时不发（服务端回落到缺省 owner）。 */
-export function actingUserHeader(steward = false): Record<string, string> {
-  const id = steward ? stewardUser() : actingUser()
+export function actingUserHeader(steward = false, spaceId?: string): Record<string, string> {
+  const id = steward ? stewardUser() : actingUser(spaceId)
   return id && /^[\x21-\x7e]+$/.test(id) ? { 'x-takt-user': id } : {}
 }

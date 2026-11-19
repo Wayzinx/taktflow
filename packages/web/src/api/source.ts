@@ -135,6 +135,8 @@ export interface DataSource extends CrudSource, StewardSource, KnowledgeSource, 
   /** archived 为 true 时只返回已归档的空间（全局接口，不加空间前缀）。 */
   spaces(opts?: { archived?: boolean }): Promise<SpaceSummary[]>
   space(): Promise<SpaceDetail>
+  team(signal?: AbortSignal): Promise<import('./team').TeamSnapshot>
+  postTeamMessage(body: import('./team').TeamPost, signal?: AbortSignal): Promise<import('./team').TeamSnapshot>
   /** 空间写操作都要原因（服务端校验非空，写进审计）：成员走 body `{ members, reason }`，仓库放在 body.reason。 */
   setMembers(members: SpaceMember[], reason: string): Promise<SpaceDetail>
   addRepo(repo: RepoBinding, reason: string): Promise<SpaceDetail>

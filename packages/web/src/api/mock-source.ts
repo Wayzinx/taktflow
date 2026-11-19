@@ -10,6 +10,7 @@ import { createMockKnowledge } from './mock-knowledge'
 import { createMockSteward } from './mock-steward'
 import { createMockM8 } from './mock-m8'
 import { mockFind, mockPicks } from './mock-solo'
+import { mockTeam } from './mock-team'
 import type { DataSource } from './source'
 import type { CrudSource, KnowledgeSource } from './source-m4'
 
@@ -138,18 +139,20 @@ export function createMockSource(): DataSource {
     deleteRequirement: (id, reason) => project().deleteRequirement(id, reason),
   }
 
-  const spaceApi: Pick<DataSource, 'me' | 'spaces' | 'space' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
+  const spaceApi: Pick<DataSource, 'me' | 'spaces' | 'space' | 'team' | 'postTeamMessage' | 'setMembers' | 'addRepo' | 'updateRepo' | 'syncRepo' | 'spaceFile' | 'saveSpaceFile'> = {
     // 与服务端 viewer() 一致：x-takt-user（这里是界面上选的身份），缺省为第一个 owner
     me: () =>
       withSpace((sp) => {
         const members = sp.detail.members
-        const id = actingUser() || members.find((m) => m.role === 'owner')?.id || 'web'
+        const id = actingUser(pinned) || members.find((m) => m.role === 'owner')?.id || 'web'
         const member = members.find((m) => m.id === id)
         return delay({ id, name: member?.name ?? id, member }, 40)
       }),
     spaces: (opts) => delay(crud.list(opts?.archived), 60),
     // 空间详情里的 workflow 列表以 workflow 存储为准（编辑后 rev / 更新时间会变）
     space: () => withSpace(async (sp) => ({ ...(await delay(sp.detail)), workflows: await workflowsOf(sp).workflows() })),
+    team: () => withSpace((sp) => delay(mockTeam(sp.seeded))),
+    postTeamMessage: () => fail('演示数据是只读的'),
     setMembers: (members, reason) =>
       needReason(reason) ??
       withSpace((sp) => {

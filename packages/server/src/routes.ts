@@ -27,6 +27,8 @@ import { createSecretResolver } from '@taktflow/knowledge'
 import { crudRoutes } from './crud-routes.js'
 import { workflowSource } from './space.js'
 import type { WorkflowStore } from '@taktflow/workflow-source'
+import { enqueueTeamJob, teamJobs, teamNodes } from './team-hub.js'
+import { teamRoomRoutes } from './team-room.js'
 
 export interface RequestContext {
   stores: ProjectStores
@@ -52,6 +54,7 @@ export function routes(connections: Set<() => void>, onAnswer?: (item: Attention
   registerKnowledgeRoutes(add, { connections })
   crudRoutes(add, catalog)
   spaceRoutes(add, connections, onLeadMention, catalog)
+  teamRoomRoutes(add, catalog, { enqueueTeamJob, teamJobs, teamNodes })
   skillRoutes(add)
   m3Routes(add, catalog)
   registerEvalRoutes(add, catalog.resolveRuntime ?? (() => { throw new HttpError(501, '未接入评测运行时') }), catalog)

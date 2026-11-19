@@ -149,7 +149,7 @@ export async function workflowModuleScope(dir: string): Promise<void> {
   // 运行时模板由当前 CLI 提供；仓库外空间也能解析同一份 core，无需安装依赖。
   const modules = join(dir, 'node_modules/@taktflow')
   await mkdir(modules, { recursive: true })
-  for (const name of ['core', 'sandbox']) {
+  for (const name of ['core', 'sandbox', 'server']) {
     const target = resolve(templatesDir, `../packages/${name}`)
     try {
       await symlink(target, join(modules, name), 'dir')

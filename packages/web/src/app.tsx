@@ -22,6 +22,7 @@ const PAGES = {
   requirement: () => import('./pages/requirement'),
   run: () => import('./pages/run'),
   settings: () => import('./pages/settings'),
+  team: () => import('./pages/team'),
   spaces: () => import('./pages/spaces'),
   workflow: () => import('./pages/workflow'),
   workflowsList: () => import('./pages/workflows-list'),
@@ -36,6 +37,7 @@ const EvalPage = lazy(() => PAGES.eval().then((m) => ({ default: m.EvalPage })))
 const RequirementPage = lazy(() => PAGES.requirement().then((m) => ({ default: m.RequirementPage })))
 const RunPage = lazy(() => PAGES.run().then((m) => ({ default: m.RunPage })))
 const SettingsPage = lazy(() => PAGES.settings().then((m) => ({ default: m.SettingsPage })))
+const TeamPage = lazy(() => PAGES.team().then((m) => ({ default: m.TeamPage })))
 const SpacesPage = lazy(() => PAGES.spaces().then((m) => ({ default: m.SpacesPage })))
 const WorkflowEditorPage = lazy(() => PAGES.workflow().then((m) => ({ default: m.WorkflowEditorPage })))
 const WorkflowsListPage = lazy(() => PAGES.workflowsList().then((m) => ({ default: m.WorkflowsListPage })))
@@ -79,6 +81,7 @@ function SpaceRoutes({ path }: { path: string }) {
   if (path === '/solo') return <SoloPage />
   if (path === '/spaces') return <SpacesPage />
   if (path === '/requirements') return <RequirementsPage />
+  if (path === '/team') return <TeamPage />
   if (path === '/attention') return <AttentionPage />
   if (path === '/knowledge') return <KnowledgeListPage />
   if (path === '/settings') return <SettingsPage />

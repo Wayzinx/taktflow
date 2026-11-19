@@ -63,14 +63,16 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     const sid = space ?? currentSpaceId()
     return sid && !GLOBAL_PATH.test(path) ? `${base}/s/${enc(sid)}${path}` : base + path
   }
-  async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const identity = (path: string) => actingUserHeader(STEWARD_PATH.test(path), GLOBAL_PATH.test(path) ? undefined : space)
+  async function req<T>(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     // 服务端 validateWriteRequest 要求所有写请求都是 application/json（无 body 的 POST 会 415）：写方法没给 body 时发 {}
     const write = method !== 'GET' && method !== 'HEAD'
     const payload = body === undefined ? (write ? {} : undefined) : body
     const res = await trackedFetch(scoped(path), {
       method,
-      headers: { ...actingUserHeader(STEWARD_PATH.test(path)), ...(payload === undefined ? {} : { 'content-type': 'application/json' }) },
+      headers: { ...identity(path), ...(payload === undefined ? {} : { 'content-type': 'application/json' }) },
       body: payload === undefined ? undefined : JSON.stringify(payload),
+      signal,
     })
     const text = await res.text()
     const data = text ? (JSON.parse(text) as unknown) : undefined
@@ -84,7 +86,7 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
   // 同一地址正在请求时直接共用：运行页一打开，十来个组件各自要 /project、运行详情，重复请求会在服务端排队
   const inflight = new Map<string, Promise<unknown>>()
   const get = <T,>(path: string): Promise<T> => {
-    const key = scoped(path)
+    const key = JSON.stringify([scoped(path), identity(path)['x-takt-user']])
     const pending = inflight.get(key)
     if (pending) return pending as Promise<T>
     const request = req<T>('GET', path).finally(() => inflight.delete(key))
@@ -119,6 +121,8 @@ export function createHttpSource(base = '/api', space?: string): DataSource {
     subscribe: (runId, onEvent) => stream(scoped(`/runs/${enc(runId)}/stream?from=tail`), onEvent),
     spaces: (opts) => get(`/spaces${qs({ archived: opts?.archived ? 1 : undefined })}`),
     space: () => get('/space'),
+    team: (signal) => req('GET', '/space/team', undefined, signal),
+    postTeamMessage: (body, signal) => req('POST', '/space/team/messages', body, signal),
     // 服务端成员接口接受数组 + x-takt-reason 头，或 { members, reason }；用 body 形式，避免非 ASCII 原因放进请求头
     setMembers: (members, reason) => req('PUT', '/space/members', { members, reason }),
     addRepo: (repo, reason) => req('POST', '/space/repos', { ...repo, reason }),

@@ -1,4 +1,4 @@
-import { BookOpen, FlaskConical, Inbox, LayoutDashboard, ListTodo, Settings, Workflow, Zap, type LucideIcon } from 'lucide-react'
+import { BookOpen, FlaskConical, Inbox, LayoutDashboard, ListTodo, MessagesSquare, Settings, Workflow, Zap, type LucideIcon } from 'lucide-react'
 
 /** 空间侧栏的导航项（components/layout 渲染）。⌘K 的“页面”分组必须一一覆盖（command-palette/pages.test.ts）。 */
 export interface NavItem {
@@ -16,6 +16,7 @@ const under = (path: string, base: string) => path === base || path.startsWith(`
 
 export const SPACE_NAV: NavItem[] = [
   { to: '/', label: '总览', icon: LayoutDashboard, motion: 'tiles', active: (p) => p === '/' },
+  { to: '/team', label: '团队 Agent', icon: MessagesSquare, motion: 'pop', active: (p) => p === '/team' },
   { to: '/requirements', label: '需求', icon: ListTodo, motion: 'drop', active: (p) => under(p, '/requirements') || under(p, '/req') || under(p, '/run') },
   { to: '/attention', label: '待办', icon: Inbox, motion: 'pop', active: (p) => p === '/attention' },
   { to: '/knowledge', label: '知识库', icon: BookOpen, motion: 'open', active: (p) => under(p, '/knowledge') },

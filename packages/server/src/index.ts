@@ -24,6 +24,9 @@ import { createPreviewServer } from './preview.js'
 import { attachLessons } from './commands.js'
 import type { M3Callbacks } from './m3-routes.js'
 import { staticFile } from './static.js'
+import { TEAM_WORKER_PATH, teamWorkerApi } from './team-hub-http.js'
+export { runTeamWorker } from './team-workflow.js'
+export { enqueueTeamJob, teamJobs, teamNodes } from './team-hub.js'
 
 export interface ServerOptions extends CatalogCallbacks, M3Callbacks, RuntimeCallbacks {
   onSpaceLoad?: (stores: import('@taktflow/core').ProjectStores) => Promise<void>
@@ -94,6 +97,10 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
     for (const id of routers.keys()) if (!byId.has(id)) routers.delete(id)
   }
   const refresh = () => refreshing ??= refreshSpaces().finally(() => { refreshing = undefined })
+  const workerApi = teamWorkerApi(process.env.TAKT_TEAM_NODES, async (id) => {
+    if (Date.now() - refreshedAt > 2000) await refresh()
+    return byId.get(id)
+  })
   const admin = createRouter<Handler>()
   const modelSpaces = async () => (await Promise.all(spaces.map(space =>
     openProject(space.projectDir).catch(() => undefined)))).filter(space => space !== undefined)
@@ -132,16 +139,20 @@ export async function createServer(options: ServerOptions): Promise<RunningServe
   let closing = false
   const server = httpServer((request, response) => {
     void (async () => {
+      if (closing) throw new HttpError(500, '服务正在关闭')
+      let url: URL
+      try { url = new URL(request.url ?? '/', 'http://localhost') } catch { throw new HttpError(400, 'URL 不合法') }
+      if (url.pathname === '/api/team-worker' || url.pathname.startsWith(TEAM_WORKER_PATH)) {
+        await workerApi(request, response, url)
+        return
+      }
       response.setHeader('vary', 'Origin')
       if (request.headers.origin === 'http://localhost:5173') {
         response.setHeader('access-control-allow-origin', 'http://localhost:5173')
         response.setHeader('access-control-allow-methods', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS')
         response.setHeader('access-control-allow-headers', 'Content-Type, X-Takt-User, X-Takt-Reason, Last-Event-ID')
       }
-      if (closing) throw new HttpError(500, '服务正在关闭')
       if (request.method === 'OPTIONS') { response.writeHead(204); response.end(); return }
-      let url: URL
-      try { url = new URL(request.url ?? '/', 'http://localhost') } catch { throw new HttpError(400, 'URL 不合法') }
       if (url.pathname.startsWith('/api/') && Date.now() - refreshedAt > 2000) await refresh()
       const adminRoute = admin.match(request.method ?? 'GET', url.pathname)
       if (adminRoute) {

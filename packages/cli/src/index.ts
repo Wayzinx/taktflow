@@ -20,6 +20,7 @@ import { runKbQuery, runKbCommand, type KbCliOptions } from './commands/kb.js'
 import { runSpaceCommand, runSpaceServer } from './commands/space.js'
 import { runServe } from './commands/serve.js'
 import { runCatalog, runDoctor } from './commands/catalog.js'
+import { runWorkerCommand } from './worker.js'
 
 export { knowledgeFromConfig } from './knowledge.js'
 
@@ -51,6 +52,8 @@ async function dispatch(cli: ParsedCli): Promise<number> {
   const handler = command && registered.get(command)
   if (handler) return handler(cli)
   switch (command) {
+    case 'worker':
+      return runWorkerCommand(cli)
     case 'quality':
     case 'attention':
       return runQualityCommand(cli)

@@ -131,6 +131,6 @@ export function validateWriteRequest(request: IncomingMessage): void {
   if (requestUser(request) === 'web') throw new HttpError(403, '匿名身份 web 不能执行写操作，请选择真实成员身份')
   const origin = request.headers.origin
   const sameOrigin = `http://${request.headers.host}`
-  if (origin && origin !== sameOrigin && origin !== 'http://localhost:5173') throw new HttpError(403, '请求来源不允许')
+  if (origin && origin !== sameOrigin && origin !== `https://${request.headers.host}` && origin !== 'http://localhost:5173') throw new HttpError(403, '请求来源不允许')
   if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== 'application/json') throw new HttpError(415, '写请求必须使用 application/json')
 }

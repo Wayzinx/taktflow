@@ -23,6 +23,10 @@ npm run takt -- serve --project examples/hello-delivery   # 打开 Web 控制台
 npm run takt -- doctor --project examples/hello-delivery  # 检查 harness / 模型 / 插件
 ```
 
+## 团队 Agent
+
+在项目空间侧栏打开「团队 Agent」。团队可以共用一个管家讨论方案，把对话变成需求、启动已有工作流，也可以直接把任务发给已连接 Hub 的 Mac 或 Linux 开发机。[配置空间、连接 Worker 和运行示例](examples/team-delivery/README.md)
+
 ## 支持哪些 harness 和模型
 
 | 类别 | 支持 |
