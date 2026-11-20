@@ -40,21 +40,21 @@ function CopyValue({ label, value, secret = false }: { label: string; value: str
 function InstallLink({ pairing }: { pairing: Pairing }) {
   const { hub, platform, spaceId, nodeId, code, expiresAt } = pairing
   const local = loopbackHub(hub)
-  const [remote, setRemote] = useState(!local)
+  const [remote, setRemote] = useState(true)
   const [address, setAddress] = useState(local ? '' : hub)
   const target = remote ? linkHub(address) : linkHub(hub)
   const mustSetAddress = remote && !target
   const editAddress = <label className="ov-field device-hub-field">
     <span className="ov-field-label">目标电脑可访问的 Hub 地址</span>
     <input className="input" value={address} onChange={e => setAddress(e.target.value)} autoComplete="off" inputMode="url" placeholder="https://hub.example.com" spellCheck={false} />
-    <span className="ov-field-hint">填写此 Hub 的 HTTPS 地址。使用隧道时，填写目标电脑上的本机转发地址。</span>
+    <span className="ov-field-hint">填写此 Hub 的 HTTPS 地址，或已在目标电脑上接通的 SSH 本地转发地址。</span>
   </label>
   return <div className="device-pairing">
     {local && <fieldset className="device-location">
       <legend>Link 将在哪里运行？</legend>
       <label><input type="radio" checked={!remote} onChange={() => setRemote(false)} /> Hub 本机</label>
       <label><input type="radio" checked={remote} onChange={() => setRemote(true)} /> 另一台电脑</label>
-      <p>当前 Hub 使用本机地址。另一台电脑需要能访问同一个 Hub。</p>
+      <p>在另一台电脑上，localhost 指向那台电脑自身。</p>
     </fieldset>}
     {remote && (local || !linkHub(hub) ? editAddress : <details className="device-hub-options"><summary>更改 Hub 地址</summary>{editAddress}</details>)}
     {target && !mustSetAddress && <>
@@ -62,7 +62,8 @@ function InstallLink({ pairing }: { pairing: Pairing }) {
         <h3>下载 Taktflow Link</h3>
         <p>在目标{platform === 'mac' ? ' Mac' : ' Linux 电脑'}上准备 Node.js 20.12 或更高版本，并安装、登录 Codex。</p>
         <a className="btn btn-sm" href={LINK_DOWNLOAD} download="taktflow-link.mjs"><Download aria-hidden /> 下载 Link 文件</a>
-        <details open={platform === 'linux'}><summary>在目标电脑用终端下载</summary><CopyValue label="下载命令" value={linkDownloadCommand(target)} /></details>
+        {remote && local && <p>先在目标电脑执行下方的 curl 下载命令，成功后再启动 Link。</p>}
+        <details open={platform === 'linux' || (remote && local)}><summary>在目标电脑用终端下载</summary><CopyValue label="下载命令" value={linkDownloadCommand(target)} /></details>
       </div>
       <div className="device-install">
         <h3>从项目目录启动 Link</h3>
